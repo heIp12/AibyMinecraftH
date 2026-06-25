@@ -108,6 +108,21 @@ B: 생존자 과반, 어떤 방식이든 해결
 C: 생존자 소수, 생존법 달성
 D: 1명 생존으로 도주 성공
 
+### 개인 서술 원칙 ★ 최우선
+각 플레이어는 GM과 개인 채널로만 소통한다.
+- 행동한 플레이어에게만 2인칭("당신은...") 시점으로 서술
+- 다른 플레이어의 행동·결과·상태를 직접 공개 금지
+- 같은 공간의 다른 플레이어가 감각으로 느낄 수 있는 것만:
+  <WITNESS player="플레이어명">
+  그 플레이어가 인지하는 것 (소리·빛·냄새·진동 등 단서. 원인·맥락 제외)
+  </WITNESS>
+  여러 명에게 각각 다른 WITNESS 가능
+
+### 배역 등장 처리
+spawn_timeline이 된 배역이 등장할 시점:
+<SPAWN player="플레이어명"/>
+이 태그 출력 시 해당 플레이어가 스토리에 진입한다.
+
 ### GM 내부 비공개 항목 (절대 공개 금지)
 - 괴담의 정체 및 스케일
 - 타임라인 세부 내용
@@ -153,6 +168,8 @@ D: 1명 생존으로 도주 성공
     private final Set<UUID> pendingCreation    = ConcurrentHashMap.newKeySet();
     /** 특성 선택 대기 중인 플레이어 */
     private final Set<UUID> pendingTraitSelect = ConcurrentHashMap.newKeySet();
+    /** 스토리에 이미 등장한(spawn된) 플레이어 */
+    private final Set<UUID> spawnedPlayers     = ConcurrentHashMap.newKeySet();
     private String gmSystemPrompt = GM_SYSTEM_BASE;
 
     public TRPGGameManager(AICraft plugin, AiManager ai) {
@@ -271,6 +288,7 @@ D: 1명 생존으로 도주 성공
         ai.clearAll();
         pendingCreation.clear();
         pendingTraitSelect.clear();
+        spawnedPlayers.clear();
         currentPhase = Phase.IDLE;
     }
 
@@ -413,8 +431,13 @@ D: 1명 생존으로 도주 성공
             RoleManager.RoleAssignment asgn = entry.getValue();
             p.sendMessage("§e§l[배역 배정]");
             p.sendMessage(roleMan.getRoleBriefing(asgn.roleId(), corruptMan.getLevel()));
-            // 배역별 초기 아이템이 있으면 .gdam에서 지급
             giveRoleStartItems(p, asgn.roleId());
+
+            if (isImmediateSpawn(asgn.roleId())) {
+                spawnedPlayers.add(p.getUniqueId());
+            } else {
+                p.sendMessage("§8당신의 배역은 이야기가 진행되면서 등장합니다. GM의 안내를 기다려주세요.");
+            }
         }
 
         currentPhase = Phase.DAILY;
@@ -444,18 +467,37 @@ D: 1명 생존으로 도주 성공
 
     private void startDailyPhase() {
         broadcast("§e[GM] 일상 파트를 시작합니다.");
-        // GM AI로 일상 프롤로그 시작
-        String prompt = "이제 일상 파트를 시작해줘. .gdam의 daily_prologue를 참고해서 "
-            + "각 배역에 맞게 자연스러운 일상 장면으로 시작해. "
-            + "첫 턴부터 괴담을 노출하지 마. "
-            + "플레이어 수: " + state.getTotalCount();
 
-        ai.callGmAi(gmSystemPrompt, prompt).thenAccept(response -> {
-            plugin.getServer().getScheduler().runTask(plugin, () -> {
-                broadcastGm(response);
-                updateAllScoreboards();
-            });
+        // 등장 배역: 각자의 위치/역할 기준 개인 프롤로그
+        spawnedPlayers.forEach(uuid -> {
+            Player p = Bukkit.getPlayer(uuid);
+            if (p == null || !p.isOnline()) return;
+            PlayerData pd = state.getPlayer(uuid);
+            if (pd == null) return;
+
+            String prompt = "일상 파트 시작. "
+                + "이 메시지는 배역 '" + pd.roleId + "' 플레이어(" + pd.name + ")에게만 전달된다. "
+                + "해당 배역의 시작 위치와 초기 정보를 바탕으로 2인칭 시점의 일상 장면을 서술해줘. "
+                + "다른 플레이어의 존재를 직접 언급하지 마. 괴담 암시 금지.";
+
+            ai.callGmAiOnce(gmSystemPrompt, prompt)
+                .thenAccept(response -> plugin.getServer().getScheduler().runTask(plugin, () -> {
+                    if (!p.isOnline()) return;
+                    String narrative = ai.stripTags(response);
+                    if (!narrative.isBlank())
+                        Arrays.stream(narrative.split("\n")).forEach(line -> p.sendMessage("§f" + line));
+                    scoreMan.update(p, pd, state.getRoomNumber());
+                }));
         });
+
+        // 미등장 배역: 배경 서술만 전송
+        state.getAllPlayers().stream()
+            .filter(pd -> !spawnedPlayers.contains(pd.uuid))
+            .forEach(pd -> {
+                Player p = Bukkit.getPlayer(pd.uuid);
+                if (p == null || !p.isOnline()) return;
+                sendPreSpawnNarrative(p, pd);
+            });
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -478,6 +520,12 @@ D: 1명 생존으로 도주 성공
 
         PlayerData pd = state.getPlayer(player);
         if (pd == null || pd.isDead) return;
+
+        // 미등장 배역: 채팅 차단, 대기 안내
+        if (!spawnedPlayers.contains(player.getUniqueId())) {
+            player.sendMessage("§8(아직 당신의 배역이 이야기에 등장하지 않았습니다. GM의 안내를 기다리세요.)");
+            return;
+        }
 
         // 꼭두각시 상태: 행동 앞에 상태 표기 → GM이 서술 조정
         String actionMessage = message;
@@ -508,13 +556,12 @@ D: 1명 생존으로 도주 성공
             String raw = response.rawText();
             Player player = response.player();
 
-            // 1. 클리어 판정 (다른 처리 전에 먼저 체크)
+            // 1. 클리어 판정
             if (currentPhase == Phase.HORROR) {
                 JsonObject clearTag = ai.parseClearTag(raw);
                 if (clearTag != null) {
                     String grade = clearTag.has("grade") ? clearTag.get("grade").getAsString() : "C";
-                    String narrative = ai.stripTags(raw);
-                    if (!narrative.isBlank()) broadcastGm(narrative);
+                    deliverNarrative(player, raw); // 클리어 서술은 행동 플레이어에게
                     onClearEnding(grade);
                     return;
                 }
@@ -530,45 +577,64 @@ D: 1명 생존으로 도주 성공
                 itemMan.processGrant(itemGrant, new ArrayList<>(Bukkit.getOnlinePlayers()));
             }
 
-            // 4. 서술 텍스트 출력 (태그 제거)
-            String narrative = ai.stripTags(raw);
-            if (!narrative.isBlank()) broadcastGm(narrative);
+            // 4. 서술 + WITNESS 전달 (당사자에게만)
+            deliverNarrative(player, raw);
 
-            // 5. 일상 파트 턴 소비
+            // 5. SPAWN 태그 처리
+            String spawnedName = ai.parseSpawnTag(raw);
+            if (spawnedName != null) handleSpawn(spawnedName);
+
+            // 6. 일상 파트 턴 소비
             if (state.isDailyPhase()) {
                 boolean phaseChanged = state.consumeDailyTurn();
                 if (phaseChanged) {
                     onHorrorPhaseStart();
                 } else if (state.getDailyTurnsLeft() == 1) {
-                    broadcast("§7§o(어딘가 분위기가 이상해지기 시작한다...)");
+                    spawnedPlayers.forEach(uid -> {
+                        Player sp = Bukkit.getPlayer(uid);
+                        if (sp != null) sp.sendMessage("§8§o(분위기가 달라지고 있다...)");
+                    });
                 }
             }
 
-            // 6. 스코어보드 갱신
+            // 7. 스코어보드 갱신
             updateAllScoreboards();
 
-            // 7. 타임라인 4단계 체크
+            // 8. 타임라인 4단계 체크
             if (state.getTimelineStage() >= 4) { onBadEnding(); return; }
 
-            // 8. 사망자 체크
+            // 9. 사망자 체크
             checkDeaths();
 
-            // 9. 능동 특성 버튼 표시
+            // 10. 능동 특성 버튼 (행동 플레이어에게만)
             traitBtn.sendTraitButtons(player, state.getPlayer(player));
 
-            // 10. Entity AI (괴담 파트, 2턴마다)
+            // 11. Entity AI (괴담 파트, 2턴마다) — 스폰된 각 플레이어에게 개별 전달
             if (currentPhase == Phase.HORROR && state.getCurrentTurn() % 2 == 1) {
                 String entityLog = state.buildEntityLog(5);
-                ai.callEntityAi(buildEntitySystemPrompt(), entityLog).thenAccept(entityResp -> {
-                    if (entityResp == null || entityResp.startsWith("§c")) return;
-                    String trimmed = entityResp.trim();
-                    if (trimmed.isEmpty()) return;
-                    plugin.getServer().getScheduler().runTask(plugin, () -> {
-                        Bukkit.broadcastMessage("§8§o[" + getEntityName() + "] " + trimmed);
-                        if (corruptMan.getLevel() >= 2) corruptMan.addEntityMemory(trimmed);
+                String entityPrompt = buildEntitySystemPrompt();
+                spawnedPlayers.forEach(uid -> {
+                    Player sp = Bukkit.getPlayer(uid);
+                    if (sp == null) return;
+                    ai.callEntityAi(entityPrompt, entityLog).thenAccept(entityResp -> {
+                        if (entityResp == null || entityResp.startsWith("§c")) return;
+                        String trimmed = entityResp.trim();
+                        if (trimmed.isEmpty()) return;
+                        plugin.getServer().getScheduler().runTask(plugin, () -> {
+                            if (sp.isOnline()) sp.sendMessage("§8§o[" + getEntityName() + "] " + trimmed);
+                            if (corruptMan.getLevel() >= 2) corruptMan.addEntityMemory(trimmed);
+                        });
                     });
                 });
             }
+
+            // 12. 미등장 배역에게 자동 배경 서술 전송
+            state.getAllPlayers().stream()
+                .filter(pd -> !spawnedPlayers.contains(pd.uuid) && !pd.isDead)
+                .forEach(pd -> {
+                    Player sp = Bukkit.getPlayer(pd.uuid);
+                    if (sp != null && sp.isOnline()) sendPreSpawnNarrative(sp, pd);
+                });
         });
     }
 
@@ -628,12 +694,24 @@ D: 1명 생존으로 도주 성공
     private void onHorrorPhaseStart() {
         currentPhase = Phase.HORROR;
         broadcast("§c§l─── 괴담이 시작됩니다 ───");
-        compressor.compressDailyPhase().thenRun(() -> {
-            // GM AI에 괴담 파트 전환 알림
-            ai.callGmAi(gmSystemPrompt, "일상 파트가 종료되었다. 이제 괴담 파트를 시작해줘. "
-                + "타임라인이 시작됨을 환경 변화로만 암시하고, 직접 언급하지 마.")
-              .thenAccept(r -> plugin.getServer().getScheduler().runTask(plugin, () -> broadcastGm(r)));
-        });
+
+        compressor.compressDailyPhase().thenRun(() ->
+            spawnedPlayers.forEach(uuid -> {
+                Player p = Bukkit.getPlayer(uuid);
+                if (p == null) return;
+                PlayerData pd = state.getPlayer(uuid);
+                String name = pd != null ? pd.name : "?";
+                ai.callGmAiOnce(gmSystemPrompt,
+                    "괴담 파트 시작. 플레이어(" + name + ")의 시점에서 타임라인이 시작됨을 "
+                    + "환경 변화(소리·냄새·온도 등)로만 암시해줘. 직접 언급 금지.")
+                  .thenAccept(r -> plugin.getServer().getScheduler().runTask(plugin, () -> {
+                      if (p.isOnline()) {
+                          String narrative = ai.stripTags(r);
+                          Arrays.stream(narrative.split("\n")).forEach(line -> p.sendMessage("§f" + line));
+                      }
+                  }));
+            })
+        );
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -646,7 +724,12 @@ D: 1명 생존으로 도주 성공
         broadcast("§4§l[배드 엔딩] 타임라인이 수습 불가 단계에 도달했습니다.");
         ai.callGmAi(gmSystemPrompt, "타임라인이 4단계에 도달했다. 배드 엔딩을 서술해줘.")
           .thenAccept(r -> plugin.getServer().getScheduler().runTask(plugin, () -> {
-              broadcastGm(r);
+              String narrative = ai.stripTags(r);
+              spawnedPlayers.forEach(uid -> {
+                  Player sp = Bukkit.getPlayer(uid);
+                  if (sp != null && sp.isOnline())
+                      Arrays.stream(narrative.split("\n")).forEach(line -> sp.sendMessage("§f" + line));
+              });
               broadcast("§c재도전하려면 §f/trpg retry §c를 입력하세요.");
           }));
     }
@@ -768,6 +851,110 @@ D: 1명 생존으로 도주 성공
     }
 
     // ──────────────────────────────────────────────────────────────
+    //  서술 개인 전달
+    // ──────────────────────────────────────────────────────────────
+
+    /** 행동 플레이어에게 GM 서술 전달 + WITNESS 태그로 주변 플레이어에게 간접 단서 전달 */
+    private void deliverNarrative(Player actor, String raw) {
+        String narrative = ai.stripTags(raw);
+        if (!narrative.isBlank() && actor != null && actor.isOnline()) {
+            Arrays.stream(narrative.split("\n")).forEach(line -> actor.sendMessage("§f" + line));
+        }
+        ai.parseWitnessTags(raw).forEach((pName, witnessText) -> {
+            if (witnessText.isBlank()) return;
+            state.getAllPlayers().stream()
+                .filter(pd -> pd.name.equals(pName) && spawnedPlayers.contains(pd.uuid))
+                .findFirst()
+                .ifPresent(pd -> {
+                    Player target = Bukkit.getPlayer(pd.uuid);
+                    if (target != null && target.isOnline())
+                        Arrays.stream(witnessText.split("\n"))
+                            .forEach(line -> target.sendMessage("§7§o" + line));
+                });
+        });
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  배역 등장 처리
+    // ──────────────────────────────────────────────────────────────
+
+    private void handleSpawn(String playerName) {
+        state.getAllPlayers().stream()
+            .filter(pd -> pd.name.equals(playerName) && !spawnedPlayers.contains(pd.uuid))
+            .findFirst()
+            .ifPresent(pd -> {
+                spawnedPlayers.add(pd.uuid);
+                Player p = Bukkit.getPlayer(pd.uuid);
+                if (p == null || !p.isOnline()) return;
+                p.sendMessage("§e§l[등장] 당신의 배역이 이야기에 들어섰습니다. 이제 행동할 수 있습니다.");
+                traitBtn.sendTraitButtons(p, pd);
+            });
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  미등장 배역 자동 서술
+    // ──────────────────────────────────────────────────────────────
+
+    private void sendPreSpawnNarrative(Player p, PlayerData pd) {
+        String context = buildPreSpawnContext(pd);
+        if (context.isEmpty()) return;
+        String phase = state.isDailyPhase() ? "일상 파트" : "괴담 파트 " + state.getTimelineStage() + "단계";
+
+        ai.callAssistant(
+            "너는 TRPG GM이야. 아직 스토리에 등장하지 않은 배역의 현재 상황을 2인칭 1-3문장으로 서술해.\n"
+            + "스탯/특성 적용 없이 배역 서사에 집중. hidden_info는 이 배역이 이미 아는 정보로 포함.\n"
+            + "본 스토리는 간접적으로만 암시 (직접 언급 금지).\n" + context,
+            "현재 게임 단계: " + phase
+        ).thenAccept(resp -> plugin.getServer().getScheduler().runTask(plugin, () -> {
+            if (p.isOnline() && !resp.startsWith("§c"))
+                p.sendMessage("§8§o" + resp.trim());
+        }));
+    }
+
+    private String buildPreSpawnContext(PlayerData pd) {
+        JsonObject gdam = state.getGdamData();
+        if (gdam == null || !gdam.has("roles")) return "";
+        for (JsonElement el : gdam.getAsJsonArray("roles")) {
+            JsonObject r = el.getAsJsonObject();
+            if (!r.has("role_id") || !r.get("role_id").getAsString().equals(pd.roleId)) continue;
+            StringBuilder sb = new StringBuilder();
+            sb.append("배역: ").append(r.has("name") ? r.get("name").getAsString() : pd.roleId).append("\n");
+            sb.append("위치: ").append(r.has("spawn_location") ? r.get("spawn_location").getAsString() : "알 수 없음").append("\n");
+            if (r.has("spawn_timeline")) sb.append("등장 예정: ").append(r.get("spawn_timeline").getAsString()).append("\n");
+            if (r.has("initial_info")) {
+                sb.append("초기 정보: ");
+                List<String> list = new ArrayList<>();
+                r.getAsJsonArray("initial_info").forEach(i -> list.add(i.getAsString()));
+                sb.append(String.join(" / ", list)).append("\n");
+            }
+            if (r.has("hidden_info")) {
+                sb.append("배역 독점 정보: ");
+                List<String> list = new ArrayList<>();
+                r.getAsJsonArray("hidden_info").forEach(i -> list.add(i.getAsString()));
+                sb.append(String.join(" / ", list)).append("\n");
+            }
+            if (r.has("knowledge_advantage") && r.get("knowledge_advantage").getAsBoolean()) {
+                sb.append("늦게 등장하는 대신 이미 중요한 정보를 보유하고 있다.\n");
+            }
+            return sb.toString();
+        }
+        return "";
+    }
+
+    private boolean isImmediateSpawn(String roleId) {
+        JsonObject gdam = state.getGdamData();
+        if (gdam == null || !gdam.has("roles")) return true;
+        for (JsonElement el : gdam.getAsJsonArray("roles")) {
+            JsonObject r = el.getAsJsonObject();
+            if (!r.has("role_id") || !r.get("role_id").getAsString().equals(roleId)) continue;
+            if (!r.has("spawn_timeline")) return true;
+            String st = r.get("spawn_timeline").getAsString().trim();
+            return st.isEmpty() || st.equals("시작 즉시");
+        }
+        return true;
+    }
+
+    // ──────────────────────────────────────────────────────────────
     //  Entity AI 헬퍼
     // ──────────────────────────────────────────────────────────────
 
@@ -809,12 +996,6 @@ D: 1명 생존으로 도주 성공
 
     private void broadcast(String msg) {
         Bukkit.broadcastMessage(msg);
-    }
-
-    private void broadcastGm(String msg) {
-        // 2인칭 서술이므로 서버 전체에 출력
-        Arrays.stream(msg.split("\n")).forEach(line ->
-            Bukkit.broadcastMessage("§f" + line));
     }
 
     private void updateAllScoreboards() {

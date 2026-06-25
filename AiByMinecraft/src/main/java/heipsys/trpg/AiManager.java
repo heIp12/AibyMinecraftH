@@ -191,11 +191,43 @@ public class AiManager {
             .replaceAll("<STATE_UPDATE>[\\s\\S]*?</STATE_UPDATE>", "")
             .replaceAll("<ITEM_GRANT>[\\s\\S]*?</ITEM_GRANT>", "")
             .replaceAll("<CLEAR>[\\s\\S]*?</CLEAR>", "")
+            .replaceAll("<WITNESS[^>]*>[\\s\\S]*?</WITNESS>", "")
+            .replaceAll("<SPAWN[^/]*/?>", "")
             .trim();
     }
 
     public JsonObject parseClearTag(String response) {
         return parseTag(response, "<CLEAR>", "</CLEAR>");
+    }
+
+    /** <WITNESS player="name">text</WITNESS> 태그를 파싱 → {playerName: witnessText} */
+    public Map<String, String> parseWitnessTags(String response) {
+        Map<String, String> result = new java.util.LinkedHashMap<>();
+        final String PREFIX = "<WITNESS player=\"";
+        int from = 0;
+        while (true) {
+            int open = response.indexOf(PREFIX, from);
+            if (open == -1) break;
+            int nameEnd = response.indexOf("\">", open + PREFIX.length());
+            if (nameEnd == -1) break;
+            String name = response.substring(open + PREFIX.length(), nameEnd);
+            int close = response.indexOf("</WITNESS>", nameEnd + 2);
+            if (close == -1) break;
+            result.put(name, response.substring(nameEnd + 2, close).trim());
+            from = close + "</WITNESS>".length();
+        }
+        return result;
+    }
+
+    /** <SPAWN player="name"/> 태그에서 플레이어명 추출 */
+    public String parseSpawnTag(String response) {
+        final String PREFIX = "<SPAWN player=\"";
+        int idx = response.indexOf(PREFIX);
+        if (idx == -1) return null;
+        int nameStart = idx + PREFIX.length();
+        int nameEnd = response.indexOf("\"", nameStart);
+        if (nameEnd == -1) return null;
+        return response.substring(nameStart, nameEnd);
     }
 
     private JsonObject parseTag(String text, String open, String close) {
