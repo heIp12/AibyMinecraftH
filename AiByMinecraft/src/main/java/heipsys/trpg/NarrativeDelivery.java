@@ -39,21 +39,32 @@ public class NarrativeDelivery {
         if (!taskIds.containsKey(uuid)) scheduleNext(player);
     }
 
+    // 색상 구분: 기본 서술=흰색, 화자 태그[...]=주황, 연출/시스템<...>=노랑, 대사="..."=청록
+    private static final String BASE_COLOR = "§f"; // 기본 서술색 (흰색)
+
     /**
-     * GM 서술 텍스트를 마인크래프트 색코드로 변환한다.
-     * - 마크다운 헤더/강조 기호 제거 또는 색 강조로 치환
-     * - 인물 대사("...")는 청록색(§b)으로 구분, 서술은 회색(§7)
+     * GM 서술 텍스트를 마인크래프트 색코드로 변환한다(가독성 색상 구분).
+     * - 기본 서술: 흰색(§f)
+     * - 화자 태그 [이름]: 주황색(§6)   예) [김민지] 저 민지에요!
+     * - 연출·시스템 효과 &lt;...&gt;: 노란색(§e)   예) &lt;시야가 암전됨&gt;
+     * - 인물 대사("..."): 청록색(§b)
      */
     public static String format(String raw) {
         if (raw == null) return "";
         String s = raw;
         s = s.replace('“', '"').replace('”', '"');
         s = s.replaceAll("(?m)^\\s*#{1,6}\\s*", "");
-        s = s.replaceAll("\\*\\*(.+?)\\*\\*", "§e$1§7");
-        s = s.replaceAll("\\*(.+?)\\*",       "§e$1§7");
-        s = s.replaceAll("`(.+?)`",           "§e$1§7");
+        // 연출·시스템 효과 <...> → 노란색 (괄호 포함)
+        s = s.replaceAll("<([^<>\n]+)>", "§e<$1>" + BASE_COLOR);
+        // 화자 태그 [이름] → 주황색 (괄호 포함)
+        s = s.replaceAll("\\[([^\\[\\]\n]+)\\]", "§6[$1]" + BASE_COLOR);
+        // 마크다운 강조 → 노란 강조 후 기본색 복귀
+        s = s.replaceAll("\\*\\*(.+?)\\*\\*", "§e$1" + BASE_COLOR);
+        s = s.replaceAll("\\*(.+?)\\*",       "§e$1" + BASE_COLOR);
+        s = s.replaceAll("`(.+?)`",           "§e$1" + BASE_COLOR);
         s = s.replaceAll("(?m)^\\s*[-•]\\s+", "");
-        s = s.replaceAll("\"([^\"]+)\"", "§b\"$1\"§7");
+        // 인물 대사("...") → 청록색
+        s = s.replaceAll("\"([^\"]+)\"", "§b\"$1\"" + BASE_COLOR);
         return s;
     }
 
@@ -95,7 +106,7 @@ public class NarrativeDelivery {
      */
     private void sendLine(Player player, String line) {
         for (String segment : hardWrap(line)) {
-            player.sendMessage("§7" + segment);
+            player.sendMessage(BASE_COLOR + segment);
         }
         player.sendMessage(""); // 줄 사이 여백
     }
