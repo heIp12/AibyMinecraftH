@@ -331,6 +331,8 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     );
 
     private Phase currentPhase = Phase.IDLE;
+    /** 포기/종료 시 에필로그·해설을 비동기로 공개하는 중인지 (중복 종료 방지) */
+    private boolean concludingEnding = false;
 
     // ──────────────────────────────────────────────────────────────
     //  매니저 참조
@@ -478,10 +480,28 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     // ══════════════════════════════════════════════════════════════
 
     public void stopSession(Player admin) {
-        if (admin != null) {
+        if (concludingEnding) return; // 이미 전말 공개 중이면 무시
+        boolean manual = admin != null;
+        if (manual) {
             broadcast("§c[GM] " + admin.getName() + "이(가) 세션을 종료했습니다.");
         } else {
             broadcast("§c[GM] 서버 종료로 세션이 정리됩니다.");
+        }
+
+        // 게임을 진행했으나 아직 전말을 공개하지 않은 상태에서 수동 종료 = 포기.
+        // 이 경우 이유 + 에필로그 + 해설을 공개한 뒤 세션을 정리한다.
+        boolean played = currentPhase == Phase.DAILY
+                      || currentPhase == Phase.HORROR
+                      || currentPhase == Phase.GAMEOVER;
+        if (manual && played && state.getGdamData() != null) {
+            concludingEnding = true;
+            currentPhase = Phase.GAMEOVER; // 종료 처리 중 추가 행동 차단
+            broadcast("§7사건을 끝까지 풀지 못하고 종료합니다. 전말을 공개합니다.");
+            concludeWithReveal("재도전 포기 / 중도 종료", () -> {
+                concludingEnding = false;
+                endSession(true);
+            });
+            return;
         }
         endSession(true);
     }
@@ -504,6 +524,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         preAssignedRoleData.clear();
         preAssignments.clear();
         gmNpcRoleIds.clear();
+        concludingEnding = false;
         currentPhase = Phase.IDLE;
     }
 
@@ -1104,8 +1125,9 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                 JsonObject clearTag = ai.parseClearTag(raw);
                 if (clearTag != null) {
                     String grade = clearTag.has("grade") ? clearTag.get("grade").getAsString() : "C";
+                    String reason = clearTag.has("reason") ? clearTag.get("reason").getAsString() : "";
                     deliverNarrative(player, raw); // 클리어 서술은 행동 플레이어에게
-                    onClearEnding(grade);
+                    onClearEnding(grade, reason);
                     return;
                 }
             }
@@ -1186,7 +1208,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             updateAllScoreboards();
 
             // 8. 타임라인 4단계 체크
-            if (state.getTimelineStage() >= 4) { onBadEnding(); return; }
+            if (state.getTimelineStage() >= 4) { onBadEnding("제한 시간 내 해결 실패 — 타임라인 붕괴"); return; }
 
             // 9. 사망자 체크
             checkDeaths();
@@ -1331,11 +1353,19 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     //  배드 엔딩 / 클리어
     // ──────────────────────────────────────────────────────────────
 
-    private void onBadEnding() {
+    /**
+     * 배드엔딩. 패인(이유)을 명확히 알리되, 시나리오 해설은 공개하지 않는다.
+     * (재도전 시 전말을 알면 재미가 없으므로 — 해설은 클리어 또는 포기 시에만 공개)
+     * @param reasonLabel 패인 요약 (예: "타임라인 붕괴", "전원 사망")
+     */
+    private void onBadEnding(String reasonLabel) {
         if (currentPhase == Phase.GAMEOVER) return;
         currentPhase = Phase.GAMEOVER;
-        broadcast("§4§l[배드 엔딩] 타임라인이 수습 불가 단계에 도달했습니다.");
-        ai.callGmAi(gmSystemPrompt, "타임라인이 4단계에 도달했다. 배드 엔딩을 서술해줘.")
+        broadcast("§4§l[배드 엔딩]");
+        broadcast("§c패인: §f" + reasonLabel);
+        ai.callGmAi(gmSystemPrompt,
+            "게임이 실패로 끝났다(" + reasonLabel + "). 배드 엔딩 장면을 서술해줘. "
+            + "단, 괴담의 정체·규칙·해결법을 직접 설명하거나 누설하지 마라(재도전 여지를 남긴다).")
           .thenAccept(r -> plugin.getServer().getScheduler().runTask(plugin, () -> {
               String narrative = ai.stripTags(r);
               spawnedPlayers.forEach(uid -> {
@@ -1343,14 +1373,14 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                   if (sp != null && sp.isOnline() && !narrative.isBlank())
                       narrativeDelivery.deliver(sp, narrative);
               });
-              // 뒷이야기(에필로그) + 엔딩 해설 공개
-              concludeEnding("배드 엔딩");
-              broadcast("§c재도전하려면 §f/trpg retry §c를 입력하세요.");
+              // 해설은 공개하지 않는다. 재도전 또는 포기를 선택하게 한다.
+              broadcast("");
+              broadcast("§e재도전: §f/trpg retry  §8|  §e포기하고 전말 보기: §f/trpg stop");
           }));
     }
 
     private void checkDeaths() {
-        if (state.getAliveCount() == 0) onBadEnding();
+        if (state.getAliveCount() == 0) onBadEnding("전원 사망");
     }
 
     public void joinSession(Player player) {
@@ -1503,7 +1533,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     //  클리어 엔딩
     // ──────────────────────────────────────────────────────────────
 
-    private void onClearEnding(String grade) {
+    private void onClearEnding(String grade, String reason) {
         if (currentPhase == Phase.CLEAR || currentPhase == Phase.GAMEOVER) return;
         currentPhase = Phase.CLEAR;
 
@@ -1512,9 +1542,10 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         broadcast("§6§l  클리어! 등급: " + grade
             + (corruptMan.getLevel() > 0 ? " (오염 보정 → " + finalGrade + ")" : ""));
         broadcast("§6§l═══════════════════════════════");
+        if (reason != null && !reason.isBlank()) broadcast("§a해결: §f" + reason);
 
         // 뒷이야기(에필로그) + 엔딩 해설 공개
-        concludeEnding("퍼펙트 클리어 (등급 " + grade + ")");
+        concludeWithReveal("퍼펙트 클리어 (등급 " + grade + ")", null);
 
         String gdamTheme = getEntityName();
 
@@ -1551,8 +1582,12 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     //  엔딩 마무리: 뒷이야기(에필로그) + 엔딩 해설
     // ──────────────────────────────────────────────────────────────
 
-    /** 결말 후 AI 에필로그(뒷이야기)를 생성해 보여주고, 이어서 .gdam 해설을 공개한다. */
-    private void concludeEnding(String endingLabel) {
+    /**
+     * 결말 후 AI 에필로그(뒷이야기)를 생성해 보여주고, 이어서 .gdam 해설을 공개한다.
+     * 클리어와 '포기(중도 종료)' 시에만 호출한다. 재도전 가능한 배드엔딩에서는 호출하지 않는다.
+     * @param onDone 에필로그·해설 공개가 끝난 뒤 실행할 콜백 (없으면 null)
+     */
+    private void concludeWithReveal(String endingLabel, Runnable onDone) {
         String recentLog = state.buildEntityLog(15);
         String prompt = "게임이 끝났다. 결말 유형: " + endingLabel + ".\n"
             + (recentLog.isBlank() ? "" : "플레이어들의 주요 행동 기록:\n" + recentLog + "\n")
@@ -1570,6 +1605,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                     }
                 }
                 broadcast(buildEndingReveal());
+                if (onDone != null) onDone.run();
             }));
     }
 
