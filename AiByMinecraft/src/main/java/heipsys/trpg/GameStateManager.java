@@ -98,6 +98,25 @@ public class GameStateManager {
         if (resetCorruption) corruption.reset();
     }
 
+    /** 다음 방으로 이동: 방 번호/씨드/gdam 업데이트. 플레이어 데이터는 호출자가 clearRoleData()로 처리. */
+    public void advanceToNextRoom(int nextRoom, String seed, JsonObject gdam) {
+        roomNumber     = nextRoom;
+        currentSeed    = seed;
+        gdamData       = gdam;
+        timelineStage  = 0;
+        currentTurn    = 0;
+        dailyPhase     = true;
+        discoveredClues.clear();
+        foundItems.clear();
+        eventLog.clear();
+        if (gdam != null && gdam.has("timeline")) {
+            JsonObject tl = gdam.getAsJsonObject("timeline");
+            dailyTurnsLeft = tl.has("daily_turns") ? tl.get("daily_turns").getAsInt() : 5;
+        } else {
+            dailyTurnsLeft = 5;
+        }
+    }
+
     /** 재도전: 오염도 상승, 플레이어 상태 리셋, 파일은 다시 로드 */
     public void onRetry() {
         corruption.onRetry();

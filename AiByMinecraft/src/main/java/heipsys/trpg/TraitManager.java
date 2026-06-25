@@ -6,6 +6,7 @@ import heipsys.trpg.model.TraitData;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 /**
  * 특성 시스템 (STEP 3-2).
@@ -74,6 +75,70 @@ active는 플레이어가 직접 발동해야 하면 true, 자동 발동이면 f
                     td.description = obj.has("description") ? obj.get("description").getAsString() : "";
                     td.active      = obj.has("active")      && obj.get("active").getAsBoolean();
                     td.effect      = obj.has("effect")      ? obj.get("effect").getAsString()      : "";
+                    result.add(td);
+                }
+                return result;
+            } catch (Exception ex) {
+                return Collections.emptyList();
+            }
+        });
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  배역 배정 시 추가 특성 1~2개 생성
+    // ──────────────────────────────────────────────────────────────
+
+    public CompletableFuture<List<TraitData>> generateRoleTraits(PlayerData pd, JsonObject roleData) {
+        StringBuilder roleCtx = new StringBuilder();
+        roleCtx.append("배역 이름: ");
+        roleCtx.append(roleData.has("name") ? roleData.get("name").getAsString()
+            : roleData.get("role_id").getAsString());
+        if (roleData.has("initial_info")) {
+            roleCtx.append("\n배역 초기 정보: ");
+            roleData.getAsJsonArray("initial_info").forEach(e -> roleCtx.append(e.getAsString()).append(" "));
+        }
+        if (roleData.has("spawn_location") && !roleData.get("spawn_location").getAsString().isBlank()) {
+            roleCtx.append("\n시작 위치: ").append(roleData.get("spawn_location").getAsString());
+        }
+
+        String existingTraits = pd.traits.isEmpty() ? "없음"
+            : pd.traits.stream().map(t -> t.name).collect(Collectors.joining(", "));
+
+        String system = """
+너는 TRPG 특성 생성기야.
+아래 JSON 배열 형식으로만 응답해 (다른 텍스트 금지):
+[
+  {"id":"","name":"","grade":"","description":"","active":false,"effect":""},
+  ...
+]
+grade는 S/A/B/C/D/F 중 하나. 배역 초기 특성이므로 B~D 범위.
+active는 직접 발동하면 true, 자동 발동이면 false.
+description과 effect에 스탯 숫자·스탯 약어(STR/HP/SAN/CHA/LUK/SPR) 절대 사용 금지.
+description: 이 배역의 배경·지식·역할에서 비롯된 능력이나 성향을 자연스러운 서사로 묘사 (2~3문장).
+한국어로 작성.
+""";
+
+        String prompt = "직업: " + pd.job + "\n나이: " + pd.age + "세\n"
+            + "기존 특성(중복 금지): " + existingTraits + "\n"
+            + roleCtx + "\n\n위 배역에 맞는 추가 특성 1~2개를 JSON 배열로 생성해줘.";
+
+        return aiManager.callAssistant(system, prompt).thenApply(raw -> {
+            try {
+                String cleaned = raw.replaceAll("```json", "").replaceAll("```", "").trim();
+                int s = cleaned.indexOf('['), e = cleaned.lastIndexOf(']');
+                if (s == -1 || e == -1) return Collections.emptyList();
+                JsonArray arr = gson.fromJson(cleaned.substring(s, e + 1), JsonArray.class);
+                List<TraitData> result = new ArrayList<>();
+                for (JsonElement el : arr) {
+                    JsonObject obj = el.getAsJsonObject();
+                    TraitData td = new TraitData();
+                    td.id          = obj.has("id")          ? obj.get("id").getAsString()          : UUID.randomUUID().toString().substring(0, 8);
+                    td.name        = obj.has("name")        ? obj.get("name").getAsString()        : "알 수 없는 특성";
+                    td.grade       = obj.has("grade")       ? obj.get("grade").getAsString()       : "C";
+                    td.description = obj.has("description") ? obj.get("description").getAsString() : "";
+                    td.active      = obj.has("active")      && obj.get("active").getAsBoolean();
+                    td.effect      = obj.has("effect")      ? obj.get("effect").getAsString()      : "";
+                    td.roleSpecific = true;
                     result.add(td);
                 }
                 return result;

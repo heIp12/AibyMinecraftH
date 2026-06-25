@@ -7,6 +7,7 @@ public class TraitData {
     public String  description;
     public boolean active;       // true = 능동적 발동 (버튼 필요)
     public String  effect;       // GM 참고용 효과 설명
+    public boolean roleSpecific; // true = 해당 챕터 배역 한정 특성 (챕터 종료 시 제거)
 
     public TraitData() {}
 
