@@ -35,7 +35,11 @@ public class AICraft extends JavaPlugin {
         AiManager trpgAi = new AiManager(apiKey, apiType);
         trpgManager = new TRPGGameManager(this, trpgAi);
 
-        if (getCommand("trpg") != null) getCommand("trpg").setExecutor(new CMDTrpg(trpgManager));
+        if (getCommand("trpg") != null) {
+            CMDTrpg cmdTrpg = new CMDTrpg(trpgManager);
+            getCommand("trpg").setExecutor(cmdTrpg);
+            getCommand("trpg").setTabCompleter(cmdTrpg);
+        }
         if (getCommand("join") != null) getCommand("join").setExecutor(new CMDJoin(trpgManager));
 
         getServer().getPluginManager().registerEvents(new ChatListener(this, trpgManager), this);

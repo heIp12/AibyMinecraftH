@@ -5,13 +5,14 @@ import org.bukkit.command.*;
 import org.bukkit.entity.Player;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * /trpg 커맨드 핸들러.
- * 서브커맨드: start / stop / retry / status / help
+ * 서브커맨드: start / stop / retry / load / list / status / help
  * 내부 커맨드 (_confirm, _reroll, _trait 등)는 TRPGGameManager.handleInternalCommand()로 위임.
  */
-public class CMDTrpg implements CommandExecutor {
+public class CMDTrpg implements CommandExecutor, TabCompleter {
 
     private final TRPGGameManager trpg;
 
@@ -76,6 +77,22 @@ public class CMDTrpg implements CommandExecutor {
             + "  타임라인: §f" + (state.isDailyPhase() ? "일상(" + state.getDailyTurnsLeft() + "턴)" : state.getTimelineStage() + "단계")
             + "  오염: §f" + state.getCorruption().level);
         player.sendMessage("§7참여 인원: §f" + state.getTotalCount() + "명 (생존 " + state.getAliveCount() + "명)");
+    }
+
+    @Override
+    public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
+        if (args.length == 1) {
+            List<String> subs = List.of("start", "stop", "retry", "load", "list", "status", "help");
+            String partial = args[0].toLowerCase();
+            return subs.stream().filter(s -> s.startsWith(partial)).collect(Collectors.toList());
+        }
+        if (args.length == 2 && args[0].equalsIgnoreCase("load")) {
+            String partial = args[1].toLowerCase();
+            return trpg.listSavedSeeds().stream()
+                .filter(s -> s.toLowerCase().startsWith(partial))
+                .collect(Collectors.toList());
+        }
+        return Collections.emptyList();
     }
 
     private void listSessions(Player player) {
