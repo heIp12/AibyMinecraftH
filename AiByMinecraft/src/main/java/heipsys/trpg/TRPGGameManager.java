@@ -599,15 +599,16 @@ D: 1명 생존으로 도주 성공
                 }
                 if (update.has("status_change") && !update.get("status_change").isJsonNull()) {
                     String newStatus = update.get("status_change").getAsString();
+                    Player target = Bukkit.getPlayer(pd.uuid);
                     if ("puppet".equals(newStatus) && "puppet".equals(pd.status)) {
-                        // 꼭두각시 재발 → 영구 게임오버
+                        // 꼭두각시 재발 → 영구 탈락 (본인에게만 알림)
                         pd.isDead = true;
-                        broadcast("§4§l[영구 탈락] " + pd.name + "이(가) 꼭두각시 재발로 영구 탈락했습니다.");
+                        if (target != null) target.sendMessage("§4당신은 완전히 잠식되어 영원히 돌아올 수 없게 되었습니다...");
                     } else {
                         if ("puppet".equals(newStatus) && !"puppet".equals(pd.status)) {
-                            broadcast("§5[꼭두각시] " + pd.name + "이(가) 괴담에 지배되었습니다...");
+                            if (target != null) target.sendMessage("§5당신의 의지가 서서히 녹아내리는 것이 느껴진다...");
                         } else if ("normal".equals(newStatus) && "puppet".equals(pd.status)) {
-                            broadcast("§a[각성] " + pd.name + "이(가) 스스로를 되찾았습니다!");
+                            if (target != null) target.sendMessage("§a정신이 들었다. 잠시 동안 자신으로 돌아온 것 같다.");
                         }
                         pd.status = newStatus;
                     }
