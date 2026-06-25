@@ -4,8 +4,10 @@ import com.google.gson.*;
 
 import java.net.URI;
 import java.net.http.*;
+import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * TRPG용 AI 매니저. 4종 AI 인스턴스(GM/Entity/NPC/Assistant)를 관리하며
@@ -27,9 +29,13 @@ public class AiManager {
     private final HttpClient http = HttpClient.newHttpClient();
 
     // 컨텍스트: GM과 Entity/NPC는 별도 히스토리 유지
+    // 멀티플레이에서 여러 플레이어가 동시에 행동하면 callGmAi 등이 동시 실행되므로
+    // 각 컨텍스트는 전용 락으로 직렬화하여 동시 변경(자료구조 손상)을 막는다.
     private final List<JsonObject>              gmContext     = new ArrayList<>();
     private final List<JsonObject>              entityContext = new ArrayList<>();
-    private final Map<String, List<JsonObject>> npcContexts   = new HashMap<>();
+    private final Map<String, List<JsonObject>> npcContexts   = new ConcurrentHashMap<>();
+    private final Object gmLock     = new Object();
+    private final Object entityLock = new Object();
 
     private static final int GM_MAX_TOKENS   = 2048;  // 실제 응답은 200-600 수준
     private static final int ASST_MAX_TOKENS = 1024;
@@ -92,14 +98,17 @@ public class AiManager {
 
     public CompletableFuture<String> callGmAi(String systemPrompt, String userMessage) {
         return CompletableFuture.supplyAsync(() -> {
-            try {
-                gmContext.add(msg("user", userMessage));
-                String result = send(gmModel(), systemPrompt, gmContext, GM_MAX_TOKENS);
-                // 히스토리에는 태그 제거 버전 저장 → 다음 턴에 STATE_UPDATE JSON 재전송 방지
-                gmContext.add(msg("assistant", stripTags(result)));
-                return result;
-            } catch (Exception e) {
-                return "§c[GM AI 오류] " + e.getMessage();
+            // 동시 행동 시 GM 컨텍스트를 직렬화 (한 번에 하나의 GM 호출만 처리)
+            synchronized (gmLock) {
+                try {
+                    gmContext.add(msg("user", userMessage));
+                    String result = send(gmModel(), systemPrompt, gmContext, GM_MAX_TOKENS);
+                    // 히스토리에는 태그 제거 버전 저장 → 다음 턴에 STATE_UPDATE JSON 재전송 방지
+                    gmContext.add(msg("assistant", stripTags(result)));
+                    return result;
+                } catch (Exception e) {
+                    return "§c[GM AI 오류] " + e.getMessage();
+                }
             }
         });
     }
@@ -134,13 +143,15 @@ public class AiManager {
 
     public CompletableFuture<String> callEntityAi(String systemPrompt, String actionLog) {
         return CompletableFuture.supplyAsync(() -> {
-            try {
-                entityContext.add(msg("user", "플레이어 행동 로그:\n" + actionLog));
-                String result = send(haikuModel(), systemPrompt, entityContext, ASST_MAX_TOKENS);
-                entityContext.add(msg("assistant", result));
-                return result;
-            } catch (Exception e) {
-                return "§c[Entity AI 오류] " + e.getMessage();
+            synchronized (entityLock) {
+                try {
+                    entityContext.add(msg("user", "플레이어 행동 로그:\n" + actionLog));
+                    String result = send(haikuModel(), systemPrompt, entityContext, ASST_MAX_TOKENS);
+                    entityContext.add(msg("assistant", result));
+                    return result;
+                } catch (Exception e) {
+                    return "§c[Entity AI 오류] " + e.getMessage();
+                }
             }
         });
     }
@@ -152,12 +163,15 @@ public class AiManager {
     public CompletableFuture<String> callNpcAi(String npcId, String systemPrompt, String actionLog) {
         return CompletableFuture.supplyAsync(() -> {
             try {
-                npcContexts.putIfAbsent(npcId, new ArrayList<>());
-                List<JsonObject> ctx = npcContexts.get(npcId);
-                ctx.add(msg("user", "플레이어 행동 로그:\n" + actionLog));
-                String result = send(haikuModel(), systemPrompt, ctx, ASST_MAX_TOKENS);
-                ctx.add(msg("assistant", result));
-                return result;
+                List<JsonObject> ctx = npcContexts.computeIfAbsent(npcId,
+                    k -> Collections.synchronizedList(new ArrayList<>()));
+                // 같은 NPC에 대한 동시 호출을 직렬화 (리스트 + send를 원자적으로)
+                synchronized (ctx) {
+                    ctx.add(msg("user", "플레이어 행동 로그:\n" + actionLog));
+                    String result = send(haikuModel(), systemPrompt, ctx, ASST_MAX_TOKENS);
+                    ctx.add(msg("assistant", result));
+                    return result;
+                }
             } catch (Exception e) {
                 return "§c[NPC AI 오류] " + e.getMessage();
             }
@@ -186,30 +200,34 @@ public class AiManager {
     // ======================================================
 
     public void injectGmSystem(String content) {
-        gmContext.add(0, msg("user", "[시스템 주입] " + content));
+        synchronized (gmLock) {
+            gmContext.add(0, msg("user", "[시스템 주입] " + content));
+        }
     }
 
     public void clearAll() {
-        gmContext.clear();
-        entityContext.clear();
-        npcContexts.clear();
+        synchronized (gmLock)     { gmContext.clear(); }
+        synchronized (entityLock) { entityContext.clear(); }
+        npcContexts.clear(); // ConcurrentHashMap — 자체 thread-safe
     }
 
-    public void clearEntity() { entityContext.clear(); }
+    public void clearEntity() { synchronized (entityLock) { entityContext.clear(); } }
     public void clearNpc(String npcId) { npcContexts.remove(npcId); }
 
-    public int getGmContextSize() { return gmContext.size(); }
+    public int getGmContextSize() { synchronized (gmLock) { return gmContext.size(); } }
 
     /**
      * GM 컨텍스트 압축. 오래된 앞부분을 summary 한 줄로 교체.
      * 최근 10개 메시지는 원본 유지.
      */
     public void compressGmContext(String summary) {
-        if (gmContext.size() <= 20) return;
-        List<JsonObject> recent = new ArrayList<>(gmContext.subList(gmContext.size() - 10, gmContext.size()));
-        gmContext.clear();
-        gmContext.add(msg("user", "[이전 컨텍스트 요약]\n" + summary));
-        gmContext.addAll(recent);
+        synchronized (gmLock) {
+            if (gmContext.size() <= 20) return;
+            List<JsonObject> recent = new ArrayList<>(gmContext.subList(gmContext.size() - 10, gmContext.size()));
+            gmContext.clear();
+            gmContext.add(msg("user", "[이전 컨텍스트 요약]\n" + summary));
+            gmContext.addAll(recent);
+        }
     }
 
     // ======================================================
@@ -297,6 +315,7 @@ public class AiManager {
 
         String body;
         HttpRequest.Builder builder = HttpRequest.newBuilder()
+            .timeout(Duration.ofSeconds(120)) // 응답 무한 대기 방지 (직렬화된 GM 락이 영구 점유되는 것 차단)
             .header("Content-Type", "application/json");
 
         switch (apiType) {
