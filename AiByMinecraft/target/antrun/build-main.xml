@@ -1,6 +1,6 @@
-<?xml version="1.0" encoding="UTF-8" ?>
-<project name="maven-antrun-" default="main"  >
-<target name="main">
-  <copy file="C:\Users\user\eclipse-workspace\마크상위\AiByMinecraft\target\AIByMinecraft.jar" todir="C:\Users\user\Downloads\AiCraft\plugins" overwrite="true"/>
-</target>
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="maven-antrun-" default="main">
+  <target name="main">
+    <copy file="C:\Users\user\git\AibyMinecraftH\AiByMinecraft\target/AIByMinecraft.jar" todir="C:\Users\user\Downloads\AiCraft\plugins" overwrite="true" />
+  </target>
 </project>
