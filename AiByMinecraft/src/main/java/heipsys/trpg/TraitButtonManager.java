@@ -46,7 +46,10 @@ public class TraitButtonManager {
         return pd.traits.stream()
             .filter(t -> t.id.equals(traitId))
             .findFirst()
-            .map(t -> "[특성 발동] " + pd.name + "이(가) 특성 '" + t.name + "'을(를) 사용한다.")
+            .map(t -> "[특성 발동] " + pd.name + "이(가) 특성 '" + t.name + "'"
+                + (t.effect != null && !t.effect.isBlank() ? "(" + t.effect + ")" : "")
+                + "을(를) 사용한다. 현재 상황에 적절하면 효과를 반영하고, "
+                + "부적절하거나 무리한 사용이면 역효과가 날 수도 있다.")
             .orElse(null);
     }
 }
