@@ -1,14 +1,13 @@
 package heipsys.trpg;
 
 import heipsys.trpg.model.PlayerData;
-import heipsys.trpg.model.TraitData;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.scoreboard.*;
 
 /**
- * 사이드바 스코어보드: 체력/정신력/스탯/특성/스테이지 정보 표시 (STEP 3-3).
- * 타임라인 단계는 숫자 대신 '??' 표시.
+ * 사이드바 스코어보드: 이름/체력/정신력/스테이지만 간략 표시 (STEP 3-3).
+ * 상세 스탯·특성은 '캐릭터 정보'(네더의 별) GUI에서 확인한다.
  */
 public class ScoreboardManager {
 
@@ -25,27 +24,16 @@ public class ScoreboardManager {
         Objective obj = sb.registerNewObjective("trpg", Criteria.DUMMY, "§e§l[ TRPG ]");
         obj.setDisplaySlot(DisplaySlot.SIDEBAR);
 
-        int line = 20;
+        // 사이드바는 핵심 정보만 간략하게. 상세 정보(스탯·특성)는 '캐릭터 정보'(네더의 별) GUI에서.
+        int line = 9;
         set(obj, "§f" + pd.name,                         line--);
-        set(obj, "§7" + pd.age + "세 / " + pd.job,       line--);
         set(obj, "§8─────────────────",                  line--);
         set(obj, hpBar(pd),                               line--);
         set(obj, sanBar(pd),                              line--);
         set(obj, "§8─────────────────",                  line--);
-        set(obj, "§9근력 §f" + pd.str + "  §a매력 §f" + pd.cha, line--);
-        set(obj, "§6행운 §f" + pd.luk + "  §d영감 §f" + pd.spr, line--);
-
-        if (!pd.traits.isEmpty()) {
-            set(obj, "§8─────────────────", line--);
-            set(obj, "§e[특성]",            line--);
-            for (TraitData t : pd.traits) {
-                if (line <= 0) break;
-                set(obj, "§7▸ " + t.name + " §8(" + t.grade + ")", line--);
-            }
-        }
-
-        set(obj, "§8─────────────────",              line--);
-        set(obj, "§f스테이지: " + roomNumber + "  §7타임라인: ??", line);
+        set(obj, "§f스테이지: §e" + roomNumber,           line--);
+        set(obj, "§8─────────────────",                  line--);
+        set(obj, "§7상세: §b네더의 별 우클릭",            line);
 
         player.setScoreboard(sb);
     }

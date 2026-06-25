@@ -90,6 +90,8 @@ public class AICraft extends JavaPlugin {
         }
 
         AiManager trpgAi = new AiManager(apiKey, apiType);
+        // 고품질 GM 모델 ID 오버라이드 (선택). 없으면 provider별 기본 Opus/Pro 사용.
+        trpgAi.setHighModelOverride(getConfig().getString("gm-model-high", ""));
         trpgManager = new TRPGGameManager(this, trpgAi);
 
         if (getCommand("trpg") != null) {

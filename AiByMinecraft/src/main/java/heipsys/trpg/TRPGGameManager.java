@@ -12,7 +12,12 @@ import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.title.Title;
 import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
+import org.bukkit.Material;
+import org.bukkit.NamespacedKey;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.persistence.PersistentDataType;
 
 import java.time.Duration;
 import java.util.*;
@@ -61,6 +66,14 @@ public class TRPGGameManager {
 - NPC는 자신이 직접 경험한 사실만 언급, 해석·결론 제시 금지
 - 대화 장면에서는 분위기·감정만, 핵심 정보는 탐색으로만
 
+### 힌트 절제 원칙 ★ 최우선
+- GM은 플레이어에게 정답·다음 행동·공략 방향을 직접 알려주지 않는다.
+- "~를 조사해보세요", "~가 수상합니다", "~를 조심하세요" 같은 유도·지시·경고 금지.
+- 한 번의 응답에 새로 드러나는 단서는 최대 1개. 정보를 쏟아붓지 마라.
+- 플레이어가 묻지도, 행동하지도 않은 정보를 미리 풀어놓지 않는다.
+- 위험·약점·해결책을 친절히 설명하지 마라. 플레이어가 시행착오로 직접 알아내게 둔다.
+- 시작 힌트(initial_info)만으로 대략 유추 가능한 수준을 유지하고, 그 이상은 탐색의 보상으로만.
+
 ### 괴담 사전 확정 원칙 ★ 최우선
 게임 시작 전 .gdam 파일에 확정된 모든 요소는 절대 변경 불가.
 플레이어 행동에 맞춰 사후 결정하거나 변경하지 않는다.
@@ -81,6 +94,24 @@ public class TRPGGameManager {
 일상 파트 첫 장면에 자연스러운 장면 묘사로만 녹여내라. 직접 목록 나열 절대 금지.
 좋은 예: "당신은 요즘 건물 3층에서 이상한 소리가 난다는 소문이 떠돈다는 것을 알고 있다."
 나쁜 예: "당신이 알고 있는 정보: 1. 3층에서 소리가 남. 2. ..." ← 절대 금지
+
+### 일상 파트 운영 원칙 ★ 최우선
+일상 파트는 '평범한 일상'으로 시작한다. 초반에는 괴담의 흔적이 전혀 없어야 한다.
+- 첫 장면은 100% 평범: 배역의 일상·관계·목적을 자연스럽게 보여준다.
+- 절대 급발진 금지: "갑자기 괴물/시체/초자연 현상이 나타난다" 식 전개 금지.
+- 불안은 아주 천천히, 사소하고 '부정할 수 있는' 위화감부터: 살짝 어긋난 디테일,
+  설명 가능한 작은 이상함(기분 탓일 수도 있는 수준)으로만.
+- 플레이어가 스스로 "뭔가 좀 이상한데?"라고 느끼게 만들되, 원인·정체는 절대 알려주지 않는다.
+- 일상 파트 동안 직접적·치명적 위협 금지. 본격적 위협은 괴담 파트에서 시작된다.
+
+### 긴장 고조 페이싱 ★ 최우선
+전체 진행은 슬로우 번(slow burn). 단계적으로만 고조되며 단계를 건너뛰지 않는다.
+- 1단계: 부정 가능한 위화감 (착각일 수도 있는 수준)
+- 2단계: 반복되는 이상 (우연이 아닐지 의심하기 시작)
+- 3단계: 명백한 비일상 (더는 부정 불가)
+- 4단계: 직접적 위협·붕괴
+한 응답에서 여러 단계를 건너뛰지 마라. 플레이어 행동과 시간 경과에 비례해 천천히 올린다.
+플레이어가 무모하게 위험을 자초하지 않는 한, 먼저 공격하거나 몰아붙이지 않는다.
 
 ### 타임라인 관리
 - 내부적으로만 유지, 직접 고지 금지
@@ -109,6 +140,14 @@ LUK 4~6: 가끔, 작은 우연
 LUK 7~9: 종종, 의미 있는 행운
 LUK 10+: 자주, 극적인 행운
 발동 시: [행운!] 또는 [큰 행운!] 별도 라인에 표기 (불운은 서술로만)
+
+### 능동 특성 발동 처리 ★
+플레이어가 "[특성 발동]" 형식으로 능동 특성을 사용하면:
+- 상황에 적절하고 논리적이면 특성 효과를 서술로 반영한다.
+- 부적절·무리·오용(상황에 맞지 않는 발동)이면 효과가 약하거나, 실패하거나,
+  오히려 역효과(부작용·주의 끌기·자원 낭비 등)가 날 수 있다.
+- 특성은 만능이 아니다. 특성 하나로 모든 위기를 해결하게 두지 마라.
+  사전 확정된 규칙·약점 범위 안에서만 판정한다.
 
 ### 꼭두각시 상태
 정신력 0 + 괴담 직접 피해 → 꼭두각시 (즉시 게임오버 아님)
@@ -227,6 +266,13 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
 ### 서술 방식
 - 2인칭 ("당신은...")
 - 중요 판정 결과는 명확히 서술
+
+### 출력 형식 ★ 필수
+- 마크다운 절대 금지: #, ##, *, **, `, 목록 기호(-) 등 일체 사용 금지
+- 장면 제목·헤더 붙이지 마라 ("# 울음상자 — 일상 파트" 같은 제목 절대 금지). 바로 서술로 시작한다.
+- 강조가 필요하면 마크다운(*별표*)이 아니라 그냥 자연스러운 문장으로 표현하라.
+- 인물의 대사(말소리)는 반드시 큰따옴표 "..." 로 감싼다. (시스템이 색으로 구분 처리함)
+- 서술과 대사를 명확히 구분: 대사는 "..." 안에, 나머지는 서술.
 """;
 
     // ──────────────────────────────────────────────────────────────
@@ -316,6 +362,17 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             initiator.sendMessage("§c이미 TRPG 세션이 진행 중입니다.");
             return;
         }
+        // 게임 시작 전 AI 품질(표준/고품질) 선택
+        initiator.sendMessage("§e세션을 시작합니다. AI 품질을 선택하세요...");
+        dialogMan.showQualityChoice(initiator,
+            () -> beginSession(initiator, false),
+            () -> beginSession(initiator, true));
+    }
+
+    private void beginSession(Player initiator, boolean highQuality) {
+        if (currentPhase != Phase.IDLE) return; // 다이얼로그 대기 중 상태 변경 방지
+        ai.setGmQuality(highQuality);
+        broadcast("§7[AI 품질] " + (highQuality ? "§b고품질 모드" : "§f표준 모드"));
 
         int room = state.isSessionActive() ? state.getRoomNumber() + 1 : 1;
         broadcast("§e§l═══ TRPG 세션 시작 (스테이지 " + room + ") ═══");
@@ -397,6 +454,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         Bukkit.getOnlinePlayers().forEach(p -> {
             scoreMan.clear(p);
             dialogMan.clearDialog(p);
+            removeInfoItem(p);
         });
         itemMan.reclaimChapterItems(new ArrayList<>(Bukkit.getOnlinePlayers()));
         narrativeDelivery.clearAll();
@@ -427,7 +485,6 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         ai.clearAll();
         gmSystemPrompt = buildGmPrompt(state.getGdamData());
         currentPhase = Phase.DAILY;
-        broadcast("§7일상 파트부터 다시 시작합니다.");
         startDailyPhase();
     }
 
@@ -662,11 +719,9 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             JsonObject roleData = (myPd != null) ? getRoleDataById(asgn.roleId()) : null;
 
             // 배역 스탯 적용 — snapshotBase() 이후 호출이므로 clearRoleData()→resetToBase() 시 자동 제거됨
+            // (적용만 하고 채팅 출력은 하지 않음. 캐릭터 정보 GUI/스코어보드에서 기본/배역 분리 표시)
             if (myPd != null && roleData != null) {
-                String roleSummary = applyRoleStats(myPd, roleData);
-                if (!roleSummary.isBlank()) {
-                    p.sendMessage("§e[배역 스탯] §f" + roleSummary);
-                }
+                applyRoleStats(myPd, roleData);
             }
 
             p.sendMessage("§e§l[배역 배정]");
@@ -713,9 +768,18 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                     Player rp = Bukkit.getPlayer(pd.uuid);
                     traits.forEach(t -> traitMan.addTrait(pd, t));
                     if (rp != null && rp.isOnline()) {
-                        StringBuilder msg = new StringBuilder("§e[배역 특성] 다음 특성이 부여되었습니다:");
-                        traits.forEach(t -> msg.append("\n§7▸ (").append(t.grade).append(") §f").append(t.name));
-                        rp.sendMessage(msg.toString());
+                        // 마우스 오버레이로 설명을 볼 수 있는 컴포넌트 메시지
+                        var msg = Component.text()
+                            .append(Component.text("[배역 특성] 다음 특성이 부여되었습니다:", NamedTextColor.YELLOW));
+                        for (TraitData t : traits) {
+                            msg.append(Component.newline())
+                                .append(Component.text("▸ (" + t.grade + ") ", NamedTextColor.GRAY))
+                                .append(Component.text(t.name, NamedTextColor.WHITE)
+                                    .hoverEvent(DialogManager.buildTraitHover(t)));
+                        }
+                        msg.append(Component.newline())
+                            .append(Component.text("  (특성에 마우스를 올리면 설명이 표시됩니다)", NamedTextColor.DARK_GRAY));
+                        rp.sendMessage(msg.build());
                         scoreMan.update(rp, pd, state.getRoomNumber());
                     }
                 }
@@ -833,7 +897,19 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     // ──────────────────────────────────────────────────────────────
 
     private void startDailyPhase() {
-        broadcast("§e[GM] 일상 파트를 시작합니다.");
+        // 몰입형 게임 시작 연출 (파트 구분·제목 표기 없이)
+        state.getAllPlayers().forEach(pd -> {
+            Player p = Bukkit.getPlayer(pd.uuid);
+            if (p == null || !p.isOnline()) return;
+            p.showTitle(Title.title(
+                Component.text("게임 시작", NamedTextColor.DARK_RED, TextDecoration.BOLD),
+                Component.text("당신의 이야기가 시작됩니다", NamedTextColor.GRAY),
+                Title.Times.times(Duration.ofMillis(500), Duration.ofMillis(2400), Duration.ofMillis(800))
+            ));
+            p.sendMessage("§8§o게임이 시작되었습니다...");
+            // 캐릭터 정보 아이템 지급 (우클릭으로 능력치·특성 GUI 열기)
+            giveInfoItem(p);
+        });
 
         // 등장 배역: 각자의 위치/역할 기준 개인 프롤로그
         spawnedPlayers.forEach(uuid -> {
@@ -844,7 +920,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
 
             // initial_info를 GM 전달 컨텍스트에 포함 (장면 묘사에 자연스럽게 반영용)
             StringBuilder promptSb = new StringBuilder();
-            promptSb.append("일상 파트 시작. 배역 '").append(pd.roleId)
+            promptSb.append("게임 도입부 장면이다. 배역 '").append(pd.roleId)
                 .append("' 플레이어(").append(pd.name).append(")에게만 전달된다. ");
             promptSb.append("시작 위치: ").append(pd.zone.isEmpty() ? "?" : pd.zone).append(". ");
             JsonObject roleDataForPrologue = getRoleDataById(pd.roleId);
@@ -875,7 +951,8 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                     promptSb.append("— 직접 언급 금지, 장면 분위기에만 녹여낼 것.] ");
                 }
             }
-            promptSb.append("2인칭 시점의 일상 장면을 서술해줘. 다른 플레이어의 존재 직접 언급 금지. 괴담 암시 금지.");
+            promptSb.append("2인칭 시점의 일상 장면을 바로 서술해줘. 제목·헤더 붙이지 말 것. "
+                + "다른 플레이어의 존재 직접 언급 금지. 괴담 암시 금지.");
             String prompt = promptSb.toString();
 
             ai.callGmAiOnce(gmSystemPrompt, prompt)
@@ -1170,7 +1247,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
 
     private void onHorrorPhaseStart() {
         currentPhase = Phase.HORROR;
-        broadcast("§c§l─── 괴담이 시작됩니다 ───");
+        // 전환을 직접 고지하지 않는다(스포일러 방지). GM의 환경 서술로만 분위기를 바꾼다.
 
         compressor.compressDailyPhase().thenRun(() ->
             spawnedPlayers.forEach(uuid -> {
@@ -1179,8 +1256,8 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                 PlayerData pd = state.getPlayer(uuid);
                 String name = pd != null ? pd.name : "?";
                 ai.callGmAiOnce(gmSystemPrompt,
-                    "괴담 파트 시작. 플레이어(" + name + ")의 시점에서 타임라인이 시작됨을 "
-                    + "환경 변화(소리·냄새·온도 등)로만 암시해줘. 직접 언급 금지.")
+                    "분위기가 서서히 변하는 전환 시점이다. 플레이어(" + name + ")의 시점에서 "
+                    + "환경 변화(소리·냄새·온도 등)로만 불길함을 암시해줘. 제목 금지, 직접 언급 금지.")
                   .thenAccept(r -> plugin.getServer().getScheduler().runTask(plugin, () -> {
                       if (p.isOnline()) {
                           String narrative = ai.stripTags(r);
@@ -1231,6 +1308,8 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                 announceKnownContacts(player, pd);
             }
             traitBtn.sendTraitButtons(player, pd);
+            // 게임 진행 중(캐릭터 생성 이후)이면 정보 아이템 복원
+            if (pd.roleAssigned) giveInfoItem(player);
         } else {
             player.sendMessage("§c이 세션의 참가자가 아닙니다. 게임은 시작 전에 참여해야 합니다.");
         }
@@ -1281,10 +1360,74 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     private void handleTraitUse(Player player, String traitId) {
         PlayerData pd = state.getPlayer(player);
         if (pd == null) return;
+        if (pd.isDead) { player.sendMessage("§c사망 상태에서는 특성을 사용할 수 없습니다."); return; }
         String msg = traitBtn.buildTraitUseMessage(pd, traitId);
         if (msg == null) { player.sendMessage("§c특성을 찾을 수 없습니다."); return; }
-        // GM AI에 특성 발동 메시지 전달
-        turnMan.handleAction(player, msg, gmSystemPrompt);
+        // GM AI에 특성 발동 메시지 전달 (언제든 발동 가능, 직전 행동 처리 중이면 대기)
+        boolean accepted = turnMan.handleAction(player, msg, gmSystemPrompt);
+        if (!accepted) {
+            player.sendMessage("§7직전 행동을 처리 중입니다. 잠시 후 다시 시도하세요.");
+        } else {
+            player.sendMessage("§b[특성 발동] §f결과를 기다리는 중...");
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  캐릭터 정보 GUI (핫바 아이템 우클릭으로 열기)
+    // ──────────────────────────────────────────────────────────────
+
+    private static final String INFO_ITEM_TAG = "trpg_info_item";
+
+    private NamespacedKey infoItemKey() {
+        return new NamespacedKey(plugin, INFO_ITEM_TAG);
+    }
+
+    /** 핫바에 캐릭터 정보 아이템 지급 (이미 있으면 생략) */
+    public void giveInfoItem(Player p) {
+        for (ItemStack it : p.getInventory().getContents()) {
+            if (isInfoItem(it)) return;
+        }
+        ItemStack item = new ItemStack(Material.NETHER_STAR);
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null) {
+            meta.displayName(Component.text("캐릭터 정보", NamedTextColor.AQUA, TextDecoration.BOLD)
+                .decoration(TextDecoration.ITALIC, false));
+            meta.lore(List.of(
+                Component.text("우클릭하여 능력치·특성을 확인하고", NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false),
+                Component.text("능동 특성을 발동합니다.", NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false)));
+            meta.getPersistentDataContainer().set(infoItemKey(), PersistentDataType.BYTE, (byte) 1);
+            item.setItemMeta(meta);
+        }
+        // 슬롯 8(핫바 끝)이 비어있으면 거기에, 아니면 기존 아이템을 밀지 않고 빈 칸에 추가
+        var inv = p.getInventory();
+        ItemStack slot8 = inv.getItem(8);
+        if (slot8 == null || slot8.getType().isAir()) {
+            inv.setItem(8, item);
+        } else {
+            inv.addItem(item);
+        }
+    }
+
+    /** 캐릭터 정보 아이템인지 판별 */
+    public boolean isInfoItem(ItemStack item) {
+        if (item == null || !item.hasItemMeta()) return false;
+        return item.getItemMeta().getPersistentDataContainer()
+            .has(infoItemKey(), PersistentDataType.BYTE);
+    }
+
+    /** 인벤토리에서 캐릭터 정보 아이템 제거 (세션 종료 시) */
+    public void removeInfoItem(Player p) {
+        var inv = p.getInventory();
+        for (int i = 0; i < inv.getSize(); i++) {
+            if (isInfoItem(inv.getItem(i))) inv.setItem(i, null);
+        }
+    }
+
+    /** 캐릭터 정보 GUI 열기 (능동 특성 발동 콜백 포함) */
+    public void openCharacterInfo(Player player) {
+        PlayerData pd = state.getPlayer(player);
+        if (pd == null) { player.sendMessage("§c참여 중인 캐릭터가 없습니다."); return; }
+        dialogMan.showCharacterInfo(player, pd, traitId -> handleTraitUse(player, traitId));
     }
 
     // ──────────────────────────────────────────────────────────────
