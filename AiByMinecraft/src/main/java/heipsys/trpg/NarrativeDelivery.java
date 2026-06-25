@@ -8,14 +8,14 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * GM 서술 타이프라이터 출력.
- * 문단(빈 줄 구분) 단위로 묶어 출력하고 문단 사이에 PARAGRAPH_DELAY 대기.
+ * 한 줄씩 일정 간격으로 출력하고, 줄 사이에 빈 줄로 여백을 둔다.
  * 각 줄은 MC 채팅 자동 인덴트 방지를 위해 38자(한글 기준)로 강제 분할.
- * 스니킹(Shift)으로 다음 문단 즉시 출력.
+ * 스니킹(Shift)으로 다음 줄 즉시 출력.
  */
 public class NarrativeDelivery {
 
-    // 문단과 문단 사이 대기 시간 (~2.5초)
-    private static final long PARAGRAPH_DELAY_TICKS = 50L;
+    // 한 줄과 다음 줄 사이 대기 시간 (3초)
+    private static final long LINE_DELAY_TICKS = 60L;
     // 마인크래프트 채팅 자동 줄바꿈 한계 (한글 기준 38자)
     private static final int MAX_CHAT_CHARS = 38;
 
@@ -27,18 +27,14 @@ public class NarrativeDelivery {
         this.plugin = plugin;
     }
 
-    /** GM 서술 텍스트를 문단 단위로 큐에 넣고 순차 출력 시작 */
+    /** GM 서술 텍스트를 줄 단위로 큐에 넣고 순차 출력 시작 */
     public void deliver(Player player, String raw) {
         if (raw == null || raw.isBlank()) return;
         UUID uuid = player.getUniqueId();
         ArrayDeque<String> q = queues.computeIfAbsent(uuid, k -> new ArrayDeque<>());
 
-        String formatted = format(raw);
-        // 빈 줄(2개 이상 연속 개행)을 문단 구분으로 사용
-        String[] paragraphs = formatted.split("\n{2,}");
-        for (String para : paragraphs) {
-            para = para.trim();
-            if (!para.isBlank()) q.add(para);
+        for (String line : format(raw).split("\n")) {
+            if (!line.isBlank()) q.add(line.trim());
         }
         if (!taskIds.containsKey(uuid)) scheduleNext(player);
     }
@@ -46,7 +42,7 @@ public class NarrativeDelivery {
     /**
      * GM 서술 텍스트를 마인크래프트 색코드로 변환한다.
      * - 마크다운 헤더/강조 기호 제거 또는 색 강조로 치환
-     * - 인물 대사("...")는 청록색(§b)으로 구분, 서술은 흰색(§f)
+     * - 인물 대사("...")는 청록색(§b)으로 구분, 서술은 회색(§7)
      */
     public static String format(String raw) {
         if (raw == null) return "";
@@ -61,7 +57,7 @@ public class NarrativeDelivery {
         return s;
     }
 
-    /** Shift 감지 시 다음 문단을 즉시 출력하고 그 이후 문단 예약 */
+    /** Shift 감지 시 다음 줄을 즉시 출력하고 그 이후 줄 예약 */
     public void onSneak(Player player) {
         UUID uuid = player.getUniqueId();
         Integer tid = taskIds.remove(uuid);
@@ -71,8 +67,8 @@ public class NarrativeDelivery {
         ArrayDeque<String> q = queues.get(uuid);
         if (q == null || q.isEmpty()) { queues.remove(uuid); return; }
 
-        String para = q.poll();
-        if (player.isOnline()) sendParagraph(player, para);
+        String line = q.poll();
+        if (player.isOnline()) sendLine(player, line);
         if (!q.isEmpty()) scheduleNext(player);
         else queues.remove(uuid);
     }
@@ -95,22 +91,13 @@ public class NarrativeDelivery {
     }
 
     /**
-     * 문단 내 각 줄을 MAX_CHAT_CHARS 이하로 분할해 전송.
-     * 줄 사이에 빈 줄을 삽입하고, 문단 끝에 구분선 추가.
+     * 한 줄을 MAX_CHAT_CHARS 이하로 분할해 전송하고, 뒤에 빈 줄로 여백을 둔다.
      */
-    private void sendParagraph(Player player, String para) {
-        boolean first = true;
-        for (String rawLine : para.split("\n")) {
-            if (rawLine.isBlank()) continue;
-            if (!first) player.sendMessage(""); // 줄 사이 여백
-            first = false;
-            List<String> segments = hardWrap(rawLine);
-            for (String segment : segments) {
-                player.sendMessage("§7" + segment);
-            }
+    private void sendLine(Player player, String line) {
+        for (String segment : hardWrap(line)) {
+            player.sendMessage("§7" + segment);
         }
-        // 문단 구분선
-        player.sendMessage("§8 ─────────────");
+        player.sendMessage(""); // 줄 사이 여백
     }
 
     /**
@@ -149,11 +136,11 @@ public class NarrativeDelivery {
             if (!player.isOnline()) { queues.remove(uuid); return; }
             ArrayDeque<String> q = queues.get(uuid);
             if (q == null || q.isEmpty()) { queues.remove(uuid); return; }
-            String para = q.poll();
-            sendParagraph(player, para);
+            String line = q.poll();
+            sendLine(player, line);
             if (!q.isEmpty()) scheduleNext(player);
             else queues.remove(uuid);
-        }, PARAGRAPH_DELAY_TICKS).getTaskId();
+        }, LINE_DELAY_TICKS).getTaskId();
         taskIds.put(uuid, tid);
     }
 }
