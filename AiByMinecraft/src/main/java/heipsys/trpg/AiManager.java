@@ -190,7 +190,12 @@ public class AiManager {
         return response
             .replaceAll("<STATE_UPDATE>[\\s\\S]*?</STATE_UPDATE>", "")
             .replaceAll("<ITEM_GRANT>[\\s\\S]*?</ITEM_GRANT>", "")
+            .replaceAll("<CLEAR>[\\s\\S]*?</CLEAR>", "")
             .trim();
+    }
+
+    public JsonObject parseClearTag(String response) {
+        return parseTag(response, "<CLEAR>", "</CLEAR>");
     }
 
     private JsonObject parseTag(String text, String open, String close) {

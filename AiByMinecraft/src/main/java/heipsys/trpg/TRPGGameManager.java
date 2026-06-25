@@ -95,6 +95,19 @@ LUK 10+: 자주, 극적인 행운
 {"player":"","hp_change":0,"san_change":0,"timeline_change":0,"status_change":null,"new_clue":null,"item_grant":null,"item_remove":null}
 </STATE_UPDATE>
 
+### 클리어 판정
+플레이어가 entity.solution(정석 해결법), entity.exploit_path(역이용), entity.escape(도주 성공)를 달성했을 때
+반드시 아래 태그를 출력한다 (배드 엔딩이면 출력하지 않음):
+<CLEAR>
+{"grade":"A","reason":""}
+</CLEAR>
+grade 기준:
+S: 전원 생존, 타임라인 2단계 이하, 완벽 해결
+A: 전원 생존, 정석/역이용 해결
+B: 생존자 과반, 어떤 방식이든 해결
+C: 생존자 소수, 생존법 달성
+D: 1명 생존으로 도주 성공
+
 ### GM 내부 비공개 항목 (절대 공개 금지)
 - 괴담의 정체 및 스케일
 - 타임라인 세부 내용
@@ -137,10 +150,9 @@ LUK 10+: 자주, 극적인 행운
     private final ContextCompressor   compressor;
 
     /** 캐릭터 생성 완료 대기 중인 플레이어 UUID 집합 */
-    private final Set<UUID> pendingCreation = ConcurrentHashMap.newKeySet();
+    private final Set<UUID> pendingCreation    = ConcurrentHashMap.newKeySet();
     /** 특성 선택 대기 중인 플레이어 */
     private final Set<UUID> pendingTraitSelect = ConcurrentHashMap.newKeySet();
-
     private String gmSystemPrompt = GM_SYSTEM_BASE;
 
     public TRPGGameManager(AICraft plugin, AiManager ai) {
@@ -342,7 +354,6 @@ LUK 10+: 자주, 극적인 행운
         player.sendMessage("§a스탯이 확정되었습니다!");
         scoreMan.update(player, pd, state.getRoomNumber());
         pendingCreation.remove(player.getUniqueId());
-
         checkAllConfirmed();
     }
 
@@ -463,16 +474,20 @@ LUK 10+: 자주, 극적인 행운
             return;
         }
 
-        if (!state.hasPlayer(player.getUniqueId())) {
-            handleLateJoin(player);
-            return;
-        }
+        if (!state.hasPlayer(player.getUniqueId())) return; // 참여자가 아님
 
         PlayerData pd = state.getPlayer(player);
         if (pd == null || pd.isDead) return;
 
+        // 꼭두각시 상태: 행동 앞에 상태 표기 → GM이 서술 조정
+        String actionMessage = message;
+        if ("puppet".equals(pd.status)) {
+            player.sendMessage("§8(당신의 의지가 아닌 무언가에 이끌려 행동합니다...)");
+            actionMessage = "[꼭두각시] " + message;
+        }
+
         // 특성 버튼 관련 단어 처리는 TurnManager가 GM AI로 전달
-        boolean accepted = turnMan.handleAction(player, message, gmSystemPrompt);
+        boolean accepted = turnMan.handleAction(player, actionMessage, gmSystemPrompt);
         if (!accepted) {
             player.sendMessage("§7(현재 행동 처리 중입니다. 잠시 기다려주세요.)");
             return;
@@ -493,39 +508,67 @@ LUK 10+: 자주, 극적인 행운
             String raw = response.rawText();
             Player player = response.player();
 
-            // 1. STATE_UPDATE 파싱 및 적용
+            // 1. 클리어 판정 (다른 처리 전에 먼저 체크)
+            if (currentPhase == Phase.HORROR) {
+                JsonObject clearTag = ai.parseClearTag(raw);
+                if (clearTag != null) {
+                    String grade = clearTag.has("grade") ? clearTag.get("grade").getAsString() : "C";
+                    String narrative = ai.stripTags(raw);
+                    if (!narrative.isBlank()) broadcastGm(narrative);
+                    onClearEnding(grade);
+                    return;
+                }
+            }
+
+            // 2. STATE_UPDATE 파싱 및 적용
             JsonObject stateUpdate = ai.parseStateUpdate(raw);
             if (stateUpdate != null) applyStateUpdate(stateUpdate);
 
-            // 2. ITEM_GRANT 파싱 및 처리
+            // 3. ITEM_GRANT 파싱 및 처리
             JsonObject itemGrant = ai.parseItemGrant(raw);
             if (itemGrant != null) {
                 itemMan.processGrant(itemGrant, new ArrayList<>(Bukkit.getOnlinePlayers()));
             }
 
-            // 3. 서술 텍스트 출력 (태그 제거)
+            // 4. 서술 텍스트 출력 (태그 제거)
             String narrative = ai.stripTags(raw);
             if (!narrative.isBlank()) broadcastGm(narrative);
 
-            // 4. 일상 파트 턴 소비
+            // 5. 일상 파트 턴 소비
             if (state.isDailyPhase()) {
                 boolean phaseChanged = state.consumeDailyTurn();
                 if (phaseChanged) {
                     onHorrorPhaseStart();
+                } else if (state.getDailyTurnsLeft() == 1) {
+                    broadcast("§7§o(어딘가 분위기가 이상해지기 시작한다...)");
                 }
             }
 
-            // 5. 스코어보드 갱신
+            // 6. 스코어보드 갱신
             updateAllScoreboards();
 
-            // 6. 타임라인 4단계 체크
-            if (state.getTimelineStage() >= 4) onBadEnding();
+            // 7. 타임라인 4단계 체크
+            if (state.getTimelineStage() >= 4) { onBadEnding(); return; }
 
-            // 7. 사망자 체크
+            // 8. 사망자 체크
             checkDeaths();
 
-            // 8. 능동 특성 버튼 표시
+            // 9. 능동 특성 버튼 표시
             traitBtn.sendTraitButtons(player, state.getPlayer(player));
+
+            // 10. Entity AI (괴담 파트, 2턴마다)
+            if (currentPhase == Phase.HORROR && state.getCurrentTurn() % 2 == 1) {
+                String entityLog = state.buildEntityLog(5);
+                ai.callEntityAi(buildEntitySystemPrompt(), entityLog).thenAccept(entityResp -> {
+                    if (entityResp == null || entityResp.startsWith("§c")) return;
+                    String trimmed = entityResp.trim();
+                    if (trimmed.isEmpty()) return;
+                    plugin.getServer().getScheduler().runTask(plugin, () -> {
+                        Bukkit.broadcastMessage("§8§o[" + getEntityName() + "] " + trimmed);
+                        if (corruptMan.getLevel() >= 2) corruptMan.addEntityMemory(trimmed);
+                    });
+                });
+            }
         });
     }
 
@@ -555,7 +598,19 @@ LUK 10+: 자주, 극적인 행운
                     state.advanceTimeline(update.get("timeline_change").getAsInt());
                 }
                 if (update.has("status_change") && !update.get("status_change").isJsonNull()) {
-                    pd.status = update.get("status_change").getAsString();
+                    String newStatus = update.get("status_change").getAsString();
+                    if ("puppet".equals(newStatus) && "puppet".equals(pd.status)) {
+                        // 꼭두각시 재발 → 영구 게임오버
+                        pd.isDead = true;
+                        broadcast("§4§l[영구 탈락] " + pd.name + "이(가) 꼭두각시 재발로 영구 탈락했습니다.");
+                    } else {
+                        if ("puppet".equals(newStatus) && !"puppet".equals(pd.status)) {
+                            broadcast("§5[꼭두각시] " + pd.name + "이(가) 괴담에 지배되었습니다...");
+                        } else if ("normal".equals(newStatus) && "puppet".equals(pd.status)) {
+                            broadcast("§a[각성] " + pd.name + "이(가) 스스로를 되찾았습니다!");
+                        }
+                        pd.status = newStatus;
+                    }
                 }
                 if (update.has("new_clue") && !update.get("new_clue").isJsonNull()) {
                     String clue = update.get("new_clue").getAsString();
@@ -596,36 +651,7 @@ LUK 10+: 자주, 극적인 행운
     }
 
     private void checkDeaths() {
-        long dead = state.getAllPlayers().stream().filter(p -> p.isDead).count();
-        long alive = state.getAliveCount();
-
-        if (alive == 0) {
-            onBadEnding();
-        }
-    }
-
-    // ──────────────────────────────────────────────────────────────
-    //  도중 참여
-    // ──────────────────────────────────────────────────────────────
-
-    private void handleLateJoin(Player player) {
-        if (currentPhase == Phase.IDLE || currentPhase == Phase.CHAR_CREATION) {
-            player.sendMessage("§c현재 캐릭터 생성 단계에서는 참여할 수 없습니다. §f/join §c명령어를 나중에 사용하세요.");
-            return;
-        }
-        if (state.getTimelineStage() >= 4) {
-            player.sendMessage("§c타임라인이 너무 진행되어 참여할 수 없습니다. 관전만 가능합니다.");
-            return;
-        }
-
-        pendingCreation.add(player.getUniqueId());
-        charGen.generate(player).thenAccept(pd -> {
-            state.addPlayer(pd);
-            plugin.getServer().getScheduler().runTask(plugin, () -> {
-                player.sendMessage(charGen.buildSheetMessage(pd, state.getRoomNumber(), state.getCorruption().attempts + 1));
-                dialogMan.showDiceConfirm(player, pd);
-            });
-        });
+        if (state.getAliveCount() == 0) onBadEnding();
     }
 
     public void joinSession(Player player) {
@@ -633,12 +659,16 @@ LUK 10+: 자주, 극적인 행운
             player.sendMessage("§c활성 TRPG 세션이 없습니다.");
             return;
         }
-        if (state.hasPlayer(player.getUniqueId())) {
-            player.sendMessage("§c이미 세션에 참여 중입니다.");
-            return;
+        PlayerData pd = state.getPlayer(player);
+        if (pd != null) {
+            // 재접속: 스코어보드 복원 및 현재 상태 출력
+            scoreMan.update(player, pd, state.getRoomNumber());
+            player.sendMessage("§a세션에 재접속했습니다!");
+            player.sendMessage(charGen.buildSheetMessage(pd, state.getRoomNumber(), state.getCorruption().attempts + 1));
+            traitBtn.sendTraitButtons(player, pd);
+        } else {
+            player.sendMessage("§c이 세션의 참가자가 아닙니다. 게임은 시작 전에 참여해야 합니다.");
         }
-        broadcast("§e" + player.getName() + "이(가) 세션에 참여합니다!");
-        handleLateJoin(player);
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -698,6 +728,78 @@ LUK 10+: 자주, 극적인 행운
         if (msg == null) { player.sendMessage("§c특성을 찾을 수 없습니다."); return; }
         // GM AI에 특성 발동 메시지 전달
         turnMan.handleAction(player, msg, gmSystemPrompt);
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  클리어 엔딩
+    // ──────────────────────────────────────────────────────────────
+
+    private void onClearEnding(String grade) {
+        if (currentPhase == Phase.CLEAR || currentPhase == Phase.GAMEOVER) return;
+        currentPhase = Phase.CLEAR;
+
+        String finalGrade = corruptMan.getRewardGrade(grade);
+        broadcast("§6§l═══════════════════════════════");
+        broadcast("§6§l  클리어! 등급: " + grade
+            + (corruptMan.getLevel() > 0 ? " (오염 보정 → " + finalGrade + ")" : ""));
+        broadcast("§6§l═══════════════════════════════");
+
+        String gdamTheme = getEntityName();
+
+        state.getAllPlayers().stream()
+            .filter(pd -> !pd.isDead)
+            .forEach(pd -> {
+                traitMan.generateClearTraits(finalGrade, pd, gdamTheme)
+                    .thenAccept(choices -> {
+                        if (choices.isEmpty()) return;
+                        Player p = Bukkit.getPlayer(pd.uuid);
+                        if (p == null || !p.isOnline()) return;
+                        plugin.getServer().getScheduler().runTask(plugin, () -> {
+                            p.sendMessage("§6§l[클리어 보상] 특성을 선택하세요!");
+                            boolean canRemove = pd.traits.size() >= 3;
+                            dialogMan.showTraitSelection(p, choices, canRemove);
+                            pendingTraitSelect.add(p.getUniqueId());
+                        });
+                    });
+            });
+
+        broadcast("§6특성을 선택한 뒤 §f/trpg stop §6으로 세션을 종료하세요.");
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  Entity AI 헬퍼
+    // ──────────────────────────────────────────────────────────────
+
+    private String buildEntitySystemPrompt() {
+        JsonObject gdam = state.getGdamData();
+        if (gdam == null || !gdam.has("entity")) {
+            return "너는 괴담의 독립적 의지야. 1-2문장으로 짧게 행동/의도만 서술해. 한국어로.";
+        }
+        JsonObject entity = gdam.getAsJsonObject("entity");
+        StringBuilder sb = new StringBuilder();
+        sb.append("너는 '").append(entity.has("name") ? entity.get("name").getAsString() : "괴담").append("'이야.\n");
+        sb.append("1-2문장으로만 응답. 자신의 행동/의도/감각만 서술. 한국어.\n");
+        sb.append("플레이어 스탯·특성·해결법을 절대 직접 언급 금지.\n");
+        if (entity.has("ai_context")) {
+            JsonObject ctx = entity.getAsJsonObject("ai_context");
+            if (ctx.has("personality"))
+                sb.append("성격: ").append(ctx.get("personality").getAsString()).append("\n");
+            if (ctx.has("initial_pattern"))
+                sb.append("행동 패턴: ").append(ctx.get("initial_pattern").getAsString()).append("\n");
+        }
+        if (entity.has("rules") && entity.get("rules").isJsonArray()) {
+            sb.append("규칙: ").append(entity.get("rules").toString()).append("\n");
+        }
+        return sb.toString();
+    }
+
+    private String getEntityName() {
+        JsonObject gdam = state.getGdamData();
+        if (gdam != null && gdam.has("entity")) {
+            JsonObject e = gdam.getAsJsonObject("entity");
+            if (e.has("name")) return e.get("name").getAsString();
+        }
+        return "???";
     }
 
     // ──────────────────────────────────────────────────────────────
