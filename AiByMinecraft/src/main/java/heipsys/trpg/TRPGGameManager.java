@@ -1284,6 +1284,8 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                   if (sp != null && sp.isOnline() && !narrative.isBlank())
                       narrativeDelivery.deliver(sp, narrative);
               });
+              // 뒷이야기(에필로그) + 엔딩 해설 공개
+              concludeEnding("배드 엔딩");
               broadcast("§c재도전하려면 §f/trpg retry §c를 입력하세요.");
           }));
     }
@@ -1444,6 +1446,9 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             + (corruptMan.getLevel() > 0 ? " (오염 보정 → " + finalGrade + ")" : ""));
         broadcast("§6§l═══════════════════════════════");
 
+        // 뒷이야기(에필로그) + 엔딩 해설 공개
+        concludeEnding("퍼펙트 클리어 (등급 " + grade + ")");
+
         String gdamTheme = getEntityName();
 
         state.getAllPlayers().stream()
@@ -1465,6 +1470,107 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             });
 
         broadcast("§6특성을 선택한 뒤 §f/trpg stop §6으로 세션을 종료하세요.");
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  엔딩 마무리: 뒷이야기(에필로그) + 엔딩 해설
+    // ──────────────────────────────────────────────────────────────
+
+    /** 결말 후 AI 에필로그(뒷이야기)를 생성해 보여주고, 이어서 .gdam 해설을 공개한다. */
+    private void concludeEnding(String endingLabel) {
+        String recentLog = state.buildEntityLog(15);
+        String prompt = "게임이 끝났다. 결말 유형: " + endingLabel + ".\n"
+            + (recentLog.isBlank() ? "" : "플레이어들의 주요 행동 기록:\n" + recentLog + "\n")
+            + "\n이 사건의 '뒷이야기'를 소설풍 에필로그로 3~5문장 써줘. "
+            + "남은 인물들의 그 후, 장소의 변화, 여운을 담되 과장 없이. "
+            + "제목·마크다운 금지, 대사는 큰따옴표로.";
+        ai.callGmAiOnce(gmSystemPrompt, prompt)
+            .thenAccept(r -> plugin.getServer().getScheduler().runTask(plugin, () -> {
+                String story = ai.stripTags(r);
+                if (!story.isBlank()) {
+                    broadcast("");
+                    broadcast("§e§l📖 뒷이야기");
+                    for (String line : NarrativeDelivery.format(story).split("\n")) {
+                        if (!line.isBlank()) broadcast("§7" + line);
+                    }
+                }
+                broadcast(buildEndingReveal());
+            }));
+    }
+
+    /** 엔딩 시 .gdam 내부 설계(정체·규칙·타임라인·스케일·해결법 등)를 공개하는 해설 텍스트 */
+    private String buildEndingReveal() {
+        JsonObject gdam = state.getGdamData();
+        if (gdam == null) return "";
+        StringBuilder sb = new StringBuilder();
+        sb.append("\n§8§l━━━━━━━━━━━━━━━━━━━━\n");
+        sb.append("§e§l  엔딩 해설  §7씨드 ").append(state.getCurrentSeed()).append("\n");
+        sb.append("§8§l━━━━━━━━━━━━━━━━━━━━");
+
+        JsonObject e = gdam.has("entity") ? gdam.getAsJsonObject("entity") : null;
+        if (e != null) {
+            sb.append("\n\n§c§l🎭 괴담의 정체\n§f").append(getStr(e, "name"));
+            String type = getStr(e, "type");
+            if (!type.isBlank()) sb.append(" §7(").append(type).append(")");
+            if (e.has("ai_context")) {
+                String pers = getStr(e.getAsJsonObject("ai_context"), "personality");
+                if (!pers.isBlank()) sb.append("\n§7").append(pers);
+            }
+            if (e.has("rules") && e.getAsJsonArray("rules").size() > 0) {
+                sb.append("\n\n§b§l📐 핵심 규칙\n");
+                int i = 1;
+                for (JsonElement r : e.getAsJsonArray("rules"))
+                    sb.append("§7").append(i++).append(". §f").append(r.getAsString()).append("\n");
+            }
+            appendSection(sb, "§d§l⚠ 약점", getStr(e, "weakness"));
+            appendSection(sb, "§a§l✅ 정석 해결법", getStr(e, "solution"));
+            appendSection(sb, "§6§l💡 역이용 경로", getStr(e, "exploit_path"));
+            appendSection(sb, "§9§l🚪 생존법", getStr(e, "escape"));
+            if (e.has("hidden_rules") && e.getAsJsonArray("hidden_rules").size() > 0) {
+                sb.append("\n§5§l🧩 숨겨진 규칙\n");
+                for (JsonElement hr : e.getAsJsonArray("hidden_rules"))
+                    sb.append("§7▸ §f").append(hr.getAsString()).append("\n");
+            }
+        }
+        appendSection(sb, "§e§l🗺 스케일", getStr(gdam, "scale"));
+
+        if (gdam.has("timeline")) {
+            JsonObject tl = gdam.getAsJsonObject("timeline");
+            StringBuilder tlsb = new StringBuilder();
+            for (String k : new String[]{"1", "2", "3", "4"}) {
+                if (tl.has(k) && tl.get(k).isJsonObject()) {
+                    String eff = getStr(tl.getAsJsonObject(k), "effect");
+                    if (!eff.isBlank()) tlsb.append("§7[").append(k).append("단계] §f").append(eff).append("\n");
+                }
+            }
+            if (tlsb.length() > 0) sb.append("\n§c§l⏱ 타임라인\n").append(tlsb);
+        }
+
+        if (gdam.has("clues") && gdam.getAsJsonArray("clues").size() > 0) {
+            JsonArray clues = gdam.getAsJsonArray("clues");
+            int found = state.getDiscoveredClues().size();
+            sb.append("\n§7§l🔍 배치된 단서 §8(발견 ").append(found).append("/").append(clues.size()).append(")\n");
+            for (JsonElement c : clues) {
+                String desc = c.isJsonObject()
+                    ? firstNonBlank(getStr(c.getAsJsonObject(), "description"), getStr(c.getAsJsonObject(), "id"))
+                    : c.getAsString();
+                if (!desc.isBlank()) sb.append("§8▸ §7").append(desc).append("\n");
+            }
+        }
+        return sb.toString();
+    }
+
+    private static void appendSection(StringBuilder sb, String header, String body) {
+        if (body == null || body.isBlank()) return;
+        sb.append("\n").append(header).append("\n§f").append(body).append("\n");
+    }
+
+    private static String firstNonBlank(String a, String b) {
+        return (a != null && !a.isBlank()) ? a : b;
+    }
+
+    private static String getStr(JsonObject o, String key) {
+        return o.has(key) && !o.get(key).isJsonNull() ? o.get(key).getAsString() : "";
     }
 
     // ──────────────────────────────────────────────────────────────
