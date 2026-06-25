@@ -193,6 +193,8 @@ public class AiManager {
             .replaceAll("<CLEAR>[\\s\\S]*?</CLEAR>", "")
             .replaceAll("<WITNESS[^>]*>[\\s\\S]*?</WITNESS>", "")
             .replaceAll("<SPAWN[^/]*/?>", "")
+            .replaceAll("<COMM [^/]*/?>", "")
+            .replaceAll("<COMM_CLOSE [^/]*/?>", "")
             .trim();
     }
 
@@ -352,6 +354,51 @@ public class AiManager {
         parts.add(part);
         msg.add("parts", parts);
         return msg;
+    }
+
+    // ======================================================
+    //  통신 태그 파싱
+    // ======================================================
+
+    /** <COMM from="A" to="B" method="radio"/> 파싱 */
+    public JsonObject parseCommTag(String response) {
+        final String PREFIX = "<COMM ";
+        int idx = response.indexOf(PREFIX);
+        if (idx == -1) return null;
+        // <COMM_CLOSE 와 혼동 방지: 바로 다음 문자가 '_' 이면 스킵
+        if (idx + PREFIX.length() <= response.length() && response.charAt(idx + PREFIX.length() - 1) == '_') return null;
+        int end = response.indexOf("/>", idx);
+        if (end == -1) return null;
+        String attrs = response.substring(idx + PREFIX.length(), end).trim();
+        JsonObject obj = new JsonObject();
+        extractAttr(attrs, "from").ifPresent(v -> obj.addProperty("from", v));
+        extractAttr(attrs, "to").ifPresent(v -> obj.addProperty("to", v));
+        extractAttr(attrs, "method").ifPresent(v -> obj.addProperty("method", v));
+        return obj.size() > 0 ? obj : null;
+    }
+
+    /** <COMM_CLOSE from="A" to="B"/> 파싱 */
+    public JsonObject parseCommCloseTag(String response) {
+        final String PREFIX = "<COMM_CLOSE ";
+        int idx = response.indexOf(PREFIX);
+        if (idx == -1) return null;
+        int end = response.indexOf("/>", idx);
+        if (end == -1) return null;
+        String attrs = response.substring(idx + PREFIX.length(), end).trim();
+        JsonObject obj = new JsonObject();
+        extractAttr(attrs, "from").ifPresent(v -> obj.addProperty("from", v));
+        extractAttr(attrs, "to").ifPresent(v -> obj.addProperty("to", v));
+        return obj.size() > 0 ? obj : null;
+    }
+
+    private java.util.Optional<String> extractAttr(String attrs, String name) {
+        String search = name + "=\"";
+        int idx = attrs.indexOf(search);
+        if (idx == -1) return java.util.Optional.empty();
+        int start = idx + search.length();
+        int end = attrs.indexOf("\"", start);
+        if (end == -1) return java.util.Optional.empty();
+        return java.util.Optional.of(attrs.substring(start, end));
     }
 
     public String getApiType() { return apiType; }

@@ -1,7 +1,9 @@
 package heipsys.trpg.model;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 public class PlayerData {
@@ -32,6 +34,9 @@ public class PlayerData {
 
     public boolean statsConfirmed = false;
     public boolean roleAssigned   = false;
+
+    /** 현재 소지 중인 아이템 ID 집합 (통신 기기 추적 등에 사용) */
+    public Set<String> heldItemIds = new HashSet<>();
 
     // Base stats snapshot — used to reset on retry
     public int[] baseHp  = {6, 6};
@@ -65,6 +70,7 @@ public class PlayerData {
         isDead    = false;
         status    = "normal";
         turnState = TurnState.IDLE;
+        heldItemIds.clear();
     }
 
     public String getStatsSummary() {

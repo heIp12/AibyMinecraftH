@@ -1,5 +1,6 @@
 package heipsys.trpg;
 
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import heipsys.AICraft;
 import heipsys.trpg.model.PlayerData;
@@ -123,6 +124,18 @@ spawn_timeline이 된 배역이 등장할 시점:
 <SPAWN player="플레이어명"/>
 이 태그 출력 시 해당 플레이어가 스토리에 진입한다.
 
+### 플레이어 간 직접 통신
+플레이어가 "@이름 메시지" 형식으로 통신 시도 가능.
+- 같은 공간(zone): 시스템이 자동 직접 전달 — GM 개입 없음
+- 기기 소지(무전기·전화·라디오 등): 시스템이 자동 직접 전달 — GM 개입 없음
+- 간접 방법(연기신호·메모 투척·물리적 중계 등): GM이 행동으로 처리 후 서술
+
+GM이 기기 통신 채널을 개설할 때 반드시 아래 태그 출력:
+<COMM from="플레이어A" to="플레이어B" method="무전기"/>
+
+GM이 채널을 종료할 때:
+<COMM_CLOSE from="플레이어A" to="플레이어B"/>
+
 ### GM 내부 비공개 항목 (절대 공개 금지)
 - 괴담의 정체 및 스케일
 - 타임라인 세부 내용
@@ -141,7 +154,12 @@ spawn_timeline이 된 배역이 등장할 시점:
     //  세션 단계
     // ──────────────────────────────────────────────────────────────
 
-    private enum Phase { IDLE, CHAR_CREATION, ROLE_ASSIGNMENT, DAILY, HORROR, CLEAR, GAMEOVER }
+    private enum Phase    { IDLE, CHAR_CREATION, ROLE_ASSIGNMENT, DAILY, HORROR, CLEAR, GAMEOVER }
+    private enum CommMode { DIRECT, DEVICE, GM_ROUTED }
+
+    private static final Set<String> COMM_ITEM_KEYWORDS = Set.of(
+        "전화", "phone", "폰", "무전", "walkie", "radio", "라디오", "휴대폰", "핸드폰", "스마트폰", "통신", "intercom", "인터콤"
+    );
 
     private Phase currentPhase = Phase.IDLE;
 
@@ -169,7 +187,9 @@ spawn_timeline이 된 배역이 등장할 시점:
     /** 특성 선택 대기 중인 플레이어 */
     private final Set<UUID> pendingTraitSelect = ConcurrentHashMap.newKeySet();
     /** 스토리에 이미 등장한(spawn된) 플레이어 */
-    private final Set<UUID> spawnedPlayers     = ConcurrentHashMap.newKeySet();
+    private final Set<UUID> spawnedPlayers      = ConcurrentHashMap.newKeySet();
+    /** GM이 개설한 기기 통신 채널: A → {B, C, ...} (양방향 저장) */
+    private final Map<UUID, Set<UUID>> commChannels = new ConcurrentHashMap<>();
     private String gmSystemPrompt = GM_SYSTEM_BASE;
 
     public TRPGGameManager(AICraft plugin, AiManager ai) {
@@ -289,6 +309,7 @@ spawn_timeline이 된 배역이 등장할 시점:
         pendingCreation.clear();
         pendingTraitSelect.clear();
         spawnedPlayers.clear();
+        commChannels.clear();
         currentPhase = Phase.IDLE;
     }
 
@@ -452,10 +473,13 @@ spawn_timeline이 된 배역이 등장할 시점:
             if (r.get("role_id").getAsString().equals(roleId) && r.has("start_item")) {
                 for (var item : r.getAsJsonArray("start_item")) {
                     JsonObject grant = new JsonObject();
-                    grant.addProperty("item_id", item.getAsString());
+                    String itemId = item.getAsString();
+                    grant.addProperty("item_id", itemId);
                     grant.addProperty("player", player.getName());
                     grant.addProperty("chapter_bound", true);
                     itemMan.processGrant(grant, List.of(player));
+                    PlayerData pd = state.getPlayer(player);
+                    if (pd != null) pd.heldItemIds.add(itemId);
                 }
             }
         }
@@ -527,6 +551,12 @@ spawn_timeline이 된 배역이 등장할 시점:
             return;
         }
 
+        // 직접 통신 시도: @이름 메시지
+        if (message.startsWith("@")) {
+            handleDirectComm(player, pd, message);
+            return;
+        }
+
         // 꼭두각시 상태: 행동 앞에 상태 표기 → GM이 서술 조정
         String actionMessage = message;
         if ("puppet".equals(pd.status)) {
@@ -571,10 +601,23 @@ spawn_timeline이 된 배역이 등장할 시점:
             JsonObject stateUpdate = ai.parseStateUpdate(raw);
             if (stateUpdate != null) applyStateUpdate(stateUpdate);
 
-            // 3. ITEM_GRANT 파싱 및 처리
+            // 3. ITEM_GRANT 파싱 및 처리 + heldItemIds 추적
             JsonObject itemGrant = ai.parseItemGrant(raw);
             if (itemGrant != null) {
                 itemMan.processGrant(itemGrant, new ArrayList<>(Bukkit.getOnlinePlayers()));
+                String grantedItem = itemGrant.has("item_id") ? itemGrant.get("item_id").getAsString() : null;
+                String grantedTo   = itemGrant.has("player")  ? itemGrant.get("player").getAsString()  : null;
+                if (grantedItem != null && grantedTo != null) {
+                    if ("ALL".equals(grantedTo)) {
+                        state.getAllPlayers().forEach(pd -> pd.heldItemIds.add(grantedItem));
+                    } else {
+                        final String itemRef = grantedItem;
+                        state.getAllPlayers().stream()
+                            .filter(pd -> pd.name.equals(grantedTo))
+                            .findFirst()
+                            .ifPresent(pd -> pd.heldItemIds.add(itemRef));
+                    }
+                }
             }
 
             // 4. 서술 + WITNESS 전달 (당사자에게만)
@@ -583,6 +626,22 @@ spawn_timeline이 된 배역이 등장할 시점:
             // 5. SPAWN 태그 처리
             String spawnedName = ai.parseSpawnTag(raw);
             if (spawnedName != null) handleSpawn(spawnedName);
+
+            // 5a. COMM 채널 개설/종료 처리
+            JsonObject commTag = ai.parseCommTag(raw);
+            if (commTag != null) {
+                openCommChannel(
+                    commTag.has("from") ? commTag.get("from").getAsString() : null,
+                    commTag.has("to")   ? commTag.get("to").getAsString()   : null
+                );
+            }
+            JsonObject commCloseTag = ai.parseCommCloseTag(raw);
+            if (commCloseTag != null) {
+                closeCommChannel(
+                    commCloseTag.has("from") ? commCloseTag.get("from").getAsString() : null,
+                    commCloseTag.has("to")   ? commCloseTag.get("to").getAsString()   : null
+                );
+            }
 
             // 6. 일상 파트 턴 소비
             if (state.isDailyPhase()) {
@@ -683,6 +742,9 @@ spawn_timeline이 된 배역이 등장할 시점:
                     String clue = update.get("new_clue").getAsString();
                     state.discoverClue(clue);
                     state.log("clue", pd.name, "단서 발견: " + clue);
+                }
+                if (update.has("item_remove") && !update.get("item_remove").isJsonNull()) {
+                    pd.heldItemIds.remove(update.get("item_remove").getAsString());
                 }
             });
     }
@@ -988,6 +1050,123 @@ spawn_timeline이 된 배역이 등장할 시점:
             if (e.has("name")) return e.get("name").getAsString();
         }
         return "???";
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  플레이어 간 직접 통신
+    // ──────────────────────────────────────────────────────────────
+
+    private void handleDirectComm(Player sender, PlayerData senderPd, String raw) {
+        String content = raw.substring(1).trim(); // '@' 제거
+        int space = content.indexOf(' ');
+        if (space == -1) {
+            sender.sendMessage("§c사용법: @플레이어이름 메시지");
+            return;
+        }
+        String targetName = content.substring(0, space);
+        String message    = content.substring(space + 1).trim();
+        if (message.isEmpty()) {
+            sender.sendMessage("§c사용법: @플레이어이름 메시지");
+            return;
+        }
+
+        PlayerData targetPd = state.getAllPlayers().stream()
+            .filter(pd -> pd.name.equalsIgnoreCase(targetName) && !pd.isDead)
+            .findFirst().orElse(null);
+
+        if (targetPd == null) {
+            sender.sendMessage("§c'" + targetName + "' 플레이어를 찾을 수 없습니다.");
+            return;
+        }
+        if (targetPd.uuid.equals(sender.getUniqueId())) {
+            sender.sendMessage("§c자기 자신에게 통신할 수 없습니다.");
+            return;
+        }
+
+        switch (checkCommValidity(sender.getUniqueId(), senderPd, targetPd)) {
+            case DIRECT -> deliverDirectMessage(sender, senderPd, targetPd, message, false);
+            case DEVICE -> deliverDirectMessage(sender, senderPd, targetPd, message, true);
+            case GM_ROUTED -> {
+                // 간접 통신 시도 → GM이 판정
+                String gmAction = "[통신 시도] " + senderPd.name + "이(가) " + targetPd.name
+                    + "에게 메시지를 전달하려 한다: \"" + message + "\"";
+                boolean accepted = turnMan.handleAction(sender, gmAction, gmSystemPrompt);
+                if (!accepted) {
+                    sender.sendMessage("§7(현재 행동 처리 중입니다. 잠시 기다려주세요.)");
+                } else {
+                    sender.sendMessage("§7[통신 시도 중... GM이 결과를 처리합니다]");
+                }
+            }
+        }
+    }
+
+    private CommMode checkCommValidity(UUID senderId, PlayerData senderPd, PlayerData targetPd) {
+        // 같은 구역 → 직접 전달
+        if (!senderPd.zone.isEmpty() && senderPd.zone.equals(targetPd.zone)) {
+            return CommMode.DIRECT;
+        }
+        // GM이 개설한 채널
+        Set<UUID> channels = commChannels.get(senderId);
+        if (channels != null && channels.contains(targetPd.uuid)) {
+            return CommMode.DEVICE;
+        }
+        // 같은 종류의 통신 기기를 양쪽 모두 소지
+        for (String keyword : COMM_ITEM_KEYWORDS) {
+            boolean senderHas = senderPd.heldItemIds.stream()
+                .anyMatch(id -> id.toLowerCase().contains(keyword));
+            boolean targetHas = targetPd.heldItemIds.stream()
+                .anyMatch(id -> id.toLowerCase().contains(keyword));
+            if (senderHas && targetHas) return CommMode.DEVICE;
+        }
+        return CommMode.GM_ROUTED;
+    }
+
+    private void deliverDirectMessage(Player sender, PlayerData senderPd, PlayerData targetPd,
+                                      String message, boolean viaDevice) {
+        String tag     = viaDevice ? "§a[통신]" : "§a[근처]";
+        String outLine = tag + " §f" + senderPd.name + " → " + targetPd.name + ": " + message;
+        String inLine  = tag + " §f" + senderPd.name + ": " + message;
+
+        sender.sendMessage(outLine);
+        Player target = Bukkit.getPlayer(targetPd.uuid);
+        if (target != null && target.isOnline()) target.sendMessage(inLine);
+
+        state.log("comm", senderPd.name,
+            "→ " + targetPd.name + " (" + (viaDevice ? "장치" : "근거리") + "): " + message);
+    }
+
+    private void openCommChannel(String nameA, String nameB) {
+        if (nameA == null || nameB == null) return;
+        UUID uuidA = findUuid(nameA), uuidB = findUuid(nameB);
+        if (uuidA == null || uuidB == null) return;
+        commChannels.computeIfAbsent(uuidA, k -> ConcurrentHashMap.newKeySet()).add(uuidB);
+        commChannels.computeIfAbsent(uuidB, k -> ConcurrentHashMap.newKeySet()).add(uuidA);
+        notifyCommChange(uuidA, "§a[통신 채널 개설] §f" + nameB + "와(과) 연결됨.");
+        notifyCommChange(uuidB, "§a[통신 채널 개설] §f" + nameA + "와(과) 연결됨.");
+    }
+
+    private void closeCommChannel(String nameA, String nameB) {
+        if (nameA == null || nameB == null) return;
+        UUID uuidA = findUuid(nameA), uuidB = findUuid(nameB);
+        if (uuidA == null || uuidB == null) return;
+        Set<UUID> chA = commChannels.get(uuidA);
+        if (chA != null) chA.remove(uuidB);
+        Set<UUID> chB = commChannels.get(uuidB);
+        if (chB != null) chB.remove(uuidA);
+        notifyCommChange(uuidA, "§7[통신 채널 종료] §f" + nameB + "와(과)의 연결이 끊어졌습니다.");
+        notifyCommChange(uuidB, "§7[통신 채널 종료] §f" + nameA + "와(과)의 연결이 끊어졌습니다.");
+    }
+
+    private UUID findUuid(String playerName) {
+        return state.getAllPlayers().stream()
+            .filter(pd -> pd.name.equals(playerName))
+            .map(pd -> pd.uuid)
+            .findFirst().orElse(null);
+    }
+
+    private void notifyCommChange(UUID uuid, String msg) {
+        Player p = Bukkit.getPlayer(uuid);
+        if (p != null && p.isOnline()) p.sendMessage(msg);
     }
 
     // ──────────────────────────────────────────────────────────────
