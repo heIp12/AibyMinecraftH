@@ -113,10 +113,13 @@ public class RoleManager {
 
         for (JsonElement el : gdam.getAsJsonArray("roles")) {
             JsonObject r = el.getAsJsonObject();
+            if (!r.has("role_id")) continue;
             if (r.get("role_id").getAsString().equals(roleId)) {
                 StringBuilder sb = new StringBuilder();
-                sb.append("§e[배역: ").append(r.get("name").getAsString()).append("]\n");
-                sb.append("§7시작 위치: ").append(r.get("spawn_location").getAsString()).append("\n");
+                String name = r.has("name") ? r.get("name").getAsString() : roleId;
+                String spawnLoc = r.has("spawn_location") ? r.get("spawn_location").getAsString() : "알 수 없음";
+                sb.append("§e[배역: ").append(name).append("]\n");
+                sb.append("§7시작 위치: ").append(spawnLoc).append("\n");
 
                 if (r.has("initial_info")) {
                     sb.append("§7알고 있는 정보:\n");

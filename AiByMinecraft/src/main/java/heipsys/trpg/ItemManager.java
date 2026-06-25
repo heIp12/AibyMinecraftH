@@ -85,6 +85,7 @@ public class ItemManager {
     private ItemStack buildBook(JsonObject def, String title, String playerName) {
         ItemStack book = new ItemStack(Material.WRITTEN_BOOK);
         BookMeta meta = (BookMeta) book.getItemMeta();
+        if (meta == null) return book;
         meta.setTitle(title);
         meta.setAuthor(playerName);
         meta.displayName(Component.text(title));
@@ -102,8 +103,9 @@ public class ItemManager {
     }
 
     private ItemStack buildPaper(JsonObject def, String title, boolean isMap) {
-        ItemStack paper = new ItemStack(isMap ? Material.PAPER : Material.PAPER);
+        ItemStack paper = new ItemStack(Material.PAPER);
         var meta = paper.getItemMeta();
+        if (meta == null) return paper;
         meta.displayName(Component.text("§e" + title));
 
         // lore에 내용 추가

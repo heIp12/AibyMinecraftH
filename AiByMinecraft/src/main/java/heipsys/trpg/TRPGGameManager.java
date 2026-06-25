@@ -210,14 +210,27 @@ LUK 10+: 자주, 극적인 행운
 
             survivors.forEach(p -> {
                 pendingCreation.add(p.getUniqueId());
-                charGen.generate(p).thenAccept(pd -> {
-                    state.addPlayer(pd);
-                    plugin.getServer().getScheduler().runTask(plugin, () -> {
-                        p.sendMessage("§e§l─── 캐릭터 생성 ───");
-                        p.sendMessage(charGen.buildSheetMessage(pd, room, state.getCorruption().attempts + 1));
-                        dialogMan.showDiceConfirm(p, pd);
+                charGen.generate(p)
+                    .thenAccept(pd -> {
+                        state.addPlayer(pd);
+                        plugin.getServer().getScheduler().runTask(plugin, () -> {
+                            if (!p.isOnline()) {
+                                // 생성 도중 퇴장한 경우 → 대기 해제
+                                pendingCreation.remove(p.getUniqueId());
+                                checkAllConfirmed();
+                                return;
+                            }
+                            p.sendMessage("§e§l─── 캐릭터 생성 ───");
+                            p.sendMessage(charGen.buildSheetMessage(pd, room, state.getCorruption().attempts + 1));
+                            dialogMan.showDiceConfirm(p, pd);
+                        });
+                    })
+                    .exceptionally(ex -> {
+                        plugin.getLogger().warning("캐릭터 생성 실패 (" + p.getName() + "): " + ex.getMessage());
+                        pendingCreation.remove(p.getUniqueId());
+                        plugin.getServer().getScheduler().runTask(plugin, this::checkAllConfirmed);
+                        return null;
                     });
-                });
             });
         });
     }
@@ -374,6 +387,12 @@ LUK 10+: 자주, 극적인 행운
             .map(pd -> Bukkit.getPlayer(pd.uuid))
             .filter(Objects::nonNull)
             .collect(Collectors.toList());
+
+        if (players.isEmpty()) {
+            broadcast("§c[GM] 접속 중인 플레이어가 없어 배역 배정을 취소합니다.");
+            currentPhase = Phase.IDLE;
+            return;
+        }
 
         Map<UUID, RoleManager.RoleAssignment> assignments = roleMan.assignRoles(players);
 

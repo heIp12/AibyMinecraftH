@@ -61,7 +61,7 @@ public class GameStateManager {
     private final List<String>                   activeNpcs = new ArrayList<>();
     private final List<String>                   discoveredClues = new ArrayList<>();
     private final List<String>                   foundItems = new ArrayList<>();
-    private final List<EventLogEntry>            eventLog   = new ArrayList<>();
+    private final List<EventLogEntry>            eventLog   = Collections.synchronizedList(new ArrayList<>());
 
     // ──────────────────────────────────────────────────────────────
     //  세션 라이프사이클
@@ -140,12 +140,13 @@ public class GameStateManager {
     /** 일상 턴 소비. 0이 되면 괴담 파트 시작. true 반환 시 파트 전환 */
     public boolean consumeDailyTurn() {
         if (!dailyPhase) return false;
-        dailyTurnsLeft--;
-        if (dailyTurnsLeft <= 0) {
-            dailyPhase    = false;
-            timelineStage = 1;
+        if (dailyTurnsLeft <= 1) {
+            dailyTurnsLeft = 0;
+            dailyPhase     = false;
+            timelineStage  = 1;
             return true;
         }
+        dailyTurnsLeft--;
         return false;
     }
 
@@ -173,8 +174,10 @@ public class GameStateManager {
     public int                 getLogSize()            { return eventLog.size(); }
 
     public List<EventLogEntry> getRecentLog(int n) {
-        int start = Math.max(0, eventLog.size() - n);
-        return new ArrayList<>(eventLog.subList(start, eventLog.size()));
+        synchronized (eventLog) {
+            int start = Math.max(0, eventLog.size() - n);
+            return new ArrayList<>(eventLog.subList(start, eventLog.size()));
+        }
     }
 
     // ──────────────────────────────────────────────────────────────

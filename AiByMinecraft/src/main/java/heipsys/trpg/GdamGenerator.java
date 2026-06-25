@@ -292,7 +292,12 @@ public class GdamGenerator {
         try {
             if (keyFile.exists()) {
                 byte[] bytes = Files.readAllBytes(keyFile.toPath());
-                return new SecretKeySpec(bytes, "AES");
+                if (bytes.length != 32) {
+                    // 손상된 키 파일 → 재생성
+                    keyFile.delete();
+                } else {
+                    return new SecretKeySpec(bytes, "AES");
+                }
             }
             KeyGenerator kg = KeyGenerator.getInstance("AES");
             kg.init(256, new SecureRandom());

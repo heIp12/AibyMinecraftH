@@ -280,18 +280,22 @@ public class AiManager {
             throw new RuntimeException("API " + response.statusCode() + ": " + response.body().substring(0, Math.min(200, response.body().length())));
         }
 
-        JsonObject json = gson.fromJson(response.body(), JsonObject.class);
-        return switch (apiType) {
-            case "claude" -> json.getAsJsonArray("content").get(0)
-                                 .getAsJsonObject().get("text").getAsString();
-            case "gemini" -> json.getAsJsonArray("candidates").get(0)
-                                 .getAsJsonObject().getAsJsonObject("content")
-                                 .getAsJsonArray("parts").get(0)
-                                 .getAsJsonObject().get("text").getAsString();
-            default       -> json.getAsJsonArray("choices").get(0)
-                                 .getAsJsonObject().getAsJsonObject("message")
-                                 .get("content").getAsString();
-        };
+        try {
+            JsonObject json = gson.fromJson(response.body(), JsonObject.class);
+            return switch (apiType) {
+                case "claude" -> json.getAsJsonArray("content").get(0)
+                                     .getAsJsonObject().get("text").getAsString();
+                case "gemini" -> json.getAsJsonArray("candidates").get(0)
+                                     .getAsJsonObject().getAsJsonObject("content")
+                                     .getAsJsonArray("parts").get(0)
+                                     .getAsJsonObject().get("text").getAsString();
+                default       -> json.getAsJsonArray("choices").get(0)
+                                     .getAsJsonObject().getAsJsonObject("message")
+                                     .get("content").getAsString();
+            };
+        } catch (Exception e) {
+            throw new RuntimeException("API 응답 파싱 실패: " + response.body().substring(0, Math.min(200, response.body().length())), e);
+        }
     }
 
     private JsonObject msg(String role, String content) {
