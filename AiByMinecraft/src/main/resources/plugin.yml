@@ -4,14 +4,6 @@ version: 1.0
 api-version: 1.21
 description: "heIp12 games"
 commands:
-  start:
-    description: "Battle game start"
-    usage: "/start <time>"
-    permission: op
-  r:
-    description: "Server Reload"
-    usage: "/r"
-    permission: op
   trpg:
     description: "TRPG 시스템 커맨드"
     usage: "/trpg <start|stop|status|retry|help>"

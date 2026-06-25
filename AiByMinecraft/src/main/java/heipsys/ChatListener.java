@@ -17,37 +17,24 @@ import org.bukkit.plugin.Plugin;
 
 public class ChatListener implements Listener {
 
-    private final Plugin            plugin;
-    private final GameManager       gameManager;
-    private final TRPGGameManager   trpgManager;
+    private final Plugin           plugin;
+    private final TRPGGameManager  trpgManager;
 
-    public ChatListener(Plugin plugin, GameManager gameManager, TRPGGameManager trpgManager) {
+    public ChatListener(Plugin plugin, TRPGGameManager trpgManager) {
         this.plugin      = plugin;
-        this.gameManager = gameManager;
         this.trpgManager = trpgManager;
     }
 
     @EventHandler
     public void onChat(AsyncChatEvent event) {
+        if (!trpgManager.isActive()) return;
+
         Player player  = event.getPlayer();
         String message = PlainTextComponentSerializer.plainText().serialize(event.message());
 
-        // TRPG 세션이 활성화된 경우 — TRPG가 우선
-        if (trpgManager.isActive()) {
-            event.setCancelled(true);
-            // 메인 스레드에서 처리 (Bukkit API 사용 위해)
-            Bukkit.getScheduler().runTask(plugin, () ->
-                trpgManager.handleChat(player, message));
-            return;
-        }
-
-        // 기존 배틀 게임
-        if (!gameManager.isGameRunning()) return;
-        BattleSession session = gameManager.getSessionByPlayer(player);
-        if (session == null) return;
-
         event.setCancelled(true);
-        session.onPlayerActionDeclare(player, message);
+        Bukkit.getScheduler().runTask(plugin, () ->
+            trpgManager.handleChat(player, message));
     }
 
     @EventHandler

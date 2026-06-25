@@ -160,7 +160,12 @@ public class GdamGenerator {
             .thenApply(raw -> {
                 try {
                     String cleaned = stripMarkdown(raw);
-                    JsonObject gdam = gson.fromJson(cleaned, JsonObject.class);
+                    JsonElement el = gson.fromJson(cleaned, JsonElement.class);
+                    if (el == null || !el.isJsonObject()) {
+                        throw new RuntimeException("AI가 JSON 객체를 반환하지 않음 (미리보기: "
+                            + cleaned.substring(0, Math.min(80, cleaned.length())) + ")");
+                    }
+                    JsonObject gdam = el.getAsJsonObject();
 
                     // seed 및 room 주입
                     String seed = generateSeed();
@@ -254,10 +259,12 @@ public class GdamGenerator {
     }
 
     private String stripMarkdown(String raw) {
-        String s = raw.replaceAll("```json", "").replaceAll("```", "").trim();
+        // 마크다운 코드블록 제거
+        String s = raw.replaceAll("(?s)```json\\s*", "").replaceAll("```", "").trim();
+        // 첫 { 부터 마지막 } 까지 추출 (앞뒤 설명 텍스트 제거)
         int start = s.indexOf('{');
         int end   = s.lastIndexOf('}');
-        if (start != -1 && end != -1 && start <= end) return s.substring(start, end + 1);
+        if (start != -1 && end != -1 && start < end) return s.substring(start, end + 1);
         return s;
     }
 
