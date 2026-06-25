@@ -195,6 +195,8 @@ public class AiManager {
             .replaceAll("<SPAWN[^/]*/?>", "")
             .replaceAll("<COMM [^/]*/?>", "")
             .replaceAll("<COMM_CLOSE [^/]*/?>", "")
+            .replaceAll("<CONTACT_REVEAL [^/]*/?>", "")
+            .replaceAll("<CONTACT_CHANGE [^/]*/?>", "")
             .trim();
     }
 
@@ -389,6 +391,42 @@ public class AiManager {
         extractAttr(attrs, "from").ifPresent(v -> obj.addProperty("from", v));
         extractAttr(attrs, "to").ifPresent(v -> obj.addProperty("to", v));
         return obj.size() > 0 ? obj : null;
+    }
+
+    /** <CONTACT_REVEAL to="A" target="B"/> 모두 파싱 → [{to, target}, ...] */
+    public java.util.List<String[]> parseContactRevealTags(String response) {
+        java.util.List<String[]> out = new ArrayList<>();
+        final String PREFIX = "<CONTACT_REVEAL ";
+        int from = 0;
+        while (true) {
+            int idx = response.indexOf(PREFIX, from);
+            if (idx == -1) break;
+            int end = response.indexOf("/>", idx);
+            if (end == -1) break;
+            String attrs = response.substring(idx + PREFIX.length(), end);
+            String to     = extractAttr(attrs, "to").orElse(null);
+            String target = extractAttr(attrs, "target").orElse(null);
+            if (to != null && target != null) out.add(new String[]{to, target});
+            from = end + 2;
+        }
+        return out;
+    }
+
+    /** <CONTACT_CHANGE player="X"/> 모두 파싱 → [X, ...] */
+    public java.util.List<String> parseContactChangeTags(String response) {
+        java.util.List<String> out = new ArrayList<>();
+        final String PREFIX = "<CONTACT_CHANGE ";
+        int from = 0;
+        while (true) {
+            int idx = response.indexOf(PREFIX, from);
+            if (idx == -1) break;
+            int end = response.indexOf("/>", idx);
+            if (end == -1) break;
+            String attrs = response.substring(idx + PREFIX.length(), end);
+            extractAttr(attrs, "player").ifPresent(out::add);
+            from = end + 2;
+        }
+        return out;
     }
 
     private java.util.Optional<String> extractAttr(String attrs, String name) {

@@ -125,16 +125,30 @@ spawn_timeline이 된 배역이 등장할 시점:
 이 태그 출력 시 해당 플레이어가 스토리에 진입한다.
 
 ### 플레이어 간 직접 통신
-플레이어가 "@이름 메시지" 형식으로 통신 시도 가능.
-- 같은 공간(zone): 시스템이 자동 직접 전달 — GM 개입 없음
-- 기기 소지(무전기·전화·라디오 등): 시스템이 자동 직접 전달 — GM 개입 없음
-- 간접 방법(연기신호·메모 투척·물리적 중계 등): GM이 행동으로 처리 후 서술
+플레이어는 "@이름 메시지" 또는 "@번호 메시지" 형식으로 통신을 시도한다.
+시스템이 아래를 자동 판정하므로 GM은 관여하지 않는다:
+- 같은 공간(zone): 대면 직접 전달 (번호 불필요, 자동 번호 교환)
+- 기기(전화·무전기 등) + 상대 연락처를 앎: 기기 통신 직접 전달
+연기신호·메모 투척·물리적 중계 같은 간접 방법은 일반 행동으로 입력되며 GM이 서술로 처리한다.
 
-GM이 기기 통신 채널을 개설할 때 반드시 아래 태그 출력:
+GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
 <COMM from="플레이어A" to="플레이어B" method="무전기"/>
-
-GM이 채널을 종료할 때:
+채널 종료 시:
 <COMM_CLOSE from="플레이어A" to="플레이어B"/>
+
+### 연락처 시스템 ★
+모든 플레이어는 고유한 비공개 연락처(번호)를 가진다.
+1회차에서 플레이어들은 서로의 연락처를 모르며, 따라서 기기 통신이 불가능하다.
+연락처를 알게 되는 경로:
+- 대면(같은 zone) 접촉으로 자동 교환 (시스템 처리)
+- 특성(유명인·해커 등)으로 사전에 앎 (시스템 처리)
+- 스토리 중 발견(메모·명함·NPC가 알려줌 등) 시 아래 태그 출력:
+  <CONTACT_REVEAL to="알게된플레이어" target="대상플레이어"/>
+임의로 연락처를 알려주지 마라. 1회차 기본은 "직접 만나야 번호를 안다".
+
+오염 2단계 이상에서, 괴담이 통신을 교란할 때 특정 플레이어의 연락처를 바꿀 수 있다:
+<CONTACT_CHANGE player="플레이어명"/>
+출력 시 그 플레이어의 모든 연락처(번호·이메일·SNS)가 바뀌고 타인이 알던 연락처는 무효가 된다.
 
 ### GM 내부 비공개 항목 (절대 공개 금지)
 - 괴담의 정체 및 스케일
@@ -154,11 +168,18 @@ GM이 채널을 종료할 때:
     //  세션 단계
     // ──────────────────────────────────────────────────────────────
 
-    private enum Phase    { IDLE, CHAR_CREATION, ROLE_ASSIGNMENT, DAILY, HORROR, CLEAR, GAMEOVER }
-    private enum CommMode { DIRECT, DEVICE, GM_ROUTED }
+    private enum Phase { IDLE, CHAR_CREATION, ROLE_ASSIGNMENT, DAILY, HORROR, CLEAR, GAMEOVER }
 
     private static final Set<String> COMM_ITEM_KEYWORDS = Set.of(
         "전화", "phone", "폰", "무전", "walkie", "radio", "라디오", "휴대폰", "핸드폰", "스마트폰", "통신", "intercom", "인터콤"
+    );
+    /** 이 특성을 가진 플레이어의 연락처는 모두가 안다 (공인 연락처) */
+    private static final Set<String> CELEBRITY_TRAIT_KEYWORDS = Set.of(
+        "유명", "셀럽", "스타", "인플루언서", "연예인", "celebrity", "famous"
+    );
+    /** 이 특성을 가진 플레이어는 모두의 연락처를 안다 (정보 수집) */
+    private static final Set<String> HACKER_TRAIT_KEYWORDS = Set.of(
+        "해커", "해킹", "hacker", "도청", "감청", "스토커", "흥신소", "탐정", "정보상", "정보원"
     );
 
     private Phase currentPhase = Phase.IDLE;
@@ -455,6 +476,10 @@ GM이 채널을 종료할 때:
             });
         }
 
+        // 연락처: 무작위 번호 부여 + 특성 기반 사전 지식 적용
+        assignContactIds();
+        applyTraitContacts();
+
         for (var entry : assignments.entrySet()) {
             Player p = Bukkit.getPlayer(entry.getKey());
             if (p == null) continue;
@@ -462,6 +487,13 @@ GM이 채널을 종료할 때:
             p.sendMessage("§e§l[배역 배정]");
             p.sendMessage(roleMan.getRoleBriefing(asgn.roleId(), corruptMan.getLevel()));
             giveRoleStartItems(p, asgn.roleId());
+
+            PlayerData myPd = state.getPlayer(p);
+            if (myPd != null && !myPd.contactId.isEmpty()) {
+                p.sendMessage("§7당신의 연락처: §f" + myPd.contactId
+                    + " §8(상대와 연락하려면 서로의 연락처를 알아야 합니다)");
+                announceKnownContacts(p, myPd);
+            }
 
             if (isImmediateSpawn(asgn.roleId())) {
                 spawnedPlayers.add(p.getUniqueId());
@@ -652,6 +684,10 @@ GM이 채널을 종료할 때:
                 );
             }
 
+            // 5b. 연락처 발견 / 변경 처리
+            ai.parseContactRevealTags(raw).forEach(rev -> revealContact(rev[0], rev[1]));
+            ai.parseContactChangeTags(raw).forEach(this::changeContact);
+
             // 6. 일상 파트 턴 소비
             if (state.isDailyPhase()) {
                 boolean phaseChanged = state.consumeDailyTurn();
@@ -820,6 +856,10 @@ GM이 채널을 종료할 때:
             scoreMan.update(player, pd, state.getRoomNumber());
             player.sendMessage("§a세션에 재접속했습니다!");
             player.sendMessage(charGen.buildSheetMessage(pd, state.getRoomNumber(), state.getCorruption().attempts + 1));
+            if (!pd.contactId.isEmpty()) {
+                player.sendMessage("§7당신의 연락처: §f" + pd.contactId);
+                announceKnownContacts(player, pd);
+            }
             traitBtn.sendTraitButtons(player, pd);
         } else {
             player.sendMessage("§c이 세션의 참가자가 아닙니다. 게임은 시작 전에 참여해야 합니다.");
@@ -1069,22 +1109,24 @@ GM이 채널을 종료할 때:
         String content = raw.substring(1).trim(); // '@' 제거
         int space = content.indexOf(' ');
         if (space == -1) {
-            sender.sendMessage("§c사용법: @플레이어이름 메시지");
+            sender.sendMessage("§c사용법: @이름(또는 번호) 메시지");
             return;
         }
-        String targetName = content.substring(0, space);
-        String message    = content.substring(space + 1).trim();
+        String token   = content.substring(0, space);
+        String message = content.substring(space + 1).trim();
         if (message.isEmpty()) {
-            sender.sendMessage("§c사용법: @플레이어이름 메시지");
+            sender.sendMessage("§c사용법: @이름(또는 번호) 메시지");
             return;
         }
 
-        PlayerData targetPd = state.getAllPlayers().stream()
-            .filter(pd -> pd.name.equalsIgnoreCase(targetName) && !pd.isDead)
-            .findFirst().orElse(null);
+        // 대상 식별: 숫자면 연락처 번호로 다이얼, 아니면 이름
+        boolean dialedByNumber = token.matches("\\d{3,5}");
+        PlayerData targetPd = dialedByNumber ? findByContactId(token) : findByName(token);
 
         if (targetPd == null) {
-            sender.sendMessage("§c'" + targetName + "' 플레이어를 찾을 수 없습니다.");
+            sender.sendMessage(dialedByNumber
+                ? "§c'" + token + "' 번호로 연결되지 않습니다. (없는 번호)"
+                : "§c'" + token + "' 플레이어를 찾을 수 없습니다.");
             return;
         }
         if (targetPd.uuid.equals(sender.getUniqueId())) {
@@ -1092,42 +1134,153 @@ GM이 채널을 종료할 때:
             return;
         }
 
-        switch (checkCommValidity(sender.getUniqueId(), senderPd, targetPd)) {
-            case DIRECT -> deliverDirectMessage(sender, senderPd, targetPd, message, false);
-            case DEVICE -> deliverDirectMessage(sender, senderPd, targetPd, message, true);
-            case GM_ROUTED -> {
-                // 간접 통신 시도 → GM이 판정
-                String gmAction = "[통신 시도] " + senderPd.name + "이(가) " + targetPd.name
-                    + "에게 메시지를 전달하려 한다: \"" + message + "\"";
-                boolean accepted = turnMan.handleAction(sender, gmAction, gmSystemPrompt);
-                if (!accepted) {
-                    sender.sendMessage("§7(현재 행동 처리 중입니다. 잠시 기다려주세요.)");
-                } else {
-                    sender.sendMessage("§7[통신 시도 중... GM이 결과를 처리합니다]");
-                }
+        // 1) 같은 구역 → 대면 직접 전달 (번호 불필요, 자동 번호 교환)
+        if (!senderPd.zone.isEmpty() && senderPd.zone.equals(targetPd.zone)) {
+            deliverDirectMessage(sender, senderPd, targetPd, message, false);
+            exchangeContacts(senderPd, targetPd);
+            return;
+        }
+
+        // 2) GM이 개설한 기기 채널 → 번호 없이도 전달
+        Set<UUID> channels = commChannels.get(sender.getUniqueId());
+        if (channels != null && channels.contains(targetPd.uuid)) {
+            deliverDirectMessage(sender, senderPd, targetPd, message, true);
+            exchangeContacts(senderPd, targetPd);
+            return;
+        }
+
+        // 3) 기기 통신: 양쪽 모두 통신 기기 보유 필요
+        if (!hasCommDevice(senderPd) || !hasCommDevice(targetPd)) {
+            sender.sendMessage("§c근처에 없고 통신 기기로도 닿지 않습니다. (직접 찾아가거나 다른 방법이 필요)");
+            return;
+        }
+
+        // 4) 연락처 지식 확인 — 번호를 직접 입력했거나, 한쪽이라도 상대 연락처를 알면 가능
+        boolean contactKnown = dialedByNumber
+            || senderPd.knownContacts.contains(targetPd.uuid)
+            || targetPd.knownContacts.contains(senderPd.uuid);
+        if (!contactKnown) {
+            sender.sendMessage("§c" + targetPd.name + "의 연락처를 모릅니다. 직접 만나거나 번호를 알아내야 합니다.");
+            return;
+        }
+
+        deliverDirectMessage(sender, senderPd, targetPd, message, true);
+        exchangeContacts(senderPd, targetPd);
+    }
+
+    /** 통신 기기(전화·무전기 등) 소지 여부 */
+    private boolean hasCommDevice(PlayerData pd) {
+        for (String id : pd.heldItemIds) {
+            String low = id.toLowerCase();
+            for (String kw : COMM_ITEM_KEYWORDS) if (low.contains(kw)) return true;
+        }
+        return false;
+    }
+
+    private PlayerData findByContactId(String id) {
+        return state.getAllPlayers().stream()
+            .filter(pd -> id.equals(pd.contactId) && !pd.isDead)
+            .findFirst().orElse(null);
+    }
+
+    private PlayerData findByName(String name) {
+        return state.getAllPlayers().stream()
+            .filter(pd -> pd.name.equalsIgnoreCase(name) && !pd.isDead)
+            .findFirst().orElse(null);
+    }
+
+    private PlayerData findAnyByName(String name) {
+        return state.getAllPlayers().stream()
+            .filter(pd -> pd.name.equalsIgnoreCase(name))
+            .findFirst().orElse(null);
+    }
+
+    /** 통신 성립 시 양쪽이 서로의 연락처를 알게 됨 (착신/대면 교환) */
+    private void exchangeContacts(PlayerData a, PlayerData b) {
+        if (a.knownContacts.add(b.uuid)) notifyContactLearned(a, b);
+        if (b.knownContacts.add(a.uuid)) notifyContactLearned(b, a);
+    }
+
+    private void notifyContactLearned(PlayerData learner, PlayerData subject) {
+        Player p = Bukkit.getPlayer(learner.uuid);
+        if (p != null && p.isOnline())
+            p.sendMessage("§a[연락처 입수] §f" + subject.name + " (" + subject.contactId + ")");
+    }
+
+    private void announceKnownContacts(Player p, PlayerData pd) {
+        if (pd.knownContacts.isEmpty()) return;
+        StringBuilder sb = new StringBuilder("§7알고 있는 연락처: §f");
+        boolean first = true;
+        for (UUID u : pd.knownContacts) {
+            PlayerData other = state.getPlayer(u);
+            if (other == null) continue;
+            if (!first) sb.append("§7, §f");
+            sb.append(other.name).append("(").append(other.contactId).append(")");
+            first = false;
+        }
+        if (!first) p.sendMessage(sb.toString());
+    }
+
+    // ── 연락처 부여 / 특성 사전지식 / 발견·변경 ──────────────────────
+
+    private void assignContactIds() {
+        for (PlayerData pd : state.getAllPlayers()) {
+            if (pd.contactId.isEmpty()) pd.contactId = generateContactId();
+        }
+    }
+
+    private String generateContactId() {
+        Set<String> used = new HashSet<>();
+        state.getAllPlayers().forEach(pd -> { if (!pd.contactId.isEmpty()) used.add(pd.contactId); });
+        Random rng = new Random();
+        String num;
+        int guard = 0;
+        do { num = String.valueOf(1000 + rng.nextInt(9000)); guard++; }
+        while (used.contains(num) && guard < 200);
+        return num;
+    }
+
+    private void applyTraitContacts() {
+        List<PlayerData> all = new ArrayList<>(state.getAllPlayers());
+        for (PlayerData pd : all) {
+            if (hasTraitKeyword(pd, CELEBRITY_TRAIT_KEYWORDS)) {
+                // 공인 → 모두가 이 사람의 연락처를 안다
+                for (PlayerData other : all) if (other != pd) other.knownContacts.add(pd.uuid);
+            }
+            if (hasTraitKeyword(pd, HACKER_TRAIT_KEYWORDS)) {
+                // 정보 수집가 → 이 사람은 모두의 연락처를 안다
+                for (PlayerData other : all) if (other != pd) pd.knownContacts.add(other.uuid);
             }
         }
     }
 
-    private CommMode checkCommValidity(UUID senderId, PlayerData senderPd, PlayerData targetPd) {
-        // 같은 구역 → 직접 전달
-        if (!senderPd.zone.isEmpty() && senderPd.zone.equals(targetPd.zone)) {
-            return CommMode.DIRECT;
+    private boolean hasTraitKeyword(PlayerData pd, Set<String> keywords) {
+        for (TraitData t : pd.traits) {
+            if (t.name == null) continue;
+            String low = t.name.toLowerCase();
+            for (String kw : keywords) if (low.contains(kw.toLowerCase())) return true;
         }
-        // GM이 개설한 채널
-        Set<UUID> channels = commChannels.get(senderId);
-        if (channels != null && channels.contains(targetPd.uuid)) {
-            return CommMode.DEVICE;
-        }
-        // 같은 종류의 통신 기기를 양쪽 모두 소지
-        for (String keyword : COMM_ITEM_KEYWORDS) {
-            boolean senderHas = senderPd.heldItemIds.stream()
-                .anyMatch(id -> id.toLowerCase().contains(keyword));
-            boolean targetHas = targetPd.heldItemIds.stream()
-                .anyMatch(id -> id.toLowerCase().contains(keyword));
-            if (senderHas && targetHas) return CommMode.DEVICE;
-        }
-        return CommMode.GM_ROUTED;
+        return false;
+    }
+
+    /** GM이 스토리로 연락처를 알려줌: to 플레이어가 target 플레이어의 연락처를 알게 됨 */
+    private void revealContact(String toName, String targetName) {
+        PlayerData to     = findAnyByName(toName);
+        PlayerData target = findAnyByName(targetName);
+        if (to == null || target == null || to == target) return;
+        if (to.knownContacts.add(target.uuid)) notifyContactLearned(to, target);
+    }
+
+    /** 오염으로 연락처 교란: 해당 플레이어의 번호가 바뀌고 타인의 지식이 무효화됨 */
+    private void changeContact(String name) {
+        PlayerData pd = findAnyByName(name);
+        if (pd == null) return;
+        pd.contactId = generateContactId();
+        state.getAllPlayers().forEach(o -> { if (o != pd) o.knownContacts.remove(pd.uuid); });
+        Player p = Bukkit.getPlayer(pd.uuid);
+        if (p != null && p.isOnline())
+            p.sendMessage("§5[연락처 변경] 당신의 연락처가 §f" + pd.contactId
+                + "§5(으)로 바뀌었습니다. 이전 연락처로는 더 이상 닿지 않습니다.");
     }
 
     private void deliverDirectMessage(Player sender, PlayerData senderPd, PlayerData targetPd,

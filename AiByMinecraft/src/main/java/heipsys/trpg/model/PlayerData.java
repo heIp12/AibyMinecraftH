@@ -38,6 +38,11 @@ public class PlayerData {
     /** 현재 소지 중인 아이템 ID 집합 (통신 기기 추적 등에 사용) */
     public Set<String> heldItemIds = new HashSet<>();
 
+    /** 무작위 비공개 연락처 번호 (예: "1186"). 1회차에서 타인은 모름 */
+    public String contactId = "";
+    /** 이 플레이어가 연락처를 알고 있는 상대들의 UUID */
+    public final Set<UUID> knownContacts = new HashSet<>();
+
     // Base stats snapshot — used to reset on retry
     public int[] baseHp  = {6, 6};
     public int   baseStr = 5;
@@ -70,7 +75,8 @@ public class PlayerData {
         isDead    = false;
         status    = "normal";
         turnState = TurnState.IDLE;
-        heldItemIds.clear();
+        // heldItemIds / contactId / knownContacts 는 회차(재도전)에도 유지
+        // (마인크래프트 인벤토리와 학습한 연락처는 재도전 시 보존됨)
     }
 
     public String getStatsSummary() {
@@ -104,6 +110,9 @@ public class PlayerData {
         if (!traits.isEmpty()) {
             sb.append(" 특성:");
             traits.forEach(t -> sb.append(t.name).append("(").append(t.grade).append(")"));
+        }
+        if (!heldItemIds.isEmpty()) {
+            sb.append(" 소지품:").append(String.join(",", heldItemIds));
         }
         sb.append(" 상태:").append(status).append(" 위치:").append(zone.isEmpty() ? "?" : zone);
         return sb.toString();
