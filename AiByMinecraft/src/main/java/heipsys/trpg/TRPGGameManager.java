@@ -241,7 +241,7 @@ LUK 10+: 자주, 극적인 행운
             scoreMan.clear(p);
             dialogMan.clearDialog(p);
         });
-        itemMan.reclaimChapterItems(Bukkit.getOnlinePlayers());
+        itemMan.reclaimChapterItems(new ArrayList<>(Bukkit.getOnlinePlayers()));
         state.endSession(resetCorruption);
         ai.clearAll();
         pendingCreation.clear();
@@ -481,7 +481,7 @@ LUK 10+: 자주, 극적인 행운
             // 2. ITEM_GRANT 파싱 및 처리
             JsonObject itemGrant = ai.parseItemGrant(raw);
             if (itemGrant != null) {
-                itemMan.processGrant(itemGrant, Bukkit.getOnlinePlayers());
+                itemMan.processGrant(itemGrant, new ArrayList<>(Bukkit.getOnlinePlayers()));
             }
 
             // 3. 서술 텍스트 출력 (태그 제거)
