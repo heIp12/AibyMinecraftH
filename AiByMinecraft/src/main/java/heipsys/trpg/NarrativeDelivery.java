@@ -53,11 +53,11 @@ public class NarrativeDelivery {
         String s = raw;
         s = s.replace('“', '"').replace('”', '"');
         s = s.replaceAll("(?m)^\\s*#{1,6}\\s*", "");
-        s = s.replaceAll("\\*\\*(.+?)\\*\\*", "§e$1§f");
-        s = s.replaceAll("\\*(.+?)\\*",       "§e$1§f");
-        s = s.replaceAll("`(.+?)`",           "§e$1§f");
+        s = s.replaceAll("\\*\\*(.+?)\\*\\*", "§e$1§7");
+        s = s.replaceAll("\\*(.+?)\\*",       "§e$1§7");
+        s = s.replaceAll("`(.+?)`",           "§e$1§7");
         s = s.replaceAll("(?m)^\\s*[-•]\\s+", "");
-        s = s.replaceAll("\"([^\"]+)\"", "§b\"$1\"§f");
+        s = s.replaceAll("\"([^\"]+)\"", "§b\"$1\"§7");
         return s;
     }
 
@@ -96,17 +96,21 @@ public class NarrativeDelivery {
 
     /**
      * 문단 내 각 줄을 MAX_CHAT_CHARS 이하로 분할해 전송.
-     * 마지막에 §8의 구분선으로 문단 경계 표시.
+     * 줄 사이에 빈 줄을 삽입하고, 문단 끝에 구분선 추가.
      */
     private void sendParagraph(Player player, String para) {
+        boolean first = true;
         for (String rawLine : para.split("\n")) {
             if (rawLine.isBlank()) continue;
-            for (String segment : hardWrap(rawLine)) {
-                player.sendMessage("§f" + segment);
+            if (!first) player.sendMessage(""); // 줄 사이 여백
+            first = false;
+            List<String> segments = hardWrap(rawLine);
+            for (String segment : segments) {
+                player.sendMessage("§7" + segment);
             }
         }
-        // 문단 구분선 (다음 문단과 시각적으로 분리)
-        player.sendMessage("§8·");
+        // 문단 구분선
+        player.sendMessage("§8 ─────────────");
     }
 
     /**
