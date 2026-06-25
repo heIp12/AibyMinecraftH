@@ -541,12 +541,33 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             return;
         }
         broadcast("§e[TRPG] 재도전합니다. 오염도 상승!");
+
+        // 이전 회차의 잔여 행동·서술·통신을 완전히 정리 (이전 플레이어 진행 방지)
+        turnMan.cancelAll();
+        narrativeDelivery.clearAll();
+        ai.clearAll();
+
+        // 스탯/상태를 기본값으로 리셋 (HP/SAN 만회, isDead/puppet 해제)
         state.onRetry();
         broadcast("§c오염 단계: §f" + corruptMan.getLevel() + " (" + corruptMan.getAttempts() + "회차)");
-        ai.clearAll();
+
+        // 등장 상태·대기 서술·통신 채널 초기화
         spawnedPlayers.clear();
         preSpawnCallCounts.clear();
+        commChannels.clear();
+
         gmSystemPrompt = buildGmPrompt(state.getGdamData());
+
+        // 배역 스탯 재적용 + 등장 상태 재설정 (resetToBase로 제거된 배역 보정 복구)
+        // 배역 자체(roleId/zone)와 특성은 resetToBase에서 유지되므로 재배정 불필요
+        for (PlayerData pd : state.getAllPlayers()) {
+            JsonObject roleData = getRoleDataById(pd.roleId);
+            if (roleData != null) applyRoleStats(pd, roleData);
+            if (isImmediateSpawn(pd.roleId)) spawnedPlayers.add(pd.uuid);
+            Player rp = Bukkit.getPlayer(pd.uuid);
+            if (rp != null && rp.isOnline()) scoreMan.update(rp, pd, state.getRoomNumber());
+        }
+
         currentPhase = Phase.DAILY;
         startDailyPhase();
     }
@@ -1079,6 +1100,12 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
 
         if (!state.hasPlayer(player.getUniqueId())) return; // 참여자가 아님
 
+        // 게임 종료(엔딩) 상태: 모든 행동 차단. 재도전/포기만 가능
+        if (currentPhase == Phase.GAMEOVER) {
+            player.sendMessage("§8(게임이 종료되었습니다. §f/trpg retry§8 또는 §f/trpg stop§8 을 기다리세요.)");
+            return;
+        }
+
         PlayerData pd = state.getPlayer(player);
         if (pd == null || pd.isDead) return;
 
@@ -1123,6 +1150,9 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
 
     private void onGmResponse(TurnManager.GmResponse response) {
         plugin.getServer().getScheduler().runTask(plugin, () -> {
+            // 게임이 이미 종료(엔딩)됐으면 뒤늦게 도착한 응답은 무시 (이전 회차 진행 방지)
+            if (currentPhase == Phase.GAMEOVER || currentPhase == Phase.IDLE) return;
+
             String raw = response.rawText();
             Player player = response.player();
 
@@ -1367,6 +1397,8 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     private void onBadEnding(String reasonLabel) {
         if (currentPhase == Phase.GAMEOVER) return;
         currentPhase = Phase.GAMEOVER;
+        // 진행 중이던 다른 플레이어의 행동을 즉시 중단 (엔딩 후 진행 방지)
+        turnMan.cancelAll();
         broadcast("§4§l[배드 엔딩]");
         broadcast("§c패인: §f" + reasonLabel);
         ai.callGmAi(gmSystemPrompt,
@@ -1465,6 +1497,10 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     private void handleTraitUse(Player player, String traitId) {
         PlayerData pd = state.getPlayer(player);
         if (pd == null) return;
+        if (currentPhase == Phase.GAMEOVER) {
+            player.sendMessage("§8(게임이 종료되었습니다.)");
+            return;
+        }
         if (pd.isDead) { player.sendMessage("§c사망 상태에서는 특성을 사용할 수 없습니다."); return; }
         if (!spawnedPlayers.contains(player.getUniqueId())) {
             player.sendMessage("§8(아직 이야기에 등장하지 않았습니다. 배역이 등장한 후 특성을 사용할 수 있습니다.)");
