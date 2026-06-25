@@ -440,7 +440,6 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         ai.clearAll();
         gmSystemPrompt = buildGmPrompt(state.getGdamData());
         currentPhase = Phase.DAILY;
-        broadcast("§7일상 파트부터 다시 시작합니다.");
         startDailyPhase();
     }
 
@@ -876,7 +875,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
 
             // initial_info를 GM 전달 컨텍스트에 포함 (장면 묘사에 자연스럽게 반영용)
             StringBuilder promptSb = new StringBuilder();
-            promptSb.append("일상 파트 시작. 배역 '").append(pd.roleId)
+            promptSb.append("게임 도입부 장면이다. 배역 '").append(pd.roleId)
                 .append("' 플레이어(").append(pd.name).append(")에게만 전달된다. ");
             promptSb.append("시작 위치: ").append(pd.zone.isEmpty() ? "?" : pd.zone).append(". ");
             JsonObject roleDataForPrologue = getRoleDataById(pd.roleId);
@@ -907,7 +906,8 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                     promptSb.append("— 직접 언급 금지, 장면 분위기에만 녹여낼 것.] ");
                 }
             }
-            promptSb.append("2인칭 시점의 일상 장면을 서술해줘. 다른 플레이어의 존재 직접 언급 금지. 괴담 암시 금지.");
+            promptSb.append("2인칭 시점의 일상 장면을 바로 서술해줘. 제목·헤더 붙이지 말 것. "
+                + "다른 플레이어의 존재 직접 언급 금지. 괴담 암시 금지.");
             String prompt = promptSb.toString();
 
             ai.callGmAiOnce(gmSystemPrompt, prompt)
@@ -1202,7 +1202,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
 
     private void onHorrorPhaseStart() {
         currentPhase = Phase.HORROR;
-        broadcast("§c§l─── 괴담이 시작됩니다 ───");
+        // 전환을 직접 고지하지 않는다(스포일러 방지). GM의 환경 서술로만 분위기를 바꾼다.
 
         compressor.compressDailyPhase().thenRun(() ->
             spawnedPlayers.forEach(uuid -> {
@@ -1211,8 +1211,8 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                 PlayerData pd = state.getPlayer(uuid);
                 String name = pd != null ? pd.name : "?";
                 ai.callGmAiOnce(gmSystemPrompt,
-                    "괴담 파트 시작. 플레이어(" + name + ")의 시점에서 타임라인이 시작됨을 "
-                    + "환경 변화(소리·냄새·온도 등)로만 암시해줘. 직접 언급 금지.")
+                    "분위기가 서서히 변하는 전환 시점이다. 플레이어(" + name + ")의 시점에서 "
+                    + "환경 변화(소리·냄새·온도 등)로만 불길함을 암시해줘. 제목 금지, 직접 언급 금지.")
                   .thenAccept(r -> plugin.getServer().getScheduler().runTask(plugin, () -> {
                       if (p.isOnline()) {
                           String narrative = ai.stripTags(r);
