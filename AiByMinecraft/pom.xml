@@ -48,26 +48,6 @@
 		        <release>21</release>
 		      </configuration>
 		    </plugin>
-	        <plugin>
-	            <artifactId>maven-antrun-plugin</artifactId>
-	            <version>1.8</version>
-	            <executions>
-	                <execution>
-	                    <id>copy-jar</id>
-	                    <phase>package</phase>
-	                    <configuration>
-	                        <target>
-	                            <copy
-	                                file="${project.build.directory}\${project.build.finalName}.jar"
-	                               	todir="C:\Users\user\Downloads\AiCraft\plugins" overwrite="true" />
-	                        </target>
-	                    </configuration>
-	                    <goals>
-	                        <goal>run</goal>
-	                    </goals>
-	                </execution>
-	            </executions>
-	        </plugin>
 	    </plugins>
 	</build>
     
@@ -112,6 +92,12 @@
 	        <groupId>org.json</groupId>
 	        <artifactId>json</artifactId>
 	        <version>20240303</version>
+	    </dependency>
+	    <!-- Gson (AI 응답 파싱) -->
+	    <dependency>
+	        <groupId>com.google.code.gson</groupId>
+	        <artifactId>gson</artifactId>
+	        <version>2.10.1</version>
 	    </dependency>
 	    <dependency>
 		  <groupId>org.reflections</groupId>

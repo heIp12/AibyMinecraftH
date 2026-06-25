@@ -1,0 +1,52 @@
+package heipsys.trpg;
+
+import heipsys.trpg.model.PlayerData;
+import heipsys.trpg.model.TraitData;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.event.ClickEvent;
+import net.kyori.adventure.text.event.HoverEvent;
+import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.TextDecoration;
+import org.bukkit.entity.Player;
+
+/**
+ * 능동적 특성 사용 버튼 (STEP 5-2).
+ * Adventure API 클릭 가능한 채팅 텍스트로 구현.
+ * active=true인 특성만 버튼 표시.
+ */
+public class TraitButtonManager {
+
+    /**
+     * 플레이어의 능동적 특성 목록을 클릭 가능 버튼으로 전송.
+     * 특성이 없으면 아무것도 보내지 않음.
+     */
+    public void sendTraitButtons(Player player, PlayerData pd) {
+        if (pd == null) return;
+
+        boolean hasActive = pd.traits.stream().anyMatch(t -> t.active);
+        if (!hasActive) return;
+
+        player.sendMessage(Component.text("§8[능동 특성] ", NamedTextColor.DARK_GRAY));
+
+        for (TraitData t : pd.traits) {
+            if (!t.active) continue;
+            Component btn = Component.text("[" + t.name + "]", NamedTextColor.AQUA, TextDecoration.BOLD)
+                .hoverEvent(HoverEvent.showText(
+                    Component.text("(" + t.grade + ") " + t.description + "\n§7클릭하여 발동", NamedTextColor.GRAY)))
+                .clickEvent(ClickEvent.runCommand("/trpg _use_trait " + t.id));
+            player.sendMessage(btn);
+        }
+    }
+
+    /**
+     * 특성 사용 버튼 클릭 → TRPGGameManager로 전달할 메시지 반환.
+     * "/trpg _use_trait <traitId>" 커맨드에서 호출.
+     */
+    public String buildTraitUseMessage(PlayerData pd, String traitId) {
+        return pd.traits.stream()
+            .filter(t -> t.id.equals(traitId))
+            .findFirst()
+            .map(t -> "[특성 발동] " + pd.name + "이(가) 특성 '" + t.name + "'을(를) 사용한다.")
+            .orElse(null);
+    }
+}

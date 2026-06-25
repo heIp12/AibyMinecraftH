@@ -1,5 +1,6 @@
 package heipsys;
 
+import heipsys.trpg.TRPGGameManager;
 import io.papermc.paper.event.player.AsyncChatEvent;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 
@@ -15,64 +16,58 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.Plugin;
 
 public class ChatListener implements Listener {
-    
-    private final Plugin plugin;
-    private final GameManager gameManager;
 
-    public ChatListener(Plugin plugin, GameManager gameManager) {
-        this.plugin = plugin;
+    private final Plugin            plugin;
+    private final GameManager       gameManager;
+    private final TRPGGameManager   trpgManager;
+
+    public ChatListener(Plugin plugin, GameManager gameManager, TRPGGameManager trpgManager) {
+        this.plugin      = plugin;
         this.gameManager = gameManager;
+        this.trpgManager = trpgManager;
     }
 
     @EventHandler
     public void onChat(AsyncChatEvent event) {
-        if (!gameManager.isGameRunning()) return;
-
-        Player player = event.getPlayer();
-        BattleSession session = gameManager.getSessionByPlayer(player);
-        
-        // 플레이어가 현재 전투 중인 세션이 없다면 (관전자, 부전승자 등) 일반 채팅 처리
-        if (session == null) return;
-        
+        Player player  = event.getPlayer();
         String message = PlainTextComponentSerializer.plainText().serialize(event.message());
+
+        // TRPG 세션이 활성화된 경우 — TRPG가 우선
+        if (trpgManager.isActive()) {
+            event.setCancelled(true);
+            // 메인 스레드에서 처리 (Bukkit API 사용 위해)
+            Bukkit.getScheduler().runTask(plugin, () ->
+                trpgManager.handleChat(player, message));
+            return;
+        }
+
+        // 기존 배틀 게임
+        if (!gameManager.isGameRunning()) return;
+        BattleSession session = gameManager.getSessionByPlayer(player);
+        if (session == null) return;
+
         event.setCancelled(true);
         session.onPlayerActionDeclare(player, message);
     }
-    
+
     @EventHandler
     public void onPlayerDeath(PlayerDeathEvent event) {
         Player player = event.getPlayer();
-
-        // 플레이어 사망 시 책(WRITTEN_BOOK) 드랍 방지
         event.getDrops().removeIf(item -> item != null && item.getType() == Material.WRITTEN_BOOK);
-
         Bukkit.getScheduler().runTask(plugin, () -> {
-            if (player.isDead()) {
-                player.spigot().respawn();
-            }
+            if (player.isDead()) player.spigot().respawn();
         });
     }
 
-    // [변경됨] 인벤토리 내에서 책을 클릭했을 때 책 UI를 열어줌
     @EventHandler
     public void onSpectatorClickBook(InventoryClickEvent event) {
-        // 클릭한 주체가 플레이어인지 확인
-        if (!(event.getWhoClicked() instanceof Player)) return;
-        
-        Player player = (Player) event.getWhoClicked();
-        
-        // 플레이어가 관전 모드일 때만 작동
-        if (player.getGameMode() == GameMode.SPECTATOR) {
-            ItemStack clickedItem = event.getCurrentItem();
-            
-            // 클릭한 아이템이 완성된 책인지 확인
-            if (clickedItem != null && clickedItem.getType() == Material.WRITTEN_BOOK) {
-                // 클릭 이벤트를 취소하여 아이템이 이동하거나 버려지는 것을 방지
-                event.setCancelled(true);
-                
-                // 플레이어 화면에 책 내용을 즉시 띄움 (인벤토리는 닫히고 책이 열림)
-                player.openBook(clickedItem);
-            }
+        if (!(event.getWhoClicked() instanceof Player player)) return;
+        if (player.getGameMode() != GameMode.SPECTATOR) return;
+
+        ItemStack clicked = event.getCurrentItem();
+        if (clicked != null && clicked.getType() == Material.WRITTEN_BOOK) {
+            event.setCancelled(true);
+            player.openBook(clicked);
         }
     }
 }
