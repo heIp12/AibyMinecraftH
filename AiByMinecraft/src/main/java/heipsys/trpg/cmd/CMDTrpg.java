@@ -82,7 +82,7 @@ public class CMDTrpg implements CommandExecutor, TabCompleter {
             return;
         }
         player.sendMessage("§e[TRPG 상태]");
-        player.sendMessage("§7방: §f" + state.getRoomNumber()
+        player.sendMessage("§7스테이지: §f" + state.getRoomNumber()
             + "  타임라인: §f" + (state.isDailyPhase() ? "일상(" + state.getDailyTurnsLeft() + "턴)" : state.getTimelineStage() + "단계")
             + "  오염: §f" + state.getCorruption().level);
         player.sendMessage("§7참여 인원: §f" + state.getTotalCount() + "명 (생존 " + state.getAliveCount() + "명)");
@@ -138,7 +138,7 @@ public class CMDTrpg implements CommandExecutor, TabCompleter {
         player.sendMessage("§f/trpg list §7— 저장된 세션 목록");
         player.sendMessage("§f/trpg stop  §7— 세션 종료 (OP)");
         player.sendMessage("§f/trpg retry §7— 재도전 (OP)");
-        player.sendMessage("§f/trpg next  §7— 다음 방으로 이동 (OP) — 클리어 후 새 시나리오 시작");
+        player.sendMessage("§f/trpg next  §7— 다음 스테이지로 이동 (OP) — 클리어 후 새 시나리오 시작");
         player.sendMessage("§f/trpg status §7— 현재 상태 확인");
         player.sendMessage("§f/join §7— 진행 중인 세션 참여");
     }

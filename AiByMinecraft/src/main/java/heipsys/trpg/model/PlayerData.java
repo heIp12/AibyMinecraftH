@@ -82,7 +82,7 @@ public class PlayerData {
         // (마인크래프트 인벤토리와 학습한 연락처는 재도전 시 보존됨)
     }
 
-    /** 챕터 종료 후 다음 방 진행 시: roleSpecific 특성 제거, 기본 스탯 복구, 역할 초기화 */
+    /** 챕터 종료 후 다음 스테이지 진행 시: roleSpecific 특성 제거, 기본 스탯 복구, 역할 초기화 */
     public void clearRoleData() {
         traits.removeIf(t -> t.roleSpecific);
         resetToBase();

@@ -6,6 +6,7 @@ import io.papermc.paper.dialog.Dialog;
 import io.papermc.paper.registry.data.dialog.ActionButton;
 import io.papermc.paper.registry.data.dialog.DialogBase;
 import io.papermc.paper.registry.data.dialog.action.DialogAction;
+import io.papermc.paper.registry.data.dialog.body.DialogBody;
 import io.papermc.paper.registry.data.dialog.type.DialogType;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickCallback;
@@ -103,8 +104,8 @@ public class DialogManager {
 
         Dialog dialog = Dialog.create(b -> b.empty()
             .base(DialogBase.builder(
-                    Component.text("캐릭터 생성  |  방 " + roomNumber + " · " + attempt + "회차"))
-                .body(body)
+                    Component.text("캐릭터 생성  |  스테이지 " + roomNumber + " · " + attempt + "회차"))
+                .body(List.of(DialogBody.plainMessage(body, 320)))
                 .build())
             .type(DialogType.multiAction(buttons, cancelBtn, 2))
         );

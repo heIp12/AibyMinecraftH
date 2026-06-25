@@ -23,7 +23,7 @@ import java.util.stream.Collectors;
 /**
  * TRPG 전체 게임 흐름 조율 (메인 오케스트레이터).
  *
- * 방 진행 구조:
+ * 스테이지 진행 구조:
  *   입장 → 캐릭터 생성(주사위) → 배역 배정 → 일상 파트 → 괴담 파트 → 클리어/실패
  *
  * ChatListener에서 호출하는 주요 진입점:
@@ -312,7 +312,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         }
 
         int room = state.isSessionActive() ? state.getRoomNumber() + 1 : 1;
-        broadcast("§e§l═══ TRPG 세션 시작 (방 " + room + ") ═══");
+        broadcast("§e§l═══ TRPG 세션 시작 (스테이지 " + room + ") ═══");
         broadcast("§7.gdam 파일을 생성 중입니다...");
 
         currentPhase = Phase.CHAR_CREATION;
@@ -426,7 +426,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     }
 
     // ══════════════════════════════════════════════════════════════
-    //  다음 방 (/trpg next)
+    //  다음 스테이지 (/trpg next)
     // ══════════════════════════════════════════════════════════════
 
     public void nextSession(Player admin) {
@@ -436,7 +436,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         }
 
         int nextRoom = state.getRoomNumber() + 1;
-        broadcast("§e§l═══ 다음 방으로 이동합니다 (방 " + nextRoom + ") ═══");
+        broadcast("§e§l═══ 다음 스테이지로 이동합니다 (스테이지 " + nextRoom + ") ═══");
         broadcast("§7새 시나리오를 생성 중입니다...");
 
         currentPhase = Phase.ROLE_ASSIGNMENT;

@@ -7,7 +7,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.scoreboard.*;
 
 /**
- * 사이드바 스코어보드: 체력/정신력/스탯/특성/방 정보 표시 (STEP 3-3).
+ * 사이드바 스코어보드: 체력/정신력/스탯/특성/스테이지 정보 표시 (STEP 3-3).
  * 타임라인 단계는 숫자 대신 '??' 표시.
  */
 public class ScoreboardManager {
@@ -45,7 +45,7 @@ public class ScoreboardManager {
         }
 
         set(obj, "§8─────────────────",              line--);
-        set(obj, "§f방: " + roomNumber + "방  §7타임라인: ??", line);
+        set(obj, "§f스테이지: " + roomNumber + "  §7타임라인: ??", line);
 
         player.setScoreboard(sb);
     }
