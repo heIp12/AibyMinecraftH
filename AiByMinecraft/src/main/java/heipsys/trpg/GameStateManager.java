@@ -98,7 +98,7 @@ public class GameStateManager {
         if (resetCorruption) corruption.reset();
     }
 
-    /** 다음 방으로 이동: 방 번호/씨드/gdam 업데이트. 플레이어 데이터는 호출자가 clearRoleData()로 처리. */
+    /** 다음 스테이지로 이동: 스테이지 번호/씨드/gdam 업데이트. 플레이어 데이터는 호출자가 clearRoleData()로 처리. */
     public void advanceToNextRoom(int nextRoom, String seed, JsonObject gdam) {
         roomNumber     = nextRoom;
         currentSeed    = seed;
