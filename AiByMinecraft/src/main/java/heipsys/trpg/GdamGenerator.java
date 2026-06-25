@@ -88,6 +88,15 @@ public class GdamGenerator {
 - 각 배역은 고유한 초기 정보 보유
 - 늦게 등장하는 배역은 knowledge_advantage: true
 
+## pre_spawn_beats 설계 원칙 ★
+- spawn_timeline이 "시작 즉시"이면 pre_spawn_beats: [] (빈 배열)
+- 늦게 등장하는 배역은 반드시 3~4개의 비트를 작성한다
+- 각 비트는 배역이 경험하는 실제 사건/행동 1~2문장 (GM 서술용)
+- 비트 순서: 1=일상 시작지점, 2=이야기로 이끌리는 계기, 3=이동/접근, 4=합류 직전 경험(단서/목격)
+- knowledge_advantage: true이면 마지막 비트에 반드시 중요 단서 목격 포함
+- 각 비트는 다음 비트로 자연스럽게 이어지도록 인과관계를 가진다
+- 예시(늦은 등장 배역): ["집에서 아침 루틴을 보내며 평소와 다른 뉴스를 무심코 본다", "지인에게 연락이 와 외출을 결심한다", "이동 중 이상한 목격담을 듣거나 직접 보게 된다", "목적지 근처에서 사건의 흔적을 발견하고 접근한다"]
+
 ## role_stats 설계 원칙 ★
 배역 고유 스탯 보정치. 기초 스탯(캐릭터 생성 주사위)에 더해지며, 챕터 종료 시 자동 제거된다.
 - 배역마다 개성 있는 보정을 반드시 1~3가지 부여하라 (모두 0인 배역 금지)
@@ -168,6 +177,7 @@ type 값 규칙: "written_book"=책/일기/문서류, "paper"=쪽지/메모, "ma
       "zone": "zone_A",
       "initial_info": [],
       "hidden_info": [],
+      "pre_spawn_beats": [],
       "start_item": [],
       "knowledge_advantage": false,
       "role_stats": {
