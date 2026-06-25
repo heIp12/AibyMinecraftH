@@ -816,22 +816,13 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                 UUID u = roleToUuid.get(r.getAsString());
                 if (u != null) uuids.add(u);
             }
-            // 서로 연락처 교환
+            // 서로 연락처 교환 (관계 서술은 GM이 프롤로그에서 자연스럽게 처리)
             for (int i = 0; i < uuids.size(); i++) {
                 PlayerData a = state.getPlayer(uuids.get(i));
                 if (a == null) continue;
                 for (int j = 0; j < uuids.size(); j++) {
                     if (i == j) continue;
                     a.knownContacts.add(uuids.get(j));
-                }
-            }
-            // 관계 유형 브로드캐스트
-            String relType = rel.has("type") ? rel.get("type").getAsString() : "";
-            String desc    = rel.has("description") ? rel.get("description").getAsString() : "";
-            for (UUID u : uuids) {
-                Player p = Bukkit.getPlayer(u);
-                if (p != null && p.isOnline() && !relType.isBlank()) {
-                    p.sendMessage("§e[관계] §f" + relType + (desc.isBlank() ? "" : " — " + desc));
                 }
             }
         }
@@ -858,10 +849,31 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             promptSb.append("시작 위치: ").append(pd.zone.isEmpty() ? "?" : pd.zone).append(". ");
             JsonObject roleDataForPrologue = getRoleDataById(pd.roleId);
             if (roleDataForPrologue != null && roleDataForPrologue.has("initial_info")) {
-                promptSb.append("[GM 전용 — 이 배역이 이미 알고 있는 배경 지식: ");
+                promptSb.append("[GM 전용 — 이 배역의 배경 지식: ");
                 roleDataForPrologue.getAsJsonArray("initial_info")
                     .forEach(i -> promptSb.append("(").append(i.getAsString()).append(") "));
-                promptSb.append("— 위 내용을 직접 나열하지 말고 장면 묘사에만 녹여낼 것.] ");
+                promptSb.append("— 직접 나열 금지, 장면 묘사에만 녹여낼 것.] ");
+            }
+            // 이 배역의 인간관계 컨텍스트 (GM이 프롤로그에 자연스럽게 반영)
+            JsonObject gdamForRel = state.getGdamData();
+            if (gdamForRel != null && gdamForRel.has("relationships")) {
+                List<String> myRels = new ArrayList<>();
+                for (var relEl : gdamForRel.getAsJsonArray("relationships")) {
+                    JsonObject rel = relEl.getAsJsonObject();
+                    if (!rel.has("roles")) continue;
+                    for (var rId : rel.getAsJsonArray("roles")) {
+                        if (rId.getAsString().equals(pd.roleId)) {
+                            String relDesc = rel.has("description") ? rel.get("description").getAsString() : "";
+                            if (!relDesc.isBlank()) myRels.add(relDesc);
+                            break;
+                        }
+                    }
+                }
+                if (!myRels.isEmpty()) {
+                    promptSb.append("[GM 전용 — 이 배역의 인간관계: ");
+                    myRels.forEach(r -> promptSb.append("(").append(r).append(") "));
+                    promptSb.append("— 직접 언급 금지, 장면 분위기에만 녹여낼 것.] ");
+                }
             }
             promptSb.append("2인칭 시점의 일상 장면을 서술해줘. 다른 플레이어의 존재 직접 언급 금지. 괴담 암시 금지.");
             String prompt = promptSb.toString();
