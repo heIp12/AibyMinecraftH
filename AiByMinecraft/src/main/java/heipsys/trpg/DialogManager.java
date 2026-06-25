@@ -36,31 +36,58 @@ public class DialogManager {
                                     Runnable onConfirm, Runnable onReroll) {
         activeDialog.put(player.getUniqueId(), DialogState.DICE_CONFIRM);
 
-        // 스탯을 수정 불가 body Component로 구성
+        // 스탯을 수정 불가 body Component로 구성 (마우스 오버레이 포함)
         var bodyBuilder = Component.text()
             .append(Component.text("나이 · 직업  ", NamedTextColor.GOLD))
             .append(Component.text(pd.age + "세  ·  " + pd.job, NamedTextColor.WHITE))
             .appendNewline()
-            .append(Component.text("체력  ", NamedTextColor.RED))
-            .append(Component.text(hpDisplay(pd.hp), NamedTextColor.WHITE))
-            .append(Component.text("    정신력  ", NamedTextColor.AQUA))
-            .append(Component.text(hpDisplay(pd.san), NamedTextColor.WHITE))
+            // 체력 — 라벨: 설명, 값: 원본 수치
+            .append(Component.text("체력  ", NamedTextColor.RED)
+                .hoverEvent(Component.text(
+                    "체력 (HP)\n현재: " + pd.hp[0] + " / 최대: " + pd.hp[1]
+                    + "\n피해를 받으면 감소하며, 0이 되면 사망합니다.", NamedTextColor.GRAY)))
+            .append(Component.text(hpDisplay(pd.hp), NamedTextColor.WHITE)
+                .hoverEvent(Component.text(
+                    "현재: " + pd.hp[0] + " / 최대: " + pd.hp[1]
+                    + "  (100 기준 환산 표시)", NamedTextColor.GRAY)))
+            .append(Component.text("    ", NamedTextColor.WHITE))
+            // 정신력 — 라벨: 설명, 값: 원본 수치
+            .append(Component.text("정신력  ", NamedTextColor.AQUA)
+                .hoverEvent(Component.text(
+                    "정신력 (SAN)\n현재: " + pd.san[0] + " / 최대: " + pd.san[1]
+                    + "\n공포·충격으로 감소. 0이 되면 이성을 잃습니다.", NamedTextColor.GRAY)))
+            .append(Component.text(hpDisplay(pd.san), NamedTextColor.WHITE)
+                .hoverEvent(Component.text(
+                    "현재: " + pd.san[0] + " / 최대: " + pd.san[1]
+                    + "  (100 기준 환산 표시)", NamedTextColor.GRAY)))
             .appendNewline()
-            .append(Component.text("근력 ", NamedTextColor.YELLOW))
-            .append(Component.text(String.valueOf(pd.str), NamedTextColor.WHITE))
-            .append(Component.text("   매력 ", NamedTextColor.YELLOW))
-            .append(Component.text(String.valueOf(pd.cha), NamedTextColor.WHITE))
-            .append(Component.text("   행운 ", NamedTextColor.YELLOW))
-            .append(Component.text(String.valueOf(pd.luk), NamedTextColor.WHITE))
-            .append(Component.text("   영감 ", NamedTextColor.YELLOW))
-            .append(Component.text(String.valueOf(pd.spr), NamedTextColor.WHITE));
+            // 2차 스탯 — 라벨에 판정 설명
+            .append(Component.text("근력 ", NamedTextColor.YELLOW)
+                .hoverEvent(Component.text("근력 (STR)\n물리 행동·격투·이동 판정에 영향", NamedTextColor.GRAY)))
+            .append(Component.text(String.valueOf(pd.str), NamedTextColor.WHITE)
+                .hoverEvent(Component.text("근력: " + pd.str, NamedTextColor.YELLOW)))
+            .append(Component.text("   매력 ", NamedTextColor.YELLOW)
+                .hoverEvent(Component.text("매력 (CHA)\n설득·협박·사교 판정에 영향", NamedTextColor.GRAY)))
+            .append(Component.text(String.valueOf(pd.cha), NamedTextColor.WHITE)
+                .hoverEvent(Component.text("매력: " + pd.cha, NamedTextColor.YELLOW)))
+            .append(Component.text("   행운 ", NamedTextColor.YELLOW)
+                .hoverEvent(Component.text("행운 (LUK)\n위기 탈출·우연한 발견 판정에 영향", NamedTextColor.GRAY)))
+            .append(Component.text(String.valueOf(pd.luk), NamedTextColor.WHITE)
+                .hoverEvent(Component.text("행운: " + pd.luk, NamedTextColor.YELLOW)))
+            .append(Component.text("   영감 ", NamedTextColor.YELLOW)
+                .hoverEvent(Component.text("영감 (SPR)\n직감·예지·정신 방어 판정에 영향", NamedTextColor.GRAY)))
+            .append(Component.text(String.valueOf(pd.spr), NamedTextColor.WHITE)
+                .hoverEvent(Component.text("영감: " + pd.spr, NamedTextColor.YELLOW)));
 
         if (!pd.traits.isEmpty()) {
             bodyBuilder.appendNewline()
                 .append(Component.text("특성:", NamedTextColor.LIGHT_PURPLE));
             for (TraitData t : pd.traits) {
+                // 특성 — 마우스 오버레이로 설명 + 사용 효과 표시
+                Component traitHover = buildTraitHover(t);
                 bodyBuilder.appendNewline()
-                    .append(Component.text("  ▸ (" + t.grade + ") " + t.name, NamedTextColor.GRAY));
+                    .append(Component.text("  ▸ (" + t.grade + ") " + t.name, NamedTextColor.GRAY)
+                        .hoverEvent(traitHover));
             }
         }
         Component body = bodyBuilder.build();
@@ -105,7 +132,7 @@ public class DialogManager {
         Dialog dialog = Dialog.create(b -> b.empty()
             .base(DialogBase.builder(
                     Component.text("캐릭터 생성  |  스테이지 " + roomNumber + " · " + attempt + "회차"))
-                .body(List.of(DialogBody.plainMessage(body, 320)))
+                .body(List.of(DialogBody.plainMessage(body)))
                 .build())
             .type(DialogType.multiAction(buttons, cancelBtn, 2))
         );
@@ -197,6 +224,28 @@ public class DialogManager {
             .type(DialogType.multiAction(buttons, cancelBtn, 1))
         );
         player.showDialog(dialog);
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  특성 오버레이 컴포넌트 빌더
+    // ──────────────────────────────────────────────────────────────
+
+    private static Component buildTraitHover(TraitData t) {
+        var builder = Component.text()
+            .append(Component.text("(" + t.grade + ") " + t.name + "\n", NamedTextColor.WHITE));
+
+        if (t.description != null && !t.description.isBlank()) {
+            builder.append(Component.text(t.description, NamedTextColor.GRAY));
+        }
+
+        if (t.active && t.effect != null && !t.effect.isBlank()) {
+            builder.append(Component.newline())
+                .append(Component.newline())
+                .append(Component.text("[사용 효과]  ", NamedTextColor.YELLOW))
+                .append(Component.text(t.effect, NamedTextColor.WHITE));
+        }
+
+        return builder.build();
     }
 
     // ──────────────────────────────────────────────────────────────

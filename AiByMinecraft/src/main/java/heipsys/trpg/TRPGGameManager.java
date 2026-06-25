@@ -76,6 +76,12 @@ public class TRPGGameManager {
 - 아이템/판정 시스템 설명
 - 게임 메커니즘 일체
 
+### initial_info 처리 원칙 ★
+배역의 initial_info는 그 배역이 이미 알고 있는 배경 지식이다.
+일상 파트 첫 장면에 자연스러운 장면 묘사로만 녹여내라. 직접 목록 나열 절대 금지.
+좋은 예: "당신은 요즘 건물 3층에서 이상한 소리가 난다는 소문이 떠돈다는 것을 알고 있다."
+나쁜 예: "당신이 알고 있는 정보: 1. 3층에서 소리가 남. 2. ..." ← 절대 금지
+
 ### 타임라인 관리
 - 내부적으로만 유지, 직접 고지 금지
 - 환경 변화(소음/냄새/온도/색 변화)로만 암시
@@ -651,11 +657,22 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             Player p = Bukkit.getPlayer(entry.getKey());
             if (p == null) continue;
             RoleManager.RoleAssignment asgn = entry.getValue();
+
+            PlayerData myPd = state.getPlayer(p);
+            JsonObject roleData = (myPd != null) ? getRoleDataById(asgn.roleId()) : null;
+
+            // 배역 스탯 적용 — snapshotBase() 이후 호출이므로 clearRoleData()→resetToBase() 시 자동 제거됨
+            if (myPd != null && roleData != null) {
+                String roleSummary = applyRoleStats(myPd, roleData);
+                if (!roleSummary.isBlank()) {
+                    p.sendMessage("§e[배역 스탯] §f" + roleSummary);
+                }
+            }
+
             p.sendMessage("§e§l[배역 배정]");
             p.sendMessage(roleMan.getRoleBriefing(asgn.roleId(), corruptMan.getLevel()));
             giveRoleStartItems(p, asgn.roleId());
 
-            PlayerData myPd = state.getPlayer(p);
             if (myPd != null && !myPd.contactId.isEmpty()) {
                 p.sendMessage("§7당신의 연락처: §f" + myPd.contactId
                     + " §8(상대와 연락하려면 서로의 연락처를 알아야 합니다)");
@@ -668,15 +685,12 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                 p.sendMessage("§8당신의 배역은 이야기가 진행되면서 등장합니다. GM의 안내를 기다려주세요.");
             }
 
-            if (myPd != null) {
-                JsonObject roleData = getRoleDataById(asgn.roleId());
-                if (roleData != null) {
-                    p.sendMessage("§7배역 고유 특성 생성 중...");
-                    roleTraitFutures.add(
-                        traitMan.generateRoleTraits(myPd, roleData)
-                            .thenApply(traits -> Map.entry(myPd, traits))
-                    );
-                }
+            if (myPd != null && roleData != null) {
+                p.sendMessage("§7배역 고유 특성 생성 중...");
+                roleTraitFutures.add(
+                    traitMan.generateRoleTraits(myPd, roleData)
+                        .thenApply(traits -> Map.entry(myPd, traits))
+                );
             }
         }
 
@@ -746,6 +760,45 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         return null;
     }
 
+    /**
+     * gdam role_stats를 pd에 적용한다.
+     * snapshotBase() 이후에 호출되므로 clearRoleData() → resetToBase() 시 자동 제거된다.
+     * @return 플레이어에게 표시할 요약 문자열 (없으면 빈 문자열)
+     */
+    private String applyRoleStats(PlayerData pd, JsonObject roleData) {
+        if (!roleData.has("role_stats")) return "";
+        JsonObject rs = roleData.getAsJsonObject("role_stats");
+
+        int strAdd = rs.has("str_add")     ? rs.get("str_add").getAsInt()     : 0;
+        int chaAdd = rs.has("cha_add")     ? rs.get("cha_add").getAsInt()     : 0;
+        int lukAdd = rs.has("luk_add")     ? rs.get("luk_add").getAsInt()     : 0;
+        int sprAdd = rs.has("spr_add")     ? rs.get("spr_add").getAsInt()     : 0;
+        int hpAdd  = rs.has("hp_max_add")  ? rs.get("hp_max_add").getAsInt()  : 0;
+        int sanAdd = rs.has("san_max_add") ? rs.get("san_max_add").getAsInt() : 0;
+
+        if (strAdd != 0) pd.str = Math.max(1, pd.str + strAdd);
+        if (chaAdd != 0) pd.cha = Math.max(1, pd.cha + chaAdd);
+        if (lukAdd != 0) pd.luk = Math.max(1, pd.luk + lukAdd);
+        if (sprAdd != 0) pd.spr = Math.max(1, pd.spr + sprAdd);
+
+        if (hpAdd != 0) {
+            pd.hp[1] = Math.max(1, pd.hp[1] + hpAdd);
+            // 증가 시 현재 HP도 같이 증가, 감소 시 현재 HP를 새 최대로 제한
+            pd.hp[0] = hpAdd > 0 ? pd.hp[0] + hpAdd : Math.min(pd.hp[0], pd.hp[1]);
+        }
+        if (sanAdd != 0) {
+            pd.san[1] = Math.max(1, pd.san[1] + sanAdd);
+            pd.san[0] = sanAdd > 0 ? pd.san[0] + sanAdd : Math.min(pd.san[0], pd.san[1]);
+        }
+
+        // 고정 스탯 (-1 = 미적용, 0 이상 = 강제 설정)
+        if (rs.has("luk_fixed") && rs.get("luk_fixed").getAsInt() >= 0) {
+            pd.luk = rs.get("luk_fixed").getAsInt();
+        }
+
+        return rs.has("summary") ? rs.get("summary").getAsString() : "";
+    }
+
     /** gdam relationships 기반으로 mutual_contact:true 배역끼리 연락처를 미리 교환 */
     private void applyRelationshipContacts(Map<UUID, RoleManager.RoleAssignment> assignments) {
         JsonObject gdam = state.getGdamData();
@@ -763,22 +816,13 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                 UUID u = roleToUuid.get(r.getAsString());
                 if (u != null) uuids.add(u);
             }
-            // 서로 연락처 교환
+            // 서로 연락처 교환 (관계 서술은 GM이 프롤로그에서 자연스럽게 처리)
             for (int i = 0; i < uuids.size(); i++) {
                 PlayerData a = state.getPlayer(uuids.get(i));
                 if (a == null) continue;
                 for (int j = 0; j < uuids.size(); j++) {
                     if (i == j) continue;
                     a.knownContacts.add(uuids.get(j));
-                }
-            }
-            // 관계 유형 브로드캐스트
-            String relType = rel.has("type") ? rel.get("type").getAsString() : "";
-            String desc    = rel.has("description") ? rel.get("description").getAsString() : "";
-            for (UUID u : uuids) {
-                Player p = Bukkit.getPlayer(u);
-                if (p != null && p.isOnline() && !relType.isBlank()) {
-                    p.sendMessage("§e[관계] §f" + relType + (desc.isBlank() ? "" : " — " + desc));
                 }
             }
         }
@@ -798,10 +842,41 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             PlayerData pd = state.getPlayer(uuid);
             if (pd == null) return;
 
-            String prompt = "일상 파트 시작. "
-                + "이 메시지는 배역 '" + pd.roleId + "' 플레이어(" + pd.name + ")에게만 전달된다. "
-                + "해당 배역의 시작 위치와 초기 정보를 바탕으로 2인칭 시점의 일상 장면을 서술해줘. "
-                + "다른 플레이어의 존재를 직접 언급하지 마. 괴담 암시 금지.";
+            // initial_info를 GM 전달 컨텍스트에 포함 (장면 묘사에 자연스럽게 반영용)
+            StringBuilder promptSb = new StringBuilder();
+            promptSb.append("일상 파트 시작. 배역 '").append(pd.roleId)
+                .append("' 플레이어(").append(pd.name).append(")에게만 전달된다. ");
+            promptSb.append("시작 위치: ").append(pd.zone.isEmpty() ? "?" : pd.zone).append(". ");
+            JsonObject roleDataForPrologue = getRoleDataById(pd.roleId);
+            if (roleDataForPrologue != null && roleDataForPrologue.has("initial_info")) {
+                promptSb.append("[GM 전용 — 이 배역의 배경 지식: ");
+                roleDataForPrologue.getAsJsonArray("initial_info")
+                    .forEach(i -> promptSb.append("(").append(i.getAsString()).append(") "));
+                promptSb.append("— 직접 나열 금지, 장면 묘사에만 녹여낼 것.] ");
+            }
+            // 이 배역의 인간관계 컨텍스트 (GM이 프롤로그에 자연스럽게 반영)
+            JsonObject gdamForRel = state.getGdamData();
+            if (gdamForRel != null && gdamForRel.has("relationships")) {
+                List<String> myRels = new ArrayList<>();
+                for (var relEl : gdamForRel.getAsJsonArray("relationships")) {
+                    JsonObject rel = relEl.getAsJsonObject();
+                    if (!rel.has("roles")) continue;
+                    for (var rId : rel.getAsJsonArray("roles")) {
+                        if (rId.getAsString().equals(pd.roleId)) {
+                            String relDesc = rel.has("description") ? rel.get("description").getAsString() : "";
+                            if (!relDesc.isBlank()) myRels.add(relDesc);
+                            break;
+                        }
+                    }
+                }
+                if (!myRels.isEmpty()) {
+                    promptSb.append("[GM 전용 — 이 배역의 인간관계: ");
+                    myRels.forEach(r -> promptSb.append("(").append(r).append(") "));
+                    promptSb.append("— 직접 언급 금지, 장면 분위기에만 녹여낼 것.] ");
+                }
+            }
+            promptSb.append("2인칭 시점의 일상 장면을 서술해줘. 다른 플레이어의 존재 직접 언급 금지. 괴담 암시 금지.");
+            String prompt = promptSb.toString();
 
             ai.callGmAiOnce(gmSystemPrompt, prompt)
                 .thenAccept(response -> plugin.getServer().getScheduler().runTask(plugin, () -> {
