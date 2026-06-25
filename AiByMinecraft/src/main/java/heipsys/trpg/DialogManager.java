@@ -79,6 +79,11 @@ public class DialogManager {
             .append(Component.text(String.valueOf(pd.spr), NamedTextColor.WHITE)
                 .hoverEvent(Component.text("영감: " + pd.spr, NamedTextColor.YELLOW)));
 
+        // 능력 성향: 수치를 자연어로 가볍게 해설
+        bodyBuilder.appendNewline().appendNewline()
+            .append(Component.text("[능력 성향] ", NamedTextColor.GREEN))
+            .append(Component.text(pd.getStatNarrative(), NamedTextColor.GRAY));
+
         if (!pd.traits.isEmpty()) {
             bodyBuilder.appendNewline()
                 .append(Component.text("특성:", NamedTextColor.LIGHT_PURPLE));
@@ -215,6 +220,12 @@ public class DialogManager {
             .append(statCell("행운", pd.luk, pd.baseLuk))
             .append(Component.text("   "))
             .append(statCell("영감", pd.spr, pd.baseSpr));
+
+        // 능력 성향: 수치를 자연어로 가볍게 해설
+        bodyBuilder.appendNewline().appendNewline()
+            .append(Component.text("[능력 성향]", NamedTextColor.GREEN))
+            .appendNewline()
+            .append(Component.text(pd.getStatNarrative(), NamedTextColor.GRAY));
 
         // 기본 특성 (영구)
         boolean hasBase = pd.traits.stream().anyMatch(t -> !t.roleSpecific);
