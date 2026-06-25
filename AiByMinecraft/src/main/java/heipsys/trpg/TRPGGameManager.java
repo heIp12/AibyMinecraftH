@@ -92,6 +92,17 @@ NPC가 단서·정보를 줄 때마다 그 NPC의 태도를 확률로 정하라(
 플레이어가 논리적으로 타당한 창의적 행동을 하면 인정하되
 사전 확정된 규칙 범위 안에서만 판정한다.
 
+### 기믹 파훼 존중 원칙 ★ 최우선 (강제 패널티 금지)
+플레이어가 괴담의 규칙(entity.rules)에 근거해 위협을 논리적으로 무력화하면 그 성과를 반드시 인정한다.
+- 플레이어가 막은 위협을, 괴담의 특성에 '존재하지 않는' 새 수단으로 되살리지 마라.
+  나쁜 예: 악기 소리를 CCTV로 음소거했는데 → 갑자기 휴대폰에서 같은 소리가 난다(규칙에 없던 새 음원 창조). ✗
+  좋은 예: 악기 소리를 음소거함 → 그 경로의 위협은 실제로 약해진다. 다만 entity.rules에 이미 있는 '다른 정의된 경로'가 남아 있다면 그것으로만 위협이 지속될 수 있다. ✓
+- 괴담은 오직 entity.rules / hidden_rules / weakness / ai_context에 정의된 능력·수단 안에서만 행동한다.
+  거기에 없는 새로운 공격 벡터·감각·현상을 즉석에서 만들어 플레이어의 해법을 무효화하지 마라.
+- "난이도 유지"를 이유로 정당한 파훼를 깎아내리지 마라. 공정한 인과가 몰입의 핵심이다.
+- 파훼가 부분적이면 부분적으로만 인정하고, 남은 위협은 반드시 사전 정의된 규칙에서 비롯되어야 한다.
+- 단, 플레이어의 파훼가 규칙을 오해했거나 논리적 허점이 있으면 그 허점에 따른 자연스러운 결과(실패·역효과)는 정당하다.
+
 ### 게임 시작 시 출력 제한 ★
 게임 시작 시 곧바로 일상 프롤로그 장면 서술로 시작한다.
 (능력치·스탯 해설은 캐릭터 정보 GUI에서 처리하므로, GM은 채팅에 스탯을 설명하지 않는다.)
@@ -213,6 +224,13 @@ A: 전원 생존, 정석/역이용 해결
 B: 생존자 과반, 어떤 방식이든 해결
 C: 생존자 소수, 생존법 달성
 D: 1명 생존으로 도주 성공
+
+### 스테이지 난이도별 클리어 조건 ★
+- 1~2번째 스테이지: 도주·생존만으로도 클리어 인정(낮은 등급이라도 CLEAR 가능).
+- 3번째 스테이지부터: 도주·생존만으로는 클리어가 아니다. 반드시 사건의 '원인'을
+  (entity.solution 정석 해결 또는 entity.exploit_path 역이용으로) 해결해야 CLEAR를 출력한다.
+  단순 도주·생존은 CLEAR로 처리하지 말고, 위협이 계속됨을 서술하라(클리어 태그 금지).
+  ※ 현재 스테이지 번호는 아래 '.gdam 사전 확정 데이터'의 room 값을 따른다.
 
 ### 개인 서술 원칙 ★ 최우선
 각 플레이어는 GM과 개인 채널로만 소통한다.
@@ -353,6 +371,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     private final CorruptionManager   corruptMan;
     private final ContextCompressor   compressor;
     private final NarrativeDelivery   narrativeDelivery;
+    private final GameLogger          gameLogger;
 
     /** 캐릭터 생성 완료 대기 중인 플레이어 UUID 집합 */
     private final Set<UUID> pendingCreation    = ConcurrentHashMap.newKeySet();
@@ -388,6 +407,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         this.corruptMan        = new CorruptionManager(state);
         this.compressor        = new ContextCompressor(ai, state);
         this.narrativeDelivery = new NarrativeDelivery(plugin);
+        this.gameLogger        = new GameLogger(plugin);
 
         turnMan.setResponseHandler(this::onGmResponse);
     }
@@ -430,6 +450,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
 
             String seed = gdam.get("seed").getAsString();
             state.startSession(room, seed, gdam);
+            gameLogger.startNewLog(seed, room);
 
             // GM AI에 .gdam 데이터 주입
             gmSystemPrompt = buildGmPrompt(gdam);
@@ -509,6 +530,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     }
 
     private void endSession(boolean resetCorruption) {
+        gameLogger.endLog("세션 종료");
         turnMan.cancelAll();
         Bukkit.getOnlinePlayers().forEach(p -> {
             scoreMan.clear(p);
@@ -540,7 +562,14 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             admin.sendMessage("§c활성 세션이 없습니다.");
             return;
         }
+        // 3번째 방부터는 생존 성공자가 있어야 재도전 가능
+        if (!isRetryAllowed()) {
+            admin.sendMessage("§c이 스테이지(" + state.getRoomNumber()
+                + "번째)에서는 생존에 성공한 사람이 없어 재도전할 수 없습니다. §7(/trpg stop 으로 전말 확인)");
+            return;
+        }
         broadcast("§e[TRPG] 재도전합니다. 오염도 상승!");
+        gameLogger.section("재도전 " + (corruptMan.getAttempts() + 1) + "회차 (오염도 상승 예정)");
 
         // 이전 회차의 잔여 행동·서술·통신을 완전히 정리 (이전 플레이어 진행 방지)
         turnMan.cancelAll();
@@ -616,6 +645,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
 
             String seed = gdam.get("seed").getAsString();
             state.advanceToNextRoom(nextRoom, seed, gdam);
+            gameLogger.startNewLog(seed, nextRoom);
             gmSystemPrompt = buildGmPrompt(gdam);
 
             broadcast("§a새 시나리오 생성 완료. 씨드: §e" + seed);
@@ -812,6 +842,10 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             p.sendMessage("§e§l[배역 배정]");
             p.sendMessage(roleMan.getRoleBriefing(asgn.roleId(), corruptMan.getLevel()));
             giveRoleStartItems(p, asgn.roleId());
+            if (myPd != null) {
+                gameLogger.logEvent("배역 배정: " + myPd.name + " → " + asgn.roleId()
+                    + " (" + myPd.age + "세 " + myPd.job + ", zone " + asgn.zone() + ")");
+            }
 
             if (myPd != null && !myPd.contactId.isEmpty()) {
                 p.sendMessage("§7당신의 연락처: §f" + myPd.contactId
@@ -1067,7 +1101,10 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                 .thenAccept(response -> plugin.getServer().getScheduler().runTask(plugin, () -> {
                     if (!p.isOnline()) return;
                     String narrative = ai.stripTags(response);
-                    if (!narrative.isBlank()) narrativeDelivery.deliver(p, narrative);
+                    if (!narrative.isBlank()) {
+                        narrativeDelivery.deliver(p, narrative);
+                        gameLogger.logGmOutput(p.getName() + "(프롤로그)", narrative);
+                    }
                     scoreMan.update(p, pd, state.getRoomNumber());
                 }));
         });
@@ -1114,6 +1151,9 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             player.sendMessage("§8(아직 당신의 배역이 이야기에 등장하지 않았습니다. GM의 안내를 기다리세요.)");
             return;
         }
+
+        // 플레이어 입력 기록 (행동/대사/통신 모두)
+        gameLogger.logPlayerInput(player.getName(), message);
 
         // 직접 통신 시도: @이름 메시지
         if (message.startsWith("@")) {
@@ -1399,8 +1439,13 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         currentPhase = Phase.GAMEOVER;
         // 진행 중이던 다른 플레이어의 행동을 즉시 중단 (엔딩 후 진행 방지)
         turnMan.cancelAll();
+        gameLogger.logEvent("배드 엔딩 — 패인: " + reasonLabel);
         broadcast("§4§l[배드 엔딩]");
         broadcast("§c패인: §f" + reasonLabel);
+
+        // 재도전 가능 여부 판정 (3번째 방부터는 생존 성공자가 있어야 재도전 가능)
+        boolean retryAllowed = isRetryAllowed();
+
         ai.callGmAi(gmSystemPrompt,
             "게임이 실패로 끝났다(" + reasonLabel + "). 배드 엔딩 장면을 서술해줘. "
             + "단, 괴담의 정체·규칙·해결법을 직접 설명하거나 누설하지 마라(재도전 여지를 남긴다).")
@@ -1411,10 +1456,28 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                   if (sp != null && sp.isOnline() && !narrative.isBlank())
                       narrativeDelivery.deliver(sp, narrative);
               });
-              // 해설은 공개하지 않는다. 재도전 또는 포기를 선택하게 한다.
+              gameLogger.logGmOutput("전체(배드엔딩)", narrative);
               broadcast("");
-              broadcast("§e재도전: §f/trpg retry  §8|  §e포기하고 전말 보기: §f/trpg stop");
+              if (retryAllowed) {
+                  // 해설은 공개하지 않는다. 재도전 또는 포기를 선택하게 한다.
+                  broadcast("§e재도전: §f/trpg retry  §8|  §e포기하고 전말 보기: §f/trpg stop");
+              } else {
+                  // 3번째 방 이상 + 생존 성공자 없음 → 재도전 불가, 전말 공개만 가능
+                  broadcast("§c이 스테이지(" + state.getRoomNumber() + "번째)에서는 생존에 성공한 사람이 없어 재도전할 수 없습니다.");
+                  broadcast("§e전말 보기: §f/trpg stop");
+              }
           }));
+    }
+
+    /**
+     * 재도전 가능 여부.
+     * 규칙: 1~2번째 방은 항상 재도전 가능.
+     *       3번째 방부터는 한 명이라도 생존 판정에 성공(= 엔딩 시점 생존자 존재)해야 재도전 가능.
+     *       전원 사망으로 끝나면 3번째 방부터는 재도전 불가 → 전말 공개만 가능.
+     */
+    private boolean isRetryAllowed() {
+        if (state.getRoomNumber() <= 2) return true;
+        return state.getAliveCount() > 0;
     }
 
     private void checkDeaths() {
@@ -1582,6 +1645,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     private void onClearEnding(String grade, String reason) {
         if (currentPhase == Phase.CLEAR || currentPhase == Phase.GAMEOVER) return;
         currentPhase = Phase.CLEAR;
+        gameLogger.logEvent("클리어 — 등급: " + grade + (reason != null && !reason.isBlank() ? " / 해결: " + reason : ""));
 
         String finalGrade = corruptMan.getRewardGrade(grade);
         broadcast("§6§l═══════════════════════════════");
@@ -1649,8 +1713,10 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                     for (String line : NarrativeDelivery.format(story).split("\n")) {
                         if (!line.isBlank()) broadcast("§7" + line);
                     }
+                    gameLogger.logGmOutput("전체(뒷이야기)", story);
                 }
                 broadcast(buildEndingReveal());
+                gameLogger.logEvent("엔딩 해설 공개 (" + endingLabel + ")");
                 if (onDone != null) onDone.run();
             }));
     }
@@ -1739,6 +1805,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         String narrative = ai.stripTags(raw);
         if (!narrative.isBlank() && actor != null && actor.isOnline()) {
             narrativeDelivery.deliver(actor, narrative);
+            gameLogger.logGmOutput(actor.getName(), narrative);
         }
         ai.parseWitnessTags(raw).forEach((pName, witnessText) -> {
             if (witnessText.isBlank()) return;
@@ -1750,6 +1817,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                     if (target != null && target.isOnline())
                         Arrays.stream(witnessText.split("\n"))
                             .forEach(line -> target.sendMessage("§7§o" + line));
+                    gameLogger.logGmOutput(pName + "(목격)", witnessText);
                 });
         });
     }
@@ -1764,6 +1832,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             .findFirst()
             .ifPresent(pd -> {
                 spawnedPlayers.add(pd.uuid);
+                gameLogger.logEvent("배역 등장: " + pd.name + " [" + pd.roleId + "]");
                 Player p = Bukkit.getPlayer(pd.uuid);
                 if (p == null || !p.isOnline()) return;
                 p.sendMessage("§e§l[등장] 당신의 배역이 이야기에 들어섰습니다. 이제 행동할 수 있습니다.");
@@ -1851,6 +1920,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                 String trimmed = ai.stripTags(resp).trim();
                 if (trimmed.isBlank() || trimmed.startsWith("§c")) return;
                 narrativeDelivery.deliver(p, NarrativeDelivery.format(trimmed));
+                gameLogger.logGmOutput(p.getName() + "(대기)", trimmed);
             }));
     }
 
@@ -2312,9 +2382,25 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         StringBuilder sb = new StringBuilder(GM_SYSTEM_BASE);
         sb.append("\n## .gdam 사전 확정 데이터\n");
         sb.append("씨드: ").append(gdam.has("seed") ? gdam.get("seed").getAsString() : "?").append("\n");
+        int room = state.getRoomNumber();
+        sb.append("room(현재 스테이지 번호): ").append(room).append("\n");
         if (gdam.has("entity")) {
             sb.append("괴담 존재: ").append(gdam.getAsJsonObject("entity").get("name").getAsString()).append("\n");
         }
+
+        // 스테이지·회차 난이도 컨텍스트 (단서 대비 난이도 균형)
+        sb.append("\n## 현재 난이도 기준 (GM 필수 준수)\n");
+        if (room <= 2) {
+            sb.append("- 초반 스테이지: 관대하게. 도주·생존만으로도 클리어 가능. 단서를 비교적 찾기 쉽게 배치.\n");
+        } else {
+            sb.append("- 중후반 스테이지: 도주만으로는 클리어 불가(원인 해결 필수). 단서는 탐색 보상으로만.\n");
+        }
+        if (corruptMan.getAttempts() == 0) {
+            sb.append("- 1회차(오염 0): 가장 관대한 난이도. 괴담은 충분한 단서가 드러나기 전까지 치명적으로 행동하지 않는다.\n");
+        }
+        sb.append("- 단서-난이도 균형 ★: 플레이어가 아직 핵심 단서를 충분히 얻지 못한 단계에서 ");
+        sb.append("괴담을 클리어 불가능할 만큼 강하게 몰아붙이지 마라. 위협의 강도는 '드러난 단서의 양'에 비례한다.\n");
+        sb.append("- 괴담은 스토리가 전개되며 단계적으로 강해진다(슬로우 번). 시작부터 전력으로 작동시키지 마라.\n");
         // GM NPC 배역 섹션
         if (!gmNpcRoleIds.isEmpty() && gdam.has("roles")) {
             sb.append("\n## GM 직접 조종 NPC 배역\n");
