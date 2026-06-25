@@ -42,6 +42,25 @@ public class TRPGGameManager {
 
 ## 핵심 원칙
 
+### 괴담 서술 절대 금지 ★ 최우선
+괴담/entity는 절대 아래 행동을 하지 않는다:
+- 1인칭으로 플레이어에게 직접 말하기 ("나는...", "당신이 의심하기 시작한 걸 본다")
+- 자신의 내면·시점·동기를 직접 서술하기
+- 자신의 행동을 스스로 설명하기
+- 플레이어가 무엇을 생각하는지 알고 있다는 식의 메타 인식
+- 독백, 편지, 음성 메시지 등 어떤 형식으로도 플레이어에게 직접 전달
+괴담은 오직 물리적 현상·환경 이상·NPC 행동으로만 간접 표현된다.
+"거울 속에서 손이 움직인다." ✓  "[거울 속 이웃] 당신이 의심하기 시작했다는 걸 본다." ✗
+
+### 단서 배치 원칙 ★
+단서는 플레이어가 직접 탐색하고 발견할 때만 드러난다:
+- NPC가 핵심 단서를 대화 중 자발적으로 언급 금지
+  (예: 처음 만난 NPC가 "거울 조심해요" 직접 말하기 금지)
+- 첫 만남이나 시작 장면에서 핵심 단서 2개 이상 동시 노출 금지
+- 단서는 탐색 행동의 결과, 우연한 시각적 발견, 배경 오브젝트에서만 발생
+- NPC는 자신이 직접 경험한 사실만 언급, 해석·결론 제시 금지
+- 대화 장면에서는 분위기·감정만, 핵심 정보는 탐색으로만
+
 ### 괴담 사전 확정 원칙 ★ 최우선
 게임 시작 전 .gdam 파일에 확정된 모든 요소는 절대 변경 불가.
 플레이어 행동에 맞춰 사후 결정하거나 변경하지 않는다.
@@ -407,6 +426,77 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     }
 
     // ══════════════════════════════════════════════════════════════
+    //  다음 방 (/trpg next)
+    // ══════════════════════════════════════════════════════════════
+
+    public void nextSession(Player admin) {
+        if (!state.isSessionActive()) {
+            admin.sendMessage("§c활성 세션이 없습니다.");
+            return;
+        }
+
+        int nextRoom = state.getRoomNumber() + 1;
+        broadcast("§e§l═══ 다음 방으로 이동합니다 (방 " + nextRoom + ") ═══");
+        broadcast("§7새 시나리오를 생성 중입니다...");
+
+        currentPhase = Phase.ROLE_ASSIGNMENT;
+
+        // 역할 데이터 초기화: roleSpecific 특성·역할·zone 제거, 기본 스탯으로 복구
+        state.getAllPlayers().forEach(pd -> {
+            pd.clearRoleData();
+            pd.statsConfirmed = true;
+        });
+        itemMan.reclaimChapterItems(new ArrayList<>(Bukkit.getOnlinePlayers()));
+
+        turnMan.cancelAll();
+        narrativeDelivery.clearAll();
+        pendingCreation.clear();
+        pendingTraitSelect.clear();
+        spawnedPlayers.clear();
+        commChannels.clear();
+        preAssignedRoleData.clear();
+        preAssignments.clear();
+        gmNpcRoleIds.clear();
+        ai.clearAll();
+
+        gdamGen.generate(nextRoom).thenAccept(gdam -> {
+            if (gdam.has("error")) {
+                broadcast("§c[오류] 시나리오 생성 실패: " + gdam.get("error").getAsString());
+                currentPhase = Phase.IDLE;
+                return;
+            }
+
+            String seed = gdam.get("seed").getAsString();
+            state.advanceToNextRoom(nextRoom, seed, gdam);
+            gmSystemPrompt = buildGmPrompt(gdam);
+
+            broadcast("§a새 시나리오 생성 완료. 씨드: §e" + seed);
+
+            List<Player> participants = state.getAllPlayers().stream()
+                .map(pd -> Bukkit.getPlayer(pd.uuid))
+                .filter(Objects::nonNull)
+                .filter(p -> p.getGameMode() == GameMode.SURVIVAL)
+                .collect(Collectors.toList());
+
+            if (participants.isEmpty()) {
+                broadcast("§c참여 중인 플레이어가 없습니다.");
+                currentPhase = Phase.IDLE;
+                return;
+            }
+
+            doPreAssign(participants, gdam);
+
+            // 스코어보드: 기본 스탯으로 갱신
+            state.getAllPlayers().forEach(pd -> {
+                Player p = Bukkit.getPlayer(pd.uuid);
+                if (p != null) scoreMan.update(p, pd, nextRoom);
+            });
+
+            plugin.getServer().getScheduler().runTask(plugin, this::assignRolesAndStart);
+        });
+    }
+
+    // ══════════════════════════════════════════════════════════════
     //  채팅 라우팅 (ChatListener → 여기)
     // ══════════════════════════════════════════════════════════════
 
@@ -553,6 +643,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         // 연락처: 무작위 번호 부여 + 특성 기반 사전 지식 적용
         assignContactIds();
         applyTraitContacts();
+        applyRelationshipContacts(assignments);
 
         List<CompletableFuture<Map.Entry<PlayerData, List<TraitData>>>> roleTraitFutures = new ArrayList<>();
 
@@ -653,6 +744,44 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             if (r.has("role_id") && r.get("role_id").getAsString().equals(roleId)) return r;
         }
         return null;
+    }
+
+    /** gdam relationships 기반으로 mutual_contact:true 배역끼리 연락처를 미리 교환 */
+    private void applyRelationshipContacts(Map<UUID, RoleManager.RoleAssignment> assignments) {
+        JsonObject gdam = state.getGdamData();
+        if (gdam == null || !gdam.has("relationships")) return;
+        // roleId → UUID 역매핑 빌드
+        Map<String, UUID> roleToUuid = new HashMap<>();
+        for (var e : assignments.entrySet()) roleToUuid.put(e.getValue().roleId(), e.getKey());
+
+        for (var el : gdam.getAsJsonArray("relationships")) {
+            JsonObject rel = el.getAsJsonObject();
+            if (!rel.has("mutual_contact") || !rel.get("mutual_contact").getAsBoolean()) continue;
+            if (!rel.has("roles")) continue;
+            List<UUID> uuids = new ArrayList<>();
+            for (var r : rel.getAsJsonArray("roles")) {
+                UUID u = roleToUuid.get(r.getAsString());
+                if (u != null) uuids.add(u);
+            }
+            // 서로 연락처 교환
+            for (int i = 0; i < uuids.size(); i++) {
+                PlayerData a = state.getPlayer(uuids.get(i));
+                if (a == null) continue;
+                for (int j = 0; j < uuids.size(); j++) {
+                    if (i == j) continue;
+                    a.knownContacts.add(uuids.get(j));
+                }
+            }
+            // 관계 유형 브로드캐스트
+            String relType = rel.has("type") ? rel.get("type").getAsString() : "";
+            String desc    = rel.has("description") ? rel.get("description").getAsString() : "";
+            for (UUID u : uuids) {
+                Player p = Bukkit.getPlayer(u);
+                if (p != null && p.isOnline() && !relType.isBlank()) {
+                    p.sendMessage("§e[관계] §f" + relType + (desc.isBlank() ? "" : " — " + desc));
+                }
+            }
+        }
     }
 
     // ──────────────────────────────────────────────────────────────

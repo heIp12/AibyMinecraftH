@@ -82,6 +82,18 @@ public class PlayerData {
         // (마인크래프트 인벤토리와 학습한 연락처는 재도전 시 보존됨)
     }
 
+    /** 챕터 종료 후 다음 방 진행 시: roleSpecific 특성 제거, 기본 스탯 복구, 역할 초기화 */
+    public void clearRoleData() {
+        traits.removeIf(t -> t.roleSpecific);
+        resetToBase();
+        roleId       = "";
+        zone         = "";
+        roleAssigned = false;
+        heldItemIds.clear();
+        knownContacts.clear();
+        contactId    = "";
+    }
+
     public String getStatsSummary() {
         return String.format(
             "체력 %d/100(%d)  근력 %d  정신력 %d/100(%d)  매력 %d  행운 %d  영감 %d",

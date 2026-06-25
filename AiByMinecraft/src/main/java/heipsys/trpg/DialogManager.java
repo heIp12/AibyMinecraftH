@@ -6,7 +6,6 @@ import io.papermc.paper.dialog.Dialog;
 import io.papermc.paper.registry.data.dialog.ActionButton;
 import io.papermc.paper.registry.data.dialog.DialogBase;
 import io.papermc.paper.registry.data.dialog.action.DialogAction;
-import io.papermc.paper.registry.data.dialog.input.DialogInput;
 import io.papermc.paper.registry.data.dialog.type.DialogType;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickCallback;
@@ -36,33 +35,34 @@ public class DialogManager {
                                     Runnable onConfirm, Runnable onReroll) {
         activeDialog.put(player.getUniqueId(), DialogState.DICE_CONFIRM);
 
-        List<DialogInput> inputs = new ArrayList<>();
+        // 스탯을 수정 불가 body Component로 구성
+        var bodyBuilder = Component.text()
+            .append(Component.text("나이 · 직업  ", NamedTextColor.GOLD))
+            .append(Component.text(pd.age + "세  ·  " + pd.job, NamedTextColor.WHITE))
+            .appendNewline()
+            .append(Component.text("체력  ", NamedTextColor.RED))
+            .append(Component.text(hpDisplay(pd.hp), NamedTextColor.WHITE))
+            .append(Component.text("    정신력  ", NamedTextColor.AQUA))
+            .append(Component.text(hpDisplay(pd.san), NamedTextColor.WHITE))
+            .appendNewline()
+            .append(Component.text("근력 ", NamedTextColor.YELLOW))
+            .append(Component.text(String.valueOf(pd.str), NamedTextColor.WHITE))
+            .append(Component.text("   매력 ", NamedTextColor.YELLOW))
+            .append(Component.text(String.valueOf(pd.cha), NamedTextColor.WHITE))
+            .append(Component.text("   행운 ", NamedTextColor.YELLOW))
+            .append(Component.text(String.valueOf(pd.luk), NamedTextColor.WHITE))
+            .append(Component.text("   영감 ", NamedTextColor.YELLOW))
+            .append(Component.text(String.valueOf(pd.spr), NamedTextColor.WHITE));
 
-        // 나이·직업
-        String ageJob = pd.age + "세  ·  " + pd.job;
-        inputs.add(DialogInput.text("profile", Component.text("나이 · 직업"))
-            .initial(ageJob).width(320).build());
-
-        // HP, SAN — 백분율/100(스탯수치) 형식
-        String hpSan = "체력 " + hpDisplay(pd.hp) + "    정신력 " + hpDisplay(pd.san);
-        inputs.add(DialogInput.text("hp_san", Component.text("체력 / 정신력"))
-            .initial(hpSan).width(320).build());
-
-        // 나머지 스탯
-        String other = "근력 " + pd.str + "   매력 " + pd.cha + "   행운 " + pd.luk + "   영감 " + pd.spr;
-        inputs.add(DialogInput.text("other_stats", Component.text("근력 · 매력 · 행운 · 영감"))
-            .initial(other).width(320).build());
-
-        // 특성 (있을 때만)
         if (!pd.traits.isEmpty()) {
-            StringBuilder sb = new StringBuilder();
+            bodyBuilder.appendNewline()
+                .append(Component.text("특성:", NamedTextColor.LIGHT_PURPLE));
             for (TraitData t : pd.traits) {
-                if (sb.length() > 0) sb.append("  |  ");
-                sb.append("(").append(t.grade).append(") ").append(t.name);
+                bodyBuilder.appendNewline()
+                    .append(Component.text("  ▸ (" + t.grade + ") " + t.name, NamedTextColor.GRAY));
             }
-            inputs.add(DialogInput.text("traits", Component.text("특성"))
-                .initial(sb.toString()).width(320).build());
         }
+        Component body = bodyBuilder.build();
 
         List<ActionButton> buttons = new ArrayList<>();
 
@@ -104,7 +104,7 @@ public class DialogManager {
         Dialog dialog = Dialog.create(b -> b.empty()
             .base(DialogBase.builder(
                     Component.text("캐릭터 생성  |  방 " + roomNumber + " · " + attempt + "회차"))
-                .inputs(inputs)
+                .body(body)
                 .build())
             .type(DialogType.multiAction(buttons, cancelBtn, 2))
         );
