@@ -227,6 +227,13 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
 ### 서술 방식
 - 2인칭 ("당신은...")
 - 중요 판정 결과는 명확히 서술
+
+### 출력 형식 ★ 필수
+- 마크다운 절대 금지: #, ##, *, **, `, 목록 기호(-) 등 일체 사용 금지
+- 장면 제목·헤더 붙이지 마라 ("# 울음상자 — 일상 파트" 같은 제목 절대 금지). 바로 서술로 시작한다.
+- 강조가 필요하면 마크다운(*별표*)이 아니라 그냥 자연스러운 문장으로 표현하라.
+- 인물의 대사(말소리)는 반드시 큰따옴표 "..." 로 감싼다. (시스템이 색으로 구분 처리함)
+- 서술과 대사를 명확히 구분: 대사는 "..." 안에, 나머지는 서술.
 """;
 
     // ──────────────────────────────────────────────────────────────
@@ -833,7 +840,17 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     // ──────────────────────────────────────────────────────────────
 
     private void startDailyPhase() {
-        broadcast("§e[GM] 일상 파트를 시작합니다.");
+        // 몰입형 게임 시작 연출 (파트 구분·제목 표기 없이)
+        state.getAllPlayers().forEach(pd -> {
+            Player p = Bukkit.getPlayer(pd.uuid);
+            if (p == null || !p.isOnline()) return;
+            p.showTitle(Title.title(
+                Component.text("게임 시작", NamedTextColor.DARK_RED, TextDecoration.BOLD),
+                Component.text("당신의 이야기가 시작됩니다", NamedTextColor.GRAY),
+                Title.Times.times(Duration.ofMillis(500), Duration.ofMillis(2400), Duration.ofMillis(800))
+            ));
+            p.sendMessage("§8§o게임이 시작되었습니다...");
+        });
 
         // 등장 배역: 각자의 위치/역할 기준 개인 프롤로그
         spawnedPlayers.forEach(uuid -> {

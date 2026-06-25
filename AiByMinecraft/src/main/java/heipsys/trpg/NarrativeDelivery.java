@@ -27,10 +27,33 @@ public class NarrativeDelivery {
         if (raw == null || raw.isBlank()) return;
         UUID uuid = player.getUniqueId();
         ArrayDeque<String> q = queues.computeIfAbsent(uuid, k -> new ArrayDeque<>());
-        for (String line : raw.split("\n")) {
+        for (String line : format(raw).split("\n")) {
             if (!line.isBlank()) q.add(line);
         }
         if (!taskIds.containsKey(uuid)) scheduleNext(player);
+    }
+
+    /**
+     * GM 서술 텍스트를 마인크래프트 색코드로 변환한다.
+     * - 마크다운 헤더/강조 기호 제거 또는 색 강조로 치환
+     * - 인물 대사("...")는 청록색(§b)으로 구분, 서술은 흰색(§f, 출력 시 접두)
+     */
+    public static String format(String raw) {
+        if (raw == null) return "";
+        String s = raw;
+        // 스마트 따옴표 → 일반 따옴표
+        s = s.replace('“', '"').replace('”', '"');
+        // 마크다운 헤더 기호 제거 (# 제목 → 제목)
+        s = s.replaceAll("(?m)^\\s*#{1,6}\\s*", "");
+        // 굵게/기울임/코드 마크다운 → 노란색 강조 후 흰색 복귀
+        s = s.replaceAll("\\*\\*(.+?)\\*\\*", "§e$1§f");
+        s = s.replaceAll("\\*(.+?)\\*",       "§e$1§f");
+        s = s.replaceAll("`(.+?)`",           "§e$1§f");
+        // 줄머리 목록 기호 제거
+        s = s.replaceAll("(?m)^\\s*[-•]\\s+", "");
+        // 인물 대사("...") → 청록색으로 구분
+        s = s.replaceAll("\"([^\"]+)\"", "§b\"$1\"§f");
+        return s;
     }
 
     /** Shift 감지 시 현재 대기 중인 줄을 즉시 출력하고 다음 줄 예약 */
