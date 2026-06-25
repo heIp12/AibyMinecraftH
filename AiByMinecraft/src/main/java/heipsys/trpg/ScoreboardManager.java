@@ -32,16 +32,36 @@ public class ScoreboardManager {
         set(obj, hpBar(pd),                               line--);
         set(obj, sanBar(pd),                              line--);
         set(obj, "§8─────────────────",                  line--);
-        set(obj, "§9근력 §f" + pd.str + "  §a매력 §f" + pd.cha, line--);
-        set(obj, "§6행운 §f" + pd.luk + "  §d영감 §f" + pd.spr, line--);
+        // 기본 스탯 + 배역 보정치(증감) 표기
+        set(obj, "§9근력 §f" + pd.str + mod(pd.str, pd.baseStr)
+               + " §a매력 §f" + pd.cha + mod(pd.cha, pd.baseCha), line--);
+        set(obj, "§6행운 §f" + pd.luk + mod(pd.luk, pd.baseLuk)
+               + " §d영감 §f" + pd.spr + mod(pd.spr, pd.baseSpr), line--);
 
-        if (!pd.traits.isEmpty()) {
-            set(obj, "§8─────────────────", line--);
-            set(obj, "§e[특성]",            line--);
-            for (TraitData t : pd.traits) {
-                if (line <= 0) break;
-                set(obj, "§7▸ " + t.name + " §8(" + t.grade + ")", line--);
+        // 기본 특성 (영구)
+        boolean baseHeader = false;
+        for (TraitData t : pd.traits) {
+            if (t.roleSpecific) continue;
+            if (line <= 3) break;
+            if (!baseHeader) {
+                set(obj, "§8─────────────────", line--);
+                set(obj, "§e[특성]",            line--);
+                baseHeader = true;
             }
+            set(obj, "§7▸ " + t.name + " §8(" + t.grade + ")", line--);
+        }
+
+        // 배역 특성 (이번 스테이지 한정)
+        boolean roleHeader = false;
+        for (TraitData t : pd.traits) {
+            if (!t.roleSpecific) continue;
+            if (line <= 3) break;
+            if (!roleHeader) {
+                set(obj, "§8─────────────────", line--);
+                set(obj, "§6[배역 특성]",        line--);
+                roleHeader = true;
+            }
+            set(obj, "§7▸ " + t.name + " §8(" + t.grade + ")", line--);
         }
 
         set(obj, "§8─────────────────",              line--);
@@ -62,6 +82,13 @@ public class ScoreboardManager {
     private void set(Objective obj, String label, int score) {
         Score s = obj.getScore(label);
         s.setScore(score);
+    }
+
+    /** 기본값 대비 배역 보정 증감 표기 (없으면 빈 문자열) */
+    private String mod(int current, int base) {
+        int d = current - base;
+        if (d == 0) return "";
+        return d > 0 ? "§a+" + d : "§c" + d; // 음수는 부호 포함
     }
 
     private String hpBar(PlayerData pd) {

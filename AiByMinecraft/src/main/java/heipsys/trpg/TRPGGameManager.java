@@ -669,11 +669,9 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             JsonObject roleData = (myPd != null) ? getRoleDataById(asgn.roleId()) : null;
 
             // 배역 스탯 적용 — snapshotBase() 이후 호출이므로 clearRoleData()→resetToBase() 시 자동 제거됨
+            // (적용만 하고 채팅 출력은 하지 않음. 캐릭터 정보 GUI/스코어보드에서 기본/배역 분리 표시)
             if (myPd != null && roleData != null) {
-                String roleSummary = applyRoleStats(myPd, roleData);
-                if (!roleSummary.isBlank()) {
-                    p.sendMessage("§e[배역 스탯] §f" + roleSummary);
-                }
+                applyRoleStats(myPd, roleData);
             }
 
             p.sendMessage("§e§l[배역 배정]");
@@ -720,9 +718,18 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                     Player rp = Bukkit.getPlayer(pd.uuid);
                     traits.forEach(t -> traitMan.addTrait(pd, t));
                     if (rp != null && rp.isOnline()) {
-                        StringBuilder msg = new StringBuilder("§e[배역 특성] 다음 특성이 부여되었습니다:");
-                        traits.forEach(t -> msg.append("\n§7▸ (").append(t.grade).append(") §f").append(t.name));
-                        rp.sendMessage(msg.toString());
+                        // 마우스 오버레이로 설명을 볼 수 있는 컴포넌트 메시지
+                        var msg = Component.text()
+                            .append(Component.text("[배역 특성] 다음 특성이 부여되었습니다:", NamedTextColor.YELLOW));
+                        for (TraitData t : traits) {
+                            msg.append(Component.newline())
+                                .append(Component.text("▸ (" + t.grade + ") ", NamedTextColor.GRAY))
+                                .append(Component.text(t.name, NamedTextColor.WHITE)
+                                    .hoverEvent(DialogManager.buildTraitHover(t)));
+                        }
+                        msg.append(Component.newline())
+                            .append(Component.text("  (특성에 마우스를 올리면 설명이 표시됩니다)", NamedTextColor.DARK_GRAY));
+                        rp.sendMessage(msg.build());
                         scoreMan.update(rp, pd, state.getRoomNumber());
                     }
                 }

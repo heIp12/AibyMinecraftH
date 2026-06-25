@@ -230,7 +230,7 @@ public class DialogManager {
     //  특성 오버레이 컴포넌트 빌더
     // ──────────────────────────────────────────────────────────────
 
-    private static Component buildTraitHover(TraitData t) {
+    public static Component buildTraitHover(TraitData t) {
         var builder = Component.text()
             .append(Component.text("(" + t.grade + ") " + t.name + "\n", NamedTextColor.WHITE));
 
