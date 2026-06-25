@@ -211,7 +211,8 @@ public class GameStateManager {
         players.values().stream()
             .filter(p -> !p.uuid.equals(actor.getUniqueId()))
             .forEach(p -> others.add(p.toShortLine()));
-        if (others.length() > 0) sb.append("동료: ").append(others).append("\n");
+        String othersStr = others.toString();
+        if (!othersStr.isEmpty()) sb.append("동료: ").append(othersStr).append("\n");
 
         // 최근 이벤트 (3개로 축소)
         List<EventLogEntry> recent = getRecentLog(3);
