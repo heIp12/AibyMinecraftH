@@ -88,6 +88,17 @@ public class GdamGenerator {
 - 각 배역은 고유한 초기 정보 보유
 - 늦게 등장하는 배역은 knowledge_advantage: true
 
+## role_stats 설계 원칙 ★
+배역 고유 스탯 보정치. 기초 스탯(캐릭터 생성 주사위)에 더해지며, 챕터 종료 시 자동 제거된다.
+- 배역마다 개성 있는 보정을 반드시 1~3가지 부여하라 (모두 0인 배역 금지)
+- 예시: 체육선수 → str_add:3, cha_add:-2, luk_fixed:3
+- 예시: 해커 → spr_add:2, str_add:-1, cha_add:1
+- 예시: 의사 → san_max_add:1, str_add:-1
+- str_add/cha_add/luk_add/spr_add: 정수 (양수=증가, 음수=감소)
+- hp_max_add/san_max_add: 정수 (최대치 증감)
+- luk_fixed: 행운을 특정 값으로 고정 (-1이면 미적용, 0 이상이면 그 값으로 강제 설정)
+- summary: 플레이어에게 표시할 한 줄 설명 (예: "체육선수: 근력+3, 매력-2, 행운 3으로 고정")
+
 ## 배역 관계 설계 원칙
 - 배역 간 관계는 다양하게 설계한다: 가족/형제, 연인, 직장동료, 친구, 완전 타인 등
 - 관계가 있는 배역은 같은 zone에서 시작하거나 서로 연락처를 미리 알고 있을 수 있음
@@ -154,7 +165,17 @@ type 값 규칙: "written_book"=책/일기/문서류, "paper"=쪽지/메모, "ma
       "initial_info": [],
       "hidden_info": [],
       "start_item": [],
-      "knowledge_advantage": false
+      "knowledge_advantage": false,
+      "role_stats": {
+        "str_add": 0,
+        "cha_add": 0,
+        "luk_add": 0,
+        "spr_add": 0,
+        "hp_max_add": 0,
+        "san_max_add": 0,
+        "luk_fixed": -1,
+        "summary": ""
+      }
     }
   ],
   "relationships": [
