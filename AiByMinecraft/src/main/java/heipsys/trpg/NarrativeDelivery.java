@@ -8,16 +8,18 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * GM 서술 타이프라이터 출력.
- * 문단(빈 줄 구분) 단위로 묶어 출력하고, 문단 사이에 PARAGRAPH_DELAY 대기.
- * 스니킹(Shift)으로 다음 문단을 즉시 출력.
+ * 문단(빈 줄 구분) 단위로 묶어 출력하고 문단 사이에 PARAGRAPH_DELAY 대기.
+ * 각 줄은 MC 채팅 자동 인덴트 방지를 위해 38자(한글 기준)로 강제 분할.
+ * 스니킹(Shift)으로 다음 문단 즉시 출력.
  */
 public class NarrativeDelivery {
 
     // 문단과 문단 사이 대기 시간 (~2.5초)
     private static final long PARAGRAPH_DELAY_TICKS = 50L;
+    // 마인크래프트 채팅 자동 줄바꿈 한계 (한글 기준 38자)
+    private static final int MAX_CHAT_CHARS = 38;
 
     private final Plugin plugin;
-    // 각 플레이어의 문단 큐 (문단 내 줄들은 \n으로 구분된 단일 문자열)
     private final Map<UUID, ArrayDeque<String>> queues  = new ConcurrentHashMap<>();
     private final Map<UUID, Integer>            taskIds = new ConcurrentHashMap<>();
 
@@ -49,17 +51,12 @@ public class NarrativeDelivery {
     public static String format(String raw) {
         if (raw == null) return "";
         String s = raw;
-        // 스마트 따옴표 → 일반 따옴표
         s = s.replace('“', '"').replace('”', '"');
-        // 마크다운 헤더 기호 제거
         s = s.replaceAll("(?m)^\\s*#{1,6}\\s*", "");
-        // 굵게/기울임/코드 마크다운 → 노란색 강조 후 흰색 복귀
         s = s.replaceAll("\\*\\*(.+?)\\*\\*", "§e$1§f");
         s = s.replaceAll("\\*(.+?)\\*",       "§e$1§f");
         s = s.replaceAll("`(.+?)`",           "§e$1§f");
-        // 줄머리 목록 기호 제거
         s = s.replaceAll("(?m)^\\s*[-•]\\s+", "");
-        // 인물 대사("...") → 청록색으로 구분
         s = s.replaceAll("\"([^\"]+)\"", "§b\"$1\"§f");
         return s;
     }
@@ -97,14 +94,50 @@ public class NarrativeDelivery {
         queues.clear();
     }
 
-    /** 문단 내 줄들을 즉시 순서대로 전송 */
+    /**
+     * 문단 내 각 줄을 MAX_CHAT_CHARS 이하로 분할해 전송.
+     * 마지막에 §8의 구분선으로 문단 경계 표시.
+     */
     private void sendParagraph(Player player, String para) {
-        for (String line : para.split("\n")) {
-            if (!line.isBlank()) player.sendMessage("§f" + line);
+        for (String rawLine : para.split("\n")) {
+            if (rawLine.isBlank()) continue;
+            for (String segment : hardWrap(rawLine)) {
+                player.sendMessage("§f" + segment);
+            }
         }
+        // 문단 구분선 (다음 문단과 시각적으로 분리)
+        player.sendMessage("§8·");
     }
 
-    /** 다음 문단을 PARAGRAPH_DELAY 후 출력 예약 */
+    /**
+     * 색코드(§X)를 무시하고 실제 표시 문자 수 기준으로 줄을 분할한다.
+     * 한글 기준 MAX_CHAT_CHARS 자 이하로 나눠 MC 자동 인덴트를 방지.
+     */
+    private static List<String> hardWrap(String line) {
+        List<String> result = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        int visualLen = 0;
+        int i = 0;
+        while (i < line.length()) {
+            char c = line.charAt(i);
+            if (c == '§' && i + 1 < line.length()) {
+                current.append(c).append(line.charAt(i + 1));
+                i += 2;
+                continue;
+            }
+            current.append(c);
+            visualLen++;
+            if (visualLen >= MAX_CHAT_CHARS) {
+                result.add(current.toString());
+                current = new StringBuilder();
+                visualLen = 0;
+            }
+            i++;
+        }
+        if (!current.isEmpty()) result.add(current.toString());
+        return result.isEmpty() ? Collections.singletonList(line) : result;
+    }
+
     private void scheduleNext(Player player) {
         UUID uuid = player.getUniqueId();
         int tid = plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
