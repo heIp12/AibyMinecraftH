@@ -1,0 +1,14 @@
+name: AIByMinecraft
+main: heipsys.AICraft
+version: 1.0
+api-version: 1.21
+description: "heIp12 games"
+commands:
+  start:
+    description: "Main Commands"
+    usage: "<command>"
+    aliases: [start]
+  r:
+    description: "Server Reload"
+    usage: "<command>"
+    aliases: [reload]
