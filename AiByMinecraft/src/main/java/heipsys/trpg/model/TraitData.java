@@ -8,6 +8,8 @@ public class TraitData {
     public boolean active;       // true = 능동적 발동 (버튼 필요)
     public String  effect;       // GM 참고용 효과 설명
     public boolean roleSpecific; // true = 해당 챕터 배역 한정 특성 (챕터 종료 시 제거)
+    /** 클리어 보상에서 기존 특성을 강화하는 선택지일 때, 대체 대상 특성 id (null = 신규 특성) */
+    public String  replacesId;
 
     public TraitData() {}
 

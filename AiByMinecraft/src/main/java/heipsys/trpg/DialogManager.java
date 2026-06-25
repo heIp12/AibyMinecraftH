@@ -320,14 +320,17 @@ public class DialogManager {
         for (int i = 0; i < choices.size(); i++) {
             TraitData t = choices.get(i);
             final int idx = i + 1;
+            boolean isEnhance = t.replacesId != null;
 
-            String tooltip = t.description != null ? t.description : "";
+            String tooltip = (isEnhance ? "기존 특성을 강화하여 영구 획득합니다.\n\n" : "")
+                + (t.description != null ? t.description : "");
             if (t.active && t.effect != null && !t.effect.isBlank()) {
                 tooltip += (tooltip.isBlank() ? "" : "\n\n") + "§e[사용 효과] §f" + t.effect;
             }
 
+            String label = (isEnhance ? "⬆ 강화 " : "✦ ") + "(" + t.grade + ") " + t.name;
             buttons.add(ActionButton.create(
-                Component.text("(" + t.grade + ") " + t.name, NamedTextColor.WHITE),
+                Component.text(label, isEnhance ? NamedTextColor.GOLD : NamedTextColor.WHITE),
                 tooltip.isBlank() ? null : Component.text(tooltip),
                 200,
                 DialogAction.customClick((v, a) -> onSelect.accept(idx),
@@ -338,9 +341,9 @@ public class DialogManager {
         if (canRemove) {
             buttons.add(ActionButton.create(
                 Component.text("✖ 기존 특성 제거", NamedTextColor.RED),
-                Component.text("기존 특성 1개를 제거하고 새 특성을 받을 수 있습니다."),
+                Component.text("기존 특성 1개를 제거합니다."),
                 150,
-                DialogAction.customClick((v, a) -> onSelect.accept(4),
+                DialogAction.customClick((v, a) -> onSelect.accept(0), // 0 = 제거 (강화 선택지로 인덱스가 늘어날 수 있어 0으로 분리)
                     ClickCallback.Options.builder().uses(1).build())
             ));
         }
