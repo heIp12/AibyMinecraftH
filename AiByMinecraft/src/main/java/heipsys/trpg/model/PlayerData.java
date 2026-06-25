@@ -27,10 +27,12 @@ public class PlayerData {
     public List<TraitData> traits = new ArrayList<>();
     public int diceRollsRemaining = 3;
 
-    public String    status    = "normal";  // normal / puppet / dead
-    public String    zone      = "";
-    public boolean   isDead    = false;
-    public TurnState turnState = TurnState.IDLE;
+    public String    status       = "normal";  // normal / puppet / dead
+    public String    zone         = "";
+    public boolean   isDead       = false;
+    /** 괴담이 이 배역을 제거하고 정체를 차지한 상태 (다른 플레이어 기만) */
+    public boolean   impersonated = false;
+    public TurnState turnState    = TurnState.IDLE;
 
     public boolean statsConfirmed = false;
     public boolean roleAssigned   = false;
@@ -72,9 +74,10 @@ public class PlayerData {
         cha = baseCha;
         luk = baseLuk;
         spr = baseSpr;
-        isDead    = false;
-        status    = "normal";
-        turnState = TurnState.IDLE;
+        isDead       = false;
+        impersonated = false;
+        status       = "normal";
+        turnState    = TurnState.IDLE;
         // heldItemIds / contactId / knownContacts 는 회차(재도전)에도 유지
         // (마인크래프트 인벤토리와 학습한 연락처는 재도전 시 보존됨)
     }
@@ -118,8 +121,9 @@ public class PlayerData {
         return sb.toString();
     }
 
-    /** 비행동 플레이어용 압축 요약 (HP/SAN/상태만) */
+    /** 비행동 플레이어용 압축 요약 (HP/SAN/상태만). GM 전용 — 플레이어에게 노출 금지 */
     public String toShortLine() {
+        if (impersonated) return name + "[괴담이 정체 차용 중]";
         if (isDead) return name + "[사망]";
         String st = status.equals("puppet") ? "[꼭두각시]" : "";
         return name + " HP" + hp[0] + "/" + hp[1] + " SAN" + san[0] + "/" + san[1] + st;

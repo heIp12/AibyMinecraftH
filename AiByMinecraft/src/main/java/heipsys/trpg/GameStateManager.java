@@ -20,6 +20,8 @@ public class GameStateManager {
         public int          level    = 0;
         public int          attempts = 0;
         public List<String> entityMemory = new ArrayList<>();
+        /** 괴담이 학습한 플레이어별 말투·행동 (이름 → 관찰 기록) */
+        public Map<String, List<String>> playerProfiles = new HashMap<>();
 
         public void onRetry() {
             attempts++;
@@ -39,6 +41,7 @@ public class GameStateManager {
             level = 0;
             attempts = 0;
             entityMemory.clear();
+            playerProfiles.clear();
         }
     }
 

@@ -33,6 +33,7 @@ public class AiManager {
 
     private static final int GM_MAX_TOKENS   = 2048;  // 실제 응답은 200-600 수준
     private static final int ASST_MAX_TOKENS = 1024;
+    private static final int GDAM_MAX_TOKENS = 8192;  // .gdam 전체 JSON 생성용 (대용량)
 
     public AiManager(String apiKey, String apiType) {
         this.apiKey  = apiKey.trim();
@@ -83,6 +84,18 @@ public class AiManager {
             try {
                 List<JsonObject> single = List.of(msg("user", userMessage));
                 return send(sonnetModel(), systemPrompt, single, GM_MAX_TOKENS);
+            } catch (Exception e) {
+                return "§c[GM AI 오류] " + e.getMessage();
+            }
+        });
+    }
+
+    /** 대용량 1회성 호출 (.gdam 전체 JSON 생성 등 — 토큰 한도 높음) */
+    public CompletableFuture<String> callGmAiLarge(String systemPrompt, String userMessage) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                List<JsonObject> single = List.of(msg("user", userMessage));
+                return send(sonnetModel(), systemPrompt, single, GDAM_MAX_TOKENS);
             } catch (Exception e) {
                 return "§c[GM AI 오류] " + e.getMessage();
             }
@@ -197,6 +210,8 @@ public class AiManager {
             .replaceAll("<COMM_CLOSE [^/]*/?>", "")
             .replaceAll("<CONTACT_REVEAL [^/]*/?>", "")
             .replaceAll("<CONTACT_CHANGE [^/]*/?>", "")
+            .replaceAll("<IMPERSONATE [^/]*/?>", "")
+            .replaceAll("<IMPERSONATE_END [^/]*/?>", "")
             .trim();
     }
 
@@ -414,16 +429,30 @@ public class AiManager {
 
     /** <CONTACT_CHANGE player="X"/> 모두 파싱 → [X, ...] */
     public java.util.List<String> parseContactChangeTags(String response) {
+        return parseSelfClosingAttr(response, "<CONTACT_CHANGE ", "player");
+    }
+
+    /** <IMPERSONATE player="X"/> 모두 파싱 → [X, ...] */
+    public java.util.List<String> parseImpersonateTags(String response) {
+        return parseSelfClosingAttr(response, "<IMPERSONATE ", "player");
+    }
+
+    /** <IMPERSONATE_END player="X"/> 모두 파싱 → [X, ...] */
+    public java.util.List<String> parseImpersonateEndTags(String response) {
+        return parseSelfClosingAttr(response, "<IMPERSONATE_END ", "player");
+    }
+
+    /** 자기완결 태그(prefix ... />)에서 단일 속성값을 모두 수집 */
+    private java.util.List<String> parseSelfClosingAttr(String response, String prefix, String attr) {
         java.util.List<String> out = new ArrayList<>();
-        final String PREFIX = "<CONTACT_CHANGE ";
         int from = 0;
         while (true) {
-            int idx = response.indexOf(PREFIX, from);
+            int idx = response.indexOf(prefix, from);
             if (idx == -1) break;
             int end = response.indexOf("/>", idx);
             if (end == -1) break;
-            String attrs = response.substring(idx + PREFIX.length(), end);
-            extractAttr(attrs, "player").ifPresent(out::add);
+            String attrs = response.substring(idx + prefix.length(), end);
+            extractAttr(attrs, attr).ifPresent(out::add);
             from = end + 2;
         }
         return out;

@@ -4,6 +4,8 @@ import com.google.gson.JsonObject;
 import heipsys.trpg.model.PlayerData;
 
 import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
 
 /**
  * 오염 시스템 (STEP 6-3).
@@ -77,6 +79,26 @@ public class CorruptionManager {
         var em = state.getCorruption().entityMemory;
         em.add(memoryLine);
         if (em.size() > 20) em.remove(0); // 최근 20개만 유지
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  플레이어별 행동·말투 학습 (정체 차용/흉내용)
+    // ──────────────────────────────────────────────────────────────
+
+    /** 괴담이 특정 플레이어의 말/행동을 관찰해 학습 */
+    public void learnPlayerBehavior(String playerName, String line) {
+        if (playerName == null || line == null || line.isBlank()) return;
+        var profiles = state.getCorruption().playerProfiles;
+        var list = profiles.computeIfAbsent(playerName, k -> new java.util.ArrayList<>());
+        String trimmed = line.trim();
+        if (trimmed.length() > 120) trimmed = trimmed.substring(0, 120);
+        list.add(trimmed);
+        if (list.size() > 10) list.remove(0); // 최근 10개만 유지
+    }
+
+    /** 괴담이 학습한 특정 플레이어의 행동 패턴 */
+    public List<String> getPlayerProfile(String playerName) {
+        return state.getCorruption().playerProfiles.getOrDefault(playerName, Collections.emptyList());
     }
 
     // ──────────────────────────────────────────────────────────────

@@ -35,6 +35,8 @@ public class GdamGenerator {
 - 반드시 순수 JSON만 출력 (마크다운 코드블록 없이)
 - 한국어로 작성
 - 모든 필수 항목 포함
+- 각 필드 값은 간결하게: 서술형 설명은 1~2문장 이내, 배열은 핵심 3~5개로 제한
+- 불필요하게 장황하게 쓰지 마라 (JSON이 잘리지 않도록)
 
 ## 괴담 소재 다양성 (편향 금지)
 도시괴담 / SCP / 백룸 / 신화적 존재 / 한국 전통 괴담 /
@@ -80,6 +82,7 @@ public class GdamGenerator {
     "exploit_path": "",
     "escape": "",
     "independent_ai": true,
+    "can_impersonate": false,
     "ai_context": {
       "personality": "",
       "initial_pattern": "",
@@ -135,6 +138,11 @@ public class GdamGenerator {
   }
 }
 
+## can_impersonate 작성 기준
+변신·모방·도플갱어·빙의형 또는 고지능 괴담만 true.
+true면 게임 중 플레이어를 제거하고 그 정체를 차지해 다른 플레이어를 속일 수 있다.
+단순 물리적·환경적 괴담은 false.
+
 ## common_items 작성 기준
 시대 배경에 따라 모든 플레이어가 기본 소지하는 아이템 ID 목록.
 현대(2000년대~현재): ["smartphone"] 반드시 포함.
@@ -165,7 +173,7 @@ public class GdamGenerator {
         String prompt = "방 번호: " + roomNumber + "\n스케일: " + scale
             + "\n\n위 스키마 형식의 .gdam JSON을 생성해줘. seed는 빈 문자열로 두면 됩니다.";
 
-        return aiManager.callGmAiOnce(GDAM_SYSTEM_PROMPT, prompt)
+        return aiManager.callGmAiLarge(GDAM_SYSTEM_PROMPT, prompt)
             .thenApply(raw -> {
                 try {
                     String cleaned = stripMarkdown(raw);

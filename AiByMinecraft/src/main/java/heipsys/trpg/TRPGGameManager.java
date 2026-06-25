@@ -150,6 +150,19 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
 <CONTACT_CHANGE player="플레이어명"/>
 출력 시 그 플레이어의 모든 연락처(번호·이메일·SNS)가 바뀌고 타인이 알던 연락처는 무효가 된다.
 
+### 정체 차용 (entity.can_impersonate == true 인 괴담만) ★
+변신·모방·도플갱어·빙의형 괴담은 플레이어를 제거하고 그 정체를 차지할 수 있다.
+괴담은 그 플레이어가 평소 하던 행동(특성·능력 사용 제외)을 흉내 내 다른 플레이어를 속인다.
+차용 시작:
+<IMPERSONATE player="플레이어명"/>
+→ 해당 플레이어는 이야기에서 제거되고, 이후 괴담이 그 사람인 척 행동·대화한다.
+   다른 플레이어가 그 사람에게 말을 걸면 괴담(너)이 그 사람인 척 응답한다.
+   괴담은 관찰로 학습한 그 플레이어의 말투·행동을 사용하되, 미세한 위화감을 남겨라.
+   정체를 직접 밝히지 말고, 다른 플레이어가 스스로 의심하게 만들어라.
+차용 종료(정체 노출/이탈 시):
+<IMPERSONATE_END player="플레이어명"/>
+주의: 다른 플레이어에게 그 플레이어의 죽음/차용 사실을 직접 알리지 마라. (스스로 알아내야 함)
+
 ### GM 내부 비공개 항목 (절대 공개 금지)
 - 괴담의 정체 및 스케일
 - 타임라인 세부 내용
@@ -605,6 +618,9 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             actionMessage = "[꼭두각시] " + message;
         }
 
+        // 괴담이 이 플레이어의 말투·행동을 학습 (정체 차용/흉내에 사용)
+        corruptMan.learnPlayerBehavior(player.getName(), message);
+
         // 특성 버튼 관련 단어 처리는 TurnManager가 GM AI로 전달
         boolean accepted = turnMan.handleAction(player, actionMessage, gmSystemPrompt);
         if (!accepted) {
@@ -687,6 +703,10 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             // 5b. 연락처 발견 / 변경 처리
             ai.parseContactRevealTags(raw).forEach(rev -> revealContact(rev[0], rev[1]));
             ai.parseContactChangeTags(raw).forEach(this::changeContact);
+
+            // 5c. 괴담의 정체 차용 시작/종료
+            ai.parseImpersonateTags(raw).forEach(this::startImpersonation);
+            ai.parseImpersonateEndTags(raw).forEach(this::endImpersonation);
 
             // 6. 일상 파트 턴 소비
             if (state.isDailyPhase()) {
@@ -1134,37 +1154,40 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             return;
         }
 
-        // 1) 같은 구역 → 대면 직접 전달 (번호 불필요, 자동 번호 교환)
+        // 도달 가능성 판정 (viaDevice = 기기 통신 여부)
+        boolean viaDevice;
         if (!senderPd.zone.isEmpty() && senderPd.zone.equals(targetPd.zone)) {
-            deliverDirectMessage(sender, senderPd, targetPd, message, false);
-            exchangeContacts(senderPd, targetPd);
+            viaDevice = false; // 같은 구역 → 대면 (번호 불필요)
+        } else {
+            Set<UUID> channels = commChannels.get(sender.getUniqueId());
+            boolean gmChannel = channels != null && channels.contains(targetPd.uuid);
+            if (gmChannel) {
+                viaDevice = true; // GM 개설 채널 → 번호 불필요
+            } else {
+                // 기기 통신: 양쪽 모두 통신 기기 보유 필요
+                if (!hasCommDevice(senderPd) || !hasCommDevice(targetPd)) {
+                    sender.sendMessage("§c근처에 없고 통신 기기로도 닿지 않습니다. (직접 찾아가거나 다른 방법이 필요)");
+                    return;
+                }
+                // 연락처 지식: 번호를 직접 입력했거나, 한쪽이라도 상대 연락처를 알면 가능
+                boolean contactKnown = dialedByNumber
+                    || senderPd.knownContacts.contains(targetPd.uuid)
+                    || targetPd.knownContacts.contains(senderPd.uuid);
+                if (!contactKnown) {
+                    sender.sendMessage("§c" + targetPd.name + "의 연락처를 모릅니다. 직접 만나거나 번호를 알아내야 합니다.");
+                    return;
+                }
+                viaDevice = true;
+            }
+        }
+
+        // 괴담이 정체를 차용한 배역이면 → 괴담이 그 사람인 척 기만 응답
+        if (targetPd.impersonated) {
+            deliverImpersonatedReply(sender, senderPd, targetPd, message, viaDevice);
             return;
         }
 
-        // 2) GM이 개설한 기기 채널 → 번호 없이도 전달
-        Set<UUID> channels = commChannels.get(sender.getUniqueId());
-        if (channels != null && channels.contains(targetPd.uuid)) {
-            deliverDirectMessage(sender, senderPd, targetPd, message, true);
-            exchangeContacts(senderPd, targetPd);
-            return;
-        }
-
-        // 3) 기기 통신: 양쪽 모두 통신 기기 보유 필요
-        if (!hasCommDevice(senderPd) || !hasCommDevice(targetPd)) {
-            sender.sendMessage("§c근처에 없고 통신 기기로도 닿지 않습니다. (직접 찾아가거나 다른 방법이 필요)");
-            return;
-        }
-
-        // 4) 연락처 지식 확인 — 번호를 직접 입력했거나, 한쪽이라도 상대 연락처를 알면 가능
-        boolean contactKnown = dialedByNumber
-            || senderPd.knownContacts.contains(targetPd.uuid)
-            || targetPd.knownContacts.contains(senderPd.uuid);
-        if (!contactKnown) {
-            sender.sendMessage("§c" + targetPd.name + "의 연락처를 모릅니다. 직접 만나거나 번호를 알아내야 합니다.");
-            return;
-        }
-
-        deliverDirectMessage(sender, senderPd, targetPd, message, true);
+        deliverDirectMessage(sender, senderPd, targetPd, message, viaDevice);
         exchangeContacts(senderPd, targetPd);
     }
 
@@ -1178,14 +1201,15 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     }
 
     private PlayerData findByContactId(String id) {
+        // 정체 차용된(죽었지만 괴담이 행세 중인) 배역도 연결 대상에 포함
         return state.getAllPlayers().stream()
-            .filter(pd -> id.equals(pd.contactId) && !pd.isDead)
+            .filter(pd -> id.equals(pd.contactId) && (!pd.isDead || pd.impersonated))
             .findFirst().orElse(null);
     }
 
     private PlayerData findByName(String name) {
         return state.getAllPlayers().stream()
-            .filter(pd -> pd.name.equalsIgnoreCase(name) && !pd.isDead)
+            .filter(pd -> pd.name.equalsIgnoreCase(name) && (!pd.isDead || pd.impersonated))
             .findFirst().orElse(null);
     }
 
@@ -1281,6 +1305,82 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         if (p != null && p.isOnline())
             p.sendMessage("§5[연락처 변경] 당신의 연락처가 §f" + pd.contactId
                 + "§5(으)로 바뀌었습니다. 이전 연락처로는 더 이상 닿지 않습니다.");
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  괴담의 정체 차용 (impersonation)
+    // ──────────────────────────────────────────────────────────────
+
+    private boolean entityCanImpersonate() {
+        JsonObject g = state.getGdamData();
+        if (g != null && g.has("entity")) {
+            JsonObject e = g.getAsJsonObject("entity");
+            return e.has("can_impersonate") && e.get("can_impersonate").getAsBoolean();
+        }
+        return false;
+    }
+
+    /** 괴담이 플레이어를 제거하고 정체를 차지 — 본인에게만 통보, 타인에게는 비공개 */
+    private void startImpersonation(String name) {
+        if (!entityCanImpersonate()) return;
+        PlayerData pd = findAnyByName(name);
+        if (pd == null || pd.impersonated) return;
+        pd.impersonated = true;
+        pd.isDead       = true;     // 죽이고 대신 움직인다
+        pd.status       = "dead";
+        Player p = Bukkit.getPlayer(pd.uuid);
+        if (p != null && p.isOnline())
+            p.sendMessage("§4무언가가 당신의 자리를 차지했다. 당신은 더 이상 당신이 아니다...");
+        state.log("entity", getEntityName(), name + "의 정체를 차용함");
+    }
+
+    /** 괴담이 정체 차용을 종료 (노출/이탈). 배역은 제거된 상태로 유지 */
+    private void endImpersonation(String name) {
+        PlayerData pd = findAnyByName(name);
+        if (pd == null || !pd.impersonated) return;
+        pd.impersonated = false;
+        state.log("entity", getEntityName(), name + "의 정체 차용을 끝냄");
+    }
+
+    /** 차용된 배역에게 온 메시지 → 괴담이 그 사람인 척 학습된 말투로 응답 */
+    private void deliverImpersonatedReply(Player sender, PlayerData senderPd, PlayerData victim,
+                                          String message, boolean viaDevice) {
+        String tag = viaDevice ? "§a[통신]" : "§a[근처]";
+        // 발신자는 평소처럼 보낸다 (상대가 괴담인 줄 모름)
+        sender.sendMessage(tag + " §f" + senderPd.name + " → " + victim.name + ": " + message);
+        sender.sendMessage("§7[" + victim.name + "의 응답을 기다리는 중...]");
+        state.log("comm", senderPd.name, "→ " + victim.name + "(?): " + message);
+
+        String sys   = buildImpersonationPrompt(victim);
+        String input = senderPd.name + "이(가) '" + victim.name + "'에게 말한다: \"" + message + "\"\n"
+            + "'" + victim.name + "'인 척 자연스럽게 1-2문장으로 응답하라. 특성·능력 사용 금지. "
+            + "미세한 위화감만 남기고 정체는 직접 밝히지 마라.";
+
+        ai.callEntityAi(sys, input).thenAccept(resp ->
+            plugin.getServer().getScheduler().runTask(plugin, () -> {
+                if (resp == null || resp.startsWith("§c")) return;
+                String txt = resp.trim();
+                if (txt.isEmpty() || !sender.isOnline()) return;
+                sender.sendMessage(tag + " §f" + victim.name + ": " + txt);
+            }));
+    }
+
+    /** 정체 차용 시스템 프롬프트 — 괴담 기본 + 학습한 그 플레이어의 말투·행동 */
+    private String buildImpersonationPrompt(PlayerData victim) {
+        StringBuilder sb = new StringBuilder(buildEntitySystemPrompt());
+        sb.append("\n## 정체 차용 모드\n");
+        sb.append("너는 '").append(victim.name).append("'(").append(victim.age).append("세, ")
+          .append(victim.job).append(")의 정체를 차지했다. 그 사람인 척 대화하라.\n");
+        List<String> profile = corruptMan.getPlayerProfile(victim.name);
+        if (!profile.isEmpty()) {
+            sb.append("관찰로 학습한 그 사람의 말투·행동:\n");
+            profile.forEach(l -> sb.append("  - ").append(l).append("\n"));
+            sb.append("위 말투를 모방하되, 아주 미세한 위화감(어색한 호칭·모르는 과거·기계적 반복 등)을 남겨라.\n");
+        } else {
+            sb.append("관찰 기록이 거의 없으니, 짧고 모호하게 답해 정체를 숨겨라.\n");
+        }
+        sb.append("특성·능력은 사용하지 않는다. 정체를 직접 밝히지 마라. 1-2문장.\n");
+        return sb.toString();
     }
 
     private void deliverDirectMessage(Player sender, PlayerData senderPd, PlayerData targetPd,
