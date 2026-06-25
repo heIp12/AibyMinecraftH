@@ -16,6 +16,11 @@ public class PlayerData {
     public int age = 25;
     public String job = "일반인";
 
+    /** 캐릭터 고유(기본) 나이 — 배역이 없을 때 복귀할 값 */
+    public int baseAge = 25;
+    /** 현재 배역에 맞춰 임시로 부여된 나이 (-1 = 배역 없음) */
+    public int roleAge = -1;
+
     // [current, max]
     public int[] hp  = {6, 6};
     public int   str = 5;
@@ -65,6 +70,7 @@ public class PlayerData {
         baseCha = cha;
         baseLuk = luk;
         baseSpr = spr;
+        baseAge = age;
     }
 
     public void resetToBase() {
@@ -74,6 +80,8 @@ public class PlayerData {
         cha = baseCha;
         luk = baseLuk;
         spr = baseSpr;
+        // 배역이 있으면 배역 나이로, 없으면 고유 나이로 복귀 (재도전 시 배역 나이 유지)
+        age = (roleAge >= 0) ? roleAge : baseAge;
         isDead       = false;
         impersonated = false;
         status       = "normal";
@@ -85,6 +93,7 @@ public class PlayerData {
     /** 챕터 종료 후 다음 스테이지 진행 시: roleSpecific 특성 제거, 기본 스탯 복구, 역할 초기화 */
     public void clearRoleData() {
         traits.removeIf(t -> t.roleSpecific);
+        roleAge = -1;          // 배역 해제 → 다음 배역 전까지 고유 나이로
         resetToBase();
         roleId       = "";
         zone         = "";
@@ -105,6 +114,40 @@ public class PlayerData {
     private static int pct(int current, int max) {
         if (max <= 0) return 0;
         return (int) Math.round((double) current / max * 100.0);
+    }
+
+    /**
+     * 능력치 수치를 자연어로 가볍게 해설한다(스탯 이름·숫자 노출 없이).
+     * 예: "쉽게 지치지만 사람들과 쉽게 친해집니다."
+     * 플레이어 정보 표시와 GM 서술 일관성 유지에 함께 사용한다.
+     */
+    public String getStatNarrative() {
+        List<String> strengths  = new ArrayList<>();
+        List<String> weaknesses = new ArrayList<>();
+        evalStat(strengths, weaknesses, hp[1],  "좀처럼 지치지 않습니다",      "쉽게 지칩니다");
+        evalStat(strengths, weaknesses, str,    "완력이 좋습니다",            "힘이 약한 편입니다");
+        evalStat(strengths, weaknesses, san[1], "웬만해선 동요하지 않습니다",  "쉽게 불안에 휩싸입니다");
+        evalStat(strengths, weaknesses, cha,    "사람들과 쉽게 친해집니다",    "낯을 가리는 편입니다");
+        evalStat(strengths, weaknesses, luk,    "운이 따르는 편입니다",        "운이 잘 따르지 않습니다");
+        evalStat(strengths, weaknesses, spr,    "직감이 예리합니다",          "직감이 무딘 편입니다");
+
+        // 가장 두드러진 약점·강점 위주로 최대 3개 문장만
+        List<String> picked = new ArrayList<>();
+        if (!weaknesses.isEmpty()) picked.add(weaknesses.get(0));
+        if (!strengths.isEmpty())  picked.add(strengths.get(0));
+        if (picked.size() < 3) {
+            if (weaknesses.size() > 1) picked.add(weaknesses.get(1));
+            else if (strengths.size() > 1) picked.add(strengths.get(1));
+        }
+        if (picked.isEmpty()) return "전반적으로 무난한 능력입니다.";
+        return String.join(" ", picked);
+    }
+
+    /** value가 평균 이상이면 강점, 이하면 약점 목록에 추가 (4~5는 평범으로 제외) */
+    private static void evalStat(List<String> strengths, List<String> weaknesses,
+                                 int value, String high, String low) {
+        if (value >= 6)      strengths.add(high);
+        else if (value <= 3) weaknesses.add(low);
     }
 
     public String getTraitsDisplay() {
@@ -136,6 +179,8 @@ public class PlayerData {
             sb.append(" 소지품:").append(String.join(",", heldItemIds));
         }
         sb.append(" 상태:").append(status).append(" 위치:").append(zone.isEmpty() ? "?" : zone);
+        // 수치를 자연어 성향으로도 제공 → GM이 서술·판정에 일관되게 반영
+        sb.append(" 성향:").append(getStatNarrative());
         return sb.toString();
     }
 

@@ -23,6 +23,7 @@ import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Collectors;
 
 /**
@@ -96,12 +97,14 @@ public class TRPGGameManager {
 나쁜 예: "당신이 알고 있는 정보: 1. 3층에서 소리가 남. 2. ..." ← 절대 금지
 
 ### 일상 파트 운영 원칙 ★ 최우선
-일상 파트는 '평범한 일상'으로 시작한다. 초반에는 괴담의 흔적이 전혀 없어야 한다.
+일상 파트의 목적은 (1) 플레이어가 캐릭터·세계관에 몰입하도록 돕고,
+(2) 본격적인 괴담 시작 전 플레이어가 원하는 곳에서·원하는 준비를 하며 자리잡게 하는 것이다.
 - 첫 장면은 100% 평범: 배역의 일상·관계·목적을 자연스럽게 보여준다.
+- 복선·단서를 반드시 깔 필요는 없다. 아예 없을 수도 있다. 억지로 위화감을 심지 마라.
+  일상은 그냥 평범한 일상이어도 된다. 플레이어의 자유로운 행동·이동·탐색을 우선 존중한다.
+- 복선을 넣더라도 선택적·아주 미미하게. 흘려보낼 수 있는 수준이면 충분하다.
 - 절대 급발진 금지: "갑자기 괴물/시체/초자연 현상이 나타난다" 식 전개 금지.
-- 불안은 아주 천천히, 사소하고 '부정할 수 있는' 위화감부터: 살짝 어긋난 디테일,
-  설명 가능한 작은 이상함(기분 탓일 수도 있는 수준)으로만.
-- 플레이어가 스스로 "뭔가 좀 이상한데?"라고 느끼게 만들되, 원인·정체는 절대 알려주지 않는다.
+- 플레이어가 원인·정체를 알게 만들지 마라.
 - 일상 파트 동안 직접적·치명적 위협 금지. 본격적 위협은 괴담 파트에서 시작된다.
 
 ### 긴장 고조 페이싱 ★ 최우선
@@ -134,6 +137,15 @@ public class TRPGGameManager {
 10 = B급 영웅  |  13 = 1인 군대  |  17 = 국가 멸망 급
 20 = 행성·신 급  |  25 = 절대자
 이 기준으로 플레이어 스탯과 NPC·entity 강도를 비교해 판정 난이도를 조절하라.
+
+### 스탯 서술 반영 원칙 ★
+플레이어 입력의 "성향:" 항목은 그 캐릭터의 능력치를 자연어로 요약한 것이다.
+- 판정뿐 아니라 평상시 서술에도 이 성향을 일관되게 반영하라.
+  (예: 체력이 약한 캐릭터는 같은 거리를 달려도 더 빨리 숨이 차고,
+   매력이 높은 캐릭터에게는 NPC가 더 쉽게 마음을 연다.)
+- 스탯 수치·약어(STR/HP 등)나 "성향:" 문구를 그대로 노출하지 말고,
+  자연스러운 장면 묘사·NPC 반응·행동 결과로만 녹여낸다.
+- 같은 행동이라도 능력치에 따라 결과·묘사가 달라져야 한다.
 
 ### 판정 시스템
 스탯 대비 결과가 불확실한 행동에만 d20 판정.
@@ -839,6 +851,8 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
      * @return 플레이어에게 표시할 요약 문자열 (없으면 빈 문자열)
      */
     private String applyRoleStats(PlayerData pd, JsonObject roleData) {
+        // 나이는 role_stats 유무와 무관하게 배역 age_range에 맞춰 조정
+        applyRoleAge(pd, roleData);
         if (!roleData.has("role_stats")) return "";
         JsonObject rs = roleData.getAsJsonObject("role_stats");
 
@@ -870,6 +884,27 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         }
 
         return rs.has("summary") ? rs.get("summary").getAsString() : "";
+    }
+
+    /**
+     * 배역 age_range에 맞춰 나이를 임시로 조정한다.
+     * 현재 나이가 이미 배역 연령대 안이면 유지(생성 시 표시값과 불일치 방지),
+     * 벗어나면 범위 안에서 새로 뽑는다. role_stats가 없어도 호출 가능하도록 분리.
+     */
+    private void applyRoleAge(PlayerData pd, JsonObject roleData) {
+        if (roleData == null || !roleData.has("age_range")) {
+            pd.roleAge = pd.age; // 연령 정보 없으면 현재 나이를 배역 나이로 고정
+            return;
+        }
+        JsonArray ar = roleData.getAsJsonArray("age_range");
+        if (ar.size() >= 2) {
+            int lo = ar.get(0).getAsInt(), hi = ar.get(1).getAsInt();
+            if (hi < lo) { int t = lo; lo = hi; hi = t; }
+            if (pd.age < lo || pd.age > hi) {
+                pd.age = (hi > lo) ? lo + ThreadLocalRandom.current().nextInt(hi - lo + 1) : lo;
+            }
+        }
+        pd.roleAge = pd.age;
     }
 
     /** gdam relationships 기반으로 mutual_contact:true 배역끼리 연락처를 미리 교환 */
@@ -1126,12 +1161,9 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                 boolean phaseChanged = state.consumeDailyTurn();
                 if (phaseChanged) {
                     onHorrorPhaseStart();
-                } else if (state.getDailyTurnsLeft() == 1) {
-                    spawnedPlayers.forEach(uid -> {
-                        Player sp = Bukkit.getPlayer(uid);
-                        if (sp != null) sp.sendMessage("§8§o(분위기가 달라지고 있다...)");
-                    });
                 }
+                // 전환 임박을 직접 알리는 예고 메시지는 출력하지 않는다(스포일러 방지).
+                // 분위기 변화는 GM의 환경 서술로만 자연스럽게 드러난다.
             }
 
             // 7. 스코어보드 갱신
@@ -1155,10 +1187,12 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                     if (sp == null) return;
                     ai.callEntityAi(entityPrompt, entityLog).thenAccept(entityResp -> {
                         if (entityResp == null || entityResp.startsWith("§c")) return;
-                        String trimmed = entityResp.trim();
+                        String trimmed = ai.stripTags(entityResp).trim();
                         if (trimmed.isEmpty()) return;
                         plugin.getServer().getScheduler().runTask(plugin, () -> {
-                            if (sp.isOnline()) sp.sendMessage("§8§o[" + getEntityName() + "] " + trimmed);
+                            // 괴담의 정체/이름/1인칭을 노출하지 않고, 플레이어가 감지하는
+                            // 환경 현상으로만 NarrativeDelivery를 통해 자연스럽게 전달한다.
+                            if (sp.isOnline()) narrativeDelivery.deliver(sp, trimmed);
                             if (corruptMan.getLevel() >= 2) corruptMan.addEntityMemory(trimmed);
                         });
                     });
@@ -1654,8 +1688,14 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             + "본 스토리는 간접적으로만 암시 (직접 언급 금지).\n" + context,
             "현재 게임 단계: " + phase
         ).thenAccept(resp -> plugin.getServer().getScheduler().runTask(plugin, () -> {
-            if (p.isOnline() && !resp.startsWith("§c"))
-                p.sendMessage("§8§o" + resp.trim());
+            if (p.isOnline() && !resp.startsWith("§c")) {
+                // 진한 회색(§8)은 가독성이 나빠 읽기 쉬운 회색 이탤릭(§7§o)으로.
+                // 본 서술과 구분되도록 이탤릭만 유지.
+                String text = NarrativeDelivery.format(ai.stripTags(resp).trim());
+                for (String line : text.split("\n")) {
+                    if (!line.isBlank()) p.sendMessage("§7§o" + line);
+                }
+            }
         }));
     }
 
@@ -1708,25 +1748,55 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
 
     private String buildEntitySystemPrompt() {
         JsonObject gdam = state.getGdamData();
-        if (gdam == null || !gdam.has("entity")) {
-            return "너는 괴담의 독립적 의지야. 1-2문장으로 짧게 행동/의도만 서술해. 한국어로.";
-        }
+        String envRule =
+            "너는 괴담의 '결과'를 환경 현상으로 묘사하는 연출 보조다.\n"
+          + "★ 절대 규칙:\n"
+          + "- 괴담의 이름·정체·동기를 절대 언급하지 마라.\n"
+          + "- 1인칭('나는...') 금지. 괴담의 내면·시점·감각·의도를 직접 서술 금지.\n"
+          + "- 괴담이 직접 말하거나 메시지를 보내는 형식 금지.\n"
+          + "- 오직 플레이어가 감각으로 인지할 수 있는 물리적 현상·환경 이상만 묘사.\n"
+          + "  (소리·냄새·온도·그림자·사물의 미세한 변화 등)\n"
+          + "- 짧게 1문장, 2인칭 관찰자 시점. 한국어. 따옴표·제목·머리기호 금지.\n"
+          + "좋은 예: \"복도 끝 형광등이 한 박자 늦게 깜빡인다.\"\n"
+          + "나쁜 예: \"[괴담] 나는 너에게 다가간다.\" (1인칭·정체 노출 — 금지)\n";
+        String intensity = buildEntityIntensityGuide();
+        if (gdam == null || !gdam.has("entity")) return envRule + intensity;
+
         JsonObject entity = gdam.getAsJsonObject("entity");
-        StringBuilder sb = new StringBuilder();
-        sb.append("너는 '").append(entity.has("name") ? entity.get("name").getAsString() : "괴담").append("'이야.\n");
-        sb.append("1-2문장으로만 응답. 자신의 행동/의도/감각만 서술. 한국어.\n");
+        StringBuilder sb = new StringBuilder(envRule).append(intensity);
         sb.append("플레이어 스탯·특성·해결법을 절대 직접 언급 금지.\n");
         if (entity.has("ai_context")) {
             JsonObject ctx = entity.getAsJsonObject("ai_context");
+            // 성격/패턴은 내부 참고용일 뿐, 출력에 직접 노출하지 말 것
             if (ctx.has("personality"))
-                sb.append("성격: ").append(ctx.get("personality").getAsString()).append("\n");
+                sb.append("[내부 참고] 성향: ").append(ctx.get("personality").getAsString()).append("\n");
             if (ctx.has("initial_pattern"))
-                sb.append("행동 패턴: ").append(ctx.get("initial_pattern").getAsString()).append("\n");
+                sb.append("[내부 참고] 행동 패턴: ").append(ctx.get("initial_pattern").getAsString()).append("\n");
         }
         if (entity.has("rules") && entity.get("rules").isJsonArray()) {
-            sb.append("규칙: ").append(entity.get("rules").toString()).append("\n");
+            sb.append("[내부 참고] 규칙: ").append(entity.get("rules").toString()).append("\n");
         }
         return sb.toString();
+    }
+
+    /**
+     * 괴담 현상의 강도 지침. 오염도(corruption)와 타임라인 진행도에 비례한다.
+     * 초반·저오염: 그냥 흘려보낼 사소한 위화감(시나리오 영향 없음).
+     * 후반·고오염: 명백·불시·시나리오에 직접 영향 가능.
+     */
+    private String buildEntityIntensityGuide() {
+        int corr  = corruptMan.getLevel();
+        int stage = state.getTimelineStage();
+        int t = corr + Math.max(0, stage - 1);
+        if (t <= 1) {
+            return "현재 강도: 매우 약함. 그냥 흘려보낼 만한, 있는 듯 없는 듯한 사소한 위화감 1문장만. "
+                 + "시나리오 진행에 영향을 주는 사건·피해·직접 위협 절대 금지. 분위기만 아주 살짝.\n";
+        } else if (t <= 3) {
+            return "현재 강도: 중간. 신경 쓰이는 이상 현상 1문장. 아직 치명적이지 않게, 의심이 들 정도로만.\n";
+        } else {
+            return "현재 강도: 강함. 명백하고 불길한 현상. 불시에 닥쳐도 좋고, 시나리오에 직접 영향을 줄 수 있다. "
+                 + "단, 여전히 이름·정체·1인칭은 노출 금지.\n";
+        }
     }
 
     private String getEntityName() {
