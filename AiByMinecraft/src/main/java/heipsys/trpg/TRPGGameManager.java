@@ -76,6 +76,12 @@ public class TRPGGameManager {
 - 아이템/판정 시스템 설명
 - 게임 메커니즘 일체
 
+### initial_info 처리 원칙 ★
+배역의 initial_info는 그 배역이 이미 알고 있는 배경 지식이다.
+일상 파트 첫 장면에 자연스러운 장면 묘사로만 녹여내라. 직접 목록 나열 절대 금지.
+좋은 예: "당신은 요즘 건물 3층에서 이상한 소리가 난다는 소문이 떠돈다는 것을 알고 있다."
+나쁜 예: "당신이 알고 있는 정보: 1. 3층에서 소리가 남. 2. ..." ← 절대 금지
+
 ### 타임라인 관리
 - 내부적으로만 유지, 직접 고지 금지
 - 환경 변화(소음/냄새/온도/색 변화)로만 암시
@@ -845,10 +851,20 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             PlayerData pd = state.getPlayer(uuid);
             if (pd == null) return;
 
-            String prompt = "일상 파트 시작. "
-                + "이 메시지는 배역 '" + pd.roleId + "' 플레이어(" + pd.name + ")에게만 전달된다. "
-                + "해당 배역의 시작 위치와 초기 정보를 바탕으로 2인칭 시점의 일상 장면을 서술해줘. "
-                + "다른 플레이어의 존재를 직접 언급하지 마. 괴담 암시 금지.";
+            // initial_info를 GM 전달 컨텍스트에 포함 (장면 묘사에 자연스럽게 반영용)
+            StringBuilder promptSb = new StringBuilder();
+            promptSb.append("일상 파트 시작. 배역 '").append(pd.roleId)
+                .append("' 플레이어(").append(pd.name).append(")에게만 전달된다. ");
+            promptSb.append("시작 위치: ").append(pd.zone.isEmpty() ? "?" : pd.zone).append(". ");
+            JsonObject roleDataForPrologue = getRoleDataById(pd.roleId);
+            if (roleDataForPrologue != null && roleDataForPrologue.has("initial_info")) {
+                promptSb.append("[GM 전용 — 이 배역이 이미 알고 있는 배경 지식: ");
+                roleDataForPrologue.getAsJsonArray("initial_info")
+                    .forEach(i -> promptSb.append("(").append(i.getAsString()).append(") "));
+                promptSb.append("— 위 내용을 직접 나열하지 말고 장면 묘사에만 녹여낼 것.] ");
+            }
+            promptSb.append("2인칭 시점의 일상 장면을 서술해줘. 다른 플레이어의 존재 직접 언급 금지. 괴담 암시 금지.");
+            String prompt = promptSb.toString();
 
             ai.callGmAiOnce(gmSystemPrompt, prompt)
                 .thenAccept(response -> plugin.getServer().getScheduler().runTask(plugin, () -> {
