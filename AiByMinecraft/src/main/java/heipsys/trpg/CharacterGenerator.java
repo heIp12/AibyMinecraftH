@@ -328,9 +328,9 @@ public class CharacterGenerator {
         StringBuilder sb = new StringBuilder();
         sb.append("§f─────────────────────────\n");
         sb.append("§7나이: §f").append(pd.age).append("세  §7직업: §f").append(pd.job).append("\n");
-        sb.append("§c체력 §f").append(pd.hp[0]).append("/").append(pd.hp[1])
+        sb.append("§c체력 §f").append(DialogManager.hpDisplay(pd.hp))
           .append("  §9근력 §f").append(pd.str).append("\n");
-        sb.append("§b정신력 §f").append(pd.san[0]).append("/").append(pd.san[1])
+        sb.append("§b정신력 §f").append(DialogManager.hpDisplay(pd.san))
           .append("  §a매력 §f").append(pd.cha).append("\n");
         sb.append("§6행운 §f").append(pd.luk)
           .append("  §d영감 §f").append(pd.spr).append("\n");

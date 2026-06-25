@@ -200,14 +200,21 @@ public class DialogManager {
 
     // ──────────────────────────────────────────────────────────────
     //  HP / SAN 백분율 표시 헬퍼
-    //  형식: currentHP*10 / 100 (rawStat)
-    //  예: stat=7 → "70/100(7)", 데미지 후 stat[0]=3 → "30/100(7)"
+    //  굴린 최대 스탯이 항상 100을 기준으로 환산된다.
+    //  형식: round(현재/최대 * 100) / 100 (원본 스탯)
+    //  예: 최대=3 → 만피 "100/100(3)", 1피해 후 "67/100(3)", 2피해 후 "33/100(3)"
     // ──────────────────────────────────────────────────────────────
 
     public static String hpDisplay(int[] stat) {
-        int current = stat[0] * 10;
-        int maxVal  = Math.max(100, stat[1] * 10);
-        return current + "/" + maxVal + "(" + stat[1] + ")";
+        int max = Math.max(1, stat[1]);
+        int pct = (int) Math.round((double) stat[0] / max * 100.0);
+        return pct + "/100(" + stat[1] + ")";
+    }
+
+    /** 0-100 환산 퍼센트 값만 반환 (피해량 계산 등에 사용) */
+    public static int toPercent(int current, int max) {
+        if (max <= 0) return 0;
+        return (int) Math.round((double) current / max * 100.0);
     }
 
     // ──────────────────────────────────────────────────────────────

@@ -2,7 +2,6 @@ package heipsys.trpg;
 
 import heipsys.trpg.model.PlayerData;
 import heipsys.trpg.model.TraitData;
-import heipsys.trpg.DialogManager;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.scoreboard.*;

@@ -850,12 +850,16 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             .ifPresent(pd -> {
                 if (update.has("hp_change")) {
                     int delta = update.get("hp_change").getAsInt();
+                    int before = pd.hp[0];
                     pd.hp[0] = Math.max(0, Math.min(pd.hp[1], pd.hp[0] + delta));
+                    notifyVitalChange(pd, "체력", "§c", before, pd.hp[0], pd.hp[1]);
                     if (pd.hp[0] <= 0) pd.isDead = true;
                 }
                 if (update.has("san_change")) {
                     int delta = update.get("san_change").getAsInt();
+                    int before = pd.san[0];
                     pd.san[0] = Math.max(0, Math.min(pd.san[1], pd.san[0] + delta));
+                    notifyVitalChange(pd, "정신력", "§b", before, pd.san[0], pd.san[1]);
                     if (pd.san[0] <= 0 && pd.hp[0] <= 0) pd.isDead = true;
                 }
                 if (update.has("timeline_change")) {
@@ -886,6 +890,25 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                     pd.heldItemIds.remove(update.get("item_remove").getAsString());
                 }
             });
+    }
+
+    /**
+     * 체력/정신력 변화를 100 기준 환산값으로 본인에게만 알림.
+     * 예: 최대 3에서 1피해 → "체력 -33 (남은 67/100)"
+     */
+    private void notifyVitalChange(PlayerData pd, String label, String color,
+                                   int before, int after, int max) {
+        int scaledBefore = DialogManager.toPercent(before, max);
+        int scaledAfter  = DialogManager.toPercent(after, max);
+        int scaledDelta  = scaledAfter - scaledBefore;
+        if (scaledDelta == 0) return;
+
+        Player p = Bukkit.getPlayer(pd.uuid);
+        if (p == null || !p.isOnline()) return;
+
+        String sign = scaledDelta > 0 ? "+" : "-";
+        p.sendMessage(color + label + " " + sign + Math.abs(scaledDelta)
+            + " §7(남은 " + label + " " + scaledAfter + "/100)");
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -1683,7 +1706,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                             checkAllConfirmed();
                             return;
                         }
-                        dialogMan.showCharacterSheet(p, pd, room, state.getCorruption().attempts + 1);
+                        showCharacterSheetForPlayer(p, pd);
                     });
                 })
                 .exceptionally(ex -> {
