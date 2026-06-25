@@ -16,9 +16,9 @@ public class ContextCompressor {
     private final AiManager        ai;
     private final GameStateManager state;
 
-    private static final int COMPRESS_THRESHOLD = 30;
-    private static final int RECENT_KEEP        = 10;
-    private static final int OLD_BATCH_SIZE     = 20;
+    private static final int COMPRESS_THRESHOLD = 20;  // was 30
+    private static final int RECENT_KEEP        = 7;   // was 10
+    private static final int OLD_BATCH_SIZE     = 13;
 
     public ContextCompressor(AiManager ai, GameStateManager state) {
         this.ai    = ai;

@@ -31,7 +31,7 @@ public class AiManager {
     private final List<JsonObject>              entityContext = new ArrayList<>();
     private final Map<String, List<JsonObject>> npcContexts   = new HashMap<>();
 
-    private static final int GM_MAX_TOKENS   = 4096;
+    private static final int GM_MAX_TOKENS   = 2048;  // 실제 응답은 200-600 수준
     private static final int ASST_MAX_TOKENS = 1024;
 
     public AiManager(String apiKey, String apiType) {
@@ -68,7 +68,8 @@ public class AiManager {
             try {
                 gmContext.add(msg("user", userMessage));
                 String result = send(sonnetModel(), systemPrompt, gmContext, GM_MAX_TOKENS);
-                gmContext.add(msg("assistant", result));
+                // 히스토리에는 태그 제거 버전 저장 → 다음 턴에 STATE_UPDATE JSON 재전송 방지
+                gmContext.add(msg("assistant", stripTags(result)));
                 return result;
             } catch (Exception e) {
                 return "§c[GM AI 오류] " + e.getMessage();
@@ -96,7 +97,7 @@ public class AiManager {
         return CompletableFuture.supplyAsync(() -> {
             try {
                 entityContext.add(msg("user", "플레이어 행동 로그:\n" + actionLog));
-                String result = send(sonnetModel(), systemPrompt, entityContext, GM_MAX_TOKENS);
+                String result = send(haikuModel(), systemPrompt, entityContext, ASST_MAX_TOKENS);
                 entityContext.add(msg("assistant", result));
                 return result;
             } catch (Exception e) {
@@ -106,7 +107,7 @@ public class AiManager {
     }
 
     // ======================================================
-    //  NPC AI  (Sonnet, 행동 로그만)
+    //  NPC AI  (Haiku, 행동 로그만 — 단순 반응에 Sonnet 불필요)
     // ======================================================
 
     public CompletableFuture<String> callNpcAi(String npcId, String systemPrompt, String actionLog) {
@@ -115,7 +116,7 @@ public class AiManager {
                 npcContexts.putIfAbsent(npcId, new ArrayList<>());
                 List<JsonObject> ctx = npcContexts.get(npcId);
                 ctx.add(msg("user", "플레이어 행동 로그:\n" + actionLog));
-                String result = send(sonnetModel(), systemPrompt, ctx, GM_MAX_TOKENS);
+                String result = send(haikuModel(), systemPrompt, ctx, ASST_MAX_TOKENS);
                 ctx.add(msg("assistant", result));
                 return result;
             } catch (Exception e) {

@@ -194,20 +194,34 @@ public class GameStateManager {
 
     public String buildTurnInput(Player actor, String action) {
         StringBuilder sb = new StringBuilder();
-        sb.append("TURN ").append(currentTurn).append("\n");
-        sb.append("TIMELINE: ").append(dailyPhase ? "일상 파트 (").append(dailyTurnsLeft).append("턴 남음)" : timelineStage + "단계").append("\n");
-        sb.append("CORRUPTION: ").append(corruption.level).append("\n");
-        sb.append("PLAYERS:\n");
-        players.values().forEach(p -> sb.append(p.toTurnLine()).append("\n"));
+        // 헤더: 필수 메타만 압축
+        sb.append("T").append(currentTurn).append(" ");
+        sb.append(dailyPhase ? "일상(" + dailyTurnsLeft + ")" : "공포" + timelineStage);
+        if (corruption.level > 0) sb.append(" 오염").append(corruption.level);
+        sb.append("\n");
 
-        List<EventLogEntry> recent = getRecentLog(5);
+        // 행동자: 풀 스탯
+        PlayerData actorData = players.get(actor.getUniqueId());
+        if (actorData != null) {
+            sb.append("행동자: ").append(actorData.toTurnLine()).append("\n");
+        }
+
+        // 다른 플레이어: HP/SAN/상태만 한 줄로
+        StringJoiner others = new StringJoiner("  ");
+        players.values().stream()
+            .filter(p -> !p.uuid.equals(actor.getUniqueId()))
+            .forEach(p -> others.add(p.toShortLine()));
+        if (others.length() > 0) sb.append("동료: ").append(others).append("\n");
+
+        // 최근 이벤트 (3개로 축소)
+        List<EventLogEntry> recent = getRecentLog(3);
         if (!recent.isEmpty()) {
-            sb.append("EVENTS: ");
-            recent.forEach(e -> sb.append(e.toLogString()).append(" | "));
+            sb.append("최근:");
+            recent.forEach(e -> sb.append(" [").append(e.player).append("] ").append(e.content));
             sb.append("\n");
         }
 
-        sb.append("ACTION: [").append(actor.getName()).append("] ").append(action);
+        sb.append("행동: [").append(actor.getName()).append("] ").append(action);
         return sb.toString();
     }
 

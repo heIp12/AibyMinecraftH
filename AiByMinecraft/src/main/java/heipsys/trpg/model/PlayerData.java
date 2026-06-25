@@ -83,12 +83,12 @@ public class PlayerData {
         return sb.toString().trim();
     }
 
-    /** GM AI turn input용 플레이어 한 줄 요약 */
+    /** GM AI turn input용 플레이어 상세 줄 (행동자에게만 사용) */
     public String toTurnLine() {
         StringBuilder sb = new StringBuilder();
-        sb.append("  ").append(name)
-          .append(" [").append(roleId.isEmpty() ? "?" : roleId)
-          .append("/").append(age).append("세/").append(job).append("]")
+        sb.append(name)
+          .append("[").append(roleId.isEmpty() ? "?" : roleId)
+          .append(" ").append(age).append("세 ").append(job).append("]")
           .append(" HP").append(hp[0]).append("/").append(hp[1])
           .append(" SAN").append(san[0]).append("/").append(san[1])
           .append(" STR").append(str)
@@ -96,10 +96,17 @@ public class PlayerData {
           .append(" LUK").append(luk)
           .append(" SPR").append(spr);
         if (!traits.isEmpty()) {
-            sb.append("\n  특성: ");
-            traits.forEach(t -> sb.append(t.name).append("(").append(t.grade).append(") "));
+            sb.append(" 특성:");
+            traits.forEach(t -> sb.append(t.name).append("(").append(t.grade).append(")"));
         }
-        sb.append("\n  상태: ").append(status).append(" 위치: ").append(zone.isEmpty() ? "?" : zone);
+        sb.append(" 상태:").append(status).append(" 위치:").append(zone.isEmpty() ? "?" : zone);
         return sb.toString();
+    }
+
+    /** 비행동 플레이어용 압축 요약 (HP/SAN/상태만) */
+    public String toShortLine() {
+        if (isDead) return name + "[사망]";
+        String st = status.equals("puppet") ? "[꼭두각시]" : "";
+        return name + " HP" + hp[0] + "/" + hp[1] + " SAN" + san[0] + "/" + san[1] + st;
     }
 }
