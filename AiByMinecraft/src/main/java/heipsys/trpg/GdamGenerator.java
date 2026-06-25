@@ -127,12 +127,21 @@ public class GdamGenerator {
     "mid_join_allowed": true,
     "timeline_limit": 3
   },
+  "common_items": [],
   "info_sharing": {
     "chat_allowed": true,
     "item_transfer": true,
     "remote_item_transfer": false
   }
 }
+
+## common_items 작성 기준
+시대 배경에 따라 모든 플레이어가 기본 소지하는 아이템 ID 목록.
+현대(2000년대~현재): ["smartphone"] 반드시 포함.
+근미래·SF: ["smartphone", "comm_device"] 등 적절히.
+중세·고대·판타지·전근대: [] (빈 배열).
+★ 소지 여부만 표시. 실제 통신 가능 여부는 entity.rules로 제한
+(예: "신호 없음", "전파 차단", "전원 없음" 등 서술로 처리).
 
 ## 만남 가능성 검증 (출력 전 필수)
 "모든 배역이 참여한 시점에 서로 만나는 것이 물리적으로 가능한가?"

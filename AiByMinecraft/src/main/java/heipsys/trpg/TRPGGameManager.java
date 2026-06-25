@@ -446,6 +446,15 @@ GM이 채널을 종료할 때:
 
         Map<UUID, RoleManager.RoleAssignment> assignments = roleMan.assignRoles(players);
 
+        // common_items: 시대 배경에 따라 모든 플레이어가 기본 소지 (현대=스마트폰 등)
+        JsonObject gdamForItems = state.getGdamData();
+        if (gdamForItems != null && gdamForItems.has("common_items")) {
+            gdamForItems.getAsJsonArray("common_items").forEach(el -> {
+                String itemId = el.getAsString().trim();
+                if (!itemId.isEmpty()) state.getAllPlayers().forEach(pd -> pd.heldItemIds.add(itemId));
+            });
+        }
+
         for (var entry : assignments.entrySet()) {
             Player p = Bukkit.getPlayer(entry.getKey());
             if (p == null) continue;
