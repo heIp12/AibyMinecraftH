@@ -340,7 +340,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                                 checkAllConfirmed();
                                 return;
                             }
-                            dialogMan.showCharacterSheet(p, pd, room, state.getCorruption().attempts + 1);
+                            showCharacterSheetForPlayer(p, pd);
                         });
                     })
                     .exceptionally(ex -> {
@@ -423,8 +423,14 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         switch (args[0].toLowerCase()) {
             case "_confirm"    -> confirmStats(player);
             case "_reroll"     -> rerollStats(player);
-            case "_trait"      -> handleTraitSelect(player, args.length > 1 ? args[1] : "");
-            case "_trait_remove" -> handleTraitRemove(player, args.length > 1 ? args[1] : "");
+            case "_trait"      -> {
+                try { handleTraitSelect(player, args.length > 1 ? Integer.parseInt(args[1]) : 0); }
+                catch (NumberFormatException e) { player.sendMessage("§c번호를 입력해주세요."); }
+            }
+            case "_trait_remove" -> {
+                try { handleTraitRemove(player, args.length > 1 ? Integer.parseInt(args[1]) : 0); }
+                catch (NumberFormatException e) { player.sendMessage("§c번호를 입력해주세요."); }
+            }
             case "_use_trait"  -> handleTraitUse(player, args.length > 1 ? args[1] : "");
         }
     }
@@ -434,18 +440,13 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     // ──────────────────────────────────────────────────────────────
 
     private void handleCharCreationChat(Player player, String message) {
-        // 다이얼로그 활성 상태면 다이얼로그 우선
+        // Paper Dialog로 처리되므로 채팅은 숫자 입력 폴백만 유지
         if (dialogMan.hasActiveDialog(player)) {
-            DialogManager.DialogType dtype = dialogMan.getDialogType(player);
-            if (dtype == DialogManager.DialogType.TRAIT_SELECTION) {
-                handleTraitSelect(player, message.trim());
-            } else if (dtype == DialogManager.DialogType.TRAIT_REMOVE) {
-                handleTraitRemove(player, message.trim());
-            } else {
-                // DICE_CONFIRM 다이얼로그 - 확정/재굴림 입력
-                String lower = message.trim().toLowerCase();
-                if (lower.equals("확정"))   { confirmStats(player); return; }
-                if (lower.equals("재굴림")) { rerollStats(player);  return; }
+            DialogManager.DialogState dtype = dialogMan.getDialogState(player);
+            if (dtype == DialogManager.DialogState.TRAIT_SELECTION) {
+                try { handleTraitSelect(player, Integer.parseInt(message.trim())); } catch (NumberFormatException ignored) {}
+            } else if (dtype == DialogManager.DialogState.TRAIT_REMOVE) {
+                try { handleTraitRemove(player, Integer.parseInt(message.trim())); } catch (NumberFormatException ignored) {}
             }
             return;
         }
@@ -455,13 +456,10 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     }
 
     private void confirmStats(Player player) {
-        if (!dialogMan.hasActiveDialog(player) ||
-            dialogMan.getDialogType(player) != DialogManager.DialogType.DICE_CONFIRM) return;
+        PlayerData pd = state.getPlayer(player);
+        if (pd == null || pd.statsConfirmed) return;
 
         dialogMan.clearDialog(player);
-        PlayerData pd = state.getPlayer(player);
-        if (pd == null) return;
-
         pd.statsConfirmed = true;
         player.sendMessage("§a스탯이 확정되었습니다!");
         scoreMan.update(player, pd, state.getRoomNumber());
@@ -470,9 +468,6 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     }
 
     private void rerollStats(Player player) {
-        if (!dialogMan.hasActiveDialog(player) ||
-            dialogMan.getDialogType(player) != DialogManager.DialogType.DICE_CONFIRM) return;
-
         PlayerData pd = state.getPlayer(player);
         if (pd == null || pd.diceRollsRemaining <= 0) {
             player.sendMessage("§c재굴림 횟수를 모두 소진했습니다.");
@@ -486,11 +481,18 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         JsonObject roleData = preAssignedRoleData.get(player.getUniqueId());
         charGen.generate(player, roleData).thenAccept(newPd -> {
             newPd.diceRollsRemaining = pd.diceRollsRemaining;
-            state.addPlayer(newPd); // 덮어쓰기
-            plugin.getServer().getScheduler().runTask(plugin, () -> {
-                dialogMan.showCharacterSheet(player, newPd, state.getRoomNumber(), state.getCorruption().attempts + 1);
-            });
+            state.addPlayer(newPd);
+            plugin.getServer().getScheduler().runTask(plugin, () ->
+                showCharacterSheetForPlayer(player, newPd));
         });
+    }
+
+    private void showCharacterSheetForPlayer(Player player, PlayerData pd) {
+        int room    = state.getRoomNumber();
+        int attempt = state.getCorruption().attempts + 1;
+        dialogMan.showCharacterSheet(player, pd, room, attempt,
+            () -> confirmStats(player),
+            () -> rerollStats(player));
     }
 
     private void checkAllConfirmed() {
@@ -647,13 +649,13 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     // ──────────────────────────────────────────────────────────────
 
     private void handleGameChat(Player player, String message) {
-        // 다이얼로그 활성 상태면 다이얼로그 우선
+        // Paper Dialog로 처리되므로 채팅은 숫자 입력 폴백만 유지
         if (dialogMan.hasActiveDialog(player)) {
-            DialogManager.DialogType dtype = dialogMan.getDialogType(player);
-            if (dtype == DialogManager.DialogType.TRAIT_SELECTION) {
-                handleTraitSelect(player, message.trim());
-            } else if (dtype == DialogManager.DialogType.TRAIT_REMOVE) {
-                handleTraitRemove(player, message.trim());
+            DialogManager.DialogState dtype = dialogMan.getDialogState(player);
+            if (dtype == DialogManager.DialogState.TRAIT_SELECTION) {
+                try { handleTraitSelect(player, Integer.parseInt(message.trim())); } catch (NumberFormatException ignored) {}
+            } else if (dtype == DialogManager.DialogState.TRAIT_REMOVE) {
+                try { handleTraitRemove(player, Integer.parseInt(message.trim())); } catch (NumberFormatException ignored) {}
             }
             return;
         }
@@ -962,50 +964,42 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     //  특성 버튼 / 선택 처리
     // ──────────────────────────────────────────────────────────────
 
-    private void handleTraitSelect(Player player, String indexStr) {
-        if (dialogMan.getDialogType(player) != DialogManager.DialogType.TRAIT_SELECTION) return;
-
+    private void handleTraitSelect(Player player, int idx) {
         List<TraitData> choices = dialogMan.getTraitChoices(player);
-        try {
-            int idx = Integer.parseInt(indexStr);
-            if (idx == 4) { // 기존 특성 제거 선택
-                dialogMan.clearDialog(player);
-                PlayerData pd = state.getPlayer(player);
-                if (pd != null) dialogMan.showTraitRemove(player, pd);
-                return;
-            }
-            if (idx < 1 || idx > choices.size()) { player.sendMessage("§c잘못된 번호입니다."); return; }
 
-            TraitData selected = choices.get(idx - 1);
+        if (idx == 4) { // 기존 특성 제거 선택
             dialogMan.clearDialog(player);
-            pendingTraitSelect.remove(player.getUniqueId());
-
             PlayerData pd = state.getPlayer(player);
             if (pd != null) {
-                traitMan.addTrait(pd, selected);
-                player.sendMessage("§a특성 '§f" + selected.name + "§a'을(를) 획득했습니다!");
-                scoreMan.update(player, pd, state.getRoomNumber());
+                dialogMan.showTraitRemove(player, pd,
+                    removeIdx -> handleTraitRemove(player, removeIdx));
             }
-        } catch (NumberFormatException e) {
-            player.sendMessage("§c번호를 입력해주세요.");
+            return;
+        }
+        if (idx < 1 || idx > choices.size()) { player.sendMessage("§c잘못된 번호입니다."); return; }
+
+        TraitData selected = choices.get(idx - 1);
+        dialogMan.clearDialog(player);
+        pendingTraitSelect.remove(player.getUniqueId());
+
+        PlayerData pd = state.getPlayer(player);
+        if (pd != null) {
+            traitMan.addTrait(pd, selected);
+            player.sendMessage("§a특성 '§f" + selected.name + "§a'을(를) 획득했습니다!");
+            scoreMan.update(player, pd, state.getRoomNumber());
         }
     }
 
-    private void handleTraitRemove(Player player, String indexStr) {
+    private void handleTraitRemove(Player player, int idx) {
         PlayerData pd = state.getPlayer(player);
         if (pd == null) return;
-        try {
-            int idx = Integer.parseInt(indexStr);
-            if (idx < 0 || idx >= pd.traits.size()) { player.sendMessage("§c잘못된 번호."); return; }
-            TraitData removed = pd.traits.get(idx);
-            traitMan.removeTrait(pd, removed.id);
-            dialogMan.clearDialog(player);
-            pendingTraitSelect.remove(player.getUniqueId());
-            player.sendMessage("§c특성 '§f" + removed.name + "§c'을(를) 제거했습니다.");
-            scoreMan.update(player, pd, state.getRoomNumber());
-        } catch (NumberFormatException e) {
-            player.sendMessage("§c번호를 입력해주세요.");
-        }
+        if (idx < 0 || idx >= pd.traits.size()) { player.sendMessage("§c잘못된 번호."); return; }
+        TraitData removed = pd.traits.get(idx);
+        traitMan.removeTrait(pd, removed.id);
+        dialogMan.clearDialog(player);
+        pendingTraitSelect.remove(player.getUniqueId());
+        player.sendMessage("§c특성 '§f" + removed.name + "§c'을(를) 제거했습니다.");
+        scoreMan.update(player, pd, state.getRoomNumber());
     }
 
     private void handleTraitUse(Player player, String traitId) {
@@ -1034,17 +1028,18 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         String gdamTheme = getEntityName();
 
         state.getAllPlayers().stream()
-            .filter(pd -> !pd.isDead)
-            .forEach(pd -> {
-                traitMan.generateClearTraits(finalGrade, pd, gdamTheme)
+            .filter(playerData -> !playerData.isDead)
+            .forEach(playerData -> {
+                traitMan.generateClearTraits(finalGrade, playerData, gdamTheme)
                     .thenAccept(choices -> {
                         if (choices.isEmpty()) return;
-                        Player p = Bukkit.getPlayer(pd.uuid);
+                        Player p = Bukkit.getPlayer(playerData.uuid);
                         if (p == null || !p.isOnline()) return;
                         plugin.getServer().getScheduler().runTask(plugin, () -> {
                             p.sendMessage("§6§l[클리어 보상] 특성을 선택하세요!");
-                            boolean canRemove = pd.traits.size() >= 3;
-                            dialogMan.showTraitSelection(p, choices, canRemove);
+                            boolean canRemove = playerData.traits.size() >= 3;
+                            dialogMan.showTraitSelection(p, choices, canRemove,
+                                idx -> handleTraitSelect(p, idx));
                             pendingTraitSelect.add(p.getUniqueId());
                         });
                     });

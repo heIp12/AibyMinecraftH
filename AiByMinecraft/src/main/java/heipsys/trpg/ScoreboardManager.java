@@ -2,6 +2,7 @@ package heipsys.trpg;
 
 import heipsys.trpg.model.PlayerData;
 import heipsys.trpg.model.TraitData;
+import heipsys.trpg.DialogManager;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.scoreboard.*;
@@ -65,11 +66,11 @@ public class ScoreboardManager {
     }
 
     private String hpBar(PlayerData pd) {
-        return "§c체력  §f" + pd.hp[0] + "/" + pd.hp[1] + " " + bar(pd.hp[0], pd.hp[1], "§c", "§8");
+        return "§c체력  §f" + DialogManager.hpDisplay(pd.hp) + " " + bar(pd.hp[0], pd.hp[1], "§c", "§8");
     }
 
     private String sanBar(PlayerData pd) {
-        return "§b정신력 §f" + pd.san[0] + "/" + pd.san[1] + " " + bar(pd.san[0], pd.san[1], "§b", "§8");
+        return "§b정신 §f" + DialogManager.hpDisplay(pd.san) + " " + bar(pd.san[0], pd.san[1], "§b", "§8");
     }
 
     private String bar(int cur, int max, String fill, String empty) {

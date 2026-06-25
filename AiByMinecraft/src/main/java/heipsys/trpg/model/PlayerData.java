@@ -84,8 +84,8 @@ public class PlayerData {
 
     public String getStatsSummary() {
         return String.format(
-            "체력 %d/%d  근력 %d  정신력 %d/%d  매력 %d  행운 %d  영감 %d",
-            hp[0], hp[1], str, san[0], san[1], cha, luk, spr
+            "체력 %d/100(%d)  근력 %d  정신력 %d/100(%d)  매력 %d  행운 %d  영감 %d",
+            hp[0]*10, hp[1], str, san[0]*10, san[1], cha, luk, spr
         );
     }
 
