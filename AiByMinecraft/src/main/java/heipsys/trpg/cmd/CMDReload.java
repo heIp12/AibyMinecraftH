@@ -1,6 +1,8 @@
 package heipsys.trpg.cmd;
 
 import heipsys.AICraft;
+
+import org.bukkit.Bukkit;
 import org.bukkit.command.*;
 import org.bukkit.entity.Player;
 
@@ -23,8 +25,7 @@ public class CMDReload implements CommandExecutor {
             sender.sendMessage("§c권한이 없습니다.");
             return true;
         }
-        sender.sendMessage("§e[AIByMinecraft] 설정을 리로드합니다...");
-        plugin.reloadPlugin(sender);
+        Bukkit.reload(); // 서버 전체 리로드
         return true;
     }
 }
