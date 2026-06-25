@@ -56,6 +56,11 @@ public class CMDTrpg implements CommandExecutor, TabCompleter {
                 if (args.length < 2) { player.sendMessage("§c사용법: /trpg load <씨드>"); return true; }
                 trpg.loadSession(player, args[1]);
             }
+            case "read"   -> {
+                if (!player.isOp()) { player.sendMessage("§c권한이 없습니다."); return true; }
+                if (args.length < 2) { player.sendMessage("§c사용법: /trpg read <씨드>"); return true; }
+                readGdam(player, args[1]);
+            }
             case "list"   -> listSessions(player);
             case "status" -> sendStatus(player);
             case "help"   -> sendHelp(player);
@@ -82,17 +87,33 @@ public class CMDTrpg implements CommandExecutor, TabCompleter {
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (args.length == 1) {
-            List<String> subs = List.of("start", "stop", "retry", "load", "list", "status", "help");
+            List<String> subs = List.of("start", "stop", "retry", "load", "read", "list", "status", "help");
             String partial = args[0].toLowerCase();
-            return subs.stream().filter(s -> s.startsWith(partial)).collect(Collectors.toList());
-        }
-        if (args.length == 2 && args[0].equalsIgnoreCase("load")) {
-            String partial = args[1].toLowerCase();
-            return trpg.listSavedSeeds().stream()
-                .filter(s -> s.toLowerCase().startsWith(partial))
+            return subs.stream()
+                .filter(s -> s.startsWith(partial))
                 .collect(Collectors.toList());
         }
+        if (args.length == 2) {
+            String sub = args[0].toLowerCase();
+            if (sub.equals("load") || sub.equals("read")) {
+                String partial = args[1].toLowerCase();
+                return trpg.listSavedSeeds().stream()
+                    .filter(s -> s.toLowerCase().startsWith(partial))
+                    .collect(Collectors.toList());
+            }
+        }
         return Collections.emptyList();
+    }
+
+    private void readGdam(Player player, String seed) {
+        String path = trpg.exportGdamJson(seed);
+        if (path == null) {
+            player.sendMessage("§c씨드 '" + seed + "'를 찾을 수 없거나 복호화에 실패했습니다.");
+            return;
+        }
+        player.sendMessage("§a복호화 완료! 아래 파일을 서버에서 확인하세요:");
+        player.sendMessage("§e" + path);
+        player.sendMessage("§7(확인 후 파일을 수동으로 삭제해 주세요.)");
     }
 
     private void listSessions(Player player) {
@@ -109,6 +130,7 @@ public class CMDTrpg implements CommandExecutor, TabCompleter {
         player.sendMessage("§e[TRPG 커맨드]");
         player.sendMessage("§f/trpg start §7— 새 세션 시작 (OP)");
         player.sendMessage("§f/trpg load <씨드> §7— 저장된 세션 불러오기 (OP)");
+        player.sendMessage("§f/trpg read <씨드> §7— .gdam 복호화 후 .json으로 내보내기 (OP)");
         player.sendMessage("§f/trpg list §7— 저장된 세션 목록");
         player.sendMessage("§f/trpg stop  §7— 세션 종료 (OP)");
         player.sendMessage("§f/trpg retry §7— 재도전 (OP)");

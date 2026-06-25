@@ -1700,7 +1700,8 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         });
     }
 
-    public List<String> listSavedSeeds() { return gdamGen.listSavedSeeds(); }
+    public List<String> listSavedSeeds()           { return gdamGen.listSavedSeeds(); }
+    public String       exportGdamJson(String seed) { return gdamGen.exportJson(seed); }
 
     // ──────────────────────────────────────────────────────────────
     //  상태 조회
