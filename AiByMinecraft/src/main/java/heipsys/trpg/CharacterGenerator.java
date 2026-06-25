@@ -1,5 +1,6 @@
 package heipsys.trpg;
 
+import com.google.gson.*;
 import heipsys.trpg.model.PlayerData;
 import heipsys.trpg.model.TraitData;
 import org.bukkit.entity.Player;
@@ -8,20 +9,21 @@ import java.util.*;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * 캐릭터 스탯 생성 (STEP 3-1).
+ * 캐릭터 스탯 생성.
+ * 배역 데이터를 선제 주입하면 나이/직업이 배역에 맞게 결정되고,
+ * 초기 특성도 AI가 직업·나이 맥락으로 생성한다.
  *
  * 생성 순서:
- *  1. 나이 무작위 (5~80세)
- *  2. 직업 무작위 (나이/괴담 무관)
- *  3. 기본 스탯: 총합 25를 6개 스탯에 배분 → 최저 스탯 +1 → 무작위 스탯 [+4,+2,+1,-2]
- *  4. Haiku AI로 나이/직업 보정
- *  5. 특성 결정 (스탯 8이상 = 강점, 3이하 = 약점)
+ *  1. 나이/직업 — 배역 age_range·job_pool 우선, 없으면 전체 풀
+ *  2. 기본 스탯 배분 (총합 25, 각 최소 1)
+ *  3. 최저 스탯 +1, 무작위 [+4,+2,+1,-2] 적용
+ *  4. Haiku AI로 나이/직업/배역 보정
+ *  5. AI 초기 특성 생성 (1~2개, 직업·나이 맥락)
  */
 public class CharacterGenerator {
 
     private static final Random RNG = new Random();
 
-    // 방대한 직업 풀 (편향 없이 광범위)
     private static final String[] JOB_POOL = {
         "초등학생","중학생","고등학생","대학생","유치원생",
         "의사","간호사","약사","수의사","치과의사",
@@ -41,11 +43,12 @@ public class CharacterGenerator {
         "탐정","해커","사기꾼","도둑",
         "인플루언서","모델","배우","가수",
         "과학자","연구원","역사학자","고고학자",
-        "조련사","어부","잠수부","등반가",
+        "조련사","잠수부","등반가",
         "정치인","공무원","외교관","통역사"
     };
 
-    private static final String[] STAT_NAMES = {"hp", "str", "san", "cha", "luk", "spr"};
+    private static final String[] STAT_NAMES = {"hp","str","san","cha","luk","spr"};
+    private static final Gson GSON = new Gson();
 
     private final AiManager aiManager;
 
@@ -54,39 +57,71 @@ public class CharacterGenerator {
     }
 
     // ──────────────────────────────────────────────────────────────
-    //  메인 생성
+    //  메인 생성 (배역 데이터 없이)
     // ──────────────────────────────────────────────────────────────
 
-    /** 스탯 생성 후 Haiku로 나이/직업 보정 적용 */
     public CompletableFuture<PlayerData> generate(Player player) {
-        PlayerData pd = new PlayerData(player.getUniqueId(), player.getName());
-        rollStats(pd);
+        return generate(player, null);
+    }
 
-        String prompt = buildAdjustPrompt(pd);
+    // ──────────────────────────────────────────────────────────────
+    //  메인 생성 (배역 데이터 주입)
+    // ──────────────────────────────────────────────────────────────
+
+    /**
+     * @param roleData .gdam roles[] 배열의 해당 배역 JsonObject.
+     *                 있으면 age_range, job_pool, name을 스탯 생성에 활용.
+     */
+    public CompletableFuture<PlayerData> generate(Player player, JsonObject roleData) {
+        PlayerData pd = new PlayerData(player.getUniqueId(), player.getName());
+        rollStats(pd, roleData);
+
+        String roleContext = buildRoleContext(roleData);
+
         return aiManager.callAssistant(
             "너는 TRPG 캐릭터 스탯 보정기야. 아래 JSON 형식으로만 응답해:\n"
             + "{\"str_adj\":0,\"cha_adj\":0,\"luk_adj\":0,\"spr_adj\":0,"
             + "\"hp_max_adj\":0,\"san_max_adj\":0,\"reason\":\"\"}",
-            prompt
-        ).thenApply(raw -> {
+            buildAdjustPrompt(pd, roleContext)
+        ).thenCompose(raw -> {
             applyAiAdjustment(pd, raw);
-            determineTraits(pd);
+            return generateInitialTraits(pd, roleContext);
+        }).thenApply(traits -> {
+            pd.traits.addAll(traits);
             pd.snapshotBase();
             return pd;
         });
     }
 
     // ──────────────────────────────────────────────────────────────
-    //  스탯 굴림
+    //  스탯 굴림 (배역 age_range / job_pool 우선 적용)
     // ──────────────────────────────────────────────────────────────
 
-    public void rollStats(PlayerData pd) {
-        pd.age = 5 + RNG.nextInt(76); // 5~80
-        pd.job = JOB_POOL[RNG.nextInt(JOB_POOL.length)];
+    public void rollStats(PlayerData pd, JsonObject roleData) {
+        // 나이
+        if (roleData != null && roleData.has("age_range")) {
+            JsonArray ar = roleData.getAsJsonArray("age_range");
+            int lo = ar.get(0).getAsInt(), hi = ar.get(1).getAsInt();
+            if (hi > lo) pd.age = lo + RNG.nextInt(hi - lo + 1);
+            else          pd.age = lo;
+        } else {
+            pd.age = 5 + RNG.nextInt(76);
+        }
 
-        // 총합 25를 6개 스탯에 무작위 배분 (각 스탯 최소 1)
+        // 직업
+        if (roleData != null && roleData.has("job_pool")) {
+            JsonArray pool = roleData.getAsJsonArray("job_pool");
+            if (pool.size() > 0) {
+                pd.job = pool.get(RNG.nextInt(pool.size())).getAsString();
+            } else {
+                pd.job = JOB_POOL[RNG.nextInt(JOB_POOL.length)];
+            }
+        } else {
+            pd.job = JOB_POOL[RNG.nextInt(JOB_POOL.length)];
+        }
+
+        // 총합 25를 6개 스탯에 배분
         int[] stats = distributePoints(25, 6, 1, 10);
-
         pd.hp  = new int[]{stats[0], stats[0]};
         pd.str = stats[1];
         pd.san = new int[]{stats[2], stats[2]};
@@ -94,69 +129,128 @@ public class CharacterGenerator {
         pd.luk = stats[4];
         pd.spr = stats[5];
 
-        // 최저 스탯 +1
         boostLowest(pd);
-
-        // 무작위 스탯에 [+4, +2, +1, -2] 순서 부여
         applyBonuses(pd);
     }
 
     // ──────────────────────────────────────────────────────────────
-    //  특성 결정
+    //  AI 초기 특성 생성
     // ──────────────────────────────────────────────────────────────
 
-    public void determineTraits(PlayerData pd) {
-        pd.traits.clear();
-        int[] vals = getStatArray(pd);
-        String[] names = STAT_NAMES;
+    private CompletableFuture<List<TraitData>> generateInitialTraits(PlayerData pd, String roleContext) {
+        String system = """
+너는 TRPG 캐릭터 초기 특성 생성기야.
+아래 JSON 배열 형식으로만 응답 (다른 텍스트 금지):
+[{"id":"","name":"","grade":"C","description":"","active":false,"effect":""},...]
+규칙:
+- grade: C 또는 D/F 만 사용 (초기 캐릭터이므로 강한 특성 없음)
+- 직업·나이에서 자연스럽게 연결되는 능력/약점 1~2개
+- 스탯 최고/최저 값과 연결하되, 직업명을 그대로 쓰지 말고 구체적 능력으로 작성
+- 한국어, 창의적
+""";
+        String prompt = "나이: " + pd.age + "세, 직업: " + pd.job
+            + "\nHP=" + pd.hp[1] + " STR=" + pd.str + " SAN=" + pd.san[1]
+            + " CHA=" + pd.cha + " LUK=" + pd.luk + " SPR=" + pd.spr
+            + (roleContext != null && !roleContext.isBlank() ? "\n배역 맥락: " + roleContext : "")
+            + "\n\n위 캐릭터에 맞는 초기 특성 1~2개를 JSON 배열로 생성해줘.";
 
-        for (int i = 0; i < vals.length; i++) {
-            if (vals[i] >= 8) {
-                pd.traits.add(new TraitData(
-                    "init_pos_" + i, statKorName(names[i]) + " 강점",
-                    "C", "높은 " + statKorName(names[i]) + "에서 비롯된 강점.",
-                    false, "해당 스탯 판정 +2"
-                ));
-            } else if (vals[i] <= 3) {
-                pd.traits.add(new TraitData(
-                    "init_neg_" + i, statKorName(names[i]) + " 약점",
-                    "F", "낮은 " + statKorName(names[i]) + "에서 비롯된 약점.",
-                    false, "해당 스탯 판정 -2"
-                ));
+        return aiManager.callAssistant(system, prompt).thenApply(raw -> {
+            try {
+                String cleaned = raw.replaceAll("```json", "").replaceAll("```", "").trim();
+                int s = cleaned.indexOf('['), e = cleaned.lastIndexOf(']');
+                if (s == -1 || e == -1) return staticFallbackTraits(pd);
+                JsonArray arr = GSON.fromJson(cleaned.substring(s, e + 1), JsonArray.class);
+                List<TraitData> result = new ArrayList<>();
+                for (JsonElement el : arr) {
+                    JsonObject obj = el.getAsJsonObject();
+                    TraitData td = new TraitData();
+                    td.id          = obj.has("id")   && !obj.get("id").getAsString().isBlank()
+                                     ? obj.get("id").getAsString()
+                                     : "init_" + UUID.randomUUID().toString().substring(0, 6);
+                    td.name        = obj.has("name")        ? obj.get("name").getAsString()        : "초기 특성";
+                    td.grade       = obj.has("grade")       ? obj.get("grade").getAsString()       : "C";
+                    td.description = obj.has("description") ? obj.get("description").getAsString() : "";
+                    td.active      = obj.has("active")      && obj.get("active").getAsBoolean();
+                    td.effect      = obj.has("effect")      ? obj.get("effect").getAsString()      : "";
+                    result.add(td);
+                }
+                return result.isEmpty() ? staticFallbackTraits(pd) : result;
+            } catch (Exception ex) {
+                return staticFallbackTraits(pd);
             }
-        }
+        });
     }
 
-    // ──────────────────────────────────────────────────────────────
-    //  채팅 시트 출력 포맷 (GM AI가 아닌 플러그인이 직접 출력)
-    // ──────────────────────────────────────────────────────────────
-
-    public String buildSheetMessage(PlayerData pd, int roomNumber, int attempt) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("§f─────────────────────────\n");
-        sb.append("§eSeed: ").append("...").append(" / ").append(attempt).append("회차\n");
-        sb.append("§f─────────────────────────\n");
-        sb.append("§7나이: §f").append(pd.age).append("세\n");
-        sb.append("§7직업: §f").append(pd.job).append("\n\n");
-        sb.append("§c체력  §f").append(pd.hp[0]).append("/").append(pd.hp[1])
-          .append("   §9근력 §f").append(pd.str).append("\n");
-        sb.append("§b정신력 §f").append(pd.san[0]).append("/").append(pd.san[1])
-          .append("   §a매력 §f").append(pd.cha).append("\n");
-        sb.append("§6행운  §f").append(pd.luk)
-          .append("   §d영감 §f").append(pd.spr).append("\n\n");
-
-        if (!pd.traits.isEmpty()) {
-            sb.append("§e[특성]\n");
-            pd.traits.forEach(t -> sb.append("§7").append(t.toDisplayLine()).append("\n"));
+    /** AI 실패 시 스탯 기반 폴백 특성 */
+    private List<TraitData> staticFallbackTraits(PlayerData pd) {
+        List<TraitData> traits = new ArrayList<>();
+        int[] vals = {pd.hp[1], pd.str, pd.san[1], pd.cha, pd.luk, pd.spr};
+        for (int i = 0; i < vals.length; i++) {
+            if (vals[i] >= 8) {
+                traits.add(new TraitData("init_pos_" + i,
+                    statKorName(STAT_NAMES[i]) + " 강점", "C",
+                    "높은 " + statKorName(STAT_NAMES[i]) + "에서 비롯된 강점.",
+                    false, "해당 스탯 판정 +2"));
+            } else if (vals[i] <= 2) {
+                traits.add(new TraitData("init_neg_" + i,
+                    statKorName(STAT_NAMES[i]) + " 약점", "F",
+                    "낮은 " + statKorName(STAT_NAMES[i]) + "에서 비롯된 약점.",
+                    false, "해당 스탯 판정 -2"));
+            }
         }
-        sb.append("§f─────────────────────────\n");
-        sb.append("§7확정하려면 §f확정 §7입력, 재굴림은 §f재굴림 §7입력 (").append(pd.diceRollsRemaining).append("회 남음)\n");
-        return sb.toString();
+        return traits;
     }
 
     // ──────────────────────────────────────────────────────────────
     //  내부 유틸
     // ──────────────────────────────────────────────────────────────
+
+    private String buildRoleContext(JsonObject roleData) {
+        if (roleData == null) return null;
+        StringBuilder sb = new StringBuilder();
+        if (roleData.has("name")) sb.append(roleData.get("name").getAsString());
+        if (roleData.has("spawn_location")) sb.append(" / 위치: ").append(roleData.get("spawn_location").getAsString());
+        if (roleData.has("initial_info")) {
+            sb.append(" / 초기 정보: ");
+            roleData.getAsJsonArray("initial_info").forEach(e -> sb.append(e.getAsString()).append(" "));
+        }
+        return sb.toString().trim();
+    }
+
+    private String buildAdjustPrompt(PlayerData pd, String roleContext) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("나이=").append(pd.age).append("세, 직업=").append(pd.job)
+          .append(", 스탯: HP=").append(pd.hp[1]).append(" STR=").append(pd.str)
+          .append(" SAN=").append(pd.san[1]).append(" CHA=").append(pd.cha)
+          .append(" LUK=").append(pd.luk).append(" SPR=").append(pd.spr);
+        if (roleContext != null && !roleContext.isBlank()) {
+            sb.append("\n배역: ").append(roleContext);
+        }
+        sb.append("\n\n이 나이·직업·배역을 고려해 스탯을 소폭 보정해줘. "
+            + "각 보정값은 -2~+2 범위. reason에 보정 이유를 한 줄로 설명.");
+        return sb.toString();
+    }
+
+    private void applyAiAdjustment(PlayerData pd, String raw) {
+        try {
+            String cleaned = raw.replaceAll("```json", "").replaceAll("```", "").trim();
+            int s = cleaned.indexOf('{'), e = cleaned.lastIndexOf('}');
+            if (s == -1 || e == -1) return;
+            JsonObject j = GSON.fromJson(cleaned.substring(s, e + 1), JsonObject.class);
+            pd.str = Math.max(1, pd.str + clamp(j, "str_adj"));
+            pd.cha = Math.max(1, pd.cha + clamp(j, "cha_adj"));
+            pd.luk = Math.max(1, pd.luk + clamp(j, "luk_adj"));
+            pd.spr = Math.max(1, pd.spr + clamp(j, "spr_adj"));
+            int hpA  = clamp(j, "hp_max_adj"),  sanA = clamp(j, "san_max_adj");
+            pd.hp[1]  = Math.max(1, pd.hp[1]  + hpA);  pd.hp[0]  = pd.hp[1];
+            pd.san[1] = Math.max(1, pd.san[1] + sanA); pd.san[0] = pd.san[1];
+        } catch (Exception ignored) {}
+    }
+
+    private int clamp(JsonObject j, String key) {
+        if (!j.has(key)) return 0;
+        return Math.max(-2, Math.min(2, j.get(key).getAsInt()));
+    }
 
     private int[] distributePoints(int total, int count, int min, int max) {
         int[] arr = new int[count];
@@ -171,7 +265,7 @@ public class CharacterGenerator {
     }
 
     private void boostLowest(PlayerData pd) {
-        int[] vals = getStatArray(pd);
+        int[] vals = {pd.hp[1], pd.str, pd.san[1], pd.cha, pd.luk, pd.spr};
         int minIdx = 0;
         for (int i = 1; i < vals.length; i++) if (vals[i] < vals[minIdx]) minIdx = i;
         applyStatDelta(pd, minIdx, 1);
@@ -181,13 +275,7 @@ public class CharacterGenerator {
         int[] bonuses = {4, 2, 1, -2};
         List<Integer> indices = new ArrayList<>(Arrays.asList(0,1,2,3,4,5));
         Collections.shuffle(indices, RNG);
-        for (int i = 0; i < bonuses.length; i++) {
-            applyStatDelta(pd, indices.get(i), bonuses[i]);
-        }
-    }
-
-    private int[] getStatArray(PlayerData pd) {
-        return new int[]{pd.hp[1], pd.str, pd.san[1], pd.cha, pd.luk, pd.spr};
+        for (int i = 0; i < bonuses.length; i++) applyStatDelta(pd, indices.get(i), bonuses[i]);
     }
 
     private void applyStatDelta(PlayerData pd, int idx, int delta) {
@@ -201,42 +289,7 @@ public class CharacterGenerator {
         }
     }
 
-    private String buildAdjustPrompt(PlayerData pd) {
-        return "나이=" + pd.age + "세, 직업=" + pd.job
-            + ", 현재스탯: HP=" + pd.hp[1] + " STR=" + pd.str
-            + " SAN=" + pd.san[1] + " CHA=" + pd.cha
-            + " LUK=" + pd.luk + " SPR=" + pd.spr
-            + "\n\n이 나이와 직업을 고려해 스탯을 소폭 보정해줘. "
-            + "각 보정값은 -2~+2 범위 내로 제한. "
-            + "reason에 보정 이유를 한 줄로 설명.";
-    }
-
-    private void applyAiAdjustment(PlayerData pd, String raw) {
-        try {
-            String cleaned = raw.replaceAll("```json","").replaceAll("```","").trim();
-            int s = cleaned.indexOf('{'), e = cleaned.lastIndexOf('}');
-            if (s == -1 || e == -1) return;
-            com.google.gson.JsonObject j = new com.google.gson.Gson().fromJson(
-                cleaned.substring(s, e+1), com.google.gson.JsonObject.class);
-
-            pd.str = Math.max(1, pd.str + getAdj(j, "str_adj"));
-            pd.cha = Math.max(1, pd.cha + getAdj(j, "cha_adj"));
-            pd.luk = Math.max(1, pd.luk + getAdj(j, "luk_adj"));
-            pd.spr = Math.max(1, pd.spr + getAdj(j, "spr_adj"));
-            int hpAdj  = getAdj(j, "hp_max_adj");
-            int sanAdj = getAdj(j, "san_max_adj");
-            pd.hp[1]  = Math.max(1, pd.hp[1]  + hpAdj);  pd.hp[0]  = pd.hp[1];
-            pd.san[1] = Math.max(1, pd.san[1] + sanAdj); pd.san[0] = pd.san[1];
-        } catch (Exception ignored) {}
-    }
-
-    private int getAdj(com.google.gson.JsonObject j, String key) {
-        if (!j.has(key)) return 0;
-        int v = j.get(key).getAsInt();
-        return Math.max(-2, Math.min(2, v));
-    }
-
-    private String statKorName(String name) {
+    String statKorName(String name) {
         return switch (name) {
             case "hp"  -> "체력";
             case "str" -> "근력";
@@ -246,5 +299,27 @@ public class CharacterGenerator {
             case "spr" -> "영감";
             default    -> name;
         };
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  채팅 시트 (DialogManager 에서 대체하지만 백업용)
+    // ──────────────────────────────────────────────────────────────
+
+    public String buildSheetMessage(PlayerData pd, int roomNumber, int attempt) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("§f─────────────────────────\n");
+        sb.append("§7나이: §f").append(pd.age).append("세  §7직업: §f").append(pd.job).append("\n");
+        sb.append("§c체력 §f").append(pd.hp[0]).append("/").append(pd.hp[1])
+          .append("  §9근력 §f").append(pd.str).append("\n");
+        sb.append("§b정신력 §f").append(pd.san[0]).append("/").append(pd.san[1])
+          .append("  §a매력 §f").append(pd.cha).append("\n");
+        sb.append("§6행운 §f").append(pd.luk)
+          .append("  §d영감 §f").append(pd.spr).append("\n");
+        if (!pd.traits.isEmpty()) {
+            sb.append("§e[특성]\n");
+            pd.traits.forEach(t -> sb.append("§7").append(t.toDisplayLine()).append("\n"));
+        }
+        sb.append("§f─────────────────────────");
+        return sb.toString();
     }
 }

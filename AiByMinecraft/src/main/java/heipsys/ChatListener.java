@@ -12,6 +12,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.player.PlayerToggleSneakEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.Plugin;
 
@@ -44,6 +45,13 @@ public class ChatListener implements Listener {
         Bukkit.getScheduler().runTask(plugin, () -> {
             if (player.isDead()) player.spigot().respawn();
         });
+    }
+
+    @EventHandler
+    public void onSneak(PlayerToggleSneakEvent event) {
+        if (!trpgManager.isActive()) return;
+        if (!event.isSneaking()) return;
+        trpgManager.getNarrativeDelivery().onSneak(event.getPlayer());
     }
 
     @EventHandler

@@ -50,6 +50,12 @@ public class CMDTrpg implements CommandExecutor {
                 if (!player.isOp()) { player.sendMessage("§c권한이 없습니다."); return true; }
                 trpg.retrySession(player);
             }
+            case "load"   -> {
+                if (!player.isOp()) { player.sendMessage("§c권한이 없습니다."); return true; }
+                if (args.length < 2) { player.sendMessage("§c사용법: /trpg load <씨드>"); return true; }
+                trpg.loadSession(player, args[1]);
+            }
+            case "list"   -> listSessions(player);
             case "status" -> sendStatus(player);
             case "help"   -> sendHelp(player);
             default -> {
@@ -72,9 +78,21 @@ public class CMDTrpg implements CommandExecutor {
         player.sendMessage("§7참여 인원: §f" + state.getTotalCount() + "명 (생존 " + state.getAliveCount() + "명)");
     }
 
+    private void listSessions(Player player) {
+        List<String> seeds = trpg.listSavedSeeds();
+        if (seeds.isEmpty()) {
+            player.sendMessage("§7저장된 세션이 없습니다.");
+            return;
+        }
+        player.sendMessage("§e[저장된 세션]");
+        seeds.forEach(s -> player.sendMessage("§f  " + s + " §8— /trpg load " + s));
+    }
+
     private void sendHelp(Player player) {
         player.sendMessage("§e[TRPG 커맨드]");
         player.sendMessage("§f/trpg start §7— 새 세션 시작 (OP)");
+        player.sendMessage("§f/trpg load <씨드> §7— 저장된 세션 불러오기 (OP)");
+        player.sendMessage("§f/trpg list §7— 저장된 세션 목록");
         player.sendMessage("§f/trpg stop  §7— 세션 종료 (OP)");
         player.sendMessage("§f/trpg retry §7— 재도전 (OP)");
         player.sendMessage("§f/trpg status §7— 현재 상태 확인");

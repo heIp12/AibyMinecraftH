@@ -1,14 +1,20 @@
 package heipsys.trpg;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import heipsys.AICraft;
 import heipsys.trpg.model.PlayerData;
 import heipsys.trpg.model.TraitData;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.TextDecoration;
+import net.kyori.adventure.title.Title;
 import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
 import org.bukkit.entity.Player;
 
+import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
@@ -179,6 +185,19 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
 - 스탯 산출 과정
 - 일상 파트 턴 수
 
+### 알고 있는 정보 서술 방식 ★
+배역의 initial_info·hidden_info를 직접 나열하지 마라.
+환경 묘사, 대화, 행동 결과로 자연스럽게 녹여서 전달한다.
+"당신은 A를 알고 있다" ✗ → "문을 열자 A가 눈에 들어왔다" ✓
+배역이 사전에 알고 있는 정보도 적절한 상황에서 자연스럽게 드러나도록 한다.
+
+### GM NPC 조율
+플레이어가 없는 배역은 GM이 직접 조종한다.
+- 플레이어 행동·대화에 맞춰 자연스럽게 반응
+- 해당 배역의 initial_info·hidden_info를 알고 있음
+- 스토리 진행에 필요한 정보를 적절한 시점에 제공
+- NPC의 죽음·퇴장·행동도 스토리에 맞게 자연스럽게 처리
+
 ### 서술 방식
 - 2인칭 ("당신은...")
 - 중요 판정 결과는 명확히 서술
@@ -222,6 +241,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     private final TraitButtonManager  traitBtn;
     private final CorruptionManager   corruptMan;
     private final ContextCompressor   compressor;
+    private final NarrativeDelivery   narrativeDelivery;
 
     /** 캐릭터 생성 완료 대기 중인 플레이어 UUID 집합 */
     private final Set<UUID> pendingCreation    = ConcurrentHashMap.newKeySet();
@@ -231,6 +251,12 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     private final Set<UUID> spawnedPlayers      = ConcurrentHashMap.newKeySet();
     /** GM이 개설한 기기 통신 채널: A → {B, C, ...} (양방향 저장) */
     private final Map<UUID, Set<UUID>> commChannels = new ConcurrentHashMap<>();
+    /** 캐릭터 생성 전 선제 배역 배정 결과 (UUID → 배역 JsonObject) */
+    private final Map<UUID, JsonObject> preAssignedRoleData = new ConcurrentHashMap<>();
+    /** 캐릭터 생성 전 선제 배역 배정 결과 (UUID → RoleAssignment) */
+    private final Map<UUID, RoleManager.RoleAssignment> preAssignments = new ConcurrentHashMap<>();
+    /** 플레이어가 없어 GM이 직접 조종하는 배역 ID 집합 */
+    private final Set<String> gmNpcRoleIds = ConcurrentHashMap.newKeySet();
     private String gmSystemPrompt = GM_SYSTEM_BASE;
 
     public TRPGGameManager(AICraft plugin, AiManager ai) {
@@ -244,10 +270,11 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         this.roleMan    = new RoleManager(state);
         this.turnMan    = new TurnManager(state, ai);
         this.itemMan    = new ItemManager(plugin, state);
-        this.dialogMan  = new DialogManager();
-        this.traitBtn   = new TraitButtonManager();
-        this.corruptMan = new CorruptionManager(state);
-        this.compressor = new ContextCompressor(ai, state);
+        this.dialogMan         = new DialogManager();
+        this.traitBtn          = new TraitButtonManager();
+        this.corruptMan        = new CorruptionManager(state);
+        this.compressor        = new ContextCompressor(ai, state);
+        this.narrativeDelivery = new NarrativeDelivery(plugin);
 
         turnMan.setResponseHandler(this::onGmResponse);
     }
@@ -298,21 +325,22 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                 return;
             }
 
+            // 선제 배역 배정: 캐릭터 생성 시 배역 맥락(나이/직업 범위)을 활용
+            doPreAssign(survivors, gdam);
+
             survivors.forEach(p -> {
                 pendingCreation.add(p.getUniqueId());
-                charGen.generate(p)
+                JsonObject roleData = preAssignedRoleData.get(p.getUniqueId());
+                charGen.generate(p, roleData)
                     .thenAccept(pd -> {
                         state.addPlayer(pd);
                         plugin.getServer().getScheduler().runTask(plugin, () -> {
                             if (!p.isOnline()) {
-                                // 생성 도중 퇴장한 경우 → 대기 해제
                                 pendingCreation.remove(p.getUniqueId());
                                 checkAllConfirmed();
                                 return;
                             }
-                            p.sendMessage("§e§l─── 캐릭터 생성 ───");
-                            p.sendMessage(charGen.buildSheetMessage(pd, room, state.getCorruption().attempts + 1));
-                            dialogMan.showDiceConfirm(p, pd);
+                            dialogMan.showCharacterSheet(p, pd, room, state.getCorruption().attempts + 1);
                         });
                     })
                     .exceptionally(ex -> {
@@ -345,12 +373,16 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             dialogMan.clearDialog(p);
         });
         itemMan.reclaimChapterItems(new ArrayList<>(Bukkit.getOnlinePlayers()));
+        narrativeDelivery.clearAll();
         state.endSession(resetCorruption);
         ai.clearAll();
         pendingCreation.clear();
         pendingTraitSelect.clear();
         spawnedPlayers.clear();
         commChannels.clear();
+        preAssignedRoleData.clear();
+        preAssignments.clear();
+        gmNpcRoleIds.clear();
         currentPhase = Phase.IDLE;
     }
 
@@ -451,12 +483,12 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         pd.diceRollsRemaining--;
         player.sendMessage("§7재굴림 중...");
 
-        charGen.generate(player).thenAccept(newPd -> {
+        JsonObject roleData = preAssignedRoleData.get(player.getUniqueId());
+        charGen.generate(player, roleData).thenAccept(newPd -> {
             newPd.diceRollsRemaining = pd.diceRollsRemaining;
             state.addPlayer(newPd); // 덮어쓰기
             plugin.getServer().getScheduler().runTask(plugin, () -> {
-                player.sendMessage(charGen.buildSheetMessage(newPd, state.getRoomNumber(), state.getCorruption().attempts + 1));
-                dialogMan.showDiceConfirm(player, newPd);
+                dialogMan.showCharacterSheet(player, newPd, state.getRoomNumber(), state.getCorruption().attempts + 1);
             });
         });
     }
@@ -485,7 +517,26 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             return;
         }
 
-        Map<UUID, RoleManager.RoleAssignment> assignments = roleMan.assignRoles(players);
+        // 선제 배정 결과 재사용. 없으면 새로 배정 (retrySession 등 경우)
+        Map<UUID, RoleManager.RoleAssignment> assignments;
+        if (!preAssignments.isEmpty()) {
+            assignments = preAssignments;
+            // PlayerData에 배역 필드 적용 (선제 배정 시 pd가 없어 못했던 부분)
+            for (var entry : assignments.entrySet()) {
+                PlayerData pd = state.getPlayer(entry.getKey());
+                if (pd != null) {
+                    RoleManager.RoleAssignment asgn = entry.getValue();
+                    pd.roleId = asgn.roleId();
+                    pd.zone   = asgn.zone();
+                    pd.roleAssigned = true;
+                }
+            }
+        } else {
+            assignments = roleMan.assignRoles(players);
+        }
+
+        // GM 프롬프트 재생성 (NPC 배역 포함)
+        gmSystemPrompt = buildGmPrompt(state.getGdamData());
 
         // common_items: 시대 배경에 따라 모든 플레이어가 기본 소지 (현대=스마트폰 등)
         JsonObject gdamForItems = state.getGdamData();
@@ -576,8 +627,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                 .thenAccept(response -> plugin.getServer().getScheduler().runTask(plugin, () -> {
                     if (!p.isOnline()) return;
                     String narrative = ai.stripTags(response);
-                    if (!narrative.isBlank())
-                        Arrays.stream(narrative.split("\n")).forEach(line -> p.sendMessage("§f" + line));
+                    if (!narrative.isBlank()) narrativeDelivery.deliver(p, narrative);
                     scoreMan.update(p, pd, state.getRoomNumber());
                 }));
         });
@@ -693,6 +743,11 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
 
             // 4. 서술 + WITNESS 전달 (당사자에게만)
             deliverNarrative(player, raw);
+
+            // 4a. 주사위 판정 애니메이션
+            if (player != null && player.isOnline() && needsDiceAnimation(raw)) {
+                playDiceAnimation(player);
+            }
 
             // 5. SPAWN 태그 처리
             String spawnedName = ai.parseSpawnTag(raw);
@@ -851,7 +906,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                   .thenAccept(r -> plugin.getServer().getScheduler().runTask(plugin, () -> {
                       if (p.isOnline()) {
                           String narrative = ai.stripTags(r);
-                          Arrays.stream(narrative.split("\n")).forEach(line -> p.sendMessage("§f" + line));
+                          if (!narrative.isBlank()) narrativeDelivery.deliver(p, narrative);
                       }
                   }));
             })
@@ -871,8 +926,8 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
               String narrative = ai.stripTags(r);
               spawnedPlayers.forEach(uid -> {
                   Player sp = Bukkit.getPlayer(uid);
-                  if (sp != null && sp.isOnline())
-                      Arrays.stream(narrative.split("\n")).forEach(line -> sp.sendMessage("§f" + line));
+                  if (sp != null && sp.isOnline() && !narrative.isBlank())
+                      narrativeDelivery.deliver(sp, narrative);
               });
               broadcast("§c재도전하려면 §f/trpg retry §c를 입력하세요.");
           }));
@@ -1006,7 +1061,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     private void deliverNarrative(Player actor, String raw) {
         String narrative = ai.stripTags(raw);
         if (!narrative.isBlank() && actor != null && actor.isOnline()) {
-            Arrays.stream(narrative.split("\n")).forEach(line -> actor.sendMessage("§f" + line));
+            narrativeDelivery.deliver(actor, narrative);
         }
         ai.parseWitnessTags(raw).forEach((pName, witnessText) -> {
             if (witnessText.isBlank()) return;
@@ -1483,14 +1538,177 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         if (gdam.has("entity")) {
             sb.append("괴담 존재: ").append(gdam.getAsJsonObject("entity").get("name").getAsString()).append("\n");
         }
+        // GM NPC 배역 섹션
+        if (!gmNpcRoleIds.isEmpty() && gdam.has("roles")) {
+            sb.append("\n## GM 직접 조종 NPC 배역\n");
+            for (JsonElement el : gdam.getAsJsonArray("roles")) {
+                JsonObject r = el.getAsJsonObject();
+                if (!r.has("role_id")) continue;
+                String rid = r.get("role_id").getAsString();
+                if (!gmNpcRoleIds.contains(rid)) continue;
+                String name = r.has("name") ? r.get("name").getAsString() : rid;
+                sb.append("- ").append(name);
+                if (r.has("spawn_location")) sb.append(" (").append(r.get("spawn_location").getAsString()).append(")");
+                if (r.has("initial_info")) {
+                    sb.append(" | 초기 정보: ");
+                    r.getAsJsonArray("initial_info").forEach(i -> sb.append(i.getAsString()).append(" "));
+                }
+                sb.append("\n");
+            }
+            sb.append("위 NPC는 플레이어가 없으므로 GM이 자연스럽게 스토리에 통합한다.\n");
+        }
         // 오염 컨텍스트 추가
         sb.append(corruptMan.buildCorruptionContext(gdam));
         return sb.toString();
     }
 
-    // 상태 조회
-    public GameStateManager getState()          { return state; }
-    public boolean hasPlayer(Player p)          { return state.hasPlayer(p.getUniqueId()); }
-    public DialogManager getDialogManager()     { return dialogMan; }
-    public TraitManager getTraitManager()       { return traitMan; }
+    // ──────────────────────────────────────────────────────────────
+    //  선제 배역 배정
+    // ──────────────────────────────────────────────────────────────
+
+    /**
+     * 캐릭터 생성 전 역할을 미리 배정하여 age_range·job_pool을 chargen에 전달.
+     * pd가 없는 상태에서 호출하므로 PlayerData 수정은 하지 않는다.
+     */
+    private void doPreAssign(List<Player> players, JsonObject gdam) {
+        preAssignedRoleData.clear();
+        preAssignments.clear();
+        gmNpcRoleIds.clear();
+        if (!gdam.has("roles")) return;
+
+        List<JsonObject> coreRoles  = new ArrayList<>();
+        List<JsonObject> extraRoles = new ArrayList<>();
+        for (JsonElement el : gdam.getAsJsonArray("roles")) {
+            JsonObject r = el.getAsJsonObject();
+            if (r.has("is_core") && r.get("is_core").getAsBoolean()) coreRoles.add(r);
+            else extraRoles.add(r);
+        }
+        List<JsonObject> ordered = new ArrayList<>(coreRoles);
+        ordered.addAll(extraRoles);
+
+        List<Player> shuffled = new ArrayList<>(players);
+        Collections.shuffle(shuffled);
+
+        for (int i = 0; i < shuffled.size() && i < ordered.size(); i++) {
+            UUID uuid = shuffled.get(i).getUniqueId();
+            JsonObject role = ordered.get(i);
+            preAssignedRoleData.put(uuid, role);
+            preAssignments.put(uuid, roleDataToAssignment(role));
+        }
+        // 남은 배역 → GM이 직접 조종
+        for (int i = shuffled.size(); i < ordered.size(); i++) {
+            JsonObject role = ordered.get(i);
+            if (role.has("role_id")) gmNpcRoleIds.add(role.get("role_id").getAsString());
+        }
+        if (!gmNpcRoleIds.isEmpty()) {
+            plugin.getLogger().info("[TRPG] GM NPC 배역: " + gmNpcRoleIds);
+        }
+    }
+
+    private RoleManager.RoleAssignment roleDataToAssignment(JsonObject r) {
+        String roleId   = r.has("role_id") ? r.get("role_id").getAsString() : "role_?";
+        String roleName = r.has("name")    ? r.get("name").getAsString()    : "알 수 없는 배역";
+        String zone     = r.has("zone")    ? r.get("zone").getAsString()    : "zone_A";
+        boolean adv     = r.has("knowledge_advantage") && r.get("knowledge_advantage").getAsBoolean();
+        List<String> info = new ArrayList<>();
+        if (r.has("initial_info")) {
+            r.getAsJsonArray("initial_info").forEach(i -> info.add(i.getAsString()));
+        }
+        return new RoleManager.RoleAssignment(roleId, roleName, zone, info, adv);
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  주사위 판정 애니메이션
+    // ──────────────────────────────────────────────────────────────
+
+    private boolean needsDiceAnimation(String text) {
+        return text.contains("[판정]") || text.contains("d20")
+            || text.contains("주사위를 굴") || text.contains("판정이 필요") || text.contains("판정을 진행");
+    }
+
+    private void playDiceAnimation(Player player) {
+        player.showTitle(Title.title(
+            Component.text("🎲", NamedTextColor.GOLD, TextDecoration.BOLD),
+            Component.text("판정 진행 중...", NamedTextColor.YELLOW),
+            Title.Times.times(
+                Duration.ofMillis(100),
+                Duration.ofMillis(800),
+                Duration.ofMillis(300)
+            )
+        ));
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  저장 세션 불러오기
+    // ──────────────────────────────────────────────────────────────
+
+    public void loadSession(Player initiator, String seed) {
+        if (currentPhase != Phase.IDLE) {
+            initiator.sendMessage("§c이미 TRPG 세션이 진행 중입니다. /trpg stop 후 시도하세요.");
+            return;
+        }
+        JsonObject gdam = gdamGen.load(seed);
+        if (gdam == null) {
+            initiator.sendMessage("§c씨드 '" + seed + "'의 저장 파일을 찾을 수 없습니다.");
+            initiator.sendMessage("§7/trpg list 로 저장된 세션을 확인하세요.");
+            return;
+        }
+
+        int room = gdam.has("room") ? gdam.get("room").getAsInt()
+                 : (state.isSessionActive() ? state.getRoomNumber() + 1 : 1);
+        broadcast("§e§l═══ TRPG 세션 로드 (씨드: " + seed + ") ═══");
+        broadcast("§7.gdam 파일을 불러왔습니다. 캐릭터를 생성합니다...");
+
+        currentPhase = Phase.CHAR_CREATION;
+        state.startSession(room, seed, gdam);
+        gmSystemPrompt = buildGmPrompt(gdam);
+        ai.clearAll();
+
+        List<Player> survivors = Bukkit.getOnlinePlayers().stream()
+            .filter(p -> p.getGameMode() == GameMode.SURVIVAL)
+            .collect(Collectors.toList());
+
+        if (survivors.isEmpty()) {
+            broadcast("§c서바이벌 모드 플레이어가 없습니다.");
+            currentPhase = Phase.IDLE;
+            return;
+        }
+
+        doPreAssign(survivors, gdam);
+
+        survivors.forEach(p -> {
+            pendingCreation.add(p.getUniqueId());
+            JsonObject roleData = preAssignedRoleData.get(p.getUniqueId());
+            charGen.generate(p, roleData)
+                .thenAccept(pd -> {
+                    state.addPlayer(pd);
+                    plugin.getServer().getScheduler().runTask(plugin, () -> {
+                        if (!p.isOnline()) {
+                            pendingCreation.remove(p.getUniqueId());
+                            checkAllConfirmed();
+                            return;
+                        }
+                        dialogMan.showCharacterSheet(p, pd, room, state.getCorruption().attempts + 1);
+                    });
+                })
+                .exceptionally(ex -> {
+                    plugin.getLogger().warning("캐릭터 생성 실패 (" + p.getName() + "): " + ex.getMessage());
+                    pendingCreation.remove(p.getUniqueId());
+                    plugin.getServer().getScheduler().runTask(plugin, this::checkAllConfirmed);
+                    return null;
+                });
+        });
+    }
+
+    public List<String> listSavedSeeds() { return gdamGen.listSavedSeeds(); }
+
+    // ──────────────────────────────────────────────────────────────
+    //  상태 조회
+    // ──────────────────────────────────────────────────────────────
+
+    public GameStateManager getState()              { return state; }
+    public boolean hasPlayer(Player p)              { return state.hasPlayer(p.getUniqueId()); }
+    public DialogManager getDialogManager()         { return dialogMan; }
+    public TraitManager getTraitManager()           { return traitMan; }
+    public NarrativeDelivery getNarrativeDelivery() { return narrativeDelivery; }
 }
