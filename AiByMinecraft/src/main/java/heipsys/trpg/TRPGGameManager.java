@@ -1324,7 +1324,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     private void handleTraitSelect(Player player, int idx) {
         List<TraitData> choices = dialogMan.getTraitChoices(player);
 
-        if (idx == 4) { // 기존 특성 제거 선택
+        if (idx == 0) { // 기존 특성 제거 선택
             dialogMan.clearDialog(player);
             PlayerData pd = state.getPlayer(player);
             if (pd != null) {
@@ -1341,8 +1341,16 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
 
         PlayerData pd = state.getPlayer(player);
         if (pd != null) {
-            traitMan.addTrait(pd, selected);
-            player.sendMessage("§a특성 '§f" + selected.name + "§a'을(를) 획득했습니다!");
+            if (selected.replacesId != null) {
+                // 강화 선택: 원본 특성을 제거하고 강화본을 영구 특성으로 추가
+                traitMan.removeTrait(pd, selected.replacesId);
+                selected.roleSpecific = false;
+                traitMan.addTrait(pd, selected);
+                player.sendMessage("§6특성을 강화했습니다 → §f" + selected.name + " §7(" + selected.grade + ")");
+            } else {
+                traitMan.addTrait(pd, selected);
+                player.sendMessage("§a특성 '§f" + selected.name + "§a'을(를) 획득했습니다!");
+            }
             scoreMan.update(player, pd, state.getRoomNumber());
         }
     }
@@ -1454,13 +1462,21 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         state.getAllPlayers().stream()
             .filter(playerData -> !playerData.isDead)
             .forEach(playerData -> {
-                traitMan.generateClearTraits(finalGrade, playerData, gdamTheme)
+                // 신규 특성 + 이번 세션 특성 강화본을 함께 제시
+                var newF = traitMan.generateClearTraits(finalGrade, playerData, gdamTheme);
+                var enhF = traitMan.generateEnhancedTraits(playerData, gdamTheme);
+                newF.thenCombine(enhF, (newTraits, enhTraits) -> {
+                        List<TraitData> combined = new ArrayList<>();
+                        if (newTraits != null) combined.addAll(newTraits);
+                        if (enhTraits != null) combined.addAll(enhTraits);
+                        return combined;
+                    })
                     .thenAccept(choices -> {
                         if (choices.isEmpty()) return;
                         Player p = Bukkit.getPlayer(playerData.uuid);
                         if (p == null || !p.isOnline()) return;
                         plugin.getServer().getScheduler().runTask(plugin, () -> {
-                            p.sendMessage("§6§l[클리어 보상] 특성을 선택하세요!");
+                            p.sendMessage("§6§l[클리어 보상] 특성을 선택하세요! §7(✦ 신규 / ⬆ 강화)");
                             boolean canRemove = playerData.traits.size() >= 3;
                             dialogMan.showTraitSelection(p, choices, canRemove,
                                 idx -> handleTraitSelect(p, idx));
