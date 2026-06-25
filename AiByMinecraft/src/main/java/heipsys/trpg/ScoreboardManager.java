@@ -1,14 +1,13 @@
 package heipsys.trpg;
 
 import heipsys.trpg.model.PlayerData;
-import heipsys.trpg.model.TraitData;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.scoreboard.*;
 
 /**
- * 사이드바 스코어보드: 체력/정신력/스탯/특성/스테이지 정보 표시 (STEP 3-3).
- * 타임라인 단계는 숫자 대신 '??' 표시.
+ * 사이드바 스코어보드: 이름/체력/정신력/스테이지만 간략 표시 (STEP 3-3).
+ * 상세 스탯·특성은 '캐릭터 정보'(네더의 별) GUI에서 확인한다.
  */
 public class ScoreboardManager {
 
@@ -25,47 +24,16 @@ public class ScoreboardManager {
         Objective obj = sb.registerNewObjective("trpg", Criteria.DUMMY, "§e§l[ TRPG ]");
         obj.setDisplaySlot(DisplaySlot.SIDEBAR);
 
-        int line = 20;
+        // 사이드바는 핵심 정보만 간략하게. 상세 정보(스탯·특성)는 '캐릭터 정보'(네더의 별) GUI에서.
+        int line = 9;
         set(obj, "§f" + pd.name,                         line--);
-        set(obj, "§7" + pd.age + "세 / " + pd.job,       line--);
         set(obj, "§8─────────────────",                  line--);
         set(obj, hpBar(pd),                               line--);
         set(obj, sanBar(pd),                              line--);
         set(obj, "§8─────────────────",                  line--);
-        // 기본 스탯 + 배역 보정치(증감) 표기
-        set(obj, "§9근력 §f" + pd.str + mod(pd.str, pd.baseStr)
-               + " §a매력 §f" + pd.cha + mod(pd.cha, pd.baseCha), line--);
-        set(obj, "§6행운 §f" + pd.luk + mod(pd.luk, pd.baseLuk)
-               + " §d영감 §f" + pd.spr + mod(pd.spr, pd.baseSpr), line--);
-
-        // 기본 특성 (영구)
-        boolean baseHeader = false;
-        for (TraitData t : pd.traits) {
-            if (t.roleSpecific) continue;
-            if (line <= 3) break;
-            if (!baseHeader) {
-                set(obj, "§8─────────────────", line--);
-                set(obj, "§e[특성]",            line--);
-                baseHeader = true;
-            }
-            set(obj, "§7▸ " + t.name + " §8(" + t.grade + ")", line--);
-        }
-
-        // 배역 특성 (이번 스테이지 한정)
-        boolean roleHeader = false;
-        for (TraitData t : pd.traits) {
-            if (!t.roleSpecific) continue;
-            if (line <= 3) break;
-            if (!roleHeader) {
-                set(obj, "§8─────────────────", line--);
-                set(obj, "§6[배역 특성]",        line--);
-                roleHeader = true;
-            }
-            set(obj, "§7▸ " + t.name + " §8(" + t.grade + ")", line--);
-        }
-
-        set(obj, "§8─────────────────",              line--);
-        set(obj, "§f스테이지: " + roomNumber + "  §7타임라인: ??", line);
+        set(obj, "§f스테이지: §e" + roomNumber,           line--);
+        set(obj, "§8─────────────────",                  line--);
+        set(obj, "§7상세: §b네더의 별 우클릭",            line);
 
         player.setScoreboard(sb);
     }
@@ -82,13 +50,6 @@ public class ScoreboardManager {
     private void set(Objective obj, String label, int score) {
         Score s = obj.getScore(label);
         s.setScore(score);
-    }
-
-    /** 기본값 대비 배역 보정 증감 표기 (없으면 빈 문자열) */
-    private String mod(int current, int base) {
-        int d = current - base;
-        if (d == 0) return "";
-        return d > 0 ? "§a+" + d : "§c" + d; // 음수는 부호 포함
     }
 
     private String hpBar(PlayerData pd) {
