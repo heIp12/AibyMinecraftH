@@ -368,6 +368,8 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     private final Map<UUID, RoleManager.RoleAssignment> preAssignments = new ConcurrentHashMap<>();
     /** 플레이어가 없어 GM이 직접 조종하는 배역 ID 집합 */
     private final Set<String> gmNpcRoleIds = ConcurrentHashMap.newKeySet();
+    /** 미등장 배역별 서술 호출 횟수 (비트 진행 추적) */
+    private final Map<UUID, Integer> preSpawnCallCounts = new ConcurrentHashMap<>();
     private String gmSystemPrompt = GM_SYSTEM_BASE;
 
     public TRPGGameManager(AICraft plugin, AiManager ai) {
@@ -524,6 +526,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         preAssignedRoleData.clear();
         preAssignments.clear();
         gmNpcRoleIds.clear();
+        preSpawnCallCounts.clear();
         concludingEnding = false;
         currentPhase = Phase.IDLE;
     }
@@ -541,6 +544,8 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         state.onRetry();
         broadcast("§c오염 단계: §f" + corruptMan.getLevel() + " (" + corruptMan.getAttempts() + "회차)");
         ai.clearAll();
+        spawnedPlayers.clear();
+        preSpawnCallCounts.clear();
         gmSystemPrompt = buildGmPrompt(state.getGdamData());
         currentPhase = Phase.DAILY;
         startDailyPhase();
@@ -578,6 +583,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         preAssignedRoleData.clear();
         preAssignments.clear();
         gmNpcRoleIds.clear();
+        preSpawnCallCounts.clear();
         ai.clearAll();
 
         gdamGen.generate(nextRoom).thenAccept(gdam -> {
@@ -1460,6 +1466,10 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         PlayerData pd = state.getPlayer(player);
         if (pd == null) return;
         if (pd.isDead) { player.sendMessage("§c사망 상태에서는 특성을 사용할 수 없습니다."); return; }
+        if (!spawnedPlayers.contains(player.getUniqueId())) {
+            player.sendMessage("§8(아직 이야기에 등장하지 않았습니다. 배역이 등장한 후 특성을 사용할 수 있습니다.)");
+            return;
+        }
         String msg = traitBtn.buildTraitUseMessage(pd, traitId);
         if (msg == null) { player.sendMessage("§c특성을 찾을 수 없습니다."); return; }
         // GM AI에 특성 발동 메시지 전달 (언제든 발동 가능, 직전 행동 처리 중이면 대기)
@@ -1729,56 +1739,120 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     //  미등장 배역 자동 서술
     // ──────────────────────────────────────────────────────────────
 
-    private void sendPreSpawnNarrative(Player p, PlayerData pd) {
-        String context = buildPreSpawnContext(pd);
-        if (context.isEmpty()) return;
-        String phase = state.isDailyPhase() ? "일상 파트" : "괴담 파트 " + state.getTimelineStage() + "단계";
+    // 비트 2개당 1단계 진행 (비트 0→1: 2회 호출, 1→2: 4회, ...)
+    private static final int CALLS_PER_BEAT = 2;
 
-        ai.callAssistant(
-            "너는 TRPG GM이야. 아직 스토리에 등장하지 않은 배역의 현재 상황을 2인칭 1-3문장으로 서술해.\n"
-            + "스탯/특성 적용 없이 배역 서사에 집중. hidden_info는 이 배역이 이미 아는 정보로 포함.\n"
-            + "본 스토리는 간접적으로만 암시 (직접 언급 금지).\n" + context,
-            "현재 게임 단계: " + phase
-        ).thenAccept(resp -> plugin.getServer().getScheduler().runTask(plugin, () -> {
-            if (p.isOnline() && !resp.startsWith("§c")) {
-                // 진한 회색(§8)은 가독성이 나빠 읽기 쉬운 회색 이탤릭(§7§o)으로.
-                // 본 서술과 구분되도록 이탤릭만 유지.
-                String text = NarrativeDelivery.format(ai.stripTags(resp).trim());
-                for (String line : text.split("\n")) {
-                    if (!line.isBlank()) p.sendMessage("§7§o" + line);
-                }
+    private void sendPreSpawnNarrative(Player p, PlayerData pd) {
+        JsonObject roleData = findRoleData(pd.roleId);
+        if (roleData == null) return;
+
+        // 호출 횟수 증가 → 비트 인덱스 산출
+        int callCount = preSpawnCallCounts.merge(pd.uuid, 1, Integer::sum) - 1;
+        List<String> beats = new ArrayList<>();
+        if (roleData.has("pre_spawn_beats")) {
+            roleData.getAsJsonArray("pre_spawn_beats")
+                .forEach(b -> beats.add(b.getAsString()));
+        }
+
+        String beatGuide;
+        if (beats.isEmpty()) {
+            // pre_spawn_beats 없는 구형 gdam — 기본 가이드로 대체
+            beatGuide = switch (callCount) {
+                case 0 -> "배역의 일상 시작 장면. 평범한 하루의 시작.";
+                case 1 -> "무언가 계기가 생겨 외출하거나 움직임을 결심한다.";
+                case 2 -> "이동 중이거나 목적지로 접근하는 장면.";
+                default -> "합류 직전 — 목적지 근처에서 이상한 것을 목격하거나 단서를 발견한다.";
+            };
+        } else {
+            int beatIdx = Math.min(callCount / CALLS_PER_BEAT, beats.size() - 1);
+            beatGuide = beats.get(beatIdx);
+        }
+
+        String spawnLoc = roleData.has("spawn_location")
+            ? roleData.get("spawn_location").getAsString() : "";
+        boolean hasKnowledgeAdv = roleData.has("knowledge_advantage")
+            && roleData.get("knowledge_advantage").getAsBoolean();
+        String phase = state.isDailyPhase()
+            ? "일상 " + state.getDailyTurnsLeft() + "턴 남음"
+            : "괴담 " + state.getTimelineStage() + "단계";
+
+        // 배역 독점 정보 (마지막 비트나 knowledge_advantage일 때 활용)
+        List<String> hiddenInfo = new ArrayList<>();
+        if (roleData.has("hidden_info")) {
+            roleData.getAsJsonArray("hidden_info").forEach(h -> hiddenInfo.add(h.getAsString()));
+        }
+
+        StringBuilder prompt = new StringBuilder();
+        prompt.append("## 미등장 배역 서술 요청\n");
+        prompt.append("아직 이야기에 합류하지 않은 ").append(pd.name)
+              .append("(").append(pd.age).append("세, ").append(pd.job).append(")의\n");
+        prompt.append("현재 순간을 2인칭 2~3문장으로 서술한다.\n\n");
+        prompt.append("### 현재 장면 가이드\n").append(beatGuide).append("\n\n");
+        if (!spawnLoc.isEmpty()) {
+            prompt.append("### 합류 예정 장소\n").append(spawnLoc).append("\n\n");
+        }
+        if (hasKnowledgeAdv && !hiddenInfo.isEmpty()) {
+            // 마지막 비트(또는 비트 없이 3회 이상)에만 단서 포함
+            boolean isLastBeat = beats.isEmpty()
+                ? callCount >= 3
+                : (callCount / CALLS_PER_BEAT) >= beats.size() - 1;
+            if (isLastBeat) {
+                prompt.append("### 배역 독점 단서 (이 장면에 자연스럽게 녹여낼 것)\n");
+                hiddenInfo.forEach(h -> prompt.append("- ").append(h).append("\n"));
+                prompt.append("\n");
             }
-        }));
+        }
+        prompt.append("### 제약\n");
+        prompt.append("- 괴담·사건 직접 언급 금지 (간접 암시만 허용)\n");
+        prompt.append("- 스탯·특성 수치 언급 금지\n");
+        prompt.append("- 서술은 현재 시제, 2인칭 (당신은 ...)\n");
+        prompt.append("- ").append(phase).append(" 시점\n");
+        prompt.append("- 이전과 다른 장면·행동·감정으로 변화를 보여줄 것\n");
+
+        ai.callGmAiOnce(gmSystemPrompt, prompt.toString())
+            .thenAccept(resp -> plugin.getServer().getScheduler().runTask(plugin, () -> {
+                if (!p.isOnline()) return;
+                String trimmed = ai.stripTags(resp).trim();
+                if (trimmed.isBlank() || trimmed.startsWith("§c")) return;
+                narrativeDelivery.deliver(p, NarrativeDelivery.format(trimmed));
+            }));
     }
 
-    private String buildPreSpawnContext(PlayerData pd) {
+    /** role_id로 gdam 배역 JsonObject 반환. 없으면 null. */
+    private JsonObject findRoleData(String roleId) {
         JsonObject gdam = state.getGdamData();
-        if (gdam == null || !gdam.has("roles")) return "";
+        if (gdam == null || !gdam.has("roles") || roleId == null || roleId.isEmpty()) return null;
         for (JsonElement el : gdam.getAsJsonArray("roles")) {
             JsonObject r = el.getAsJsonObject();
-            if (!r.has("role_id") || !r.get("role_id").getAsString().equals(pd.roleId)) continue;
-            StringBuilder sb = new StringBuilder();
-            sb.append("배역: ").append(r.has("name") ? r.get("name").getAsString() : pd.roleId).append("\n");
-            sb.append("위치: ").append(r.has("spawn_location") ? r.get("spawn_location").getAsString() : "알 수 없음").append("\n");
-            if (r.has("spawn_timeline")) sb.append("등장 예정: ").append(r.get("spawn_timeline").getAsString()).append("\n");
-            if (r.has("initial_info")) {
-                sb.append("초기 정보: ");
-                List<String> list = new ArrayList<>();
-                r.getAsJsonArray("initial_info").forEach(i -> list.add(i.getAsString()));
-                sb.append(String.join(" / ", list)).append("\n");
-            }
-            if (r.has("hidden_info")) {
-                sb.append("배역 독점 정보: ");
-                List<String> list = new ArrayList<>();
-                r.getAsJsonArray("hidden_info").forEach(i -> list.add(i.getAsString()));
-                sb.append(String.join(" / ", list)).append("\n");
-            }
-            if (r.has("knowledge_advantage") && r.get("knowledge_advantage").getAsBoolean()) {
-                sb.append("늦게 등장하는 대신 이미 중요한 정보를 보유하고 있다.\n");
-            }
-            return sb.toString();
+            if (r.has("role_id") && r.get("role_id").getAsString().equals(roleId)) return r;
         }
-        return "";
+        return null;
+    }
+
+    @SuppressWarnings("unused")
+    private String buildPreSpawnContext(PlayerData pd) {
+        JsonObject r = findRoleData(pd.roleId);
+        if (r == null) return "";
+        StringBuilder sb = new StringBuilder();
+        sb.append("배역: ").append(r.has("name") ? r.get("name").getAsString() : pd.roleId).append("\n");
+        sb.append("위치: ").append(r.has("spawn_location") ? r.get("spawn_location").getAsString() : "알 수 없음").append("\n");
+        if (r.has("spawn_timeline")) sb.append("등장 예정: ").append(r.get("spawn_timeline").getAsString()).append("\n");
+        if (r.has("initial_info")) {
+            sb.append("초기 정보: ");
+            List<String> list = new ArrayList<>();
+            r.getAsJsonArray("initial_info").forEach(i -> list.add(i.getAsString()));
+            sb.append(String.join(" / ", list)).append("\n");
+        }
+        if (r.has("hidden_info")) {
+            sb.append("배역 독점 정보: ");
+            List<String> list = new ArrayList<>();
+            r.getAsJsonArray("hidden_info").forEach(i -> list.add(i.getAsString()));
+            sb.append(String.join(" / ", list)).append("\n");
+        }
+        if (r.has("knowledge_advantage") && r.get("knowledge_advantage").getAsBoolean()) {
+            sb.append("늦게 등장하는 대신 이미 중요한 정보를 보유하고 있다.\n");
+        }
+        return sb.toString();
     }
 
     private boolean isImmediateSpawn(String roleId) {
