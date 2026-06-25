@@ -212,6 +212,7 @@ public class AiManager {
             .replaceAll("<CONTACT_CHANGE [^/]*/?>", "")
             .replaceAll("<IMPERSONATE [^/]*/?>", "")
             .replaceAll("<IMPERSONATE_END [^/]*/?>", "")
+            .replaceAll("<ZONE_UPDATE [^/]*/?>", "")
             .trim();
     }
 
@@ -440,6 +441,25 @@ public class AiManager {
     /** <IMPERSONATE_END player="X"/> 모두 파싱 → [X, ...] */
     public java.util.List<String> parseImpersonateEndTags(String response) {
         return parseSelfClosingAttr(response, "<IMPERSONATE_END ", "player");
+    }
+
+    /** <ZONE_UPDATE player="X" zone="Y"/> 모두 파싱 → [{player, zone}, ...] */
+    public java.util.List<String[]> parseZoneUpdateTags(String response) {
+        java.util.List<String[]> out = new ArrayList<>();
+        final String PREFIX = "<ZONE_UPDATE ";
+        int from = 0;
+        while (true) {
+            int idx = response.indexOf(PREFIX, from);
+            if (idx == -1) break;
+            int end = response.indexOf("/>", idx);
+            if (end == -1) break;
+            String attrs  = response.substring(idx + PREFIX.length(), end);
+            String player = extractAttr(attrs, "player").orElse(null);
+            String zone   = extractAttr(attrs, "zone").orElse(null);
+            if (player != null && zone != null) out.add(new String[]{player, zone});
+            from = end + 2;
+        }
+        return out;
     }
 
     /** 자기완결 태그(prefix ... />)에서 단일 속성값을 모두 수집 */

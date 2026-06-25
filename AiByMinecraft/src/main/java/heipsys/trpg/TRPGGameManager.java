@@ -124,6 +124,13 @@ spawn_timeline이 된 배역이 등장할 시점:
 <SPAWN player="플레이어명"/>
 이 태그 출력 시 해당 플레이어가 스토리에 진입한다.
 
+### 위치 추적 ★ 필수
+플레이어가 이동할 때마다 반드시 아래 태그를 출력한다:
+<ZONE_UPDATE player="플레이어명" zone="존ID"/>
+zone 값은 .gdam의 zones[].zone_id를 사용한다.
+위치가 불명확하거나 이동하지 않은 경우에는 출력하지 않는다.
+같은 zone에 있는 플레이어끼리는 자동으로 대면 통신이 가능해진다.
+
 ### 플레이어 간 직접 통신
 플레이어는 "@이름 메시지" 또는 "@번호 메시지" 형식으로 통신을 시도한다.
 시스템이 아래를 자동 판정하므로 GM은 관여하지 않는다:
@@ -524,7 +531,15 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         if (gdam == null || !gdam.has("roles")) return;
         for (var el : gdam.getAsJsonArray("roles")) {
             JsonObject r = el.getAsJsonObject();
-            if (r.get("role_id").getAsString().equals(roleId) && r.has("start_item")) {
+            if (!r.get("role_id").getAsString().equals(roleId)) continue;
+
+            // 초기 zone 설정
+            PlayerData pd = state.getPlayer(player);
+            if (pd != null && r.has("zone")) {
+                pd.zone = r.get("zone").getAsString();
+            }
+
+            if (r.has("start_item")) {
                 for (var item : r.getAsJsonArray("start_item")) {
                     JsonObject grant = new JsonObject();
                     String itemId = item.getAsString();
@@ -532,7 +547,6 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                     grant.addProperty("player", player.getName());
                     grant.addProperty("chapter_bound", true);
                     itemMan.processGrant(grant, List.of(player));
-                    PlayerData pd = state.getPlayer(player);
                     if (pd != null) pd.heldItemIds.add(itemId);
                 }
             }
@@ -703,6 +717,9 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             // 5b. 연락처 발견 / 변경 처리
             ai.parseContactRevealTags(raw).forEach(rev -> revealContact(rev[0], rev[1]));
             ai.parseContactChangeTags(raw).forEach(this::changeContact);
+
+            // 5d. 위치(zone) 업데이트
+            ai.parseZoneUpdateTags(raw).forEach(zu -> updatePlayerZone(zu[0], zu[1]));
 
             // 5c. 괴담의 정체 차용 시작/종료
             ai.parseImpersonateTags(raw).forEach(this::startImpersonation);
@@ -1395,6 +1412,19 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
 
         state.log("comm", senderPd.name,
             "→ " + targetPd.name + " (" + (viaDevice ? "장치" : "근거리") + "): " + message);
+    }
+
+    /** GM이 플레이어 위치를 zone으로 업데이트. 같은 zone 진입 시 연락처 자동 교환 */
+    private void updatePlayerZone(String playerName, String newZone) {
+        PlayerData moved = findAnyByName(playerName);
+        if (moved == null || newZone == null || newZone.isBlank()) return;
+        moved.zone = newZone;
+        // 같은 zone에 이미 있는 생존 플레이어들과 연락처 교환
+        state.getAllPlayers().stream()
+            .filter(other -> other != moved && !other.isDead
+                          && newZone.equals(other.zone)
+                          && spawnedPlayers.contains(other.uuid))
+            .forEach(other -> exchangeContacts(moved, other));
     }
 
     private void openCommChannel(String nameA, String nameB) {
