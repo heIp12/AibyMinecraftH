@@ -98,21 +98,31 @@ public class CharacterGenerator {
     // ──────────────────────────────────────────────────────────────
 
     public void rollStats(PlayerData pd, JsonObject roleData) {
-        // 나이
+        // 나이 — range가 10살 미만이면 ±5 여유를 줘 재굴림 다양성 확보
         if (roleData != null && roleData.has("age_range")) {
             JsonArray ar = roleData.getAsJsonArray("age_range");
             int lo = ar.get(0).getAsInt(), hi = ar.get(1).getAsInt();
-            if (hi > lo) pd.age = lo + RNG.nextInt(hi - lo + 1);
-            else          pd.age = lo;
+            if (hi - lo < 10) {
+                lo = Math.max(5,  lo - 5);
+                hi = Math.min(80, hi + 5);
+            }
+            pd.age = hi > lo ? lo + RNG.nextInt(hi - lo + 1) : lo;
         } else {
             pd.age = 5 + RNG.nextInt(76);
         }
 
-        // 직업
+        // 직업 — job_pool이 5개 미만이면 전체 풀을 섞어 보완 (재굴림 다양성 확보)
         if (roleData != null && roleData.has("job_pool")) {
             JsonArray pool = roleData.getAsJsonArray("job_pool");
-            if (pool.size() > 0) {
+            if (pool.size() >= 5) {
                 pd.job = pool.get(RNG.nextInt(pool.size())).getAsString();
+            } else if (pool.size() > 0) {
+                // 배역 풀 50%, 전체 풀 50% 혼합
+                if (RNG.nextBoolean()) {
+                    pd.job = pool.get(RNG.nextInt(pool.size())).getAsString();
+                } else {
+                    pd.job = JOB_POOL[RNG.nextInt(JOB_POOL.length)];
+                }
             } else {
                 pd.job = JOB_POOL[RNG.nextInt(JOB_POOL.length)];
             }
@@ -244,8 +254,8 @@ public class CharacterGenerator {
         if (roleContext != null && !roleContext.isBlank()) {
             sb.append("\n배역: ").append(roleContext);
         }
-        sb.append("\n\n이 나이·직업·배역을 고려해 스탯을 소폭 보정해줘. "
-            + "각 보정값은 -2~+2 범위. reason에 보정 이유를 한 줄로 설명.");
+        sb.append("\n\n이 나이·직업·배역을 고려해 스탯을 보정해줘. "
+            + "각 보정값은 -3~+3 범위 (직업 특성이 뚜렷할수록 더 강하게). reason에 보정 이유를 한 줄로 설명.");
         return sb.toString();
     }
 
@@ -267,7 +277,7 @@ public class CharacterGenerator {
 
     private int clamp(JsonObject j, String key) {
         if (!j.has(key)) return 0;
-        return Math.max(-2, Math.min(2, j.get(key).getAsInt()));
+        return Math.max(-3, Math.min(3, j.get(key).getAsInt()));
     }
 
     private int[] distributePoints(int total, int count, int min, int max) {
