@@ -16,6 +16,11 @@ public class PlayerData {
     public int age = 25;
     public String job = "일반인";
 
+    /** 캐릭터 고유(기본) 나이 — 배역이 없을 때 복귀할 값 */
+    public int baseAge = 25;
+    /** 현재 배역에 맞춰 임시로 부여된 나이 (-1 = 배역 없음) */
+    public int roleAge = -1;
+
     // [current, max]
     public int[] hp  = {6, 6};
     public int   str = 5;
@@ -65,6 +70,7 @@ public class PlayerData {
         baseCha = cha;
         baseLuk = luk;
         baseSpr = spr;
+        baseAge = age;
     }
 
     public void resetToBase() {
@@ -74,6 +80,8 @@ public class PlayerData {
         cha = baseCha;
         luk = baseLuk;
         spr = baseSpr;
+        // 배역이 있으면 배역 나이로, 없으면 고유 나이로 복귀 (재도전 시 배역 나이 유지)
+        age = (roleAge >= 0) ? roleAge : baseAge;
         isDead       = false;
         impersonated = false;
         status       = "normal";
@@ -85,6 +93,7 @@ public class PlayerData {
     /** 챕터 종료 후 다음 스테이지 진행 시: roleSpecific 특성 제거, 기본 스탯 복구, 역할 초기화 */
     public void clearRoleData() {
         traits.removeIf(t -> t.roleSpecific);
+        roleAge = -1;          // 배역 해제 → 다음 배역 전까지 고유 나이로
         resetToBase();
         roleId       = "";
         zone         = "";

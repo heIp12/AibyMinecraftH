@@ -23,6 +23,7 @@ import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Collectors;
 
 /**
@@ -839,6 +840,8 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
      * @return 플레이어에게 표시할 요약 문자열 (없으면 빈 문자열)
      */
     private String applyRoleStats(PlayerData pd, JsonObject roleData) {
+        // 나이는 role_stats 유무와 무관하게 배역 age_range에 맞춰 조정
+        applyRoleAge(pd, roleData);
         if (!roleData.has("role_stats")) return "";
         JsonObject rs = roleData.getAsJsonObject("role_stats");
 
@@ -870,6 +873,27 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         }
 
         return rs.has("summary") ? rs.get("summary").getAsString() : "";
+    }
+
+    /**
+     * 배역 age_range에 맞춰 나이를 임시로 조정한다.
+     * 현재 나이가 이미 배역 연령대 안이면 유지(생성 시 표시값과 불일치 방지),
+     * 벗어나면 범위 안에서 새로 뽑는다. role_stats가 없어도 호출 가능하도록 분리.
+     */
+    private void applyRoleAge(PlayerData pd, JsonObject roleData) {
+        if (roleData == null || !roleData.has("age_range")) {
+            pd.roleAge = pd.age; // 연령 정보 없으면 현재 나이를 배역 나이로 고정
+            return;
+        }
+        JsonArray ar = roleData.getAsJsonArray("age_range");
+        if (ar.size() >= 2) {
+            int lo = ar.get(0).getAsInt(), hi = ar.get(1).getAsInt();
+            if (hi < lo) { int t = lo; lo = hi; hi = t; }
+            if (pd.age < lo || pd.age > hi) {
+                pd.age = (hi > lo) ? lo + ThreadLocalRandom.current().nextInt(hi - lo + 1) : lo;
+            }
+        }
+        pd.roleAge = pd.age;
     }
 
     /** gdam relationships 기반으로 mutual_contact:true 배역끼리 연락처를 미리 교환 */
