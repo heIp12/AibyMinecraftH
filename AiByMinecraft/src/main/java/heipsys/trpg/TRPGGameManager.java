@@ -16,6 +16,7 @@ import org.bukkit.entity.Player;
 
 import java.time.Duration;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
@@ -553,6 +554,8 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         assignContactIds();
         applyTraitContacts();
 
+        List<CompletableFuture<Map.Entry<PlayerData, List<TraitData>>>> roleTraitFutures = new ArrayList<>();
+
         for (var entry : assignments.entrySet()) {
             Player p = Bukkit.getPlayer(entry.getKey());
             if (p == null) continue;
@@ -573,10 +576,46 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             } else {
                 p.sendMessage("§8당신의 배역은 이야기가 진행되면서 등장합니다. GM의 안내를 기다려주세요.");
             }
+
+            if (myPd != null) {
+                JsonObject roleData = getRoleDataById(asgn.roleId());
+                if (roleData != null) {
+                    p.sendMessage("§7배역 고유 특성 생성 중...");
+                    roleTraitFutures.add(
+                        traitMan.generateRoleTraits(myPd, roleData)
+                            .thenApply(traits -> Map.entry(myPd, traits))
+                    );
+                }
+            }
         }
 
         currentPhase = Phase.DAILY;
-        startDailyPhase();
+
+        if (roleTraitFutures.isEmpty()) {
+            startDailyPhase();
+            return;
+        }
+
+        CompletableFuture.allOf(roleTraitFutures.toArray(new CompletableFuture[0]))
+            .thenRun(() -> plugin.getServer().getScheduler().runTask(plugin, () -> {
+                for (var future : roleTraitFutures) {
+                    Map.Entry<PlayerData, List<TraitData>> result;
+                    try { result = future.join(); }
+                    catch (Exception ignored) { continue; }
+                    PlayerData pd = result.getKey();
+                    List<TraitData> traits = result.getValue();
+                    if (traits.isEmpty()) continue;
+                    Player rp = Bukkit.getPlayer(pd.uuid);
+                    traits.forEach(t -> traitMan.addTrait(pd, t));
+                    if (rp != null && rp.isOnline()) {
+                        StringBuilder msg = new StringBuilder("§e[배역 특성] 다음 특성이 부여되었습니다:");
+                        traits.forEach(t -> msg.append("\n§7▸ (").append(t.grade).append(") §f").append(t.name));
+                        rp.sendMessage(msg.toString());
+                        scoreMan.update(rp, pd, state.getRoomNumber());
+                    }
+                }
+                startDailyPhase();
+            }));
     }
 
     private void giveRoleStartItems(Player player, String roleId) {
@@ -604,6 +643,16 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                 }
             }
         }
+    }
+
+    private JsonObject getRoleDataById(String roleId) {
+        JsonObject gdam = state.getGdamData();
+        if (gdam == null || !gdam.has("roles")) return null;
+        for (var el : gdam.getAsJsonArray("roles")) {
+            JsonObject r = el.getAsJsonObject();
+            if (r.has("role_id") && r.get("role_id").getAsString().equals(roleId)) return r;
+        }
+        return null;
     }
 
     // ──────────────────────────────────────────────────────────────
