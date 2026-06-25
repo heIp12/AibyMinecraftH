@@ -362,6 +362,17 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             initiator.sendMessage("§c이미 TRPG 세션이 진행 중입니다.");
             return;
         }
+        // 게임 시작 전 AI 품질(표준/고품질) 선택
+        initiator.sendMessage("§e세션을 시작합니다. AI 품질을 선택하세요...");
+        dialogMan.showQualityChoice(initiator,
+            () -> beginSession(initiator, false),
+            () -> beginSession(initiator, true));
+    }
+
+    private void beginSession(Player initiator, boolean highQuality) {
+        if (currentPhase != Phase.IDLE) return; // 다이얼로그 대기 중 상태 변경 방지
+        ai.setGmQuality(highQuality);
+        broadcast("§7[AI 품질] " + (highQuality ? "§b고품질 모드" : "§f표준 모드"));
 
         int room = state.isSessionActive() ? state.getRoomNumber() + 1 : 1;
         broadcast("§e§l═══ TRPG 세션 시작 (스테이지 " + room + ") ═══");

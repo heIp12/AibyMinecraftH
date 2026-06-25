@@ -2,7 +2,13 @@
 # 발급받은 API 키를 아래에 입력해 주세요.
 # openai(짧고 빠름) / gemini(상상력이 풍부하지만 느림) / claude(비싸지만 똑똑함)
 api-type: "openai"
-api-key: 
+api-key:
+
+# [TRPG] 고품질 GM 모델 ID (선택)
+# /trpg start 시 "고품질 모드"를 고르면 GM AI가 이 모델을 사용합니다.
+# 비워두면 provider별 기본값 사용 (claude=claude-opus-4-1, openai=gpt-4.1, gemini=gemini-2.5-pro)
+# 사용 중인 API 키가 접근 가능한 정확한 모델 ID로 바꿔주세요.
+gm-model-high: ""
 # 0~5 뒤로 갈수록 플레이어의 상상을 그대로 구현합니다
 #[0 현실주의] [1 벨런스] [2 기본] [3 판타지] [4 신화] [5 카오스] [6 종말]
 logic-level: 1

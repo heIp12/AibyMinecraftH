@@ -44,6 +44,17 @@ public class AiManager {
     //  모델 선택
     // ======================================================
 
+    /** 게임 시작 시 선택되는 GM AI 고품질 모드 */
+    private volatile boolean gmHighQuality = false;
+    /** config.yml에서 지정한 고품질 모델 ID (없으면 기본값 사용) */
+    private String highModelOverride = null;
+
+    public void setGmQuality(boolean high) { this.gmHighQuality = high; }
+    public boolean isGmHighQuality()       { return gmHighQuality; }
+    public void setHighModelOverride(String m) {
+        if (m != null && !m.isBlank()) this.highModelOverride = m.trim();
+    }
+
     private String sonnetModel() {
         return switch (apiType) {
             case "claude" -> "claude-sonnet-4-6";
@@ -60,6 +71,21 @@ public class AiManager {
         };
     }
 
+    /** 고품질 GM 모델 (config 우선, 없으면 provider별 기본값) */
+    private String highModel() {
+        if (highModelOverride != null) return highModelOverride;
+        return switch (apiType) {
+            case "claude" -> "claude-opus-4-1";
+            case "openai" -> "gpt-4.1";
+            default       -> "gemini-2.5-pro";
+        };
+    }
+
+    /** GM AI 호출에 사용할 모델 (고품질 모드면 highModel, 아니면 sonnet) */
+    private String gmModel() {
+        return gmHighQuality ? highModel() : sonnetModel();
+    }
+
     // ======================================================
     //  GM AI  (Sonnet, 플레이어 전체 정보 접근)
     // ======================================================
@@ -68,7 +94,7 @@ public class AiManager {
         return CompletableFuture.supplyAsync(() -> {
             try {
                 gmContext.add(msg("user", userMessage));
-                String result = send(sonnetModel(), systemPrompt, gmContext, GM_MAX_TOKENS);
+                String result = send(gmModel(), systemPrompt, gmContext, GM_MAX_TOKENS);
                 // 히스토리에는 태그 제거 버전 저장 → 다음 턴에 STATE_UPDATE JSON 재전송 방지
                 gmContext.add(msg("assistant", stripTags(result)));
                 return result;
@@ -83,7 +109,7 @@ public class AiManager {
         return CompletableFuture.supplyAsync(() -> {
             try {
                 List<JsonObject> single = List.of(msg("user", userMessage));
-                return send(sonnetModel(), systemPrompt, single, GM_MAX_TOKENS);
+                return send(gmModel(), systemPrompt, single, GM_MAX_TOKENS);
             } catch (Exception e) {
                 return "§c[GM AI 오류] " + e.getMessage();
             }
@@ -95,7 +121,7 @@ public class AiManager {
         return CompletableFuture.supplyAsync(() -> {
             try {
                 List<JsonObject> single = List.of(msg("user", userMessage));
-                return send(sonnetModel(), systemPrompt, single, GDAM_MAX_TOKENS);
+                return send(gmModel(), systemPrompt, single, GDAM_MAX_TOKENS);
             } catch (Exception e) {
                 return "§c[GM AI 오류] " + e.getMessage();
             }

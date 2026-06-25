@@ -140,6 +140,53 @@ public class DialogManager {
     }
 
     // ──────────────────────────────────────────────────────────────
+    //  세션 시작 — AI 품질 선택
+    // ──────────────────────────────────────────────────────────────
+
+    /** 게임 시작 전 GM AI 품질(표준/고품질)을 선택하는 다이얼로그 */
+    public void showQualityChoice(Player player, Runnable onStandard, Runnable onHigh) {
+        Component body = Component.text()
+            .append(Component.text("GM AI 품질을 선택하세요.", NamedTextColor.WHITE))
+            .appendNewline().appendNewline()
+            .append(Component.text("표준  ", NamedTextColor.YELLOW))
+            .append(Component.text("빠르고 저렴 · 일반 플레이용", NamedTextColor.GRAY))
+            .appendNewline()
+            .append(Component.text("고품질  ", NamedTextColor.AQUA))
+            .append(Component.text("더 풍부하고 일관된 서술 · 응답이 느리고 비쌈", NamedTextColor.GRAY))
+            .build();
+
+        List<ActionButton> buttons = new ArrayList<>();
+        buttons.add(ActionButton.create(
+            Component.text("표준 모드", NamedTextColor.YELLOW),
+            Component.text("빠르고 저렴한 기본 모델로 진행합니다."),
+            150,
+            DialogAction.customClick((v, a) -> onStandard.run(),
+                ClickCallback.Options.builder().uses(1).build())
+        ));
+        buttons.add(ActionButton.create(
+            Component.text("고품질 모드", NamedTextColor.AQUA),
+            Component.text("더 똑똑한 모델로 진행합니다.\n응답이 느리고 토큰 비용이 큽니다."),
+            150,
+            DialogAction.customClick((v, a) -> onHigh.run(),
+                ClickCallback.Options.builder().uses(1).build())
+        ));
+
+        ActionButton cancel = ActionButton.create(
+            Component.text("취소", TextColor.color(0xAAAAAA)),
+            Component.text("세션을 시작하지 않습니다."),
+            100, null
+        );
+
+        Dialog dialog = Dialog.create(b -> b.empty()
+            .base(DialogBase.builder(Component.text("세션 시작  —  AI 품질 선택"))
+                .body(List.of(DialogBody.plainMessage(body)))
+                .build())
+            .type(DialogType.multiAction(buttons, cancel, 2))
+        );
+        player.showDialog(dialog);
+    }
+
+    // ──────────────────────────────────────────────────────────────
     //  캐릭터 정보 GUI (게임 중 열람 — 기본/배역 분리, 능동 특성 사용)
     // ──────────────────────────────────────────────────────────────
 
