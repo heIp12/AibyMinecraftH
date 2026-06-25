@@ -49,6 +49,8 @@ public class TraitManager {
 ]
 grade는 S/A/B/C/D/F 중 하나.
 active는 플레이어가 직접 발동해야 하면 true, 자동 발동이면 false.
+description은 짧고 명료하게 한 문장(최대 35자)으로. 장황한 설명 금지.
+effect도 한 문장으로 간결하게.
 한국어로 작성. 창의적이고 괴담 테마와 어울리는 특성 3개.
 """;
 
@@ -114,7 +116,8 @@ active는 플레이어가 직접 발동해야 하면 true, 자동 발동이면 f
 grade는 S/A/B/C/D/F 중 하나. 배역 초기 특성이므로 B~D 범위.
 active는 직접 발동하면 true, 자동 발동이면 false.
 description과 effect에 스탯 숫자·스탯 약어(STR/HP/SAN/CHA/LUK/SPR) 절대 사용 금지.
-description: 이 배역의 배경·지식·역할에서 비롯된 능력이나 성향을 자연스러운 서사로 묘사 (2~3문장).
+description: 이 배역의 배경에서 비롯된 능력·성향을 짧고 명료하게 한 문장(최대 35자)으로 묘사. 장황한 설명 금지.
+effect도 한 문장으로 간결하게.
 한국어로 작성.
 """;
 
