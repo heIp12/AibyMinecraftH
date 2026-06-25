@@ -140,6 +140,126 @@ public class DialogManager {
     }
 
     // ──────────────────────────────────────────────────────────────
+    //  캐릭터 정보 GUI (게임 중 열람 — 기본/배역 분리, 능동 특성 사용)
+    // ──────────────────────────────────────────────────────────────
+
+    /**
+     * 게임 중 캐릭터 정보 다이얼로그.
+     * 기본 능력치 + 배역 보정(증감)을 분리 표기하고, 특성을 기본/배역으로 나눠 표시한다.
+     * 능동(active) 특성은 버튼으로 눌러 발동할 수 있다.
+     */
+    public void showCharacterInfo(Player player, PlayerData pd, Consumer<String> onUseTrait) {
+        var bodyBuilder = Component.text()
+            .append(Component.text("나이 · 직업  ", NamedTextColor.GOLD))
+            .append(Component.text(pd.age + "세  ·  " + pd.job, NamedTextColor.WHITE))
+            .appendNewline()
+            .append(Component.text("체력  ", NamedTextColor.RED)
+                .hoverEvent(Component.text("체력 (HP)\n현재: " + pd.hp[0] + " / 최대: " + pd.hp[1], NamedTextColor.GRAY)))
+            .append(Component.text(hpDisplay(pd.hp), NamedTextColor.WHITE))
+            .append(Component.text("    정신력  ", NamedTextColor.AQUA)
+                .hoverEvent(Component.text("정신력 (SAN)\n현재: " + pd.san[0] + " / 최대: " + pd.san[1], NamedTextColor.GRAY)))
+            .append(Component.text(hpDisplay(pd.san), NamedTextColor.WHITE))
+            .appendNewline()
+            // 2차 스탯: 기본값 대비 배역 보정 표기
+            .append(statCell("근력", pd.str, pd.baseStr))
+            .append(Component.text("   "))
+            .append(statCell("매력", pd.cha, pd.baseCha))
+            .append(Component.text("   "))
+            .append(statCell("행운", pd.luk, pd.baseLuk))
+            .append(Component.text("   "))
+            .append(statCell("영감", pd.spr, pd.baseSpr));
+
+        // 기본 특성 (영구)
+        boolean hasBase = pd.traits.stream().anyMatch(t -> !t.roleSpecific);
+        if (hasBase) {
+            bodyBuilder.appendNewline().appendNewline()
+                .append(Component.text("[특성]", NamedTextColor.LIGHT_PURPLE));
+            for (TraitData t : pd.traits) {
+                if (t.roleSpecific) continue;
+                bodyBuilder.appendNewline()
+                    .append(traitLine(t));
+            }
+        }
+        // 배역 특성 (이번 스테이지 한정)
+        boolean hasRole = pd.traits.stream().anyMatch(t -> t.roleSpecific);
+        if (hasRole) {
+            bodyBuilder.appendNewline().appendNewline()
+                .append(Component.text("[배역 특성] ", NamedTextColor.GOLD))
+                .append(Component.text("(스테이지 종료 시 사라짐)", NamedTextColor.DARK_GRAY));
+            for (TraitData t : pd.traits) {
+                if (!t.roleSpecific) continue;
+                bodyBuilder.appendNewline()
+                    .append(traitLine(t));
+            }
+        }
+        Component body = bodyBuilder.build();
+
+        // 능동 특성 → 발동 버튼
+        List<ActionButton> buttons = new ArrayList<>();
+        for (TraitData t : pd.traits) {
+            if (!t.active) continue;
+            final String traitId = t.id;
+            buttons.add(ActionButton.create(
+                Component.text("⚡ " + t.name + " 발동", NamedTextColor.AQUA),
+                buildTraitHover(t),
+                200,
+                DialogAction.customClick((v, a) -> onUseTrait.accept(traitId),
+                    ClickCallback.Options.builder().uses(1).build())
+            ));
+        }
+        // 능동 특성이 없으면 비활성 안내 버튼 (multiAction이 빈 목록을 받지 않도록)
+        if (buttons.isEmpty()) {
+            buttons.add(ActionButton.create(
+                Component.text("발동 가능한 능동 특성 없음", NamedTextColor.DARK_GRAY),
+                Component.text("능동(⚡) 특성을 보유하면 여기서 발동할 수 있습니다."),
+                200,
+                null
+            ));
+        }
+
+        ActionButton closeBtn = ActionButton.create(
+            Component.text("닫기", TextColor.color(0xAAAAAA)),
+            null, 100, null
+        );
+
+        Component title = Component.text()
+            .append(Component.text(pd.name, NamedTextColor.YELLOW))
+            .append(Component.text("  —  캐릭터 정보", NamedTextColor.GRAY))
+            .build();
+
+        Dialog dialog = Dialog.create(b -> b.empty()
+            .base(DialogBase.builder(title)
+                .body(List.of(DialogBody.plainMessage(body)))
+                .build())
+            .type(DialogType.multiAction(buttons, closeBtn, 1))
+        );
+        player.showDialog(dialog);
+    }
+
+    /** 기본값 대비 배역 보정을 표기한 스탯 컴포넌트 ("근력 4 §c(-1)") */
+    private static Component statCell(String label, int current, int base) {
+        var c = Component.text()
+            .append(Component.text(label + " ", NamedTextColor.YELLOW))
+            .append(Component.text(String.valueOf(current), NamedTextColor.WHITE));
+        int d = current - base;
+        if (d > 0) {
+            c.append(Component.text(" (+" + d + ")", NamedTextColor.GREEN));
+        } else if (d < 0) {
+            c.append(Component.text(" (" + d + ")", NamedTextColor.RED));
+        }
+        c.hoverEvent(Component.text(label + "\n기본 " + base + (d != 0 ? " → 현재 " + current + " (배역 보정)" : ""), NamedTextColor.GRAY));
+        return c.build();
+    }
+
+    /** 특성 한 줄 (등급+이름, 마우스 오버레이로 설명) */
+    private static Component traitLine(TraitData t) {
+        String prefix = t.active ? "  ⚡ " : "  ▸ ";
+        return Component.text(prefix + "(" + t.grade + ") " + t.name,
+                t.active ? NamedTextColor.AQUA : NamedTextColor.GRAY)
+            .hoverEvent(buildTraitHover(t));
+    }
+
+    // ──────────────────────────────────────────────────────────────
     //  특성 선택 다이얼로그
     // ──────────────────────────────────────────────────────────────
 

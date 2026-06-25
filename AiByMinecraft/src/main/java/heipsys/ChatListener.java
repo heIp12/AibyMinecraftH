@@ -10,9 +10,13 @@ import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.event.block.Action;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.player.PlayerDropItemEvent;
+import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerToggleSneakEvent;
+import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 
 public class ChatListener implements Listener {
@@ -56,6 +60,29 @@ public class ChatListener implements Listener {
         if (trpgManager == null || !trpgManager.isActive()) return;
         if (!event.isSneaking()) return;
         trpgManager.getNarrativeDelivery().onSneak(event.getPlayer());
+    }
+
+    /** 캐릭터 정보 아이템 우클릭 → 정보 GUI 열기 */
+    @EventHandler
+    public void onInfoItemUse(PlayerInteractEvent event) {
+        TRPGGameManager trpgManager = trpg();
+        if (trpgManager == null || !trpgManager.isActive()) return;
+        if (event.getHand() != EquipmentSlot.HAND) return; // 양손 중복 방지
+        Action action = event.getAction();
+        if (action != Action.RIGHT_CLICK_AIR && action != Action.RIGHT_CLICK_BLOCK) return;
+        if (!trpgManager.isInfoItem(event.getItem())) return;
+
+        event.setCancelled(true);
+        Player player = event.getPlayer();
+        Bukkit.getScheduler().runTask(plugin, () -> trpgManager.openCharacterInfo(player));
+    }
+
+    /** 캐릭터 정보 아이템은 버릴 수 없음 */
+    @EventHandler
+    public void onInfoItemDrop(PlayerDropItemEvent event) {
+        TRPGGameManager trpgManager = trpg();
+        if (trpgManager == null || !trpgManager.isActive()) return;
+        if (trpgManager.isInfoItem(event.getItemDrop().getItemStack())) event.setCancelled(true);
     }
 
     @EventHandler

@@ -12,7 +12,12 @@ import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.title.Title;
 import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
+import org.bukkit.Material;
+import org.bukkit.NamespacedKey;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.persistence.PersistentDataType;
 
 import java.time.Duration;
 import java.util.*;
@@ -404,6 +409,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         Bukkit.getOnlinePlayers().forEach(p -> {
             scoreMan.clear(p);
             dialogMan.clearDialog(p);
+            removeInfoItem(p);
         });
         itemMan.reclaimChapterItems(new ArrayList<>(Bukkit.getOnlinePlayers()));
         narrativeDelivery.clearAll();
@@ -857,6 +863,8 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                 Title.Times.times(Duration.ofMillis(500), Duration.ofMillis(2400), Duration.ofMillis(800))
             ));
             p.sendMessage("§8§o게임이 시작되었습니다...");
+            // 캐릭터 정보 아이템 지급 (우클릭으로 능력치·특성 GUI 열기)
+            giveInfoItem(p);
         });
 
         // 등장 배역: 각자의 위치/역할 기준 개인 프롤로그
@@ -1255,6 +1263,8 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                 announceKnownContacts(player, pd);
             }
             traitBtn.sendTraitButtons(player, pd);
+            // 게임 진행 중(캐릭터 생성 이후)이면 정보 아이템 복원
+            if (pd.roleAssigned) giveInfoItem(player);
         } else {
             player.sendMessage("§c이 세션의 참가자가 아닙니다. 게임은 시작 전에 참여해야 합니다.");
         }
@@ -1309,6 +1319,64 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         if (msg == null) { player.sendMessage("§c특성을 찾을 수 없습니다."); return; }
         // GM AI에 특성 발동 메시지 전달
         turnMan.handleAction(player, msg, gmSystemPrompt);
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  캐릭터 정보 GUI (핫바 아이템 우클릭으로 열기)
+    // ──────────────────────────────────────────────────────────────
+
+    private static final String INFO_ITEM_TAG = "trpg_info_item";
+
+    private NamespacedKey infoItemKey() {
+        return new NamespacedKey(plugin, INFO_ITEM_TAG);
+    }
+
+    /** 핫바에 캐릭터 정보 아이템 지급 (이미 있으면 생략) */
+    public void giveInfoItem(Player p) {
+        for (ItemStack it : p.getInventory().getContents()) {
+            if (isInfoItem(it)) return;
+        }
+        ItemStack item = new ItemStack(Material.NETHER_STAR);
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null) {
+            meta.displayName(Component.text("캐릭터 정보", NamedTextColor.AQUA, TextDecoration.BOLD)
+                .decoration(TextDecoration.ITALIC, false));
+            meta.lore(List.of(
+                Component.text("우클릭하여 능력치·특성을 확인하고", NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false),
+                Component.text("능동 특성을 발동합니다.", NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false)));
+            meta.getPersistentDataContainer().set(infoItemKey(), PersistentDataType.BYTE, (byte) 1);
+            item.setItemMeta(meta);
+        }
+        // 슬롯 8(핫바 끝)이 비어있으면 거기에, 아니면 기존 아이템을 밀지 않고 빈 칸에 추가
+        var inv = p.getInventory();
+        ItemStack slot8 = inv.getItem(8);
+        if (slot8 == null || slot8.getType().isAir()) {
+            inv.setItem(8, item);
+        } else {
+            inv.addItem(item);
+        }
+    }
+
+    /** 캐릭터 정보 아이템인지 판별 */
+    public boolean isInfoItem(ItemStack item) {
+        if (item == null || !item.hasItemMeta()) return false;
+        return item.getItemMeta().getPersistentDataContainer()
+            .has(infoItemKey(), PersistentDataType.BYTE);
+    }
+
+    /** 인벤토리에서 캐릭터 정보 아이템 제거 (세션 종료 시) */
+    public void removeInfoItem(Player p) {
+        var inv = p.getInventory();
+        for (int i = 0; i < inv.getSize(); i++) {
+            if (isInfoItem(inv.getItem(i))) inv.setItem(i, null);
+        }
+    }
+
+    /** 캐릭터 정보 GUI 열기 (능동 특성 발동 콜백 포함) */
+    public void openCharacterInfo(Player player) {
+        PlayerData pd = state.getPlayer(player);
+        if (pd == null) { player.sendMessage("§c참여 중인 캐릭터가 없습니다."); return; }
+        dialogMan.showCharacterInfo(player, pd, traitId -> handleTraitUse(player, traitId));
     }
 
     // ──────────────────────────────────────────────────────────────
