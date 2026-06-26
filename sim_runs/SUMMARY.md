@@ -123,3 +123,11 @@
 - 신규: 프롬프트 P42(번호 미보유 연락 실패·우회 허용 med)·P43(comms_monitored 대면 면제 자동명시 med). ★새 high 프롬프트 없음. +코드: CODE-9(원격 NPC 통화 불가 high·통화한정)·CODE-10(NPC 연락처 everKnown 미저장 med).
 - 파일: iter14/seed.json(7 zones·comms_monitored)·log.txt(483줄·통화 80회)·replay.json(stage3·3인). 플러그인 .java 미변경.
 - ※★프롬프트 수렴 확정: iter13·iter14 2회 연속 신규 high 프롬프트 패치 없음(med·코드 위주). 다음: 종합 검증(SYNTHESIS) 패스 — P1~P43 모순·중복·누락 점검 + CODE-1~10 정리.
+
+## ★ 종합 검증(SYNTHESIS) — 2026-06-26 21:55 — sim_runs/SYNTHESIS.md
+- iter01~14 누적 프롬프트 패치 P1~P43(43건) + 코드 TODO CODE-1~10(10건) 종합 점검.
+- 병합: 9개 통합 그룹(A NPC반응·B comms·C duration·D 평가면제·E mislead·F 단일주체·G 클리어판정·H 리트라이상태·I 해결경로강건성)으로 정리. 각 그룹 '통합 패치 텍스트' 초안 작성.
+- 모순: 실질 1건(P36 AND vs P37 OR → P37 우선 통합으로 해소), 우선순위 긴장 1건(P5/P17 엄격 vs P33 완화 → 단계 우선순위), 조건부 분리 9분류(친숙·의례·단일·과거·미래·역설·희생·소음·gated).
+- 최우선 프롬프트: H-1(P1+P12+P38 클리어 판정 통합)·H-2(P36+P37 평가 면제 통합)·H-3(P24 단일주체 collapse 의무).
+- 최우선 코드: CODE-3(사망캐리어 보상제외)·CODE-8(E_END 평가 미호출#13)·CODE-6(ZONE_ISOLATION 자동로그) 모두 HIGH.
+- ★프롬프트 수렴 확정. 잔여 약점 전부 코드 도메인 이동. SYNTHESIS.md에 적용 위치 매핑·우선순위·코드 TODO 착수용 정리 완비.
