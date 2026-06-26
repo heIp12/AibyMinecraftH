@@ -821,8 +821,9 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         pd.diceRollsRemaining--;
         player.sendMessage("§7재굴림 중...");
 
-        JsonObject roleData = preAssignedRoleData.get(player.getUniqueId());
-        charGen.generate(player, roleData).thenAccept(newPd -> {
+        // 캐릭터 본체는 시나리오와 무관하게 완전 무작위로 재굴림.
+        // (시나리오 배역은 이후 배역 배정 단계에서 별도로 덮어쓴다)
+        charGen.generate(player).thenAccept(newPd -> {
             newPd.diceRollsRemaining = pd.diceRollsRemaining;
             state.addPlayer(newPd);
             plugin.getServer().getScheduler().runTask(plugin, () ->
@@ -2737,8 +2738,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
 
         survivors.forEach(p -> {
             pendingCreation.add(p.getUniqueId());
-            JsonObject roleData = preAssignedRoleData.get(p.getUniqueId());
-            charGen.generate(p, roleData)
+            charGen.generate(p) // 시나리오 무관 완전 무작위 캐릭터 생성
                 .thenAccept(pd -> {
                     state.addPlayer(pd);
                     plugin.getServer().getScheduler().runTask(plugin, () -> {
