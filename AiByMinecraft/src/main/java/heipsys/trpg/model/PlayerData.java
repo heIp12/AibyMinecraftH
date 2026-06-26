@@ -55,8 +55,10 @@ public class PlayerData {
     public List<String> narrativeLog = new ArrayList<>();
     /** AI가 추출한 정보 조각 목록 (Info GUI용) */
     public List<String> infoItems    = new ArrayList<>();
-    public static final int NARRATIVE_LOG_MAX = 60;
+    public static final int NARRATIVE_LOG_MAX = 80;
     public static final int INFO_ITEMS_MAX    = 120;
+    /** narrativeLog 안의 '위치 이동' 구분 마커 접두사 (페이지 분할 지점). PUA 문자라 trim/일반 텍스트와 충돌 없음 */
+    public static final String MOVE_TAG = "##MOVE##";
 
     /** 방문해 본 zone 집합 (직접 그린 약도에 드러나는 범위) */
     public Set<String> visitedZones = new HashSet<>();

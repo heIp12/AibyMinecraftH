@@ -604,6 +604,152 @@ public class DialogManager {
     }
 
     // ──────────────────────────────────────────────────────────────
+    //  기록 다이얼로그 (전체 대화 / 수집 정보 — 위치 이동 기준 페이지 넘김)
+    // ──────────────────────────────────────────────────────────────
+
+    private static final int LOG_LINES_PER_PAGE  = 10;
+    private static final int INFO_LINES_PER_PAGE  = 12;
+
+    private record RecordPage(String header, List<String> lines) {}
+
+    /** 전체 대화 / 정보만 보기 선택 화면 */
+    public void showRecordChoice(Player player, PlayerData pd) {
+        List<String> logSnap, infoSnap;
+        synchronized (pd.narrativeLog) { logSnap  = new ArrayList<>(pd.narrativeLog); }
+        synchronized (pd.infoItems)    { infoSnap = new ArrayList<>(pd.infoItems); }
+        long logCount = logSnap.stream().filter(l -> !l.startsWith(PlayerData.MOVE_TAG)).count();
+
+        Component body = Component.text()
+            .append(Component.text("무엇을 확인할까요?", NamedTextColor.WHITE)).appendNewline().appendNewline()
+            .append(Component.text("전체 대화  ", NamedTextColor.YELLOW))
+            .append(Component.text("지나간 모든 서술·행동 (" + logCount + "줄)", NamedTextColor.GRAY)).appendNewline()
+            .append(Component.text("수집 정보  ", NamedTextColor.AQUA))
+            .append(Component.text("정보가 담긴 내용만 추린 목록 (" + infoSnap.size() + "건)", NamedTextColor.GRAY))
+            .build();
+
+        List<ActionButton> buttons = new ArrayList<>();
+        buttons.add(ActionButton.create(
+            Component.text("📖 전체 대화 보기", NamedTextColor.YELLOW),
+            Component.text("지나간 모든 기록을 페이지로 봅니다."), 160,
+            DialogAction.customClick((v, a) -> showRecordPages(player, pd, false, logSnap, 0),
+                ClickCallback.Options.builder().uses(1).build())));
+        buttons.add(ActionButton.create(
+            Component.text("🔍 정보만 보기", NamedTextColor.AQUA),
+            Component.text("정보가 포함된 내용만 모아 봅니다."), 160,
+            DialogAction.customClick((v, a) -> showRecordPages(player, pd, true, infoSnap, 0),
+                ClickCallback.Options.builder().uses(1).build())));
+
+        ActionButton closeBtn = ActionButton.create(Component.text("닫기", TextColor.color(0xAAAAAA)), null, 100, null);
+        Dialog dialog = Dialog.create(b -> b.empty()
+            .base(DialogBase.builder(Component.text("기록 열람"))
+                .body(List.of(DialogBody.plainMessage(body))).build())
+            .type(DialogType.multiAction(buttons, closeBtn, 1)));
+        player.showDialog(dialog);
+    }
+
+    /** 전체 대화 기록 바로 열기 */
+    public void showRecordLog(Player player, PlayerData pd) {
+        List<String> snap; synchronized (pd.narrativeLog) { snap = new ArrayList<>(pd.narrativeLog); }
+        showRecordPages(player, pd, false, snap, 0);
+    }
+
+    /** 수집 정보 바로 열기 */
+    public void showRecordInfo(Player player, PlayerData pd) {
+        List<String> snap; synchronized (pd.infoItems) { snap = new ArrayList<>(pd.infoItems); }
+        showRecordPages(player, pd, true, snap, 0);
+    }
+
+    private void showRecordPages(Player player, PlayerData pd, boolean infoMode, List<String> data, int page) {
+        List<RecordPage> pages = infoMode ? paginateInfo(data) : paginateLog(data);
+
+        if (pages.isEmpty()) {
+            ActionButton back = ActionButton.create(Component.text("◀ 목록", NamedTextColor.WHITE), null, 100,
+                DialogAction.customClick((v, a) -> showRecordChoice(player, pd),
+                    ClickCallback.Options.builder().uses(1).build()));
+            ActionButton close = ActionButton.create(Component.text("닫기", TextColor.color(0xAAAAAA)), null, 100, null);
+            Dialog empty = Dialog.create(b -> b.empty()
+                .base(DialogBase.builder(Component.text(infoMode ? "수집 정보" : "전체 대화"))
+                    .body(List.of(DialogBody.plainMessage(Component.text(
+                        infoMode ? "아직 수집된 정보가 없습니다." : "아직 기록된 내용이 없습니다.", NamedTextColor.GRAY))))
+                    .build())
+                .type(DialogType.multiAction(List.of(back), close, 1)));
+            player.showDialog(empty);
+            return;
+        }
+
+        final int p = Math.max(0, Math.min(page, pages.size() - 1));
+        RecordPage pg = pages.get(p);
+
+        var bodyB = Component.text();
+        if (!pg.header().isBlank())
+            bodyB.append(Component.text("▸ " + pg.header(), NamedTextColor.GOLD)).appendNewline().appendNewline();
+        if (pg.lines().isEmpty()) {
+            bodyB.append(Component.text("(내용 없음)", NamedTextColor.DARK_GRAY));
+        } else {
+            boolean first = true;
+            for (String line : pg.lines()) {
+                if (!first) bodyB.appendNewline();
+                first = false;
+                bodyB.append(colorRecordLine(line));
+            }
+        }
+        Component body = bodyB.build();
+        String title = (infoMode ? "수집 정보" : "전체 대화") + "  " + (p + 1) + "/" + pages.size();
+
+        List<ActionButton> nav = new ArrayList<>();
+        if (p > 0) nav.add(ActionButton.create(Component.text("◀ 이전", NamedTextColor.WHITE), null, 70,
+            DialogAction.customClick((v, a) -> showRecordPages(player, pd, infoMode, data, p - 1),
+                ClickCallback.Options.builder().uses(1).build())));
+        nav.add(ActionButton.create(Component.text("목록", NamedTextColor.GRAY), null, 70,
+            DialogAction.customClick((v, a) -> showRecordChoice(player, pd),
+                ClickCallback.Options.builder().uses(1).build())));
+        if (p < pages.size() - 1) nav.add(ActionButton.create(Component.text("다음 ▶", NamedTextColor.WHITE), null, 70,
+            DialogAction.customClick((v, a) -> showRecordPages(player, pd, infoMode, data, p + 1),
+                ClickCallback.Options.builder().uses(1).build())));
+
+        ActionButton closeBtn = ActionButton.create(Component.text("닫기", TextColor.color(0xAAAAAA)), null, 100, null);
+        Dialog dialog = Dialog.create(b -> b.empty()
+            .base(DialogBase.builder(Component.text(title))
+                .body(List.of(DialogBody.plainMessage(body))).build())
+            .type(DialogType.multiAction(nav, closeBtn, 3)));
+        player.showDialog(dialog);
+    }
+
+    /** 대화 로그를 위치 이동(MOVE_TAG) 지점·줄 수 한도로 페이지 분할 */
+    private static List<RecordPage> paginateLog(List<String> log) {
+        List<RecordPage> pages = new ArrayList<>();
+        List<String> cur = new ArrayList<>();
+        String header = "";
+        for (String line : log) {
+            if (line.startsWith(PlayerData.MOVE_TAG)) {
+                if (!cur.isEmpty()) { pages.add(new RecordPage(header, cur)); cur = new ArrayList<>(); }
+                header = line.substring(PlayerData.MOVE_TAG.length());
+                continue;
+            }
+            cur.add(line);
+            if (cur.size() >= LOG_LINES_PER_PAGE) { pages.add(new RecordPage(header, cur)); cur = new ArrayList<>(); }
+        }
+        if (!cur.isEmpty()) pages.add(new RecordPage(header, cur));
+        return pages;
+    }
+
+    /** 정보 목록을 줄 수 한도로 단순 페이지 분할 */
+    private static List<RecordPage> paginateInfo(List<String> items) {
+        List<RecordPage> pages = new ArrayList<>();
+        for (int i = 0; i < items.size(); i += INFO_LINES_PER_PAGE) {
+            pages.add(new RecordPage("",
+                new ArrayList<>(items.subList(i, Math.min(items.size(), i + INFO_LINES_PER_PAGE)))));
+        }
+        return pages;
+    }
+
+    private static Component colorRecordLine(String line) {
+        if (line.startsWith("[행동")) return Component.text(line, NamedTextColor.YELLOW);
+        if (line.startsWith("•"))     return Component.text(line, NamedTextColor.AQUA);
+        return Component.text(line, NamedTextColor.WHITE);
+    }
+
+    // ──────────────────────────────────────────────────────────────
     //  특성 오버레이 컴포넌트 빌더
     // ──────────────────────────────────────────────────────────────
 

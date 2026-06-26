@@ -6,7 +6,6 @@ import com.google.gson.JsonObject;
 import heipsys.AICraft;
 import heipsys.trpg.model.PlayerData;
 import heipsys.trpg.model.TraitData;
-import net.kyori.adventure.inventory.Book;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.event.HoverEvent;
@@ -662,6 +661,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             scoreMan.clear(p);
             dialogMan.clearDialog(p);
             removeInfoItem(p);
+            removeRecordItem(p);
         });
         itemMan.reclaimChapterItems(new ArrayList<>(Bukkit.getOnlinePlayers()));
         narrativeDelivery.clearAll();
@@ -1262,6 +1262,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             p.sendMessage("§8§o게임이 시작되었습니다...");
             // 캐릭터 정보 아이템 지급 (우클릭으로 능력치·특성 GUI 열기)
             giveInfoItem(p);
+            giveRecordItem(p); // 기록(로그/정보) 아이템 지급
         });
 
         // 등장 배역: 각자의 위치/역할 기준 개인 프롤로그
@@ -1826,8 +1827,8 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                 player.sendMessage("§7당신의 연락처: §f" + pd.contactId);
                 announceKnownContacts(player, pd);
             }
-            // 게임 진행 중(캐릭터 생성 이후)이면 정보 아이템 복원
-            if (pd.roleAssigned) giveInfoItem(player);
+            // 게임 진행 중(캐릭터 생성 이후)이면 정보·기록 아이템 복원
+            if (pd.roleAssigned) { giveInfoItem(player); giveRecordItem(player); }
         } else {
             player.sendMessage("§c이 세션의 참가자가 아닙니다. 게임은 시작 전에 참여해야 합니다.");
         }
@@ -2466,6 +2467,53 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         dialogMan.showCharacterInfo(player, pd, traitId -> handleTraitUse(player, traitId));
     }
 
+    // ──────────────────────────────────────────────────────────────
+    //  기록 아이템 (핫바 우클릭으로 기록 다이얼로그 열기)
+    // ──────────────────────────────────────────────────────────────
+
+    private static final String RECORD_ITEM_TAG = "trpg_record_item";
+
+    private NamespacedKey recordItemKey() {
+        return new NamespacedKey(plugin, RECORD_ITEM_TAG);
+    }
+
+    /** 핫바에 기록(로그/정보) 아이템 지급 (이미 있으면 생략) */
+    public void giveRecordItem(Player p) {
+        for (ItemStack it : p.getInventory().getContents()) {
+            if (isRecordItem(it)) return;
+        }
+        ItemStack item = new ItemStack(Material.BOOK);
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null) {
+            meta.displayName(Component.text("기록", NamedTextColor.GOLD, TextDecoration.BOLD)
+                .decoration(TextDecoration.ITALIC, false));
+            meta.lore(List.of(
+                Component.text("우클릭하여 지금까지의 기록을 봅니다.", NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false),
+                Component.text("전체 대화 / 수집 정보 선택 · 페이지 넘김", NamedTextColor.DARK_GRAY).decoration(TextDecoration.ITALIC, false)));
+            meta.getPersistentDataContainer().set(recordItemKey(), PersistentDataType.BYTE, (byte) 1);
+            item.setItemMeta(meta);
+        }
+        var inv = p.getInventory();
+        ItemStack slot7 = inv.getItem(7);
+        if (slot7 == null || slot7.getType().isAir()) inv.setItem(7, item);
+        else inv.addItem(item);
+    }
+
+    /** 기록 아이템인지 판별 */
+    public boolean isRecordItem(ItemStack item) {
+        if (item == null || !item.hasItemMeta()) return false;
+        return item.getItemMeta().getPersistentDataContainer()
+            .has(recordItemKey(), PersistentDataType.BYTE);
+    }
+
+    /** 인벤토리에서 기록 아이템 제거 (세션 종료 시) */
+    public void removeRecordItem(Player p) {
+        var inv = p.getInventory();
+        for (int i = 0; i < inv.getSize(); i++) {
+            if (isRecordItem(inv.getItem(i))) inv.setItem(i, null);
+        }
+    }
+
     /** /trpg map — 직접 그린 현장 약도(지도 아이템)를 손에 넣는다 */
     public void openMap(Player player) {
         mapMan.giveMapItem(player);
@@ -2688,55 +2736,25 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         });
     }
 
-    public void openNarrativeLog(Player player) {
+    /** 기록 다이얼로그 — 전체 대화 / 정보만 선택 화면 (기록 아이템 우클릭 · /trpg log·info) */
+    public void openRecords(Player player) {
         PlayerData pd = state.getPlayer(player);
         if (pd == null) { player.sendMessage("§c참여 중인 캐릭터가 없습니다."); return; }
-        List<String> log;
-        synchronized (pd.narrativeLog) { log = new ArrayList<>(pd.narrativeLog); }
-        if (log.isEmpty()) {
-            player.sendMessage("§7아직 기록된 서술이 없습니다.");
-            return;
-        }
-        String author = pd.charName.isEmpty() ? pd.name : pd.charName;
-        player.openBook(Book.book(
-            Component.text("서술 기록"),
-            Component.text(author),
-            buildBookPages(log, 230)
-        ));
+        dialogMan.showRecordChoice(player, pd);
     }
 
-    public void openInfoBook(Player player) {
+    /** 전체 대화 기록 다이얼로그로 바로 열기 */
+    public void openRecordLog(Player player) {
         PlayerData pd = state.getPlayer(player);
         if (pd == null) { player.sendMessage("§c참여 중인 캐릭터가 없습니다."); return; }
-        List<String> items;
-        synchronized (pd.infoItems) { items = new ArrayList<>(pd.infoItems); }
-        if (items.isEmpty()) {
-            player.sendMessage("§7아직 수집된 정보가 없습니다.");
-            return;
-        }
-        String author = pd.charName.isEmpty() ? pd.name : pd.charName;
-        player.openBook(Book.book(
-            Component.text("수집 정보"),
-            Component.text(author),
-            buildBookPages(items, 230)
-        ));
+        dialogMan.showRecordLog(player, pd);
     }
 
-    private static List<Component> buildBookPages(List<String> entries, int maxCharsPerPage) {
-        List<Component> pages = new ArrayList<>();
-        StringBuilder page = new StringBuilder();
-        for (String entry : entries) {
-            String clean = entry.replaceAll("§[0-9a-fk-or]", "");
-            if (page.length() + clean.length() + 1 > maxCharsPerPage && page.length() > 0) {
-                pages.add(Component.text(page.toString()));
-                page = new StringBuilder();
-            }
-            if (page.length() > 0) page.append("\n");
-            page.append(clean);
-        }
-        if (page.length() > 0) pages.add(Component.text(page.toString()));
-        if (pages.isEmpty()) pages.add(Component.text("기록 없음"));
-        return pages.subList(0, Math.min(pages.size(), 100));
+    /** 수집 정보 기록 다이얼로그로 바로 열기 */
+    public void openRecordInfo(Player player) {
+        PlayerData pd = state.getPlayer(player);
+        if (pd == null) { player.sendMessage("§c참여 중인 캐릭터가 없습니다."); return; }
+        dialogMan.showRecordInfo(player, pd);
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -3326,6 +3344,10 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         boolean zoneChanged = !newZone.equals(moved.zone);
         moved.zone = newZone;
         moved.visitedZones.add(newZone); // 방문 기록 (직접 그린 약도에 반영)
+        // 위치 이동 시 기록에 구분 마커 추가 (기록 다이얼로그 페이지 분할 지점)
+        if (zoneChanged && spawnedPlayers.contains(moved.uuid)) {
+            appendNarrativeLog(moved, PlayerData.MOVE_TAG + zoneDisplayName(newZone));
+        }
         // 세부 위치: 명시되면 갱신, zone이 바뀌었는데 미명시면 이전 spot 무효화
         if (spot != null && !spot.isBlank()) moved.spot = spot.trim();
         else if (zoneChanged)                moved.spot = "";
@@ -3335,6 +3357,23 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                           && newZone.equals(other.zone)
                           && spawnedPlayers.contains(other.uuid))
             .forEach(other -> exchangeContacts(moved, other));
+    }
+
+    /** zone_id → .gdam zones[].name (사람이 읽을 이름). 없으면 zone_id */
+    private String zoneDisplayName(String zoneId) {
+        if (zoneId == null || zoneId.isEmpty()) return "?";
+        JsonObject gdam = state.getGdamData();
+        if (gdam != null && gdam.has("zones")) {
+            for (JsonElement el : gdam.getAsJsonArray("zones")) {
+                if (!el.isJsonObject()) continue;
+                JsonObject z = el.getAsJsonObject();
+                if (zoneId.equals(z.has("zone_id") ? z.get("zone_id").getAsString() : "")) {
+                    String n = z.has("name") ? z.get("name").getAsString() : "";
+                    return n.isEmpty() ? zoneId : n;
+                }
+            }
+        }
+        return zoneId;
     }
 
     private void openCommChannel(String nameA, String nameB) {
