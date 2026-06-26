@@ -459,7 +459,8 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         this.ai         = ai;
         this.gdamGen    = new GdamGenerator(plugin, ai);
         this.state      = new GameStateManager();
-        this.charGen    = new CharacterGenerator(ai);
+        this.charGen    = new CharacterGenerator(ai, plugin.getDataFolder());
+        charGen.refreshJobPools(); // 서버 시작 시 캐시 로드 + 필요 시 AI 갱신 (비동기)
         this.traitMan   = new TraitManager(ai);
         this.scoreMan   = new ScoreboardManager();
         this.roleMan    = new RoleManager(state);
@@ -807,6 +808,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         player.sendMessage("§a스탯이 확정되었습니다!");
         scoreMan.update(player, pd, state.getRoomNumber());
         pendingCreation.remove(player.getUniqueId());
+        charGen.clearPlayerUsedJobs(player.getUniqueId()); // 재굴림 직업 기록 초기화
         checkAllConfirmed();
     }
 
