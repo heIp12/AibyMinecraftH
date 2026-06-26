@@ -48,3 +48,19 @@
 - [대상] buildGmPrompt 난이도 섹션
 - [문제] room≤2 생존판정 진출 가능이 GM 서술/CLEAR에 자동 반영 안 됨.
 - [수정안] "room≤2면 생존판정(resolved=false)도 진출 가능임을 CLEAR reason에 명시" 한 줄 추가.
+
+## iter03 (#NX4T-7WRA, 스테이지5 내셔널·'조율사') 발견 패치
+(P1·P3·P4·P5·P6 검증 완료 / P2 일부 미흡 — 가짜 변수 미삽입 / P7 범위 외)
+
+### P8. P2 강화 — 가짜 단서(mislead)를 생성에서 필수화 (med)
+- [대상] GDAM_SYSTEM_PROMPT clues 설계 / P2 보강
+- [문제] world_rules 은폐용 '가짜 변수'를 GM 자율에 맡기니 실제로 안 들어감(P2 취지 미달).
+- [수정안] clues 배열에 type "mislead" 단서 1~2개를 필수 포함. GM은 이를 '그럴듯한 오답 방향'으로 흘려 규칙 확신을 늦춘다.
+
+### P9. NPC schedule 지속 턴(duration_turns) 명시 (med)
+- [대상] buildNpcSystemPrompt schedule / 스키마
+- [문제] critical NPC의 상태(예: 균열·동요)가 몇 턴 지속되는지 GM 컨텍스트에 없음 → 임의 처리.
+- [수정안] schedule 항목에 선택적 duration_turns 필드. buildNpcSystemPrompt가 있으면 "이 행동/상태는 N턴 지속" 한 줄로 주입.
+
+### (시나리오 특화 — 범용 패치 아님, 기록만)
+- ISSUE-1/3 '합의 형성=괴담 트리거' 계열은 '조율사'류 시나리오에서만 유효. 범용 GM_SYSTEM_BASE에 강제 주입하면 다른 괴담을 왜곡하므로 패치화하지 않음. 단, 해당 괴담이면 entity.rules에 자체 명시하도록 생성 단계에서 처리(이미 entity.rules 자유 서술로 가능).
