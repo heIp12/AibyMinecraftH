@@ -37,7 +37,18 @@ public class DialogManager {
         activeDialog.put(player.getUniqueId(), DialogState.DICE_CONFIRM);
 
         // 스탯을 수정 불가 body Component로 구성 (마우스 오버레이 포함)
-        var bodyBuilder = Component.text()
+        var bodyBuilder = Component.text();
+        // 이름·성별이 있을 때만 표시
+        if (!pd.charName.isEmpty() || !pd.gender.isEmpty()) {
+            bodyBuilder.append(Component.text("이름 · 성별  ", NamedTextColor.AQUA))
+                       .append(Component.text(
+                           (pd.charName.isEmpty() ? "미정" : pd.charName)
+                           + "  ·  "
+                           + (pd.gender.isEmpty() ? "미상" : pd.gender),
+                           NamedTextColor.WHITE))
+                       .appendNewline();
+        }
+        bodyBuilder
             .append(Component.text("나이 · 직업  ", NamedTextColor.GOLD))
             .append(Component.text(pd.age + "세  ·  " + pd.job, NamedTextColor.WHITE))
             .appendNewline()
@@ -203,7 +214,18 @@ public class DialogManager {
      * 능동(active) 특성은 버튼으로 눌러 발동할 수 있다.
      */
     public void showCharacterInfo(Player player, PlayerData pd, Consumer<String> onUseTrait) {
-        var bodyBuilder = Component.text()
+        var bodyBuilder = Component.text();
+        // 이름·성별이 있을 때만 표시
+        if (!pd.charName.isEmpty() || !pd.gender.isEmpty()) {
+            bodyBuilder.append(Component.text("이름 · 성별  ", NamedTextColor.AQUA))
+                       .append(Component.text(
+                           (pd.charName.isEmpty() ? "미정" : pd.charName)
+                           + "  ·  "
+                           + (pd.gender.isEmpty() ? "미상" : pd.gender),
+                           NamedTextColor.WHITE))
+                       .appendNewline();
+        }
+        bodyBuilder
             .append(Component.text("나이 · 직업  ", NamedTextColor.GOLD))
             .append(Component.text(pd.age + "세  ·  " + pd.job, NamedTextColor.WHITE))
             .appendNewline()
