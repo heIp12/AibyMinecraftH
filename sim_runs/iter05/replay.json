@@ -1,0 +1,135 @@
+{
+  "version": 1,
+  "stage": 4,
+  "seed": "#FW9L-4QZR",
+  "created": "2054-05-03",
+  "players": [
+    {
+      "minecraft_name": "Hayeon_Park",
+      "char_name": "박하연",
+      "gender": "여성",
+      "age": 33,
+      "job": "신경공학 연구원",
+      "role_id": "role_A",
+      "hp": 4,
+      "hp_max": 5,
+      "san": 4,
+      "san_max": 8,
+      "str": 3,
+      "cha": 6,
+      "luk": 5,
+      "spr": 8,
+      "traits": [
+        {"name": "패턴 직관", "grade": "B", "active": false},
+        {"name": "신경 차단", "grade": "C", "active": true},
+        {"name": "내부 접근", "grade": "B", "active": false}
+      ],
+      "status": "normal",
+      "neurolink": true,
+      "neurolink_infected_cache": false,
+      "clear_trait_chosen": "신경 패턴 역독",
+      "clear_trait_grade": "A"
+    },
+    {
+      "minecraft_name": "DavidOK_WHO",
+      "char_name": "다비드 오콘조",
+      "gender": "남성",
+      "age": 41,
+      "job": "WHO 특수대응팀 요원",
+      "role_id": "role_B",
+      "hp": 6,
+      "hp_max": 8,
+      "san": 4,
+      "san_max": 5,
+      "str": 7,
+      "cha": 6,
+      "luk": 5,
+      "spr": 4,
+      "traits": [
+        {"name": "위기 대응", "grade": "A", "active": false},
+        {"name": "협박 심문", "grade": "B", "active": true},
+        {"name": "생물안전 지식", "grade": "B", "active": false}
+      ],
+      "status": "normal",
+      "neurolink": false,
+      "clear_trait_chosen": "비감각 침투",
+      "clear_trait_grade": "A"
+    },
+    {
+      "minecraft_name": "Sua_Lee_NNI",
+      "char_name": "이수아",
+      "gender": "여성",
+      "age": 29,
+      "job": "NNI 전직 연구원",
+      "role_id": "role_C",
+      "hp": 5,
+      "hp_max": 5,
+      "san": 6,
+      "san_max": 6,
+      "str": 3,
+      "cha": 5,
+      "luk": 7,
+      "spr": 6,
+      "traits": [
+        {"name": "시스템 허점", "grade": "B", "active": true},
+        {"name": "내부자 직감", "grade": "C", "active": false},
+        {"name": "은신 습관", "grade": "C", "active": false}
+      ],
+      "status": "normal",
+      "neurolink": false,
+      "clear_trait_chosen": "시스템 귀신",
+      "clear_trait_grade": "A"
+    }
+  ],
+  "clear": {
+    "grade": "A",
+    "resolved": true,
+    "retry_count": 1,
+    "retry_grade_penalty": false,
+    "reason": "collapse_condition 완전 충족 — 마야 인터페이스 폐쇄 루프 피드백 전송 성공. 잠식체 원본 패턴 자기 소각. 전원 생존. 타임라인 3단계 완료. 1차 실패 후 크리스 챈 협력 확보→2차 성공. P1 기준 등급 강등 없음.",
+    "next_stage": 5,
+    "patches_verified": ["P1","P2","P3","P4","P5","P6","P7_skipped","P8","P9","P10","P11","P12"]
+  },
+  "npc_log": [
+    {
+      "npc_id": "npc_A",
+      "name": "펠리체 마레나",
+      "role_type": "복합 (방어막+제물)",
+      "outcome": "생존 — 감염 확인 후 혼란 상태에서 보안 코드 노출. 이후 이탈(after_duration: 도주). 치료 후 내부 징계.",
+      "p11_applied": true,
+      "duration_turns": 1,
+      "after_duration": "도주"
+    },
+    {
+      "npc_id": "npc_B",
+      "name": "크리스 챈",
+      "role_type": "열쇠",
+      "outcome": "생존 — 리트라이 시 협력. 폐쇄 루프 위상 보정 수행. 2차 해결의 핵심 기여.",
+      "p11_applied": true,
+      "duration_turns": 2,
+      "after_duration": "대기"
+    }
+  ],
+  "clue_log": [
+    {"id": "clue_01", "type": "real", "acquired": true, "turn": 2},
+    {"id": "clue_02", "type": "real", "acquired": true, "turn": 4},
+    {"id": "clue_03", "type": "real", "acquired": true, "turn": 14},
+    {"id": "clue_04", "type": "real", "acquired": true, "turn": 11},
+    {"id": "clue_05", "type": "mislead", "acquired": true, "turn": 6, "revealed_false_turn": 16, "p10_applied": true},
+    {"id": "clue_06", "type": "mislead", "acquired": true, "turn": 4, "revealed_false_turn": 8, "p10_applied": true}
+  ],
+  "time_skips": [
+    {"turn": "prologue", "duration": "약 4개월", "reason": "수개월 조사 기간 (글로벌 스케일 서사)"},
+    {"turn": 9, "duration": "약 20분", "reason": "씽크링크 차단 후 이동 준비 (P3 — 평온 구간 스킵)"}
+  ],
+  "cooperation_checks": [
+    {"turn": 9, "actors": ["이수아(주도)", "다비드(보조)"], "formula": "d20+7+2=21", "result": "성공", "p6_applied": true},
+    {"turn": 14, "actors": ["다비드(주도)", "크리스챈(보조)"], "formula": "d20+7+2=18", "result": "성공", "p6_applied": true},
+    {"turn": 17, "actors": ["박하연(주도)", "크리스챈(보조)", "이수아(보조)"], "formula": "d20+8+2+2=26", "result": "대성공", "p6_applied": true}
+  ],
+  "branch_log": [
+    {"event": "E2", "chosen": "intervene — 씽크링크 서버 격리", "next": "E2-B"},
+    {"event": "E3", "chosen": "intervene — NNI 격리 구역 진입", "next": "E_NNI"},
+    {"event": "E4", "chosen": "intervene — 0번 감염원 폐쇄 루프 전송 성공", "next": "E_RESOLVE"}
+  ]
+}

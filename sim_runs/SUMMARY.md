@@ -37,3 +37,10 @@
 - 검증: P7·P8(mislead 2개)·P9(duration_turns 3/1) 핵심 검증. P1·P2·P3·P5·P6도 확인. P4는 대상 없음.
 - 신규: P10(mislead 타이밍)·P11(after_duration)·P12(해결/생존 경계 high).
 - 파일: iter04/seed.json·log.txt·replay.json. 플러그인 .java 미변경.
+
+## iter05 — 2026-06-26 19:28 — #FW9L-4QZR (스테이지4·글로벌·2054 근미래)
+- 괴담: "공명 잠식체" — 뉴로링크(신경 인터페이스) 망을 타고 전파되는 글로벌 감염형. 런던 NNI 연구소 무대, 수개월 추적(프롤로그 대형 TIME_SKIP + 평온 20분/급박 분 단위).
+- 결과: 1차 폐쇄루프 전송 위상 미보정 실패 → 리트라이 → 크리스 챈 NPC 협력 확보, 2차 대성공(d20+8+2+2=26) collapse 완전 충족 → 해결판정 A, 전원 생존, 스테이지5 진출. ★스테이지3+ 게이트: 해결(resolved=true)만 진출, 1차 생존은 미진출. P1대로 재도전 강등 없음.
+- 검증: P1·P2·P3·P6·P8·P9·P11·P12 완료. P10 일부 심도 부족(가짜단서 조기 실증), P5 일부 미흡(반응 condition 느슨).
+- 신규: P13(장비·기술 착용 분기 high)·P14(comms_monitored 발동 트리거)·P15(대규모 zones 접근권 주입)·P16(리트라이 부분피해 유지)·P17(반응 condition 엄밀화)·P10 보강.
+- 파일: iter05/seed.json(10 zones·9 events·mislead 2)·log.txt(581줄)·replay.json(stage4·3인). 플러그인 .java 미변경.
