@@ -99,11 +99,12 @@ public class ItemManager {
         List<Component> lore = new ArrayList<>();
         lore.add(Component.text("§7[TRPG 아이템]"));
         if (def.has("description")) {
-            String desc = def.get("description").getAsString();
-            for (int i = 0; i < desc.length(); i += 40) {
-                lore.add(Component.text("§f" + desc.substring(i, Math.min(i + 40, desc.length()))));
-            }
+            appendWrapped(lore, def.get("description").getAsString(), "§f");
         }
+        // 주요 정보(lore_info)를 강조색으로 추가 — 물건형 아이템의 핵심 단서
+        appendLoreInfo(lore, def);
+        // content(본문)가 있으면 lore에도 일부 노출 (쪽지·라벨류)
+        appendContentToLore(lore, def);
         meta.lore(lore);
         item.setItemMeta(meta);
         return item;
@@ -116,13 +117,16 @@ public class ItemManager {
         meta.setTitle(title);
         meta.setAuthor(playerName);
         meta.displayName(Component.text(title));
-        if (def.has("pages")) {
-            List<Component> pageComps = new ArrayList<>();
-            for (JsonElement page : def.getAsJsonArray("pages")) {
-                pageComps.add(Component.text(page.getAsString()));
-            }
-            meta.pages(pageComps);
+        List<Component> pageComps = new ArrayList<>();
+        // content(신규) 우선, 없으면 pages(구) 호환
+        JsonArray body = readBody(def);
+        if (body != null) {
+            for (JsonElement page : body) pageComps.add(Component.text(page.getAsString()));
         }
+        if (pageComps.isEmpty() && def.has("description")) {
+            pageComps.add(Component.text(def.get("description").getAsString()));
+        }
+        if (!pageComps.isEmpty()) meta.pages(pageComps);
         book.setItemMeta(meta);
         return book;
     }
@@ -133,16 +137,55 @@ public class ItemManager {
         if (meta == null) return paper;
         meta.displayName(Component.text("§e" + title));
         List<Component> lore = new ArrayList<>();
-        lore.add(Component.text("§7[TRPG 아이템]"));
-        if (def.has("pages") && def.getAsJsonArray("pages").size() > 0) {
-            String content = def.getAsJsonArray("pages").get(0).getAsString();
-            for (int i = 0; i < content.length(); i += 40) {
-                lore.add(Component.text("§f" + content.substring(i, Math.min(i + 40, content.length()))));
-            }
+        lore.add(Component.text("§7[" + (isMap ? "지도" : "쪽지") + "]"));
+        // 쪽지·지도의 실제 본문을 lore에 줄바꿈해 표시 (마우스 오버로 읽음)
+        JsonArray body = readBody(def);
+        if (body != null) {
+            for (JsonElement el : body) appendWrapped(lore, el.getAsString(), "§f");
+        } else if (def.has("description")) {
+            appendWrapped(lore, def.get("description").getAsString(), "§f");
         }
+        appendLoreInfo(lore, def);
         meta.lore(lore);
         paper.setItemMeta(meta);
         return paper;
+    }
+
+    /** content(신규) 또는 pages(구) 배열을 반환. 둘 다 없으면 null. */
+    private JsonArray readBody(JsonObject def) {
+        if (def.has("content") && def.get("content").isJsonArray()
+            && def.getAsJsonArray("content").size() > 0) {
+            return def.getAsJsonArray("content");
+        }
+        if (def.has("pages") && def.get("pages").isJsonArray()
+            && def.getAsJsonArray("pages").size() > 0) {
+            return def.getAsJsonArray("pages");
+        }
+        return null;
+    }
+
+    /** lore_info(주요 정보)를 강조색으로 lore에 추가 */
+    private void appendLoreInfo(List<Component> lore, JsonObject def) {
+        if (def.has("lore_info") && !def.get("lore_info").getAsString().isBlank()) {
+            lore.add(Component.text("§6▸ 정보"));
+            appendWrapped(lore, def.get("lore_info").getAsString(), "§e");
+        }
+    }
+
+    /** 물건형 아이템에 짧은 content가 있으면 lore에 미리보기로 표시 */
+    private void appendContentToLore(List<Component> lore, JsonObject def) {
+        JsonArray body = readBody(def);
+        if (body == null) return;
+        lore.add(Component.text("§7― 적힌 내용 ―"));
+        for (JsonElement el : body) appendWrapped(lore, el.getAsString(), "§f");
+    }
+
+    /** 긴 문자열을 38자 단위로 줄바꿈해 lore에 추가 */
+    private void appendWrapped(List<Component> lore, String text, String color) {
+        if (text == null || text.isBlank()) return;
+        for (int i = 0; i < text.length(); i += 38) {
+            lore.add(Component.text(color + text.substring(i, Math.min(i + 38, text.length()))));
+        }
     }
 
     // ──────────────────────────────────────────────────────────────

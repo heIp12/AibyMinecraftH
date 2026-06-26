@@ -173,7 +173,12 @@ public class PlayerData {
           .append(" SPR").append(spr);
         if (!traits.isEmpty()) {
             sb.append(" 특성:");
-            traits.forEach(t -> sb.append(t.name).append("(").append(t.grade).append(")"));
+            traits.forEach(t -> {
+                sb.append(t.name).append("(").append(t.grade);
+                if (t.active) sb.append(",능동");
+                if (t.effect != null && !t.effect.isBlank()) sb.append(",효과:").append(t.effect);
+                sb.append(")");
+            });
         }
         if (!heldItemIds.isEmpty()) {
             sb.append(" 소지품:").append(String.join(",", heldItemIds));

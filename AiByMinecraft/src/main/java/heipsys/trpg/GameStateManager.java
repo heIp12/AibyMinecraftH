@@ -36,7 +36,14 @@ public class GameStateManager {
             return 4;
         }
 
-        /** 세션 완전 종료 시 리셋 */
+        /** 다음 스테이지 이동 시 부분 리셋 — entity 메모리·오염도만, 플레이어 프로파일 유지 */
+        public void resetForNewStage() {
+            level = 0;
+            attempts = 0;
+            entityMemory.clear();
+        }
+
+        /** 세션 완전 종료 시 전체 리셋 */
         public void reset() {
             level = 0;
             attempts = 0;
@@ -224,20 +231,40 @@ public class GameStateManager {
 
         // 행동자: 풀 스탯
         PlayerData actorData = players.get(actor.getUniqueId());
+        String actorZone = (actorData != null) ? actorData.zone : "";
         if (actorData != null) {
             sb.append("행동자: ").append(actorData.toTurnLine()).append("\n");
         }
 
-        // 다른 플레이어: HP/SAN/상태만 한 줄로
-        StringJoiner others = new StringJoiner("  ");
+        // 동료를 같은 위치(zone)와 다른 위치로 분리한다.
+        // 같은 위치 동료는 협력·상호작용이 가능하므로 직전 행동까지 함께 제공한다.
+        // (사망자는 제외. 정체 차용된 플레이어는 toShortLine이 GM에게 표시하므로 포함)
+        List<PlayerData> sameZone  = new ArrayList<>();
+        List<PlayerData> otherZone = new ArrayList<>();
         players.values().stream()
-            .filter(p -> !p.uuid.equals(actor.getUniqueId()))
-            .forEach(p -> others.add(p.toShortLine()));
-        String othersStr = others.toString();
-        if (!othersStr.isEmpty()) sb.append("동료: ").append(othersStr).append("\n");
+            .filter(p -> !p.uuid.equals(actor.getUniqueId()) && !p.isDead)
+            .forEach(p -> {
+                if (!actorZone.isEmpty() && actorZone.equals(p.zone)) sameZone.add(p);
+                else otherZone.add(p);
+            });
 
-        // 최근 이벤트 (3개로 축소)
-        List<EventLogEntry> recent = getRecentLog(3);
+        if (!sameZone.isEmpty()) {
+            sb.append("같은 위치(협력·상호작용 가능):\n");
+            for (PlayerData p : sameZone) {
+                sb.append("  ").append(p.toShortLine());
+                String last = lastActionOf(p.name);
+                if (last != null) sb.append("  직전행동: ").append(last);
+                sb.append("\n");
+            }
+        }
+        if (!otherZone.isEmpty()) {
+            StringJoiner others = new StringJoiner("  ");
+            otherZone.forEach(p -> others.add(p.toShortLine()));
+            sb.append("다른 위치 동료: ").append(others).append("\n");
+        }
+
+        // 최근 이벤트 (동시 행동 반영을 위해 4개)
+        List<EventLogEntry> recent = getRecentLog(4);
         if (!recent.isEmpty()) {
             sb.append("최근:");
             recent.forEach(e -> sb.append(" [").append(e.player).append("] ").append(e.content));
@@ -246,6 +273,20 @@ public class GameStateManager {
 
         sb.append("행동: [").append(actor.getName()).append("] ").append(action);
         return sb.toString();
+    }
+
+    /** 특정 플레이어의 가장 최근 action 로그 1건 (협력 맥락 제공용). 없으면 null. */
+    private String lastActionOf(String playerName) {
+        synchronized (eventLog) {
+            for (int i = eventLog.size() - 1; i >= 0; i--) {
+                EventLogEntry e = eventLog.get(i);
+                if ("action".equals(e.type) && playerName.equals(e.player)) {
+                    String c = e.content;
+                    return c.length() > 60 ? c.substring(0, 60) + "…" : c;
+                }
+            }
+        }
+        return null;
     }
 
     /** Entity/NPC AI용 — 행동 로그만, 스탯/특성 없음 */
