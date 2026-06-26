@@ -467,6 +467,10 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     private final ContextCompressor   compressor;
     private final NarrativeDelivery   narrativeDelivery;
     private final GameLogger          gameLogger;
+    private final ReplayManager       replayMan;
+
+    /** 재현(replay) 파일로 시작한 세션 — 해당 스테이지만 진행, 다음 스테이지 진행 차단 */
+    private boolean replayLock = false;
 
     /** 캐릭터 생성 완료 대기 중인 플레이어 UUID 집합 */
     private final Set<UUID> pendingCreation    = ConcurrentHashMap.newKeySet();
@@ -504,6 +508,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         charGen.refreshJobPools(); // 서버 시작 시 캐시 로드 + 필요 시 AI 갱신 (비동기)
         this.traitMan   = new TraitManager(ai);
         this.scoreMan   = new ScoreboardManager(state);
+        this.replayMan  = new ReplayManager(plugin);
         this.roleMan    = new RoleManager(state);
         this.turnMan    = new TurnManager(state, ai);
         this.itemMan    = new ItemManager(plugin, state);
@@ -537,6 +542,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
 
     private void beginSession(Player initiator, boolean highQuality) {
         if (currentPhase != Phase.IDLE) return; // 다이얼로그 대기 중 상태 변경 방지
+        replayLock = false; // 정상 시작 — 재현 잠금 해제
         ai.setGmQuality(highQuality);
         broadcast("§7[AI 품질] " + (highQuality ? "§b고품질 모드" : "§f표준 모드"));
 
@@ -665,6 +671,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         gmNpcRoleIds.clear();
         preSpawnCallCounts.clear();
         concludingEnding = false;
+        replayLock = false;
         currentPhase = Phase.IDLE;
     }
 
@@ -732,6 +739,11 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     public void nextSession(Player admin) {
         if (!state.isSessionActive()) {
             admin.sendMessage("§c활성 세션이 없습니다.");
+            return;
+        }
+        if (replayLock) {
+            admin.sendMessage("§c재현(replay) 세션입니다. 이 스테이지만 진행되며 다음 스테이지로 넘어갈 수 없습니다.");
+            admin.sendMessage("§7/trpg stop §c으로 종료하세요.");
             return;
         }
 
@@ -1211,6 +1223,14 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     // ──────────────────────────────────────────────────────────────
 
     private void startDailyPhase() {
+        // 재현 파일 기록 (정상 시작 한정 — 재현 세션에선 다시 기록하지 않음)
+        if (!replayLock) {
+            String code = replayMan.writeReplay(state.getRoomNumber(), state.getCurrentSeed(), state.getAllPlayers());
+            if (code != null) {
+                broadcast("§7[기록] 이번 시작 재현 코드: §f" + code);
+                broadcast("§8  같은 서버에서 §7/trpg replay " + code + " §8로 동일한 시작을 재현할 수 있습니다.");
+            }
+        }
         // 몰입형 게임 시작 연출 (파트 구분·제목 표기 없이)
         state.getAllPlayers().forEach(pd -> {
             Player p = Bukkit.getPlayer(pd.uuid);
@@ -3382,6 +3402,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         broadcast("§e§l═══ TRPG 세션 로드 (씨드: " + seed + ") ═══");
         broadcast("§7.gdam 파일을 불러왔습니다. 캐릭터를 생성합니다...");
 
+        replayLock = false; // 일반 로드 — 재현 잠금 해제
         currentPhase = Phase.CHAR_CREATION;
         state.startSession(room, seed, gdam);
         gmSystemPrompt = buildGmPrompt(gdam);
@@ -3422,6 +3443,95 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         });
     }
 
+    // ──────────────────────────────────────────────────────────────
+    //  재현(replay) 세션 — 기록된 시드·캐릭터로 해당 스테이지만 재현
+    // ──────────────────────────────────────────────────────────────
+
+    public void replaySession(Player initiator, String fileName) {
+        if (currentPhase != Phase.IDLE) {
+            initiator.sendMessage("§c이미 TRPG 세션이 진행 중입니다. /trpg stop 후 시도하세요.");
+            return;
+        }
+        JsonObject root = replayMan.readReplay(fileName);
+        if (root == null) {
+            initiator.sendMessage("§c재현 파일 '" + fileName + "'을(를) 찾을 수 없습니다. §7/trpg replaylist §c로 확인하세요.");
+            return;
+        }
+        String seed = root.has("seed") ? root.get("seed").getAsString() : "";
+        int stage   = root.has("stage") ? root.get("stage").getAsInt() : 1;
+        JsonObject gdam = gdamGen.load(seed);
+        if (gdam == null) {
+            initiator.sendMessage("§c이 서버에 시드 '" + seed + "'의 시나리오(.gdam)가 없어 재현할 수 없습니다.");
+            initiator.sendMessage("§7(재현 파일은 시드만 기록하므로 원본 .gdam이 같은 서버에 있어야 합니다.)");
+            return;
+        }
+        if (!root.has("players") || root.getAsJsonArray("players").size() == 0) {
+            initiator.sendMessage("§c재현 파일에 캐릭터 정보가 없습니다.");
+            return;
+        }
+
+        List<Player> survivors = Bukkit.getOnlinePlayers().stream()
+            .filter(p -> p.getGameMode() == GameMode.SURVIVAL)
+            .collect(Collectors.toList());
+        if (survivors.isEmpty()) {
+            initiator.sendMessage("§c서바이벌 모드 플레이어가 없습니다.");
+            return;
+        }
+
+        broadcast("§e§l═══ 재현 세션 시작 (스테이지 " + stage + ", 씨드 " + seed + ") ═══");
+        broadcast("§7기록된 캐릭터로 시작합니다. 이 스테이지만 진행되며 이어서 진행할 수 없습니다.");
+
+        replayLock = true;
+        currentPhase = Phase.DAILY;
+        state.startSession(stage, seed, gdam); // players.clear() 포함 — 복원 배정은 이 이후
+        gameLogger.startNewLog(seed, stage);
+        ai.clearAll();
+
+        // 기록된 캐릭터를 접속 중인 생존 플레이어에게 순서대로 복원 (min 인원만 참여)
+        JsonArray recorded = root.getAsJsonArray("players");
+        int n = Math.min(survivors.size(), recorded.size());
+        Set<String> usedRoleIds = new HashSet<>();
+        for (int i = 0; i < survivors.size(); i++) {
+            Player p = survivors.get(i);
+            p.getInventory().clear();
+            if (i >= n) { p.sendMessage("§7이 재현에는 " + n + "명만 참여합니다. 관전하세요."); continue; }
+            PlayerData pd = replayMan.deserializePlayer(recorded.get(i).getAsJsonObject(), p.getUniqueId(), p.getName());
+            state.addPlayer(pd);
+            usedRoleIds.add(pd.roleId);
+        }
+
+        // 플레이어가 맡지 않은 배역 = GM 직접 조종 NPC
+        gmNpcRoleIds.clear();
+        if (gdam.has("roles")) {
+            for (JsonElement el : gdam.getAsJsonArray("roles")) {
+                JsonObject r = el.getAsJsonObject();
+                if (r.has("role_id") && !usedRoleIds.contains(r.get("role_id").getAsString()))
+                    gmNpcRoleIds.add(r.get("role_id").getAsString());
+            }
+        }
+
+        // common_items 보유 추적 복원
+        if (gdam.has("common_items")) {
+            gdam.getAsJsonArray("common_items").forEach(el -> {
+                String itemId = el.getAsString().trim();
+                if (!itemId.isEmpty()) state.getAllPlayers().forEach(pd -> pd.heldItemIds.add(itemId));
+            });
+        }
+
+        gmSystemPrompt = buildGmPrompt(gdam); // gmNpcRoleIds 반영 후 재생성
+
+        // 등장 배역 spawn 설정 + 배역 시작 아이템 지급
+        for (PlayerData pd : state.getAllPlayers()) {
+            Player p = Bukkit.getPlayer(pd.uuid);
+            if (p == null) continue;
+            if (isImmediateSpawn(pd.roleId)) spawnedPlayers.add(pd.uuid);
+            giveRoleStartItems(p, pd.roleId);
+        }
+
+        startDailyPhase(); // replayLock=true이므로 재기록은 건너뜀
+    }
+
+    public List<String> listReplays()              { return replayMan.listReplays(); }
     public List<String> listSavedSeeds()           { return gdamGen.listSavedSeeds(); }
     public String       exportGdamJson(String seed) { return gdamGen.exportJson(seed); }
 
