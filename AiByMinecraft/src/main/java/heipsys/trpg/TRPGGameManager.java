@@ -7,6 +7,8 @@ import heipsys.AICraft;
 import heipsys.trpg.model.PlayerData;
 import heipsys.trpg.model.TraitData;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.event.ClickEvent;
+import net.kyori.adventure.text.event.HoverEvent;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.title.Title;
@@ -438,6 +440,8 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     private final Set<UUID> pendingTraitSelect = ConcurrentHashMap.newKeySet();
     /** 스토리에 이미 등장한(spawn된) 플레이어 */
     private final Set<UUID> spawnedPlayers      = ConcurrentHashMap.newKeySet();
+    /** 특성 발동 대기 중인 플레이어 UUID → 트레이트 ID (행동 입력 전까지 유지) */
+    private final Map<UUID, String> pendingTraitActivation = new ConcurrentHashMap<>();
     /** GM이 개설한 기기 통신 채널: A → {B, C, ...} (양방향 저장) */
     private final Map<UUID, Set<UUID>> commChannels = new ConcurrentHashMap<>();
     /** 캐릭터 생성 전 선제 배역 배정 결과 (UUID → 배역 JsonObject) */
@@ -602,6 +606,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         ai.clearAll();
         pendingCreation.clear();
         pendingTraitSelect.clear();
+        pendingTraitActivation.clear();
         spawnedPlayers.clear();
         commChannels.clear();
         preAssignedRoleData.clear();
@@ -640,9 +645,11 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         broadcast("§c오염 단계: §f" + corruptMan.getLevel() + " (" + corruptMan.getAttempts() + "회차)");
 
         // 등장 상태·대기 서술·통신 채널 초기화
+        pendingTraitActivation.clear();
         spawnedPlayers.clear();
         preSpawnCallCounts.clear();
         commChannels.clear();
+        state.getAllPlayers().forEach(pd -> traitMan.resetStageTraits(pd));
 
         gmSystemPrompt = buildGmPrompt(state.getGdamData());
 
@@ -687,8 +694,10 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         narrativeDelivery.clearAll();
         pendingCreation.clear();
         pendingTraitSelect.clear();
+        pendingTraitActivation.clear();
         spawnedPlayers.clear();
         commChannels.clear();
+        state.getAllPlayers().forEach(pd -> traitMan.resetStageTraits(pd));
         preAssignedRoleData.clear();
         preAssignments.clear();
         gmNpcRoleIds.clear();
@@ -762,6 +771,30 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                 catch (NumberFormatException e) { player.sendMessage("§c번호를 입력해주세요."); }
             }
             case "_use_trait"  -> handleTraitUse(player, args.length > 1 ? args[1] : "");
+            case "_trait_commit" -> {
+                String traitId = pendingTraitActivation.remove(player.getUniqueId());
+                if (traitId == null) {
+                    player.sendMessage("§7(발동 대기 중인 특성이 없습니다.)");
+                } else {
+                    PlayerData pd = state.getPlayer(player);
+                    if (pd != null) {
+                        String msg = traitBtn.buildTraitUseMessage(pd, traitId);
+                        if (msg != null) {
+                            applyTraitUsed(pd, traitId, state.getCurrentTurn());
+                            boolean accepted = turnMan.handleAction(player, msg, gmSystemPrompt);
+                            if (!accepted) {
+                                player.sendMessage("§7행동 처리 중입니다. 잠시 후 다시 시도하세요.");
+                            } else {
+                                player.sendMessage("§7[특성 발동 중...]");
+                            }
+                        }
+                    }
+                }
+            }
+            case "_trait_cancel" -> {
+                pendingTraitActivation.remove(player.getUniqueId());
+                player.sendMessage("§7특성 발동을 취소했습니다.");
+            }
         }
     }
 
@@ -1229,6 +1262,16 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             actionMessage = "[꼭두각시] " + message;
         }
 
+        // 대기 중인 특성 발동이 있으면 행동에 포함
+        String pendingTrait = pendingTraitActivation.remove(player.getUniqueId());
+        if (pendingTrait != null) {
+            String traitMsg = traitBtn.buildTraitUseMessage(pd, pendingTrait);
+            if (traitMsg != null) {
+                applyTraitUsed(pd, pendingTrait, state.getCurrentTurn());
+                actionMessage = traitMsg + "\n플레이어 추가 행동: " + actionMessage;
+            }
+        }
+
         // 괴담이 이 플레이어의 말투·행동을 학습 (정체 차용/흉내에 사용)
         corruptMan.learnPlayerBehavior(player.getName(), message);
 
@@ -1348,6 +1391,16 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
 
             // 9. 사망자 체크
             checkDeaths();
+
+            // 쿨다운 틱: 행동자의 특성 쿨다운 1 감소 (스테이지당 1회형은 제외)
+            if (player != null) {
+                PlayerData actorPd = state.getPlayer(player);
+                if (actorPd != null) {
+                    actorPd.traits.forEach(t -> {
+                        if (t.remainingCooldown > 0 && t.cooldownTurns != -1) t.remainingCooldown--;
+                    });
+                }
+            }
 
             // 10. 능동 특성 버튼 (행동 플레이어에게만)
             traitBtn.sendTraitButtons(player, state.getPlayer(player));
@@ -1499,6 +1552,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     private void onBadEnding(String reasonLabel) {
         if (currentPhase == Phase.GAMEOVER) return;
         currentPhase = Phase.GAMEOVER;
+        pendingTraitActivation.clear();
         // 진행 중이던 다른 플레이어의 행동을 즉시 중단 (엔딩 후 진행 방지)
         turnMan.cancelAll();
         gameLogger.logEvent("배드 엔딩 — 패인: " + reasonLabel);
@@ -1650,15 +1704,43 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             player.sendMessage("§8(아직 이야기에 등장하지 않았습니다. 배역이 등장한 후 특성을 사용할 수 있습니다.)");
             return;
         }
-        String msg = traitBtn.buildTraitUseMessage(pd, traitId);
-        if (msg == null) { player.sendMessage("§c특성을 찾을 수 없습니다."); return; }
-        // GM AI에 특성 발동 메시지 전달 (언제든 발동 가능, 직전 행동 처리 중이면 대기)
-        boolean accepted = turnMan.handleAction(player, msg, gmSystemPrompt);
-        if (!accepted) {
-            player.sendMessage("§7직전 행동을 처리 중입니다. 잠시 후 다시 시도하세요.");
-        } else {
-            player.sendMessage("§b[특성 발동] §f결과를 기다리는 중...");
+        TraitData trait = pd.traits.stream().filter(t -> t.id.equals(traitId)).findFirst().orElse(null);
+        if (trait == null) { player.sendMessage("§c특성을 찾을 수 없습니다."); return; }
+
+        if (trait.remainingCooldown > 0) {
+            player.sendMessage("§c[" + trait.name + "] 쿨다운 중입니다. (" + trait.remainingCooldown + "턴 남음)");
+            return;
         }
+        if (trait.cooldownTurns == -1 && trait.usedThisStage > 0) {
+            player.sendMessage("§c[" + trait.name + "] 이번 스테이지에서 이미 사용했습니다.");
+            return;
+        }
+
+        pendingTraitActivation.put(player.getUniqueId(), traitId);
+
+        String warnMsg = trait.usedThisStage >= 2
+            ? "\n§e⚠ 이번 스테이지에서 이미 " + trait.usedThisStage + "회 사용 — 효과가 감소하거나 역효과가 있을 수 있습니다." : "";
+
+        player.sendMessage("§b[" + trait.name + "] 발동 준비." + warnMsg);
+        player.sendMessage("§7채팅으로 행동을 입력하면 특성과 함께 처리됩니다.");
+
+        Component commitBtn = Component.text("[특성에 맡기기]", NamedTextColor.GREEN, TextDecoration.BOLD)
+            .hoverEvent(HoverEvent.showText(Component.text("추가 행동 없이 특성 효과만으로 턴을 진행합니다.", NamedTextColor.GRAY)))
+            .clickEvent(ClickEvent.runCommand("/trpg _trait_commit"));
+        player.sendMessage(commitBtn);
+
+        Component cancelBtn = Component.text("[취소]", NamedTextColor.GRAY)
+            .clickEvent(ClickEvent.runCommand("/trpg _trait_cancel"));
+        player.sendMessage(cancelBtn);
+    }
+
+    private void applyTraitUsed(PlayerData pd, String traitId, int currentTurn) {
+        pd.traits.stream().filter(t -> t.id.equals(traitId)).findFirst().ifPresent(t -> {
+            t.usedThisStage++;
+            t.lastUsedTurn = currentTurn;
+            if (t.cooldownTurns > 0) t.remainingCooldown = t.cooldownTurns;
+            else if (t.cooldownTurns == -1) t.remainingCooldown = Integer.MAX_VALUE;
+        });
     }
 
     // ──────────────────────────────────────────────────────────────
