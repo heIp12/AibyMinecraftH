@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "stage": 1,
+  "seed": "#HQ7R-3MVX",
+  "created": "2026-06-26",
+  "players": [
+    {
+      "role_id": "role_A",
+      "char_name": "최세나",
+      "job": "생명유지 기술자",
+      "gender": "여성",
+      "spawn_timeline": "시작 즉시",
+      "zone_start": "zone_C",
+      "final_hp": 10,
+      "final_san": 7,
+      "outcome": "생존",
+      "grade_contribution": "A- (핵심 exploit 실행 — 에어록 기압 조작)"
+    },
+    {
+      "role_id": "role_B",
+      "char_name": "라힘 파루키",
+      "job": "화물 관리 담당",
+      "gender": "남성",
+      "spawn_timeline": "시작 즉시",
+      "zone_start": "zone_A",
+      "final_hp": 12,
+      "final_san": 4,
+      "outcome": "생존",
+      "grade_contribution": "B+ (탐색 및 물리 지원, 포드 코드 보유)"
+    },
+    {
+      "role_id": "role_C",
+      "char_name": "이보리",
+      "job": "정거장 의무관",
+      "gender": "여성",
+      "spawn_timeline": "타임라인 1단계",
+      "zone_start": "zone_B",
+      "final_hp": 9,
+      "final_san": 10,
+      "outcome": "생존",
+      "grade_contribution": "A (통신 핵심정보 누설 자발 회피 — P14/P18 핵심 발동 방지)"
+    }
+  ],
+  "entity": {
+    "name": "거리 역설자 (逆說者)",
+    "_single_entity": true,
+    "_pure_avoidance": true,
+    "independent_ai": true,
+    "corruption_final_stage": 2,
+    "outcome": "C구역 영구 격리 봉인 — 소멸 불가. 위협 계속 존재."
+  },
+  "clear": {
+    "grade": "B",
+    "resolved": false,
+    "reason": "순수 회피형 생존판정 — 전원 생존 + 격문 통과. 억지 해결 없음. 스테이지1 생존판정 정상 진출.",
+    "retry_count": 1,
+    "grade_penalty_for_retry": false
+  },
+  "patches_verified": {
+    "P24": "통과 — 순수 회피형 스테이지1 배치 + collapse_condition 비움",
+    "P25": "통과 — 배역 2인 최소+1인 늦은 합류. meeting_window 늦춤",
+    "P26": "통과 — corruption 단계 0→1→2 준수, 2단계 점프 없음, 물리 간접표현",
+    "P14": "통과 — 통신 1회당 위협+1 실제 발동. 플레이어 행동 변경 유도",
+    "P18": "통과 — 핵심정보 경계 명확. 이보리 통신 회피로 선제 차단 방지",
+    "P1": "확인",
+    "P3": "확인",
+    "P6": "확인",
+    "P7": "확인 — room=1, resolved:false, CLEAR reason 명시",
+    "P8": "확인 — mislead 2개",
+    "P9": "확인",
+    "P10": "확인",
+    "P11": "확인",
+    "P12": "확인",
+    "P16": "확인",
+    "P17": "확인",
+    "P20": "확인",
+    "P21": "확인"
+  },
+  "new_weaknesses": [
+    "WEAK-01: 순수 회피형 탈출 인원 수 기반 등급 기준선 부재 (med, 순수회피형 한정)",
+    "WEAK-02: 미래 통신 채널별 도청 대상 범위 불명확 (med, 미래통신 한정)",
+    "WEAK-03: 이해 시도 패널티 정량 기준 부재 (low, 역설형 한정)",
+    "WEAK-04: 감청 AI NPC 선제 차단 타이밍 미명시 (med, 감청AI형 한정)"
+  ]
+}
