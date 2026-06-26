@@ -1,0 +1,123 @@
+{
+  "version": 1,
+  "stage": 3,
+  "seed": "#RK7B-2WSL",
+  "created": "2026-06-26",
+  "legend": "루살카 (Rusalka)",
+  "legend_region": "슬라브 — 러시아·우크라이나·벨라루스·폴란드 수신 전승",
+  "scale": "시티",
+  "familiar_mode": true,
+  "phone_usable": true,
+  "comms_monitored": false,
+  "players": [
+    {
+      "role_id": "role_A",
+      "char_name": "한아름",
+      "gender": "여성",
+      "role": "수질 조사원",
+      "spawn": "시작 즉시",
+      "zone_start": "zone_C",
+      "grade": "A",
+      "grade_reason": "완전 해결 참여·전원생존. 1차 mislead 신뢰 경미 감점.",
+      "highlight": "수질 이상 데이터 최초 실증, 잠금 서랍 협력 보조",
+      "role_stats_summary": "정신력+2, 매력+1, 최대SAN+1"
+    },
+    {
+      "role_id": "role_B",
+      "char_name": "오재훈",
+      "gender": "남성",
+      "role": "야간 경비원",
+      "spawn": "시작 즉시",
+      "zone_start": "zone_B",
+      "grade": "A+",
+      "grade_reason": "핵심 재료 조달·유골 문서 확보·2단계 의례 수행. 캐리 역할.",
+      "highlight": "박순례 접촉 성공, 잠금 서랍 주도 개방, 버드나무 X자 배치 수행",
+      "role_stats_summary": "근력+2, 최대HP+2, 정신력+1, 매력-1"
+    },
+    {
+      "role_id": "role_C",
+      "char_name": "이수빈",
+      "gender": "여성",
+      "role": "민속학 대학원생",
+      "spawn": "타임라인 1단계",
+      "zone_start": "zone_A",
+      "grade": "B+",
+      "grade_reason": "1차 의례 실패 주도 책임(mislead A 채택). 최종 의례 1·3단계 실행자.",
+      "highlight": "루살카 개념 최초 제시, 주문 완창(resolved=true 확정). P22 의도대로 원전 지식 보유자도 이형에서 혼동.",
+      "role_stats_summary": "최대SAN+2, 매력+2, 행운+1, 근력-1"
+    }
+  ],
+  "team_grade": "A",
+  "resolved": true,
+  "retry_count": 1,
+  "retry_grade_penalty": false,
+  "gate_passed": true,
+  "timeline_stage_at_resolution": 3,
+  "npc_critical": {
+    "id": "npc_A",
+    "name": "박순례",
+    "role_type": "열쇠",
+    "survived": true,
+    "contributed": "유골 문서 위치 제공, 정확 3단계 의례 힌트, 주문서 전달, 2차 의례 감독"
+  },
+  "p22_verified": {
+    "status": "pass",
+    "note": "mislead A(러시아 내륙 이형·Afanasyev 1872 미완 채록)와 mislead B(폴란드 Podlasie 이형·Kolberg 1880) 모두 실제 존재하는 이형을 근거로 설계. 루살카 기본 지식 보유자(이수빈)도 어느 이형이 진짜인지 혼동하여 1차 의례 실패 주도 — 지식이 함정이 되는 구조 실현."
+  },
+  "p23_verified": {
+    "status": "pass",
+    "note": "entity.solution에 [정확 조건 3단계] + [4가지 오류 결과] 구조적 명시. 1차 의례 2단계(버드나무 십자) 누락 → 오류결과(corruption 3·HP-5·SAN-10·침수 위험) GM 임의 판정 없이 정확 적용."
+  },
+  "p10_verified": {
+    "status": "pass",
+    "note": "진짜 단서 2개(clue_1·clue_2) 확보 후 E3(21:00)에서 mislead 실행. 가짜를 한 번 실제로 써보고 틀림 드러남."
+  },
+  "patches_verified": {
+    "P1": "pass",
+    "P3": "pass",
+    "P6": "pass",
+    "P7": "대상없음(스테이지3)",
+    "P8": "pass",
+    "P9": "pass",
+    "P10": "pass",
+    "P11": "pass",
+    "P12": "pass",
+    "P16": "pass",
+    "P17": "pass",
+    "P20": "pass",
+    "P21": "pass",
+    "P22": "★pass",
+    "P23": "★pass",
+    "P24-P31": "대상없음"
+  },
+  "new_weaknesses": [
+    {
+      "id": "WEAK-01",
+      "issue": "의례형 이름 확인 경로 단일 장애점(문서+NPC 이중 잠금 → 어느 하나 막히면 의례 전체 불가)",
+      "fix": "이름 확인 경로 최소 2개 이상 설계",
+      "severity": "high",
+      "scope": "범용"
+    },
+    {
+      "id": "WEAK-02",
+      "issue": "열쇠형 NPC will=반응 조건이 너무 엄격하면 플레이어가 올바른 질문 방식 몰라 반응 미발동 위험",
+      "fix": "will=반응 condition에 시간 트리거 보조 조건 추가",
+      "severity": "med",
+      "scope": "범용"
+    },
+    {
+      "id": "WEAK-03",
+      "issue": "GM이 mislead variant_basis를 창작 채록본으로 대체하면 P22 취지(실제 이형 근거) 위반",
+      "fix": "variant_basis에 실제 출처(채록자·연도·지역) 포함 의무화",
+      "severity": "med",
+      "scope": "한정(친숙 모드 P22)"
+    },
+    {
+      "id": "WEAK-04",
+      "issue": "의례 오류결과 격노 발동 시 플레이어 대응 행동 여지 없는 강제 수동 구간 발생",
+      "fix": "격노형 오류결과 시 임시 대응 행동 1개 이상 entity.escape 또는 hidden_rules에 명시",
+      "severity": "med",
+      "scope": "한정(격노형 페널티 의례 시나리오)"
+    }
+  ]
+}
