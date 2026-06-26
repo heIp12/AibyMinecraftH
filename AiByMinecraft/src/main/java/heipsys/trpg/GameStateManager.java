@@ -159,7 +159,7 @@ public class GameStateManager {
 
     public void advanceTimeline(int stages) {
         if (dailyPhase) return;
-        timelineStage = Math.min(4, timelineStage + stages);
+        timelineStage = Math.max(0, Math.min(4, timelineStage + stages));
     }
 
     /** 일상 턴 소비. 0이 되면 괴담 파트 시작. true 반환 시 파트 전환 */
@@ -316,11 +316,13 @@ public class GameStateManager {
     // ──────────────────────────────────────────────────────────────
 
     public void log(String type, String player, String content) {
-        eventLog.add(new EventLogEntry(currentTurn, type, player, content));
+        synchronized (eventLog) {
+            eventLog.add(new EventLogEntry(currentTurn, type, player, content));
+        }
     }
 
     public List<EventLogEntry> getLog()               { return eventLog; }
-    public int                 getLogSize()            { return eventLog.size(); }
+    public int                 getLogSize()            { synchronized (eventLog) { return eventLog.size(); } }
 
     public List<EventLogEntry> getRecentLog(int n) {
         synchronized (eventLog) {
