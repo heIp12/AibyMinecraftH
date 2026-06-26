@@ -51,3 +51,12 @@
 - 검증: P13(gated_zones 인증잠금 4개)·P14(comms 트리거)·P15(zones 11 접근권)·P16(부분피해 유지)·P17(반응 condition)·P10보강 전부 + P1·P6·P8·P12 확인.
 - 신규: P18(comms 핵심정보 정의)·P19(gated bypass DC 주입)·P20(괴담 종속 축적값 리트라이 유지)·P21(after_duration 실행주체). 모두 기존 패치 빈틈 보완·범용.
 - 파일: iter06/seed.json(11 zones·9 events·gated 4·mislead 2)·log.txt(604줄)·replay.json(stage3·3인). 플러그인 .java 미변경.
+
+## iter07 — 2026-06-26 19:58 — #TK9R-2ELB (스테이지2·시티·★친숙(familiar) 모드)
+- ★친숙 모드 첫 검증. 채택 전설: El Silbón(실보네) — 베네수엘라·콜롬비아 야노스 평원(비동아시아·지역다양성).
+- 원전 충실도 4/5(음향역설·럼유인·개 선행경보·이름의례·자루뼈 반전 모두 게임화)·게임화 4/5.
+- 결과: 1차 이름 오류(페드로≠에스피리도) 의례 실패 → HP/SAN·오염도 유지(P16/P20) → 리트라이 → 로시오 NPC서 진짜 이름 확인 → 2차 협력의례 대성공 → 해결판정 A. room=2라 생존판정 진출도 가능했으나 해결 달성(P7 CLEAR reason 명시).
+- 검증: P1·P3·P6·P7·P8·P10·P12·P16·P20·P9·P11·P17·P21 전부 VERIFIED. P13·P14·P18·P19 대상없음.
+- 신규: P22(친숙 mislead=원전 이형/불분명 채록 버전)·P23(의례형 파훼는 hidden_rules에 정확조건+오류결과 필수). +코드 도메인 2건(CODE-1 region 무작위화·CODE-2 P7 자동주입)은 프롬프트 외라 미적용 기록만.
+- 파일: iter07/seed.json(6 zones·_familiar:true)·log.txt(543줄)·replay.json(stage2·3인). 플러그인 .java 미변경.
+- ※수렴 관찰: 신규 high 패치는 P13(iter05) 이후 끊김. 이후 med/low·시나리오 한정·코드 도메인으로 좁아지는 중.

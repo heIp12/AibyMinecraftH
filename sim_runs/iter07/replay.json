@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "stage": 2,
+  "seed": "TK9R-2ELB",
+  "created": "2026-06-26",
+  "familiar": true,
+  "legend_origin": "El Silbón — 베네수엘라·콜롬비아 야노스 평원 전설",
+  "players": [
+    {
+      "role_id": "role_A",
+      "char_name": "마리솔 카스티요",
+      "job": "목장 경영인",
+      "gender": "여성",
+      "age": 31,
+      "stats": {
+        "STR": 7, "CHA": 7, "LUK": 5, "SPR": 6,
+        "HP": 10, "HP_current": 8,
+        "SAN": 9, "SAN_current": 6
+      },
+      "active_traits": ["역장 버팀"],
+      "items": ["낡은 손전등", "스위스 아미 나이프", "할머니의 쪽지", "말 뼈 십자가"],
+      "final_grade": "A",
+      "highlight": "할머니 쪽지로 음향 역설 최초 인지, 다락방 십자가 단독 회수",
+      "deduction": "1차 의례 이름 오류(페드로→에스피리도)"
+    },
+    {
+      "role_id": "role_B",
+      "char_name": "에두아르도 렌히포",
+      "job": "대학 민속학 교수",
+      "gender": "남성",
+      "age": 44,
+      "stats": {
+        "STR": 3, "CHA": 6, "LUK": 5, "SPR": 8,
+        "HP": 7, "HP_current": 4,
+        "SAN": 10, "SAN_current": 5
+      },
+      "active_traits": ["문헌 연구"],
+      "items": ["현장 노트(완독)", "녹음기", "헤드랜턴", "럼 2병"],
+      "final_grade": "A",
+      "highlight": "노트 미독 페이지 탐색 성공(특성), mislead 조기 반증, 로시오에서 진짜 이름 확인, 2차 의례 주도",
+      "deduction": "HP 최저(4/7), 1차 협력 판정 d20=5 불운"
+    },
+    {
+      "role_id": "role_C",
+      "char_name": "다리오 우르다네타",
+      "job": "장거리 화물 운전사",
+      "gender": "남성",
+      "age": 48,
+      "stats": {
+        "STR": 9, "CHA": 3, "LUK": 6, "SPR": 5,
+        "HP": 12, "HP_current": 7,
+        "SAN": 6, "SAN_current": 4
+      },
+      "active_traits": ["야노스 생존자"],
+      "items": ["트럭 열쇠", "담배 한 갑", "낡은 지포 라이터", "럼 2병"],
+      "final_grade": "A",
+      "highlight": "야노스 생존자 특성으로 음향 역설 확정, 개 선행 경보 전달, 1차 실패 시 문 막기 피해 흡수",
+      "deduction": "SAN 위험(4/6), 럼 케이스 자원 충분 활용 미흡"
+    }
+  ],
+  "overall_grade": "A",
+  "resolved": true,
+  "clear_reason": "실보네의 자루 속 뼈 정화 의례(럼+말 뼈 십자가+에스피리도 카스티요 이름 호명) 완료. 괴담 소멸. 전원 생존. 1차 시도 실패(이름 오류) 후 리트라이 — P1 적용: 재도전으로 등급 강등 없음. room=2(스테이지2)이므로 resolved=false여도 스테이지3 진출 가능했으나 해결판정 달성으로 A등급 부여.",
+  "patches_verified": {
+    "P1": "VERIFIED",
+    "P3": "VERIFIED",
+    "P6": "VERIFIED",
+    "P7": "VERIFIED",
+    "P8": "VERIFIED",
+    "P10": "VERIFIED",
+    "P12": "VERIFIED",
+    "P16": "VERIFIED",
+    "P20": "VERIFIED",
+    "P9": "VERIFIED",
+    "P11": "VERIFIED",
+    "P17": "VERIFIED",
+    "P21": "VERIFIED",
+    "P13": "N/A",
+    "P14": "N/A",
+    "P18": "N/A",
+    "P19": "N/A"
+  },
+  "new_weaknesses_found": 4,
+  "familiar_mode_balance": {
+    "lore_fidelity": "4/5",
+    "game_structure": "4/5",
+    "balance_verdict": "충실도 우위. 게임화 구조 단순하나 스테이지2 로컬 규모에 적합."
+  }
+}

@@ -137,3 +137,20 @@
 - [대상] buildNpcSystemPrompt schedule after_duration 주입부
 - [문제] duration_turns 종료 후 after_duration("복귀"/"도주"/"대기")을 NPC AI가 자율 수행하는지 GM이 서술로 처리하는지 불명 → 누락·중복 위험.
 - [수정안] 주입문 한 줄: "duration_turns 종료 후 after_duration은 해당 NPC AI가 자신의 동기에 따라 자율 결정·연기하고, GM은 그 결과를 다음 장면 서술에 자연스럽게 녹인다(GM이 임의로 NPC 행동을 대신 정하지 않는다)."
+
+## iter07 (#TK9R-2ELB, 스테이지2 시티·★친숙(familiar) 모드·El Silbón/베네수엘라) 발견 패치
+(P1·P3·P6·P7·P8·P10·P12·P16·P20·P9·P11·P17·P21 전부 검증 완료 / P13·P14·P18·P19 대상없음(comms_monitored=false·gated 없음). ★친숙 모드 생성 경로 첫 검증 — 원전 충실도 4/5·게임화 4/5)
+
+### P22. 친숙 모드 mislead는 '원전 이형(異形)·불분명 채록 버전'을 채택 (med, P8/P10 보완·친숙 모드 한정)
+- [대상] GdamGenerator generateFamiliarConcept → .gdam 전개 / clues 설계
+- [문제] 친숙 모드에서 mislead 단서를 평범한 오답으로 넣으면, 그 전설을 아는 플레이어에게 너무 쉽게 간파됨(El Silbón 시뮬의 '고추' mislead가 원전 지식 플레이어에게 취약).
+- [수정안] 친숙 모드 clues의 mislead는 '해당 전설의 지역별 이형(異形)·구전 변형·불분명하게 채록된 버전'을 근거로 삼는다. 즉 "원전을 아는 사람도 어느 변형이 맞는지 헷갈리게" 만들어, 지식 자체가 함정이 되도록 설계. (창작 모드 mislead는 기존 P8/P10 유지)
+
+### P23. 의례형 파훼(ritual-solution) 시나리오는 hidden_rules에 '정확 조건+오류 결과' 필수 명시 (med, 범용·의례형 한정)
+- [대상] GDAM_SYSTEM_PROMPT collapse_condition/world_rules.hidden / GM 판정
+- [문제] collapse_condition이 '정확한 의례 수행'(예: 정확한 이름 호명·재료·순서)인 시나리오에서, 정확 조건과 '틀렸을 때의 결과'가 hidden_rules에만 막연히 있으면 GM이 성공·실패 경계를 임의 판정.
+- [수정안] solution이 의례·정확입력형이면 world_rules.hidden(또는 entity.solution)에 "정확 조건 = X(구체), 오류 시 결과 = Y(부분피해·오염도·리트라이 등)"를 반드시 구조적으로 명시. GM은 이 경계로만 성공/실패를 가른다(P12 해결/생존 경계와 연동).
+
+### (기록만 — 코드 도메인, 프롬프트 외라 루프에서 미적용. 추후 .java 작업 시 반영 후보)
+- CODE-1 (WEAK-03, low): generateFamiliarConcept의 region 선택이 roomNumber 의존이라 초반 인덱스 편향 가능 → region 오프셋을 roomNumber 무관 무작위로 분리(리팩토링). ※프롬프트 아님 → 본 루프 미적용.
+- CODE-2 (WEAK-04, low, P7 보강): 스테이지1~2 생존판정 진출 특례가 CLEAR reason 수동 주입 의존 → buildGmPrompt가 room≤2일 때 특례 문장을 '자동' 주입하도록(코드). ※프롬프트 내용(P7)은 이미 충분; 자동화는 코드 TODO → 본 루프 미적용.
