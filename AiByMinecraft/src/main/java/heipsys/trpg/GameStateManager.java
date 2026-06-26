@@ -495,14 +495,17 @@ public class GameStateManager {
         return sb.toString();
     }
 
-    /** 시나리오 평가용 — 전체 게임 로그 (action + damage + clue + system) */
+    /** 시나리오 평가용 — 전체 게임 로그 (action + damage + clue + system + comm)
+     *  comm: 플레이어 간 직접 통신(@연락) — 정보 전달 기여 평가에 사용 */
     public String buildFullEvalLog() {
         StringBuilder sb = new StringBuilder();
         synchronized (eventLog) {
             for (EventLogEntry e : eventLog) {
                 if ("action".equals(e.type) || "damage".equals(e.type)
-                        || "clue".equals(e.type) || "system".equals(e.type)) {
-                    sb.append(e.toLogString()).append("\n");
+                        || "clue".equals(e.type) || "system".equals(e.type)
+                        || "comm".equals(e.type)) {
+                    String tag = "comm".equals(e.type) ? "[통신] " : "";
+                    sb.append(tag).append(e.toLogString()).append("\n");
                 }
             }
         }
