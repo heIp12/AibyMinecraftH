@@ -263,3 +263,16 @@
 ### (기록만 — 코드 도메인 추가, 사용자 보고 대상)
 - CODE-3 보강 (iter12): isDead=true·S/A 캐리어의 보상 이관 '정책'을 먼저 확정해야 grantClearTraitRewards(line 3006) 예외 경로 구현 가능 — 후보: 유산 포인트/다음 캐릭터로 1회 이관. ※정책 결정 필요(사용자).
 - CODE-6 (iter12 NEW-2 코드측, high): zone 진입/이탈 시 ZONE_ISOLATION(격리)·해제 system 로그를 자동 생성하는 로직(GameStateManager/MapManager) 추가 → P36/P37/P39가 GM 서술 의존 없이 근본 보장됨. ※.java 수정 필요(평가 공정성 직결).
+
+## iter13 (#BK4M-7TQV, 스테이지2 로컬·★캐릭터시트·액티브특성·강제 결말#13·그림자 식각자) 발견 패치
+(★검증: (a)캐릭터시트 다양·시작파워 차등 pass (b)반스포일러 pass (c)액티브특성 2회+ 일관 pass (d)E_END 강제 결말 발화 pass(#13) / (e)실패 평가는 서술만·코드 미호출 부족→CODE-8 (f)특성보상 약체 무보너스 부족→CODE-4. ★프롬프트 신규는 P41 1건(med)뿐 — 나머지는 코드 도메인. 프롬프트 수렴 접근 신호)
+
+### P41. hidden_info에 해결 수단이 포함될 때 '용도 미인지' 반스포일러 강화 (med, 범용, 반스포일러 보강)
+- [대상] CharacterGenerator hidden_info 생성 / TraitManager generateRoleTraits 반스포일러
+- [문제] hidden_info에 해결 경로 직결 아이템·지식(예: 특정 패널 조작법)이 들어갈 때, 그것이 '왜 필요한지(괴담 약점·해법)'까지 캐릭터가 알면 반스포일러 경계가 무너짐(시작부터 정답 보유).
+- [수정안] 생성 지침 한 줄: "hidden_info에 해결 수단(아이템·경로·조작법)이 포함되면, 그 '존재·방법'만 알게 하고 '왜 필요한지(괴담 약점·해법과의 연결)'는 캐릭터가 인지하지 못한 상태로 설계하라(용도는 플레이 중 발견). 정답을 처음부터 쥐여주지 마라."
+
+### (기록만 — 코드 도메인 추가, 사용자 보고 대상. iter13)
+- ★CODE-8 (iter13 ISSUE-13-4 = #13, ★high): E_END 강제 실패 종료 경로에서 onClearEnding 미호출 → runScenarioEvaluation·실패 등급 기록이 코드상 실행되지 않음(엔딩 해설만 존재). 별도 onFailureEnding() 경로 신설 → 실패 회차도 per-player 평가(D~E)·후일담·(필요시)페널티가 정식 산출되게 연결 필요. ※#13의 핵심 미구현부 — .java 작업.
+- ★CODE-4 격상 (iter13 ISSUE-13-2, ★high로 상향): computeWeaknessBonus 기준선 ≤9가 너무 좁아 hpSanBase=10(HP3+SAN7 등) 약체도 bonus=0. '시작파워 낮을수록 강한 보상' 취지 사문화. 기준선 (10-hpSanBase)/2 → (14-hpSanBase)/2 로 확장 권고. ※.java 수정(보상 핵심 취지 직결).
+- CODE-7 (iter13 ISSUE-13-1, med): applyAiAdjustment가 ensureSurvivalFloor 이후 적용돼 AI 음수 조정이 생존 하한을 다시 무너뜨림(SAN<1 재발 가능). applyAiAdjustment 후 ensureSurvivalFloor 재호출 또는 순서 변경. ※.java 수정.
