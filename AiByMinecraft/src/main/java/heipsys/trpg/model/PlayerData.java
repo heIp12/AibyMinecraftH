@@ -58,6 +58,11 @@ public class PlayerData {
     public static final int NARRATIVE_LOG_MAX = 60;
     public static final int INFO_ITEMS_MAX    = 120;
 
+    /** 방문해 본 zone 집합 (직접 그린 약도에 드러나는 범위) */
+    public Set<String> visitedZones = new HashSet<>();
+    /** 전체 지도를 입수했는지 (true면 약도에 모든 zone 표시) */
+    public boolean hasFullMap = false;
+
     /** 무작위 비공개 연락처 번호 (예: "1186"). 1회차에서 타인은 모름 */
     public String contactId = "";
     /** 이 플레이어가 연락처를 알고 있는 상대들의 UUID */
@@ -122,6 +127,8 @@ public class PlayerData {
         contactId    = "";
         narrativeLog.clear();
         infoItems.clear();
+        visitedZones.clear();
+        hasFullMap = false;
     }
 
     public String getStatsSummary() {

@@ -257,6 +257,7 @@ public class AiManager {
             .replaceAll("<IMPERSONATE [^/]*/?>", "")
             .replaceAll("<IMPERSONATE_END [^/]*/?>", "")
             .replaceAll("<ZONE_UPDATE [^/]*/?>", "")
+            .replaceAll("<MAP_GRANT [^/]*/?>", "")
             .replaceAll("<TIME_SKIP [^/]*/?>", "")
             .replaceAll("<EVENT_BLOCK [^/]*/?>", "")
             .replaceAll("<TIME_VISIBLE [^/]*/?>", "")
@@ -284,6 +285,15 @@ public class AiManager {
             from = close + "</WITNESS>".length();
         }
         return result;
+    }
+
+    /** <MAP_GRANT player="name"/> 태그들에서 플레이어명 목록 추출 (지도 전체 입수) */
+    public java.util.List<String> parseMapGrantTags(String response) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        java.util.regex.Matcher m = java.util.regex.Pattern
+            .compile("<MAP_GRANT\\s+player=\"([^\"]+)\"\\s*/?>").matcher(response);
+        while (m.find()) out.add(m.group(1));
+        return out;
     }
 
     /** <SPAWN player="name"/> 태그에서 플레이어명 추출 */

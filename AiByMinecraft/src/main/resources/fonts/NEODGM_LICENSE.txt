@@ -1,0 +1,7 @@
+네오둥근모 (NeoDunggeunmo / neodgm)
+- 원본: 김정태(Jungtae Kim)가 1990년대 공개한 둥근모꼴 비트맵 폰트(퍼블릭 도메인)
+- 트루타입 변환·확장: Dalgona (https://github.com/Dalgona/neodgm)
+- 라이선스: SIL Open Font License 1.1 (OFL) — 번들·재배포 허용
+
+128px 마인크래프트 지도(filled_map)에 한글 방 이름을 렌더링하기 위해 포함됨.
+전체 라이선스 전문: https://github.com/Dalgona/neodgm/blob/master/LICENSE
