@@ -57,9 +57,10 @@ public class GameStateManager {
     //  상태 필드
     // ──────────────────────────────────────────────────────────────
 
-    private boolean sessionActive     = false;
-    private int     roomNumber        = 1;
-    private int     timelineStage     = 0; // 0 = 일상 파트
+    private boolean sessionActive       = false;
+    private int     roomNumber          = 1;
+    private int     timelineStage       = 0; // 0 = 일상 파트
+    private int     turnsSinceAdvance   = 0; // 마지막 타임라인 진행 이후 경과 턴 수
     private int     dailyTurnsLeft    = 5;
     private int     currentTurn       = 0;
     private boolean dailyPhase        = true;
@@ -94,10 +95,11 @@ public class GameStateManager {
         sessionActive  = true;
         roomNumber     = room;
         currentSeed    = seed;
-        gdamData       = gdam;
-        timelineStage  = 0;
-        currentTurn    = 0;
-        dailyPhase     = true;
+        gdamData          = gdam;
+        timelineStage     = 0;
+        turnsSinceAdvance = 0;
+        currentTurn       = 0;
+        dailyPhase        = true;
         players.clear();
         activeNpcs.clear();
         discoveredClues.clear();
@@ -115,10 +117,11 @@ public class GameStateManager {
     public void advanceToNextRoom(int nextRoom, String seed, JsonObject gdam) {
         roomNumber     = nextRoom;
         currentSeed    = seed;
-        gdamData       = gdam;
-        timelineStage  = 0;
-        currentTurn    = 0;
-        dailyPhase     = true;
+        gdamData          = gdam;
+        timelineStage     = 0;
+        turnsSinceAdvance = 0;
+        currentTurn       = 0;
+        dailyPhase        = true;
         discoveredClues.clear();
         foundItems.clear();
         eventLog.clear();
@@ -128,9 +131,10 @@ public class GameStateManager {
     /** 재도전: 오염도 상승, 플레이어 상태 리셋, 파일은 다시 로드 */
     public void onRetry() {
         corruption.onRetry();
-        timelineStage = 0;
-        currentTurn   = 0;
-        dailyPhase    = true;
+        timelineStage     = 0;
+        turnsSinceAdvance = 0;
+        currentTurn       = 0;
+        dailyPhase        = true;
         discoveredClues.clear();
         foundItems.clear();
         eventLog.clear();
@@ -159,8 +163,23 @@ public class GameStateManager {
 
     public void advanceTimeline(int stages) {
         if (dailyPhase) return;
+        if (stages > 0) turnsSinceAdvance = 0;
         timelineStage = Math.max(0, Math.min(4, timelineStage + stages));
     }
+
+    /** 타임라인이 진행되지 않은 턴을 누적한다. 3회 초과 시 자동 1단계 진행. */
+    public boolean tickStagnation() {
+        if (dailyPhase || timelineStage >= 4) return false;
+        turnsSinceAdvance++;
+        if (turnsSinceAdvance >= 3) {
+            timelineStage = Math.min(4, timelineStage + 1);
+            turnsSinceAdvance = 0;
+            return true; // 자동 진행 발생
+        }
+        return false;
+    }
+
+    public int getTurnsSinceAdvance() { return turnsSinceAdvance; }
 
     /** 일상 턴 소비. 0이 되면 괴담 파트 시작. true 반환 시 파트 전환 */
     public boolean consumeDailyTurn() {
