@@ -139,3 +139,17 @@
 - 신규: ★P44(can_impersonate 위장 AI 운용 high·P26 확장)·P45(행동불가 NPC 워치독 정지 med)·P46(같은zone 다수 critical NPC 조율 med)·P47(스케일=영향범위·기간 분리 low). +CODE-11(워치독 행동불가 인지 확인).
 - 파일: iter15/seed.json(12 zones·can_impersonate·2 critical)·log.txt(546줄)·replay.json(stage6·3인). 플러그인 .java 미변경.
 - ※스팟체크 수확: 새 high(P44) 발견 → can_impersonate·복합NPC 축 미수렴 판명(스팟체크 가치 입증). 다음: 진짜 3~4 critical NPC 오케스트레이션 + P44/P46 검증 1회 후 재수렴 판단.
+
+## iter16 — 2026-06-26 22:25 — #DK9V-5RWQ (스테이지5·시티·★진짜 4 critical NPC + P44/P45/P46 검증)
+- iter15 후속: 진짜 3~4 critical NPC 오케스트레이션(iter15는 2명 그침) + 신규 P44/P45/P46 실효 검증. 괴담: "주파수 유언집행자" — 사망자 임종 감정이 주파수로 결정화돼 생존자 수신 상태를 덮어쓰는 존재. can_impersonate=true. critical NPC 4명(발생원·열쇠·방어막·제물).
+- ★검증 PASS 5/5: (a)P46 4 critical NPC 일관 조율(TURN3 박용철·한지훈 충돌 교대서술·양쪽 컨텍스트 반영; TURN11 3인 동시 클라이맥스) / (b)P44 위장 운용 전 규칙 실적용(corruption 지연 T6·해제 후 반격 T8·쿨다운 T10~12·재활성화 실패 T13·정보흡수 조건판정) / (c)P45 박용철 7턴 행동불가 워치독 정지·구출 시 재개 / (d)스테이지5 1차 mislead 실패→리트라이(강등 없음·손실 유지)→2차 위장 간파+충돌 중재+단서통합 해결판정 / (e)평가 S/S/A+·하이라이트·P36 로그판별·후일담·특성보상 전부.
+- 신규: P44b(위장 정보흡수 트리거 로그 기준 정량화 low)뿐. ★새 high/med 0건.
+- 파일: iter16/seed.json(8 zones·can_impersonate·4 critical)·log.txt(517줄)·replay.json(stage5·3인). 플러그인 .java 미변경.
+
+## ★★ 최종 수렴 — 루프 종료 선언 (2026-06-26 22:25, iter16 기준)
+- **총 16회 시뮬**(iter01~16, 1회 false-positive 거부 후 재시도 포함). 마감(~02:27 UTC) 전 자발적 수렴 종료.
+- **프롬프트 패치 P1~P47(+P44b)** 누적. 마지막 2축(can_impersonate·복합NPC) 검증 완료, 신규 high 소진.
+- **수렴 근거**: iter13·14 신규 high 0 → 스팟체크 iter15가 can_impersonate 빈틈(P44 high) 발견 → iter16에서 P44/P45/P46 검증 PASS·신규 low 1건뿐. 모든 주요 구조축에서 잔여 약점이 (i)niche 미세조정 또는 (ii)코드 도메인으로 이동.
+- **검증 완료 축**: 스테이지1~6 / 로컬~코즈믹 / 과거20C~먼미래 / 다인·단일(해결·순수회피)·can_impersonate위장 / 창작·친숙(2지역) / 평가(정보비대칭·고의은폐vs소통불가·캐리·사망S·희생) / 캐릭터시트·액티브특성·반스포일러 / 통화·연락(#19·#20·도청) / 4 critical NPC 복합 오케스트레이션 / 강제 실패엔딩(#13) / 시간가변·branches·mislead·협력판정·해결경로 강건성.
+- **★남은 핵심 작업 = 코드(.java) — 프롬프트로 불가**: CODE-3(사망캐리어 보상제외 high)·CODE-4(weaknessBonus 사문화 high)·CODE-6(ZONE_ISOLATION 자동로그 high)·CODE-8(E_END 평가 미호출=#13 high)·CODE-9(원격 NPC통화 불가 high)·CODE-5/7/10/11(med)·CODE-1/2(low). SYNTHESIS.md 5절에 착수용 정리.
+- **다음 단계 권고**: 이 루프는 프롬프트만 다뤘으므로, 사용자 승인 시 SYNTHESIS.md 우선순위(H-1 P1+P12+P38 / H-2 P36+P37 / H-3 P24 / P44)대로 .java 프롬프트 블록에 통합 반영 + CODE-1~11 버그 수정을 별도 작업으로 진행.

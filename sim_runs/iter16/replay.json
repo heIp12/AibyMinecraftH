@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "stage": 5,
+  "seed": "DK9V-5RWQ",
+  "created": "2026-06-26",
+  "scenario_title": "봉인된 목소리들",
+  "scale": "내셔널",
+  "theme": "현대 2026년 한국 / 방송국",
+  "entity": "주파수 유언집행자 (can_impersonate=true)",
+  "critical_npcs": [
+    {"id": "npc_parkyongchul", "name": "박용철", "role_type": "발생원"},
+    {"id": "npc_hanjihoon",   "name": "한지훈", "role_type": "열쇠"},
+    {"id": "npc_yoonsoobin",  "name": "윤수빈", "role_type": "방어막 (위장 타깃)"},
+    {"id": "npc_kimtaehwan",  "name": "김태환", "role_type": "제물"}
+  ],
+  "players": [
+    {
+      "role_id": "role_A",
+      "char_name": "이창민",
+      "gender": "남성",
+      "start_zone": "z1_방송국_로비",
+      "start_power": "보통",
+      "role_stats": {"spr_add": 1, "cha_add": 1, "str_add": -1},
+      "final_grade": "S",
+      "highlight": "파형 분석으로 P44 위장 최초 간파 / 비상키 독자 탐색 / 결정체 최종 파쇄",
+      "deduction": "1차 실패 — mislead m1 오답 시도(c3 미확보 상태)"
+    },
+    {
+      "role_id": "role_B",
+      "char_name": "장하린",
+      "gender": "여성",
+      "start_zone": "z5_지하1층_기계실",
+      "start_power": "강함",
+      "role_stats": {"spr_add": 2, "str_add": 1, "cha_add": -1},
+      "final_grade": "S",
+      "highlight": "위장 의심 성공(SPR 16) / 배전반 합선 / 반대 파형 방출 완료",
+      "deduction": "없음"
+    },
+    {
+      "role_id": "role_C",
+      "char_name": "윤수빈",
+      "gender": "여성",
+      "start_zone": "z2_1층_편집실",
+      "start_power": "낮음",
+      "role_stats": {"cha_add": 2, "spr_add": 1, "hp_max_add": -1},
+      "final_grade": "A+",
+      "highlight": "위장 피해자(귀책 없음) / 동선 지원 / 김태환 안정화 / 약체 캐리",
+      "deduction": "SAN 0 기절 — 집행자 반격 피해(고의 아님, 로그 기반 면제)"
+    }
+  ],
+  "overall_grade": "S",
+  "resolved": true,
+  "survivors": 3,
+  "timeline_stage_final": 4,
+  "retry_count": 1,
+  "retry_grade_penalty": false,
+  "patch_verification": {
+    "P44_impersonation": "PASS — 위장 중 corruption 지연·해제 후 1턴 반격·2턴 쿨다운·정보흡수 미발동(간파로 조건 미충족) 전부 로그 기록",
+    "P45_watchdog_pause": "PASS — 박용철 기절(TURN4~11, 7턴) 동안 워치독 카운터 정지 로그 기록. 구출 후 재개.",
+    "P46_npc_coordination": "PASS — TURN3 박용철·한지훈 충돌 교대 서술·컨텍스트 양쪽 반영. TURN11 3인 NPC 조율 클라이맥스 서술.",
+    "stage5_gate": "PASS — 1차 실패 → 리트라이(P1/P16/P20) → 2차 위장 간파+NPC 중재+단서 통합 → 해결",
+    "evaluation_reward": "PASS — per-player 등급/하이라이트/감점/종합/후일담/특성보상 전부 기록"
+  },
+  "new_weaknesses": [
+    {
+      "issue": "P44 rule_4(신뢰 시 정보흡수) 발동 조건이 GM 재량에 의존 — '플레이어가 신뢰했다'는 판단의 정량 기준이 없어 GM마다 다르게 적용될 수 있음",
+      "fix": "rule_4 트리거를 '핵심정보(P18 정의)를 위장 대상에게 감청 채널로 전달한 로그가 있을 때'로 명확화(로그 기반 객관 판정)",
+      "severity": "low",
+      "scope": "한정(can_impersonate=true 위장형)",
+      "code_required": false
+    }
+  ],
+  "convergence_note": "신규 high 없음. P44·P45·P46 3축 모두 이번에 수렴 진입. 잔여 미수렴: P44 rule_4 정량화(low 1건). 코드 미해결: CODE-3/4/6/7/8/9/10/11 유지."
+}
