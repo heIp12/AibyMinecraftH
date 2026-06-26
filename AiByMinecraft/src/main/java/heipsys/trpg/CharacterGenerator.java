@@ -287,17 +287,24 @@ public class CharacterGenerator {
     // ──────────────────────────────────────────────────────────────
 
     public JobTier rollStats(PlayerData pd, JsonObject roleData) {
-        // 나이 — range가 10살 미만이면 ±5 여유를 줘 재굴림 다양성 확보
+        // 나이 — roleData가 있으면 배역 범위 우선, 없으면 가중 무작위 (12~30 빈출)
         if (roleData != null && roleData.has("age_range")) {
             JsonArray ar = roleData.getAsJsonArray("age_range");
             int lo = ar.get(0).getAsInt(), hi = ar.get(1).getAsInt();
+            if (hi < lo) { int t = lo; lo = hi; hi = t; }
+            // 범위가 좁으면 ±5 여유 — 초자연적 고연령(hi > 80)은 80 상한선 적용 안 함
             if (hi - lo < 10) {
-                lo = Math.max(5,  lo - 5);
-                hi = Math.min(80, hi + 5);
+                lo = Math.max(1, lo - 5);
+                hi = hi > 80 ? hi + 5 : Math.min(80, hi + 5);
             }
             pd.age = hi > lo ? lo + RNG.nextInt(hi - lo + 1) : lo;
         } else {
-            pd.age = 5 + RNG.nextInt(76);
+            // 가중 분포: 12~30세 약 60%, 30~50세 약 25%, 5~11세 약 10%, 51~80세 약 5%
+            int roll = RNG.nextInt(100);
+            if      (roll < 60) pd.age = 12 + RNG.nextInt(19); // 12~30
+            else if (roll < 85) pd.age = 30 + RNG.nextInt(21); // 30~50
+            else if (roll < 95) pd.age =  5 + RNG.nextInt(7);  // 5~11
+            else                pd.age = 51 + RNG.nextInt(30); // 51~80
         }
 
         // 직업 — roleData가 있으면 배역 풀 우선, 없으면 가중치 계층 선택
