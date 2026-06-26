@@ -1521,9 +1521,12 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                   // 해설은 공개하지 않는다. 재도전 또는 포기를 선택하게 한다.
                   broadcast("§e재도전: §f/trpg retry  §8|  §e포기하고 전말 보기: §f/trpg stop");
               } else {
-                  // 3번째 방 이상 + 생존 성공자 없음 → 재도전 불가, 전말 공개만 가능
-                  broadcast("§c이 스테이지(" + state.getRoomNumber() + "번째)에서는 생존에 성공한 사람이 없어 재도전할 수 없습니다.");
-                  broadcast("§e전말 보기: §f/trpg stop");
+                  // 재도전 불가 → 플레이어 명령 대기 없이 즉시 전말 공개 후 세션 종료
+                  concludingEnding = true;
+                  concludeWithReveal("배드 엔딩 — " + reasonLabel, () -> {
+                      concludingEnding = false;
+                      endSession(true);
+                  });
               }
           }));
     }
@@ -1768,7 +1771,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
 
     /**
      * 결말 후 AI 에필로그(뒷이야기)를 생성해 보여주고, 이어서 .gdam 해설을 공개한다.
-     * 클리어와 '포기(중도 종료)' 시에만 호출한다. 재도전 가능한 배드엔딩에서는 호출하지 않는다.
+     * 클리어, '재도전 불가 배드엔딩', '포기(중도 종료)' 시 호출한다. 재도전 가능한 배드엔딩에서는 호출하지 않는다.
      * @param onDone 에필로그·해설 공개가 끝난 뒤 실행할 콜백 (없으면 null)
      */
     private void concludeWithReveal(String endingLabel, Runnable onDone) {
