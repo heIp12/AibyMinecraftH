@@ -3,13 +3,16 @@ heipsys\trpg\CorruptionManager.class
 heipsys\trpg\RoleManager.class
 heipsys\trpg\TraitManager.class
 heipsys\trpg\AiManager$AiType.class
+heipsys\trpg\GameLogger.class
 heipsys\trpg\TRPGGameManager.class
 heipsys\trpg\AiManager.class
 heipsys\trpg\ItemManager.class
 heipsys\trpg\ScoreboardManager.class
+heipsys\trpg\CharacterGenerator$JobTier.class
 heipsys\trpg\model\TraitData.class
 heipsys\trpg\GameStateManager$CorruptionData.class
 heipsys\trpg\NarrativeDelivery.class
+heipsys\trpg\TraitManager$StageEndChoices.class
 heipsys\trpg\GameStateManager.class
 heipsys\trpg\model\PlayerData.class
 heipsys\trpg\TurnManager.class

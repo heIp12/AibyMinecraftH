@@ -24,6 +24,7 @@ public class CharacterGenerator {
 
     private static final Random RNG = new Random();
 
+<<<<<<< HEAD
     private static final String[] JOB_POOL = {
             // [기존 직업]
             "초등학생","중학생","고등학생","대학생","유치원생",
@@ -97,6 +98,51 @@ public class CharacterGenerator {
             "네크로맨서","주술사","부두술사","강령술사",
             "도플갱어","몽유병치료사","가위눌림해결사","저주인형제작자"
         };
+=======
+    private enum JobTier { COMMON, STRONG, RARE }
+
+    /** 평범한 직업 (~70%) */
+    private static final String[] COMMON_JOB_POOL = {
+        "초등학생","중학생","고등학생","대학생","유치원생",
+        "의사","간호사","약사","수의사","치과의사",
+        "교사","교수","학원강사","사서",
+        "경찰관","소방관","군인","경호원",
+        "요리사","제빵사","바리스타","식당주인",
+        "회계사","변호사","검사","판사","세무사",
+        "기자","PD","작가","웹툰작가","유튜버","사진작가",
+        "프로그래머","디자이너","건축가","엔지니어",
+        "농부","어부","축산업자","임업종사자",
+        "택시기사","버스기사","트럭운전사","배달원",
+        "청소부","경비원","편의점알바","마트직원",
+        "헬스트레이너","무용가","스포츠선수","코치",
+        "성직자","스님","사회복지사","심리상담사",
+        "골동품상인","마술사","서커스단원",
+        "노숙자","은퇴자","백수","전업주부",
+        "탐정","해커","사기꾼","도둑",
+        "인플루언서","모델","배우","가수",
+        "과학자","연구원","역사학자","고고학자",
+        "조련사","잠수부","등반가",
+        "정치인","공무원","외교관","통역사"
+    };
+>>>>>>> branch 'claude/optimistic-hamilton-jw2ayv' of https://github.com/heIp12/AibyMinecraftH
+
+    /** 해결사/전문 능력자 (~20%) — A/B등급 초기 특성 부여 */
+    private static final String[] STRONG_JOB_POOL = {
+        "엑소시스트","퇴마사","봉마사","신부(퇴마 전문)",
+        "SCP요원","비밀결사 요원","정보국 요원","첩보원",
+        "특수부대원","저격수","용병","군특수공작원",
+        "형사(베테랑)","괴물 사냥꾼","무도가","검객",
+        "심령술사","봉인사","연금술사","무속인",
+        "성기사","수도사(전투형)","마법사(학파 출신)","저항군 사령관"
+    };
+
+    /** 초자연적/변수가 큰 직업 (~10%) — S/A등급이지만 큰 대가 수반 */
+    private static final String[] RARE_JOB_POOL = {
+        "뱀파이어","랩틸리언","흑마법사","저주받은 자",
+        "시간여행자","악마와의 계약자","마계 망명자",
+        "반신(半神)","인조인간","불사자","저주받은 마법사",
+        "예언자","괴물의 후손","유령빙의자","혼종"
+    };
 
     private static final String[] STAT_NAMES = {"hp","str","san","cha","luk","spr"};
     private static final Gson GSON = new Gson();
@@ -125,7 +171,7 @@ public class CharacterGenerator {
      */
     public CompletableFuture<PlayerData> generate(Player player, JsonObject roleData) {
         PlayerData pd = new PlayerData(player.getUniqueId(), player.getName());
-        rollStats(pd, roleData);
+        JobTier tier = rollStats(pd, roleData);
 
         String roleContext = buildRoleContext(roleData);
 
@@ -136,7 +182,7 @@ public class CharacterGenerator {
             buildAdjustPrompt(pd, roleContext)
         ).thenCompose(raw -> {
             applyAiAdjustment(pd, raw);
-            return generateInitialTraits(pd, roleContext);
+            return generateInitialTraits(pd, roleContext, tier);
         }).thenApply(traits -> {
             pd.traits.addAll(traits);
             pd.snapshotBase();
@@ -148,7 +194,7 @@ public class CharacterGenerator {
     //  스탯 굴림 (배역 age_range / job_pool 우선 적용)
     // ──────────────────────────────────────────────────────────────
 
-    public void rollStats(PlayerData pd, JsonObject roleData) {
+    public JobTier rollStats(PlayerData pd, JsonObject roleData) {
         // 나이 — range가 10살 미만이면 ±5 여유를 줘 재굴림 다양성 확보
         if (roleData != null && roleData.has("age_range")) {
             JsonArray ar = roleData.getAsJsonArray("age_range");
@@ -162,23 +208,35 @@ public class CharacterGenerator {
             pd.age = 5 + RNG.nextInt(76);
         }
 
-        // 직업 — job_pool이 5개 미만이면 전체 풀을 섞어 보완 (재굴림 다양성 확보)
+        // 직업 — roleData가 있으면 배역 풀 우선, 없으면 가중치 계층 선택
+        JobTier tier = JobTier.COMMON;
         if (roleData != null && roleData.has("job_pool")) {
             JsonArray pool = roleData.getAsJsonArray("job_pool");
             if (pool.size() >= 5) {
                 pd.job = pool.get(RNG.nextInt(pool.size())).getAsString();
             } else if (pool.size() > 0) {
-                // 배역 풀 50%, 전체 풀 50% 혼합
+                // 배역 풀 50%, 평범한 풀 50% 혼합
                 if (RNG.nextBoolean()) {
                     pd.job = pool.get(RNG.nextInt(pool.size())).getAsString();
                 } else {
-                    pd.job = JOB_POOL[RNG.nextInt(JOB_POOL.length)];
+                    pd.job = COMMON_JOB_POOL[RNG.nextInt(COMMON_JOB_POOL.length)];
                 }
             } else {
-                pd.job = JOB_POOL[RNG.nextInt(JOB_POOL.length)];
+                pd.job = COMMON_JOB_POOL[RNG.nextInt(COMMON_JOB_POOL.length)];
             }
         } else {
-            pd.job = JOB_POOL[RNG.nextInt(JOB_POOL.length)];
+            // 가중치 랜덤: 70% 평범 / 20% 강한 직업 / 10% 희귀 직업
+            int roll = RNG.nextInt(100);
+            if (roll < 70) {
+                tier = JobTier.COMMON;
+                pd.job = COMMON_JOB_POOL[RNG.nextInt(COMMON_JOB_POOL.length)];
+            } else if (roll < 90) {
+                tier = JobTier.STRONG;
+                pd.job = STRONG_JOB_POOL[RNG.nextInt(STRONG_JOB_POOL.length)];
+            } else {
+                tier = JobTier.RARE;
+                pd.job = RARE_JOB_POOL[RNG.nextInt(RARE_JOB_POOL.length)];
+            }
         }
 
         // 총합 25를 6개 스탯에 배분
@@ -192,32 +250,53 @@ public class CharacterGenerator {
 
         boostLowest(pd);
         applyBonuses(pd);
+        return tier;
     }
 
     // ──────────────────────────────────────────────────────────────
     //  AI 초기 특성 생성
     // ──────────────────────────────────────────────────────────────
 
-    private CompletableFuture<List<TraitData>> generateInitialTraits(PlayerData pd, String roleContext) {
-        String system = """
-너는 TRPG 캐릭터 초기 특성 생성기야.
-아래 JSON 배열 형식으로만 응답 (다른 텍스트 금지):
-[{"id":"","name":"","grade":"C","description":"","active":false,"effect":""},...]
-
-규칙:
-- grade: C 또는 D/F 만 사용 (초기 캐릭터이므로 강한 특성 없음)
-- 직업·나이에서 자연스럽게 연결되는 능력/약점 1~2개
-- description과 effect에 스탯 숫자·스탯 약어(STR/HP/SAN/CHA/LUK/SPR) 절대 사용 금지
-- description: 아주 짧은 명사구 한 줄(최대 18자). 장황한 설명·문장 금지. 예: "빠른 처치 손길", "겁 많은 성격"
-- effect: 한 문장으로 간결하게 (수동이면 "판정에서 자연스럽게 발휘" 식, 능동이면 사용 효과)
-- 직업명을 그대로 쓰지 말고 구체적 능력으로 작성 (예: '간호사' → '빠른 처치 손길')
-- 한국어, 창의적
+    private CompletableFuture<List<TraitData>> generateInitialTraits(PlayerData pd, String roleContext, JobTier tier) {
+        String tierRules = switch (tier) {
+            case STRONG -> """
+- grade: A 또는 B 사용 (해결사·전문 능력자이므로 강한 특성)
+- 사명감, 오랜 훈련, 특수 기술에서 비롯된 능력으로 작성
+- 능동 특성(active:true) 1개 이상 포함 권장. 쿨다운(cooldownTurns) 1~2 설정
+- 직업·배경에 맞는 제약(조건부 발동, 쿨다운)이 있을 수 있음
+- 개수: 1~2개
 """;
+            case RARE -> """
+- grade: S 또는 A 사용 (초자연적 직종이므로 극히 강력한 특성)
+- 반드시 큰 대가·위험부담 수반: 쿨다운 3턴 이상 또는 체력·정신력 소모 또는 특정 조건 하에서만 발동
+- 능동 특성(active:true) 필수 포함. cooldownTurns 2~4 설정
+- 강점이 극단적인 만큼 뚜렷한 약점이나 부작용 특성도 1개 추가 (grade D 또는 F)
+- 개수: 2개 이상 (강점 + 약점/부작용)
+""";
+            default -> """
+- grade: C 또는 D/F 만 사용 (초기 캐릭터이므로 강한 특성 없음)
+- 개수: 1~2개
+""";
+        };
+
+        String system = "너는 TRPG 캐릭터 초기 특성 생성기야.\n"
+            + "아래 JSON 배열 형식으로만 응답 (다른 텍스트 금지):\n"
+            + "[{\"id\":\"\",\"name\":\"\",\"grade\":\"C\",\"description\":\"\",\"active\":false,\"effect\":\"\","
+            + "\"cooldownTurns\":0},...]\n\n"
+            + "공통 규칙:\n"
+            + "- 직업·나이에서 자연스럽게 연결되는 능력/약점\n"
+            + "- description과 effect에 스탯 숫자·스탯 약어(STR/HP/SAN/CHA/LUK/SPR) 절대 사용 금지\n"
+            + "- description: 아주 짧은 명사구 한 줄(최대 18자). 예: \"빠른 처치 손길\", \"겁 많은 성격\"\n"
+            + "- effect: 한 문장으로 간결하게 (수동이면 판정에서 발휘되는 식, 능동이면 사용 효과)\n"
+            + "- 직업명을 그대로 쓰지 말고 구체적 능력으로 작성\n"
+            + "- 한국어, 창의적\n\n"
+            + "직업 등급별 규칙:\n" + tierRules;
+
         String prompt = "나이: " + pd.age + "세, 직업: " + pd.job
             + "\nHP=" + pd.hp[1] + " STR=" + pd.str + " SAN=" + pd.san[1]
             + " CHA=" + pd.cha + " LUK=" + pd.luk + " SPR=" + pd.spr
             + (roleContext != null && !roleContext.isBlank() ? "\n배역 맥락: " + roleContext : "")
-            + "\n\n위 캐릭터에 맞는 초기 특성 1~2개를 JSON 배열로 생성해줘.";
+            + "\n\n위 캐릭터에 맞는 초기 특성을 JSON 배열로 생성해줘.";
 
         return aiManager.callAssistant(system, prompt).thenApply(raw -> {
             try {
@@ -235,8 +314,9 @@ public class CharacterGenerator {
                     td.name        = obj.has("name")        ? obj.get("name").getAsString()        : "초기 특성";
                     td.grade       = obj.has("grade")       ? obj.get("grade").getAsString()       : "C";
                     td.description = obj.has("description") ? obj.get("description").getAsString() : "";
-                    td.active      = obj.has("active")      && obj.get("active").getAsBoolean();
-                    td.effect      = obj.has("effect")      ? obj.get("effect").getAsString()      : "";
+                    td.active        = obj.has("active")       && obj.get("active").getAsBoolean();
+                    td.effect        = obj.has("effect")       ? obj.get("effect").getAsString()       : "";
+                    td.cooldownTurns = obj.has("cooldownTurns") ? obj.get("cooldownTurns").getAsInt()  : 0;
                     result.add(td);
                 }
                 return result.isEmpty() ? staticFallbackTraits(pd) : result;
