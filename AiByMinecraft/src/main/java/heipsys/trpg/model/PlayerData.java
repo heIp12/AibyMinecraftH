@@ -23,6 +23,9 @@ public class PlayerData {
     /** 현재 배역에 맞춰 임시로 부여된 나이 (-1 = 배역 없음) */
     public int roleAge = -1;
 
+    /** 캐릭터 고유(기본) 직업 — 배역이 없을 때 복귀할 값 */
+    public String baseJob = "일반인";
+
     // [current, max]
     public int[] hp  = {6, 6};
     public int   str = 5;
@@ -73,6 +76,7 @@ public class PlayerData {
         baseLuk = luk;
         baseSpr = spr;
         baseAge = age;
+        baseJob = job;
     }
 
     public void resetToBase() {
@@ -96,6 +100,7 @@ public class PlayerData {
     public void clearRoleData() {
         traits.removeIf(t -> t.roleSpecific);
         roleAge = -1;          // 배역 해제 → 다음 배역 전까지 고유 나이로
+        job = baseJob;         // 배역 해제 → 고유 직업으로 복귀
         resetToBase();
         roleId       = "";
         zone         = "";
