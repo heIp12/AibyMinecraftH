@@ -16,3 +16,10 @@
 - 발견 약점→패치(작업본): P1 재도전이 등급 강등(부당) / P2 world_rules 너무 빨리 확정 / P3 시간 가변 미활용(균일 진행).
 - 파일: iter01/seed.json, iter01/log.txt, iter01/S3_#SIM3-K7P2_3FA12T1850.replay
 - 플러그인 .java: 변경 없음 (프롬프트 작업본 prompt_patches.md만 갱신)
+
+## iter02 — 2026-06-26 18:58 — #VY8K-3PMQ (스테이지1·로컬·영역형 고립)
+- 괴담: 1980년대 폐저수탑, 소리내면 창살 봉쇄되는 압력형. 폭우·산사태 고립(can_leave_scene=false).
+- 결과: 레버 1차 실패 → 리트라이 → 3인 협력 역방향 전환 성공, 전원 생존 해결판정 A.
+- P1~P3 유효 확인. 신규 패치 P4~P7(협력판정 공식 high 포함).
+- 파일: iter02/seed.json·log.txt·replay.json (에이전트 직접 저장)
+- 플러그인 .java: 변경 없음.

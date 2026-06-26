@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "stage": 1,
+  "seed": "#VY8K-3PMQ",
+  "created": "2026-06-26T00:00:00+09:00",
+  "players": [
+    {
+      "name": "임도현",
+      "role_id": "role_A",
+      "role_name": "수자원 관리 기사",
+      "age": 47,
+      "job": "수자원 관리 기사",
+      "hp": [7, 8],
+      "str": 7,
+      "san": [5, 5],
+      "cha": 3,
+      "luk": 4,
+      "spr": 6,
+      "traits": [
+        {"id": "trait_veteran_hands", "name": "베테랑 손길", "grade": "C", "active": true, "cooldownTurns": 1},
+        {"id": "trait_rough_social", "name": "거친 사교성", "grade": "D", "active": false, "cooldownTurns": 0},
+        {"id": "trait_facility_know", "name": "시설 지식", "grade": "C", "active": false, "cooldownTurns": 0, "roleSpecific": true}
+      ],
+      "final_hp": [7, 8],
+      "final_san": [4, 5],
+      "survived": true,
+      "eval_grade": "A",
+      "eval_role_label": "핵심 해결자"
+    },
+    {
+      "name": "최수빈",
+      "role_id": "role_B",
+      "role_name": "지역 신문 기자",
+      "age": 29,
+      "job": "지역 신문 기자",
+      "hp": [4, 4],
+      "str": 3,
+      "san": [6, 7],
+      "cha": 7,
+      "luk": 5,
+      "spr": 6,
+      "traits": [
+        {"id": "trait_sharp_obs", "name": "날카로운 관찰력", "grade": "C", "active": true, "cooldownTurns": 0},
+        {"id": "trait_persuasion", "name": "설득의 기술", "grade": "B", "active": true, "cooldownTurns": 1, "roleSpecific": true}
+      ],
+      "final_hp": [4, 4],
+      "final_san": [7, 7],
+      "survived": true,
+      "eval_grade": "A",
+      "eval_role_label": "정보 수집가"
+    },
+    {
+      "name": "박정훈",
+      "role_id": "role_C",
+      "role_name": "길 잃은 여행자",
+      "age": 24,
+      "job": "대학생",
+      "hp": [5, 5],
+      "str": 5,
+      "san": [3, 4],
+      "cha": 4,
+      "luk": 3,
+      "spr": 4,
+      "traits": [
+        {"id": "trait_youth_stamina", "name": "청년의 체력", "grade": "C", "active": false, "cooldownTurns": 0},
+        {"id": "trait_claustro", "name": "밀폐 공포 기질", "grade": "F", "active": false, "cooldownTurns": 0, "roleSpecific": true}
+      ],
+      "final_hp": [5, 5],
+      "final_san": [3, 4],
+      "survived": true,
+      "eval_grade": "B",
+      "eval_role_label": "팀 지원자"
+    }
+  ]
+}
