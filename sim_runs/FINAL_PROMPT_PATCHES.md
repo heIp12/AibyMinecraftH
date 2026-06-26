@@ -1,0 +1,465 @@
+# FINAL_PROMPT_PATCHES.md
+# 괴담 TRPG 프롬프트 자가개선 루프 — 최종 적용본
+# 작성 기준: 2026-06-26 | 18회 시뮬 완전 수렴 | P1~P48(+P44b) + CODE-1~12 전수 반영
+
+---
+
+## A. 적용 개요
+
+18회 시뮬레이션(iter01~iter17) 결과, 프롬프트 도메인은 iter13~14 연속 무(無)high 이후 실질 수렴하였으며, iter15~17 스팟체크 3회에서 can_impersonate 축(P44) 1건이 추가 발견되어 최종 49건(P44b 포함)으로 확정되었다. 잔여 미해결 문제는 전량 코드 도메인(CODE-3/4/6/8/9/12)으로 이동하였다.
+
+**권장 적용 순서:**
+1. HIGH 프롬프트 그룹 (G1 클리어·G2 평가면제·G3 단일주체collapse·G4 해결경로·G5 협력판정·G6 can_impersonate위장)
+2. MED 범용 그룹 (G7 comms도청·G8 NPC반응schedule·G9 리트라이상태유지)
+3. 조건부 그룹 (C절 분리표 참조 — 범용 주입 금지)
+4. 코드 TODO HIGH (CODE-3·CODE-4·CODE-6·CODE-8·CODE-9·CODE-12) — 정책 결정 선행 항목 있음
+
+---
+
+## B. 통합 그룹별 '바로 붙여넣는' 프롬프트 텍스트
+
+---
+
+### G1. 클리어 등급·희생·해결/생존 경계 통합
+**포함 패치:** P1, P12, P16, P20, P38, P40  
+**severity:** HIGH  
+**대상:** `TRPGGameManager.java` — `GM_SYSTEM_BASE` 상수 내 클리어 판정 섹션  
+**삽입 앵커:** `"grade 기준:\nS: 해결판정 + 전원 생존 + 타임라인 2단계 이하"` 문장 직전 (line ~339)에 독립 단락으로 삽입
+
+**삽입 텍스트:**
+```
+★ 등급 판정 4원칙 (최우선):
+(1) 재도전 강등 금지: 등급은 최종 성공 시점의 조건(해결/생존 여부·생존자 수·타임라인 단계)만으로 매긴다. 재도전을 거쳤다는 이유만으로 등급을 내리지 마라. 오염도는 시스템이 보상에 별도 반영한다.
+(2) 해결/생존 경계: collapse_condition 완전 충족 + 위협권 인원 전원 탈출/생존 = 해결판정(resolved:true). collapse 부분 충족이나 잔류·미구출 발생 = 생존판정 또는 등급 강등. 모호하면 생존판정 쪽으로.
+(3) 자발적 희생 수용: collapse 달성을 위한 캐릭터의 자발적 희생(앵커·기폭·미끼 등)은 정당한 영웅 서사 선택으로 존중한다. GM이 임의로 차단(과보호)하거나 강요하지 마라. 플레이어가 선택하면 그 결과(전원 생존·캐리 등급)를 정당히 반영하고, 선택하지 않으면 대안 경로를 막지 마라.
+(4) 희생형 collapse 범위 기준: 희생으로 collapse 달성 시, entity.rules 또는 solution에 명시된 "충격파/붕괴 영향 범위(구역)와 안전 대피 완료 기준(예: 폭발 1턴 전 인접구역 밖)"으로만 희생자 외 인원의 생존을 판정한다. 자의적 판정 금지.
+
+★ 스테이지 내 재시도(리트라이) 진입 시:
+- HP/SAN 손실·상태이상은 유지된다. 상태 초기화 없음.
+- 괴담 고유 축적값(채무·감염·저주 스택·오염도 누적·NPC 관계 등 시나리오 종속 수치)도 유지된다.
+- 단, '다음 스테이지 진출' 시에는 전원 부활과 함께 이 수치들이 초기화된다.
+```
+
+---
+
+### G2. 평가 — 소통불가 면제·INSTANT_CLEAR 일괄 하향 방지
+**포함 패치:** P36, P37, P39, P48  
+**severity:** HIGH (P36·P37) + MED (P39·P48)  
+**대상:** `TRPGGameManager.java` — `runScenarioEvaluation` 메서드 내 prompt String  
+**삽입 앵커:** `"※ '정보 미공유' 감점은 신중히 적용하라. 공유할 수단·기회가 실제로 있었는데"` 문장 (line ~3081)을 아래 텍스트로 전체 교체
+
+**교체 텍스트:**
+```
+※ '정보 미공유' 감점 판별 기준 (로그 근거 필수):
+  소통불가 면제: 플레이어의 현재 구역에 '[격리: ...]' system 로그 기록이 있으면 그 구간의 미공유는 소통불가로 자동 간주한다. comm 로그에 시도가 없어도 격리 기록만으로 면제 증거로 충분하다.
+  고의적 은폐 감점: 격리 기록이 없고 통신 가능 구간임에도 공유하지 않은 경우(comm/log에 격리 기록 없고, 공유 수단·기회가 실존). 플레이어 본인의 주장만으로 면제 처리 금지.
+★ INSTANT_CLEAR류 즉시 종료(clearGrade=F)로 끝난 회차에서는, 발동자 외 플레이어를 clearGrade=F 이유로 일괄 하향하지 말고 각자의 실제 행동 기록으로만 평가하라. 발동자는 기여를 반영하되 penalties에 '조기 철수(미해결 종료 유도)'를 기록한다(상황상 정당한 철수면 감점 완화).
+```
+
+---
+
+### G3. 단일 주체 괴담 — collapse_condition 의무화·배역·AI 운용
+**포함 패치:** P24, P25, P26  
+**severity:** HIGH (P24) + MED (P25·P26)  
+**적용 분기:** `_single_entity` 또는 `npc_dependency=low` 단일 주체 괴담 조건부
+
+**대상 1:** `GdamGenerator.java` — `GDAM_SYSTEM_PROMPT` 스케일 너프 지침 블록 (line ~72~78)  
+**삽입 앵커:** `"- 괴담 자체의 강함은 유지하되, 접촉/피해 기회를 제한"` 문장 직후에 삽입
+
+**삽입 텍스트 (생성 지침):**
+```
+★ 단일 주체 괴담(_single_entity·npc_dependency=low) 전용 규칙:
+1. collapse_condition 의무화: entity.weakness/exploit_path에서 논리적으로 도출되는 소멸·해제 조건이 있으면 world_rules.collapse_condition을 반드시 채워라(탈출 전용으로 비우지 마라). 진짜 해결 불가한 순수 회피형(쿠네쿠네類, collapse 없음)이면 그 사실을 명시하고 스테이지 1~2 배치 권고(스테이지 3+는 해결판정 필수 진출이라 구조적 충돌 발생).
+2. 배역 수 완화: 최소 2인 운용 허용. 만남 창(meeting_window)을 늦게 설정 가능. 대신 단서 비대칭을 충분히 확보해 협력 동기를 유지하라. 다인 앙상블형은 기존 3~4 배역 원칙 유지.
+```
+
+**대상 2:** `TRPGGameManager.java` — `GM_SYSTEM_BASE` 상수 내 괴담 AI 서술 원칙 섹션  
+**삽입 앵커:** `"### GM 내부 비공개 항목 (절대 공개 금지)"` 문장 직전에 삽입
+
+**삽입 텍스트 (GM 운용 지침):**
+```
+★ 단일 독립 AI 운용 원칙:
+
+[entity.independent_ai=true · can_impersonate=false 단일 주체]
+- ai_context.corruption_behavior의 단계 순서를 반드시 준수한다. 한 응답에서 corruption 단계를 2단계 이상 건너뛰지 마라.
+- 위협은 물리적 현상·환경 변화로만 간접 표현한다. 직접 묘사로 신비를 소진하지 마라(단일 주체에서 특히 엄격히 적용).
+
+[entity.independent_ai=true · can_impersonate=true 위장 단일 주체]
+- (1) 위장 유지 중에는 corruption 단계 진행을 1단계 늦춘다(위장은 비용이 든다).
+- (2) 위장 해제 후 직접 반격(공격·공간 압박)은 해제된 그 턴 직후 1턴 이내(P31 타이밍과 동일).
+- (3) 위장 재활성화는 해제 후 최소 2턴 쿨다운.
+- (4) 발동 트리거: 플레이어가 핵심정보(collapse_condition·weakness·exploit_path·loophole 직결 내용)를 '위장 대상'에게 감청 가능 채널(통화·무전 등)로 전달한 comm 로그가 실제로 존재할 때만 → 위장 강화로 corruption 1단계 상승 + 그 정보를 즉시 흡수·역이용. 단순 동행·대화만으로는 미발동. 대면 안전채널(같은 zone 직접 대화)은 흡수 제외.
+- (5) 위장은 ai_context의 단계 순서를 어기지 않는다(독립 AI 원칙과 호환).
+```
+
+---
+
+### G4. 해결 경로 강건성 — 단일 장애점 금지·의례·희생형
+**포함 패치:** P23, P32, P35, P40  
+**severity:** HIGH (P32) + MED (P23·P35·P40)  
+**대상:** `GdamGenerator.java` — `GDAM_SYSTEM_PROMPT` clues 설계부 또는 meeting_design 섹션 직후  
+**삽입 앵커:** `"## 만남 가능성 검증 (출력 전 필수)"` 문장 직전에 삽입
+
+**삽입 텍스트:**
+```
+★ 해결 경로 강건성 규칙 (생성 시 필수 점검):
+
+1. 단일 장애점 금지: collapse_condition 달성에 필수인 핵심 단서·열쇠는 최소 2개의 독립 경로(문서/NPC/환경 단서 중 둘 이상)로 입수 가능하게 설계하라. 하나가 막혀도(NPC 사망·구역 봉쇄) 대체 경로로 해결 가능해야 한다. 단일 출처면 그 출처의 보호·복원 수단을 함께 둔다.
+
+2. 의례형 파훼(solution이 의례·정확입력형이면): world_rules.hidden 또는 entity.solution에 "정확 조건 = X(구체), 오류 시 결과 = Y(부분피해·오염도·리트라이 등)"를 반드시 구조적으로 명시하라. 오류결과가 '격노·즉발 반격'형이면 entity.escape 또는 hidden_rules에 그 순간의 임시 대응 행동(도피 경로·연기 차단·미끼 등) 최소 1개를 함께 명시. 완전 무력 구간 금지. GM은 이 경계로만 성공/실패를 가른다.
+
+3. 희생형 collapse: entity.rules 또는 solution에 "충격파/붕괴 영향 범위(구역)와 안전 대피 완료 기준(예: 폭발 1턴 전 인접구역 밖)"을 필수 명시. GM은 그 기준으로 희생자 외 인원의 생존을 판정한다(자의 금지).
+```
+
+---
+
+### G5. 협력 판정 공식
+**포함 패치:** P6  
+**severity:** HIGH  
+**대상:** `TRPGGameManager.java` — `GM_SYSTEM_BASE` 판정 시스템 섹션  
+**삽입 앵커:** `"### 판정 시스템\n스탯 대비 결과가 불확실한 행동에만 d20 판정."` 문장 직후 (line ~252)에 삽입
+
+**삽입 텍스트:**
+```
+협력 판정: 주도자 d20 + 보조 1인당 +2(최대 +6).
+```
+
+---
+
+### G6. comms_monitored — 도청 처리 통합 (대면 면제 포함)
+**포함 패치:** P14, P18, P29, P31, P43, P44b  
+**severity:** MED  
+**대상:** `TRPGGameManager.java` — `buildGmPrompt` 메서드 내 comms_monitored 주입 블록  
+**삽입 앵커:** `"- 통신 도청 ★: 괴담이 플레이어들의 기기 통신을 엿볼 수 있다."` 문장 (line ~4481)을 아래 텍스트로 전체 교체
+
+**교체 텍스트:**
+```
+- 통신 도청 ★: 괴담이 플레이어들의 기기 통신을 엿볼 수 있다.
+  도청 대상은 '기기를 통한 통신'(통화·무전·메시지)뿐이다. 같은 zone 안에서의 직접 대면 대화는 도청되지 않는 안전 채널이다(플레이어가 핵심정보를 대면으로 돌리는 전술을 인정하라).
+  감시 통신 1회 사용 시 오염도(timeline_change)+1 또는 적 위협단계 1상승 중 상황에 맞는 쪽을 적용한다.
+  '핵심 정보' 정의: collapse_condition·weakness·exploit_path·loophole 직결 내용. 일반 위치·안부 대화는 오염도+1만 적용, 모방 트리거 미발동.
+  핵심 정보를 감시 채널로 넘기면 괴담이 그 대처법을 인지하고 무력화를 시도한다. 단, 선제 차단·모방 대응은 감청 턴 직후 다음 1턴 이내에 발동(즉시 텔레포트식 과반응 금지). 플레이어에게 1턴의 대응 여지를 남긴다.
+  미래 통신 복수 채널: constraints.notes에 "감청 대상 채널 = [목록], 안전 채널 = [목록]" 명시 시, 각 채널에 맞춰 적용한다. 안전 채널이 명시된 경우 그 채널을 찾아 핵심 정보를 안전 전달하는 공략을 허용한다.
+```
+
+---
+
+### G7. NPC schedule will=반응 — 타이밍·엄밀화·보조트리거·duration 통합
+**포함 패치:** P5, P9, P11, P17, P21, P33  
+**severity:** MED  
+**대상:** `TRPGGameManager.java` — `buildNpcSystemPrompt` 메서드 내 schedule 출력부  
+**삽입 앵커:** `"- 의지가 '강함'이면 막혀도 다른 방법으로 재시도하고, '약함'이면 제지·설득에 포기한다."` 문장 (line ~3740) 직후에 삽입
+
+**삽입 텍스트:**
+```
+반응(will=반응) 처리 규칙:
+1. 발동 조건: condition에 명시된 구체적 행위(예: "특정 물건을 건드림"·"이름을 직접 물음")가 실제 일어난 직후 다음 1턴 안에 발동한다. 단순 접근·방문·같은 zone 진입만으로는 발동하지 않는다. condition 문구는 '구체적 행위'로 작성하며, 모호한 상태 기술("방문하면") 금지.
+2. 보조 트리거(진행 보장): condition이 N턴 경과 시까지도 충족되지 않으면 NPC가 먼저 다가와 핵심 정보의 일부라도 전달한다. condition 충족 시 = 더 좋은 결과(전체 정보·최적 반응). 시간 트리거 발동 시 = 최소 보장(단편 정보·불완전 협력).
+3. duration_turns: 있으면 "이 행동/상태는 N턴 지속" 주입. N턴 종료 후 after_duration이 있으면 "N턴 후 → [after_duration]"으로 주입. after_duration은 해당 NPC AI가 자신의 동기에 따라 자율 결정·실행하고, GM은 그 결과를 다음 장면 서술에 자연스럽게 녹인다(GM이 임의로 NPC 행동을 대신 정하지 않는다).
+```
+
+**추가 대상(생성 단계):** `GdamGenerator.java` — `GDAM_SYSTEM_PROMPT` npc_schedules 설계부 (line ~321~326)  
+**삽입 앵커:** `"will: \"강함\".../ \"반응\"(플레이어 행동에 촉발 — condition 필드로 조건 명시)."` 문장 직후에 삽입
+
+**삽입 텍스트 (생성 스키마 확장):**
+```
+schedule 항목 선택 필드:
+- duration_turns: 이 행동/상태가 지속되는 턴 수 (정수, 생략 가능).
+- after_duration: duration 종료 후 상태("복귀"/"대기"/"도주" 중 하나, 생략 가능).
+```
+
+---
+
+### G8. mislead 단서 설계 — 창작·친숙 모드 통합
+**포함 패치:** P8, P10, P22, P34  
+**severity:** MED  
+**대상:** `GdamGenerator.java` — `GDAM_SYSTEM_PROMPT` clues 설계부  
+**삽입 앵커:** `'"clues": []'` 스키마 설명 근방 또는 ## 필수 설계 항목 '9. 배치된 단서 종류와 위치' 문장 직후에 삽입
+
+**삽입 텍스트 (창작 모드 — 범용):**
+```
+★ clues 설계 규칙:
+clues에 type="mislead" 단서 1~2개를 필수 포함한다. mislead 단서는 GM이 '그럴듯한 오답 방향'으로 자연스럽게 흘린다.
+발동 타이밍: 진짜 단서가 2개 이상 확보된 뒤 자연스럽게 오답임이 드러나게 한다(처음부터 거짓 티 내지 마라). 플레이어가 mislead를 신뢰해 실제 행동(잘못된 차단·봉쇄 등)을 한 번은 실행해보도록 유도한 뒤 오답을 드러내라.
+```
+
+**삽입 텍스트 (친숙 모드 — generateFamiliarConcept clues 생성, P22·P34):**
+```
+★ 친숙 모드 mislead 규칙:
+mislead 단서의 variant_basis는 해당 전설의 실제 채록 이형(지역별·시대별 구전 변형 버전)을 근거로 삼는다. variant_basis에는 실제 채록자·연도·지역(또는 명확한 구전 계통)을 포함한다. 확실한 실제 출처를 못 대면 mislead를 "같은 전설의 다른 지역 변형" 수준으로만 사용하고 가짜 학술 인용 금지. 목적: 원전을 아는 플레이어도 "어느 변형이 맞는지" 헷갈리게 만들어 지식이 함정이 되도록 설계.
+```
+
+---
+
+### G9. 클리어/리트라이 상태 유지 (G1에 통합)
+P16·P20은 G1 삽입 텍스트의 "리트라이 진입 시" 단락에 이미 포함. 별도 삽입 불필요.
+
+---
+
+### G10. GM 격리 태그 명시 의무
+**포함 패치:** P39  
+**severity:** MED  
+**대상:** `TRPGGameManager.java` — `GM_SYSTEM_BASE` 상수 내 통신/구역 서술 원칙 섹션  
+**삽입 앵커:** `"### 협력·상호작용 원칙 ★ 최우선 (같은 위치 플레이어)"` 섹션 근방 또는 zone 서술 관련 문구 직후에 삽입  
+**위치 확인 필요:** GM_SYSTEM_BASE 내 zone/comms 서술 관련 섹션 정확 위치 재확인 권장 (현재 파악된 섹션 구조상 line ~355~370 근방 추정)
+
+**삽입 텍스트:**
+```
+★ 격리 서술 의무: 캐릭터가 통신두절·고립 구역에 들어가거나 나올 때마다 서술에 '[격리: <구역>·<시점>]'을 명시하라(평가의 소통불가 면제 판정 근거). 구간 종료 시 '[격리 해제]'도 남긴다.
+```
+
+---
+
+### G11. 시간 가변 활용
+**포함 패치:** P3  
+**severity:** MED  
+**대상:** `TRPGGameManager.java` — `buildGmPrompt` 타임라인 시계 주입부  
+**삽입 앵커:** `"- ★ 급박·위기 상황에서는 TIME_SKIP을 쓰지 마라(시간이 분·초로 천천히 흐른다). 스케일이 클수록 평온 구간의 도약을 크게 잡는다."` 문장 (line ~4523) 직후에 추가
+
+**삽입 텍스트:**
+```
+- 탐색·대기·장면 전환 등 평온 구간에서는 적극적으로 <TIME_SKIP>으로 수십 분~수 시간을 건너뛰어라. 추격·대치 등 급박 구간에서는 1턴을 수 분 이내로 좁혀라. 매 턴 동일 간격으로 흐르게 두지 마라.
+```
+
+---
+
+### G12. world_rules 은폐 지속
+**포함 패치:** P2  
+**severity:** MED  
+**대상:** `GdamGenerator.java` — `GDAM_SYSTEM_PROMPT` world_rules 설계부  
+**삽입 앵커:** `"- hidden: 처음부터 아는가. 보통 true(모름) — 탐색·단서·희생으로 점차 파악."` 문장 (line ~232) 직후에 삽입
+
+**삽입 텍스트:**
+```
+- hidden 규칙 운용: hidden=true이면 '결과(현상)'만 보여주고 메커니즘을 GM 서술이 깔끔히 확정·요약하지 않는다. 플레이어 가설은 '부분적으로만' 맞게 하고, 가짜 변수(인원수·타이밍 외 다른 요인처럼 보이는 것)를 한두 번 섞어 확신을 늦춰라.
+```
+
+---
+
+### G13. NPC schedule duration_turns 스키마 (GDAM 생성)
+**포함 패치:** P9, P11  
+**severity:** MED  
+**위치:** G7에서 이미 처리 (생성 스키마 확장 텍스트 포함). 별도 삽입 불필요.
+
+---
+
+### G14. 다수 critical NPC 조율 원칙 + 워치독 일시정지
+**포함 패치:** P45, P46  
+**severity:** MED  
+**대상:** `TRPGGameManager.java` — `GM_SYSTEM_BASE` 상수 내 GM NPC 조율 섹션  
+**삽입 앵커:** `"### GM NPC 조율\n플레이어가 없는 배역은 GM이 직접 조종한다."` 문장 (line ~461) 직후에 삽입
+
+**삽입 텍스트:**
+```
+★ 다수 critical NPC 조율 원칙:
+- 같은 zone에 critical NPC가 2인 이상이고 motivation/knowledge가 충돌하거나 공유 필요가 있으면, GM이 두 NPC AI의 turn을 교대 서술해 자연스러운 정보 교환·충돌을 구현한다. NPC AI 컨텍스트는 분리돼 있으므로 GM이 교환된 내용을 양쪽에 명시 반영해 누락을 막는다(3인 이상이면 컨텍스트 부담↑ — 핵심 2인 상호작용에 집중하고 나머지는 배경 처리).
+- NPC가 격리·기절·기억 소진·구속 등 '행동 불가 상태'에 있으면 무행동 워치독(N턴 미등장 강제 등장) 카운터를 일시 정지하고, 상태 해제 후 재개한다(행동 불가 NPC를 억지로 끌어내지 마라).
+```
+
+---
+
+### G15. 번호 미보유 연락 시도 허용
+**포함 패치:** P42  
+**severity:** MED  
+**대상:** `TRPGGameManager.java` — `buildGmPrompt` 연락/통화 판정 섹션  
+**삽입 앵커:** `"- 통신기기 불능: 전화·무전 등이 작동하지 않는다(신호 없음/시대상 부재)."` 문장 (line ~4479) 또는 통화 관련 주입 블록 말미에 삽입  
+**위치 확인 필요:** phone_usable=false 조건 블록 이후 통화 허용 시 적용되는 문구 삽입 위치 재확인 권장
+
+**삽입 텍스트:**
+```
+- 번호 미보유 연락 시도: 연락 대상 번호를 모르더라도 시도 자체를 허용하라. 단, 상황상 연결 불가 사유(인프라 마비·신호 차단·대상 도달 불가)가 있으면 '연결 실패 + 우회 단서(다른 경로 안내)'로 처리할 수 있다. 시도를 막지도, 성공을 강제하지도 마라.
+```
+
+---
+
+### G16. hidden_info 반스포일러 강화
+**포함 패치:** P41  
+**severity:** MED  
+**대상:** `TRPGGameManager.java` — `buildGmPrompt` 내 hidden_info 주입부 + `TraitManager.java` — `generateRoleTraits` system 프롬프트  
+**삽입 앵커 (buildGmPrompt):** `"배역 독점 정보:"` 주입 문구 (line ~3613) 직전에 삽입  
+**삽입 앵커 (TraitManager):** `"## 스포일러 금지 · 범용성 (★ 최우선)"` 섹션 (line ~167) 직후에 삽입
+
+**삽입 텍스트:**
+```
+hidden_info에 해결 수단(아이템·경로·조작법)이 포함되면, 그 '존재·방법'만 알게 하고 '왜 필요한지(괴담 약점·해법과의 연결)'는 캐릭터가 인지하지 못한 상태로 설계하라. 정답을 처음부터 쥐여주지 마라(용도는 플레이 중 발견).
+```
+
+---
+
+### G17. 챕터 분량·스케일/기간 분리
+**포함 패치:** P15, P47  
+**severity:** MED (P15) + LOW (P47)  
+**대상:** `GdamGenerator.java` — `lengthGuideFor` 메서드 반환 문자열 (line ~1088) + buildGmPrompt zones 주입부  
+
+**P47 텍스트 추가 위치:** `lengthGuideFor` 반환 문자열 말미 (line ~1092 이후)에 추가
+
+**삽입 텍스트 (P47):**
+```
+  · 스케일(로컬~코즈믹)은 '사건의 영향 범위'로 정한다(단일 건물이라도 국가 기밀·핵심 인프라 위협이면 내셔널). 단 기간 span은 영향 범위와 분리 — 현장 집중형이면 수 시간~1일로 압축 가능(스케일 크다고 무조건 1주+ 강제 금지). 큰 TIME_SKIP은 이야기상 자연스러울 때만.
+```
+
+**P15 zones 접근권 주입:** `buildGmPrompt` zones 주입 블록에서 zones 수 ≥ 6 또는 scale이 내셔널/글로벌일 때 조건 분기 추가  
+**위치 확인 필요:** `buildGmPrompt` 내 zones 주입 정확 위치 (line ~4423 이후 NPC 숨은 역할 블록 이전) 재확인 권장
+
+**삽입 텍스트 (P15, 조건부):**
+```
+구역 접근권 (zones 6개 이상 또는 스케일 내셔널/글로벌): {zone}=accessible_by 요약 2~3줄. 빈 accessible_by는 '전원 가능'으로 명시.
+```
+
+---
+
+### G18. gated_zones 구역 잠금 처리
+**포함 패치:** P13, P19  
+**severity:** HIGH (P13) + MED (P19)  
+**조건부:** 장비·인증 잠금이 있는 시나리오에서만 주입  
+**대상:** `GdamGenerator.java` — `GDAM_SYSTEM_PROMPT` constraints 스키마 (line ~243~261) + `TRPGGameManager.java` — `buildGmPrompt` 제약 주입 블록  
+**삽입 앵커 (GDAM):** `"- notes: 위로 표현 못 한 기타 자연 제약을 짧게"` 문장 (line ~256) 직후에 삽입
+
+**삽입 텍스트 (생성 스키마):**
+```
+- gated_zones: (선택) 장비·인증 잠금이 있는 구역 배열. 각 항목: {zone: "zone_id", requires: "필요 조건(장비명/인증)", bypass: "물리 우회 방법(없으면 생략)", bypass_dc: DC숫자(생략 가능)}.
+```
+
+**삽입 텍스트 (buildGmPrompt — constraints 주입 블록 말미):**
+```
+gated_zones가 있으면 각 항목에 대해 주입: "구역 [zone]: [requires] 필요. 우회: [bypass] (판정 DC [bypass_dc], 미정의 시 DC 15)". bypass 자체가 없으면 "우회 불가".
+```
+
+---
+
+## C. 조건부(시나리오 유형 감지 시만) 패치 분리표
+
+아래 패치는 해당 조건이 확인된 시나리오에서만 생성·주입한다. 범용 주입 금지.
+
+| 패치 그룹 | 조건 | 적용 대상 | 핵심 내용 |
+|-----------|------|----------|-----------|
+| P4 | 소음 트리거 괴담 | GDAM_SYSTEM_PROMPT constraints.notes 설계 | 통화·무전 음성도 의도적 소음과 동등 취급 명시 |
+| P22·P34 (G8 친숙) | 친숙(familiar) 모드 | generateFamiliarConcept clues 생성 | mislead = 실제 채록 이형·variant_basis 실제 출처 의무화 |
+| P23·P35 (G4 의례) | solution이 의례·정확입력형 | GDAM_SYSTEM_PROMPT entity.solution/hidden_rules | 정확 조건·오류결과 구조적 명시·격노 즉발 시 대응창 최소 1개 |
+| P24·P25·P26 (G3) | 단일 주체(_single_entity·npc_dependency=low) | GDAM_SYSTEM_PROMPT + GM_SYSTEM_BASE | collapse_condition 의무화·배역 2인 허용·AI 단계 엄수 |
+| P27 | 과거 시대 + phone_usable=false | GDAM_SYSTEM_PROMPT constraints.notes 설계 | 대체 통신 수단명·도달 소요·발각 위험 수준 필수 명시. comms_monitored 대신 이 notes 기준 적용 |
+| P28 | 순수 회피형(collapse 없음) | GM_SYSTEM_BASE 클리어 판정 | 탈출 인원 수 기반 등급 기준선: 전원=C 기본, 과반=D, 1~2인=D~E. 사망해도 동료 살린 개인은 별도 상향 |
+| P29 | 미래 통신 복수 채널 | GDAM_SYSTEM_PROMPT constraints.notes + buildGmPrompt comms_monitored | 감청 대상 채널·안전 채널 목록 명시 (G6에 병합) |
+| P30 | 역설형(이해/접근 시 악화) | GDAM_SYSTEM_PROMPT entity.rules 설계 | '이해 시도' 행동 유형 목록·단계 상승 조건 entity.rules에 명시 |
+| P40 (G4 희생) | 희생형 collapse | GDAM_SYSTEM_PROMPT entity.rules/solution | 충격파 범위·안전 대피 기준 필수 명시 (G4에 포함) |
+| P13·P19 (G18) | 장비·인증 잠금 구역 있음 | GDAM constraints 스키마 + buildGmPrompt | gated_zones[] 배열·bypass_dc 주입 |
+| P44·P44b (G3) | can_impersonate=true | GM_SYSTEM_BASE 괴담 AI 운용 | 위장 4규칙·정보흡수 comm 로그 기준 (G3에 포함) |
+
+---
+
+## D. 코드 TODO (CODE-1~12) 착수 스펙 — 심각도순
+
+### HIGH 우선 (즉시 착수 권고)
+
+---
+
+#### CODE-3 | 사망 캐리어 보상 완전 제외 버그
+- **파일·메서드·위치:** `TRPGGameManager.java` — `grantClearTraitRewards` 메서드 (line 3006) — `.filter(playerData -> !playerData.isDead)` 조건
+- **현재 동작(증상):** `isDead=true`인 플레이어는 평가 등급(S/A 캐리)에 무관하게 특성 보상 대상에서 완전 제외됨. 자기희생으로 동료를 살리고 S/A 등급을 받아도 다음 스테이지에서 보상이 없어, 사용자 의도("사망해도 캐리하면 S + 특성 보상")와 정면 충돌.
+- **목표 동작:** isDead=true이더라도 playerGrades에서 S/A인 플레이어는 예외 보상 경로로 처리.
+- **정책 결정 필요 (사용자 확인 선행):** 보상 이관 방식 선택 — 후보 (a) 다음 캐릭터에게 1회 이관(유산 포인트), (b) 동일 캐릭터가 다음 스테이지 부활 시 1회 추가 선택권. 정책 미결정 시 코드 구현 불가.
+- **수정 스케치:** 정책 확정 후, `grantClearTraitRewards`에서 `.filter(!isDead)` 이전에 `isDead=true AND pGrade∈{S,A}` 플레이어를 별도 컬렉션으로 추출 → 선택된 정책(유산 포인트/이월)에 맞는 예외 처리 경로 추가.
+- **severity:** ★HIGH
+
+---
+
+#### CODE-4 | weaknessBonus 기준선 협소로 취지 사문화
+- **파일·메서드·위치:** `TRPGGameManager.java` — `computeWeaknessBonus` 메서드 (line 2268~2270) — `(10 - hpSanBase) / 2`
+- **현재 동작(증상):** `hpSanBase ≥ 10`인 캐릭터(HP3+SAN7=10 포함)는 `weaknessBonus=0`으로 '시작파워 낮을수록 강한 보상' 취지가 사문화. 대부분 캐릭터(hpSanBase≥10)가 보정 혜택을 받지 못함.
+- **목표 동작:** 기준선 확장으로 더 많은 약체 캐릭터가 혜택을 받도록.
+- **수정 스케치:** 현재 코드 1줄 수정: `(10 - hpSanBase) / 2` → `(14 - hpSanBase) / 2`. 결과: hpSanBase=14→0, 12→1, 10→2, 8→3(상한 3 유지). `Math.max(0, Math.min(3, ...))` 래퍼는 그대로 유지.
+- **severity:** ★HIGH (iter13에서 med→high 격상)
+
+---
+
+#### CODE-6 | ZONE_ISOLATION 격리 자동 로그 없음
+- **파일·메서드·위치:** `TRPGGameManager.java` / `GameStateManager.java` — zone 진입/이탈 처리 로직 (zone 변경 시 eventLog에 기록하는 부분)
+- **현재 동작(증상):** P36/P37/P39의 평가 소통불가 면제 판정이 GM 서술의 수동 '[격리: ...]' 태그에 의존. GM 서술 누락 시 억울한 감점 발생. 자동화 없이는 평가 공정성 보장 불가.
+- **목표 동작:** 플레이어가 통신두절·고립 구역에 진입/이탈할 때 `GameStateManager`가 자동으로 ZONE_ISOLATION(격리)·해제 system 로그를 생성. `buildFullEvalLog()`가 이 로그를 포함해 평가 AI에게 전달.
+- **수정 스케치:** (a) 격리 구역 판별 기준 확정(예: `outside_contact=false` 또는 `can_leave_scene=false`인 구역 진입 시). (b) `GameStateManager`의 zone 변경 처리(ZONE_UPDATE 처리 경로)에서 해당 조건 충족 시 `eventLog.add(EventLogEntry.system("[격리: "+zone+"·"+시점+"]"))`를 자동 기록. (c) 이탈 시 `[격리 해제]` 로그도 추가. (d) P36 평가 프롬프트가 이 로그를 면제 증거로 참조(G2 교체 텍스트와 연동).
+- **severity:** ★HIGH
+
+---
+
+#### CODE-8 | E_END 강제 실패 종료 시 runScenarioEvaluation 미호출
+- **파일·메서드·위치:** `TRPGGameManager.java` — `GameStateManager.java:fireDueEvents()` (line 310)에서 `endEventFired=true` 설정 후 GM 서술 배드엔딩만 발생. `onClearEnding` 미호출.
+- **현재 동작(증상):** 타임라인 4단계 `is_end=true` 이벤트(E_END) 발화 후 GM이 배드엔딩 서술만 하고 `runScenarioEvaluation`이 코드상 실행되지 않음. 실패 회차는 평가도, 후일담도, 특성 보상도 없어 시스템 불완전.
+- **목표 동작:** E_END 처리 경로에서 `onFailureEnding()` 신설 또는 기존 `onClearEnding`에 실패 경로 연결 → `runScenarioEvaluation(실패 등급 D~E)` + 제한적 특성 보상 + 후일담 공개가 정식 산출.
+- **수정 스케치:** `endEventFired=true` 확인 시점(메인 루프 또는 별도 체크)에서 `onClearEnding("F", "타임라인 종료 — 미해결", false)` 호출 경로 추가. 또는 별도 `onFailureEnding()`을 신설해 `runScenarioEvaluation` + 후일담 공개를 연결. `onClearEnding`의 `Phase.CLEAR/GAMEOVER` 중복 방지 로직 확인.
+- **severity:** ★HIGH
+
+---
+
+#### CODE-9 | handleNpcDirectComm 원격 NPC 통화 불가 구조
+- **파일·메서드·위치:** `TRPGGameManager.java` — `handleNpcDirectComm` (line 3981) — line 3988~3990 zone 동일 조건 강제: `if (!senderPd.zone.isEmpty() && !senderPd.zone.equals(npcZone))`
+- **현재 동작(증상):** `handleNpcDirectComm`이 `senderPd.zone == npcZone` 조건을 강제하여, `phone_usable=true`라도 다른 구역·외부 기관 NPC에게 전화로 연락 불가. 통화 기믹 시나리오(iter14 '사신의 교환원')의 핵심 구조적 한계.
+- **목표 동작:** 플레이어가 기기(전화) 보유 + NPC에 `phone_number` 필드가 있으면 zone 무관 원격 통화 허용. 대면 행위(같은 zone)와 원격 통화를 코드 분기로 분리.
+- **수정 스케치:** `handleNpcDirectComm` 진입 시 분기 추가 — (a) `senderPd.zone == npcZone`이면 기존 대면 처리. (b) zone이 다르고 `phone_usable=true`이고 NPC 객체에 `phone_number` 필드가 있으면 원격 통화 처리(동일 NPC AI 호출, 단 대면 보너스 없음). (c) zone이 다르고 통화 불가 조건이면 기존 "같은 위치에 없습니다" 메시지.
+- **severity:** ★HIGH
+
+---
+
+#### CODE-12 | INSTANT_CLEAR 스테이지3+ 게이트 봉쇄 사전 경고 없음
+- **파일·메서드·위치:** `TRPGGameManager.java` — `activateInstantClear` 메서드 (line 2369~2376)
+- **현재 동작(증상):** `activateInstantClear`가 room≥3에서 `resolved=false → 다음 스테이지 진출 불가`를 발동 전에 경고하지 않아, 플레이어가 의도치 않게 진출을 봉쇄당함.
+- **목표 동작:** room≥3 시 확인 dialog("이 특성은 생존 처리(해결 아님)입니다. 스테이지 N에서 다음 스테이지 진출이 불가합니다. 발동하시겠습니까?")를 삽입 후 사용자 확인 시에만 `onClearEnding("F", ...)` 호출.
+- **수정 스케치:** `activateInstantClear`에서 `roomNumber >= 3`이면 `DialogManager`(또는 채팅 확인 방식)로 경고 메시지 + 확인/취소 버튼 제시 → 확인 시에만 기존 `onClearEnding("F", ...)` 경로 실행. 취소 시 특성 사용 취소(또는 uses 복구).
+- **severity:** ★HIGH
+
+---
+
+### MED (다음 작업 사이클)
+
+| CODE | 파일·메서드·라인 근방 | 현재 동작(증상) | 목표 동작 | 수정 스케치 | severity |
+|------|---------------------|---------------|---------|------------|---------|
+| CODE-5 | `TRPGGameManager.java` / `GameStateManager.java` — comm 로그 기록 로직 | 실패한 통신 시도(연결 불가)가 comm 로그에 기록되지 않아 평가 AI가 '시도조차 없음'으로 오인 가능 | 실패 통신 시도도 comm 로그에 "시도(실패): 대상·사유"로 기록, `buildFullEvalLog()`에 포함 | 통신 시도 실패 처리 경로에 `state.logComm(sender, target, message, failed=true)` 추가 | med |
+| CODE-7 | `CharacterGenerator.java` — `applyAiAdjustment` (line ~538) vs `ensureSurvivalFloor` (line ~353) 호출 순서 | `applyAiAdjustment`가 `ensureSurvivalFloor` 이후 적용돼 AI 음수 조정이 생존 하한(HP/SAN≥1)을 다시 무너뜨릴 수 있음 | `applyAiAdjustment` 후 `ensureSurvivalFloor` 재호출 또는 내부에서 하한 보장 | `applyAiAdjustment` 호출 직후 `ensureSurvivalFloor(pd)` 재호출 1줄 추가 | med |
+| CODE-10 | `TRPGGameManager.java` / `PlayerData` — `everKnownContacts` (UUID 기반, line ~886·4053~4112·4132) | `everKnownContacts`가 UUID 기반이라 NPC 연락처(문자열 ID) 저장 불가. CONTACT_REVEAL로 알게 된 NPC 번호가 리트라이 시 소실 | `PlayerData`에 `everKnownNpcContacts(Set<String> npcId)` 신설. CONTACT_REVEAL 시 npc_id 추가. `onRetry` 복구 | `PlayerData`에 `Set<String> everKnownNpcContacts = new HashSet<>()` 추가, CONTACT_REVEAL 처리 시 `pd.everKnownNpcContacts.add(npcId)`. `onRetry`(line ~886)에서 복구 | med |
+| CODE-11 | `TRPGGameManager.java` — 무행동 워치독 (line 1857: `(curTurn - lastNpcBeatTurn) >= 4`) | 워치독이 NPC '행동 불가 상태'(격리·기절·기억소진 등)를 인지하지 못해 카운터가 그대로 증가, 행동 불가 NPC를 억지로 등장 유발 가능 | 행동 불가 상태 NPC가 있으면 `lastNpcBeatTurn`을 현재 턴으로 갱신해 워치독 카운터 초기화(일시정지 효과) | `fireDueEvents` 또는 워치독 체크 직전에 critical NPC 중 행동 불가 상태(`status∈{faint,puppet,incapacitated}`)인 것이 있으면 `lastNpcBeatTurn = curTurn`으로 갱신 | med |
+
+---
+
+### LOW (여유 작업)
+
+| CODE | 파일·메서드·라인 근방 | 현재 동작(증상) | 목표 동작 | 수정 스케치 | severity |
+|------|---------------------|---------------|---------|------------|---------|
+| CODE-1 | `GdamGenerator.java` — `generateFamiliarConcept` (line 675~676) region 선택 로직 | `(roomNumber - 1 + roll) % WORLD_LEGEND_REGIONS.size()`로 roomNumber 의존 → 초반 인덱스 편향 가능 | region 오프셋을 roomNumber 무관 순수 무작위로 분리 | `roll`만으로 region 선택: `WORLD_LEGEND_REGIONS.get(roll)`. roomNumber 의존 제거 | low |
+| CODE-2 | `TRPGGameManager.java` — `buildGmPrompt` room 분기 (line ~4427~4428) | P7의 "room≤2 생존판정 진출 가능" 문구가 수동 주입 의존 → 빠질 수 있음 | `buildGmPrompt`에서 room≤2일 때 특례 문장 자동 주입 | room 값 체크 후 `if (room <= 2) sb.append("- ★ 이 스테이지(room≤2)에서는 생존판정(resolved=false)도 다음 스테이지 진출이 가능하다.")` 자동 추가 | low |
+
+---
+
+## E. 적용 체크리스트
+
+### 프롬프트 그룹 적용 후 회귀 확인 포인트
+
+| 확인 항목 | 관련 패치 | 확인 방법 |
+|----------|----------|---------|
+| 재도전 후 S 등급 가능 여부 | G1(P1) | iter01 재현 시나리오 — S 조건 충족 시 A로 강등 안 됨을 확인 |
+| 해결/생존 경계 일관성 | G1(P12) | 부분 collapse 상황에서 GM이 생존판정 선택하는지 |
+| 희생 선택 GM 차단 금지 | G1(P38) | GM이 "못 한다"로 차단하지 않고 결과 서술하는지 |
+| 리트라이 시 HP/SAN 유지 | G1(P16·P20) | 1차 실패 후 재진입 시 스탯이 초기화되지 않는지 |
+| 소통불가 면제 판별 | G2(P36·P37) | '[격리]' 로그 있는 플레이어 미공유 감점 안 받는지 |
+| INSTANT_CLEAR 일괄 하향 없음 | G2(P48) | F 클리어 시 발동자 외 플레이어 개인 행동으로만 평가되는지 |
+| 단일주체 collapse 비어있지 않음 | G3(P24) | 스테이지3+ 단일주체 시나리오 생성 시 collapse_condition 채워지는지 |
+| 위장 corruption 지연 · 2턴 쿨다운 | G3(P44) | can_impersonate=true 괴담이 위장 중 corruption 1단계 지연되는지 |
+| 핵심 단서 2개 독립 경로 | G4(P32) | NPC 1명 사망해도 다른 경로로 정보 입수 가능한지 |
+| 대면 대화 도청 비대상 | G6(P43) | comms_monitored=true여도 같은 zone 대면 발언이 도청 카운트 안 됨 |
+| NPC 반응 단순 방문 미발동 | G7(P17) | 플레이어가 zone 진입만으로 will=반응 NPC가 발동하지 않는지 |
+| NPC 보조 트리거 N턴 보장 | G7(P33) | 오래 지나도 condition 미충족 시 NPC가 먼저 최소 정보 전달하는지 |
+| 행동불가 NPC 워치독 정지 | G14(P45) | 기절/격리 NPC가 4턴+ 미등장해도 강제 등장 안 되는지 |
+
+### 코드 수정 후 검증 포인트
+
+| 확인 항목 | CODE | 검증 방법 |
+|----------|------|---------|
+| 사망 S 캐리어 보상 지급 | CODE-3 | 희생으로 사망 + S 등급 → 다음 스테이지 유산/이관 보상 발생 여부 |
+| weaknessBonus=2 for hpSanBase=10 | CODE-4 | HP3+SAN7 캐릭터 생성 후 클리어 시 avgBoost +2 보정 확인 |
+| ZONE_ISOLATION 자동 로그 | CODE-6 | 격리 구역 진입 시 eventLog에 '[격리: zone·시점]' 자동 기록 여부 |
+| E_END 후 runScenarioEvaluation 호출 | CODE-8 | 타임라인 4단계 is_end 발화 후 평가 결과·후일담 산출 여부 |
+| 다른 zone NPC 전화 연결 | CODE-9 | phone_usable=true + NPC phone_number 있을 때 원격 통화 성공 여부 |
+| INSTANT_CLEAR 스테이지3 경고 dialog | CODE-12 | room=3+ 시 확인 dialog 출력 → 취소 시 미발동 확인 |
+
+---
+
+*FINAL_PROMPT_PATCHES.md 작성 완료 — 2026-06-26*  
+*패치 P1~P48(+P44b) 전수 반영 | 코드 TODO CODE-1~12 전수 착수 스펙 완료*
