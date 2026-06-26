@@ -139,7 +139,10 @@ NPC가 단서·정보를 줄 때마다 그 NPC의 태도를 확률로 정하라(
 - 1단계: 부정 가능한 위화감 (착각일 수도 있는 수준)
 - 2단계: 반복되는 이상 (우연이 아닐지 의심하기 시작)
 - 3단계: 명백한 비일상 (더는 부정 불가)
-- 4단계: 직접적 위협·붕괴
+- 4단계: 직접적 위협·극한 압박 — 매 행동마다 피해 위협. 괴담이 최대 강도로 작동.
+  ★ 4단계에서도 클리어는 가능하다. 플레이어가 entity.solution 또는 entity.exploit_path를
+    달성하면 반드시 <CLEAR>를 출력한다. 자동으로 배드엔딩 처리하지 마라.
+  ★ 단, 난이도는 플레이어 스펙 대비 압도적으로 높아야 한다. 클리어 성공 시 D~C 등급 수준.
 한 응답에서 여러 단계를 건너뛰지 마라. 플레이어 행동과 시간 경과에 비례해 천천히 올린다.
 플레이어가 무모하게 위험을 자초하지 않는 한, 먼저 공격하거나 몰아붙이지 않는다.
 
@@ -219,24 +222,37 @@ LUK 10+: 자주, 극적인 행운
 {"player":"","hp_change":0,"san_change":0,"timeline_change":0,"status_change":null,"new_clue":null,"item_grant":null,"item_remove":null}
 </STATE_UPDATE>
 
-### 클리어 판정
-플레이어가 entity.solution(정석 해결법), entity.exploit_path(역이용), entity.escape(도주 성공)를 달성했을 때
-반드시 아래 태그를 출력한다 (배드 엔딩이면 출력하지 않음):
+### 클리어 판정 — 두 가지 유형
+클리어에는 두 가지 유형이 있다. 어느 쪽이든 달성 시 <CLEAR> 태그를 출력한다.
+
+★ 생존판정 (생존·도주 성공):
+entity.escape 조건 달성 — 1명 이상이 괴담의 위협권에서 살아서 벗어났다.
+괴담 자체는 해결되지 않으며, 위협이 세계 어딘가에 계속 존재함을 서술해도 좋다.
+어느 스테이지에서도 유효하다.
+
+★ 해결판정 (괴담 해소):
+아래 중 하나로 괴담 자체를 무력화·해소했다:
+- entity.solution (정석 해결법) 달성
+- 역이용 성공: exploit_path가 가리키는 허점을 동일한 논리로 찌른 창의적 방법
+  (구체적 절차가 달라도 논리가 같으면 인정)
+  판정 기준: "플레이어의 방법이 exploit_path가 가리키는 허점을 실제로 찌르고 있는가?"
+
 <CLEAR>
 {"grade":"A","reason":""}
 </CLEAR>
-grade 기준:
-S: 전원 생존, 타임라인 2단계 이하, 완벽 해결
-A: 전원 생존, 정석/역이용 해결
-B: 생존자 과반, 어떤 방식이든 해결
-C: 생존자 소수, 생존법 달성
-D: 1명 생존으로 도주 성공
 
-### 스테이지 난이도별 클리어 조건 ★
-- 1~2번째 스테이지: 도주·생존만으로도 클리어 인정(낮은 등급이라도 CLEAR 가능).
-- 3번째 스테이지부터: 도주·생존만으로는 클리어가 아니다. 반드시 사건의 '원인'을
-  (entity.solution 정석 해결 또는 entity.exploit_path 역이용으로) 해결해야 CLEAR를 출력한다.
-  단순 도주·생존은 CLEAR로 처리하지 말고, 위협이 계속됨을 서술하라(클리어 태그 금지).
+grade 기준:
+S: 해결판정 + 전원 생존 + 타임라인 2단계 이하
+A: 해결판정 + 전원 생존
+B: 해결판정 + 생존자 과반
+C: 해결판정 + 생존자 소수  /  또는 생존판정 + 다수(과반 이상) 생존
+D: 생존판정 (1~2명 도주 성공, 해결 없음)
+
+### 스테이지 난이도별 등급 상한 ★
+- 1~2번째 스테이지: 생존판정·해결판정 모두 CLEAR 인정. 등급 상한 없음.
+- 3번째 스테이지부터: 생존판정은 여전히 유효하나 최대 D등급.
+  D등급 생존판정 서술 시 반드시 "괴담은 계속 위협으로 남아있다"는 뉘앙스를 포함한다.
+  B등급 이상은 해결판정 필수.
   ※ 현재 스테이지 번호는 아래 '.gdam 사전 확정 데이터'의 room 값을 따른다.
 
 ### 개인 서술 원칙 ★ 최우선
@@ -1324,8 +1340,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             // 7. 스코어보드 갱신
             updateAllScoreboards();
 
-            // 8. 타임라인 4단계 체크
-            if (state.getTimelineStage() >= 4) { onBadEnding("제한 시간 내 해결 실패 — 타임라인 붕괴"); return; }
+            // 8. 타임라인 4단계: 강제 배드엔딩 없음. GM이 압도적 난이도로 진행하되 CLEAR는 가능.
 
             // 9. 사망자 체크
             checkDeaths();
@@ -1376,19 +1391,21 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             .filter(pd -> pd.name.equals(playerName))
             .findFirst()
             .ifPresent(pd -> {
+                // 일상 파트에서는 스탯 변화는 허용하되 사망 전환은 불가
+                boolean horrorActive = (currentPhase == Phase.HORROR);
                 if (update.has("hp_change")) {
                     int delta = update.get("hp_change").getAsInt();
                     int before = pd.hp[0];
                     pd.hp[0] = Math.max(0, Math.min(pd.hp[1], pd.hp[0] + delta));
                     notifyVitalChange(pd, "체력", "§c", before, pd.hp[0], pd.hp[1]);
-                    if (pd.hp[0] <= 0) pd.isDead = true;
+                    if (horrorActive && pd.hp[0] <= 0) pd.isDead = true;
                 }
                 if (update.has("san_change")) {
                     int delta = update.get("san_change").getAsInt();
                     int before = pd.san[0];
                     pd.san[0] = Math.max(0, Math.min(pd.san[1], pd.san[0] + delta));
                     notifyVitalChange(pd, "정신력", "§b", before, pd.san[0], pd.san[1]);
-                    if (pd.san[0] <= 0 && pd.hp[0] <= 0) pd.isDead = true;
+                    if (horrorActive && pd.san[0] <= 0 && pd.hp[0] <= 0) pd.isDead = true;
                 }
                 if (update.has("timeline_change")) {
                     state.advanceTimeline(update.get("timeline_change").getAsInt());
@@ -1397,8 +1414,8 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                     String newStatus = update.get("status_change").getAsString();
                     Player target = Bukkit.getPlayer(pd.uuid);
                     if ("puppet".equals(newStatus) && "puppet".equals(pd.status)) {
-                        // 꼭두각시 재발 → 영구 탈락 (본인에게만 알림)
-                        pd.isDead = true;
+                        // 꼭두각시 재발 → 영구 탈락 (본인에게만 알림, 공포 파트에서만 유효)
+                        if (horrorActive) pd.isDead = true;
                         if (target != null) target.sendMessage("§4당신은 완전히 잠식되어 영원히 돌아올 수 없게 되었습니다...");
                     } else {
                         if ("puppet".equals(newStatus) && !"puppet".equals(pd.status)) {
@@ -1482,7 +1499,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         turnMan.cancelAll();
         gameLogger.logEvent("배드 엔딩 — 패인: " + reasonLabel);
         broadcast("§4§l[배드 엔딩]");
-        broadcast("§c패인: §f" + reasonLabel);
+        // 패인 레이블은 로그에만 기록 — 플레이어에게 직접 노출하면 게임 내부 구조 스포일러
 
         // 재도전 가능 여부 판정 (3번째 방부터는 생존 성공자가 있어야 재도전 가능)
         boolean retryAllowed = isRetryAllowed();
@@ -1492,8 +1509,9 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             + "단, 괴담의 정체·규칙·해결법을 직접 설명하거나 누설하지 마라(재도전 여지를 남긴다).")
           .thenAccept(r -> plugin.getServer().getScheduler().runTask(plugin, () -> {
               String narrative = ai.stripTags(r);
-              spawnedPlayers.forEach(uid -> {
-                  Player sp = Bukkit.getPlayer(uid);
+              // 미스폰 플레이어 포함 전원에게 배드엔딩 서술 전달
+              state.getAllPlayers().forEach(pd -> {
+                  Player sp = Bukkit.getPlayer(pd.uuid);
                   if (sp != null && sp.isOnline() && !narrative.isBlank())
                       narrativeDelivery.deliver(sp, narrative);
               });
@@ -1503,9 +1521,12 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                   // 해설은 공개하지 않는다. 재도전 또는 포기를 선택하게 한다.
                   broadcast("§e재도전: §f/trpg retry  §8|  §e포기하고 전말 보기: §f/trpg stop");
               } else {
-                  // 3번째 방 이상 + 생존 성공자 없음 → 재도전 불가, 전말 공개만 가능
-                  broadcast("§c이 스테이지(" + state.getRoomNumber() + "번째)에서는 생존에 성공한 사람이 없어 재도전할 수 없습니다.");
-                  broadcast("§e전말 보기: §f/trpg stop");
+                  // 재도전 불가 → 플레이어 명령 대기 없이 즉시 전말 공개 후 세션 종료
+                  concludingEnding = true;
+                  concludeWithReveal("배드 엔딩 — " + reasonLabel, () -> {
+                      concludingEnding = false;
+                      endSession(true);
+                  });
               }
           }));
     }
@@ -1522,7 +1543,22 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     }
 
     private void checkDeaths() {
-        if (state.getAliveCount() == 0) onBadEnding("전원 사망");
+        // 일상 파트에서는 괴담을 아직 마주치지 않은 상태이므로 배드엔딩 판정 없음
+        if (currentPhase != Phase.HORROR) return;
+        if (state.getAliveCount() == 0) {
+            onBadEnding("전원 사망");
+            return;
+        }
+        // 스폰된 생존자가 0이지만 미스폰 생존자가 남은 경우 — 게임 교착 방지
+        // (스폰된 플레이어 전원 사망 → 행동 제출자 없어 SPAWN 태그 도달 불가)
+        // → 남은 미스폰 플레이어를 즉시 스토리에 투입
+        boolean spawnedAliveExists = state.getAllPlayers().stream()
+            .anyMatch(p -> !p.isDead && spawnedPlayers.contains(p.uuid));
+        if (!spawnedAliveExists) {
+            state.getAllPlayers().stream()
+                .filter(p -> !p.isDead && !spawnedPlayers.contains(p.uuid))
+                .forEach(p -> handleSpawn(p.name));
+        }
     }
 
     public void joinSession(Player player) {
@@ -1735,7 +1771,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
 
     /**
      * 결말 후 AI 에필로그(뒷이야기)를 생성해 보여주고, 이어서 .gdam 해설을 공개한다.
-     * 클리어와 '포기(중도 종료)' 시에만 호출한다. 재도전 가능한 배드엔딩에서는 호출하지 않는다.
+     * 클리어, '재도전 불가 배드엔딩', '포기(중도 종료)' 시 호출한다. 재도전 가능한 배드엔딩에서는 호출하지 않는다.
      * @param onDone 에필로그·해설 공개가 끝난 뒤 실행할 콜백 (없으면 null)
      */
     private void concludeWithReveal(String endingLabel, Runnable onDone) {
@@ -2444,6 +2480,13 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         sb.append("- 단서-난이도 균형 ★: 플레이어가 아직 핵심 단서를 충분히 얻지 못한 단계에서 ");
         sb.append("괴담을 클리어 불가능할 만큼 강하게 몰아붙이지 마라. 위협의 강도는 '드러난 단서의 양'에 비례한다.\n");
         sb.append("- 괴담은 스토리가 전개되며 단계적으로 강해진다(슬로우 번). 시작부터 전력으로 작동시키지 마라.\n");
+        if (state.getTimelineStage() >= 4) {
+            sb.append("\n## ★ 현재 타임라인 4단계 — 극한 압박 모드\n");
+            sb.append("괴담이 최대 강도로 작동한다. 매 행동마다 피해·위협이 발생해도 좋다.\n");
+            sb.append("단, 클리어는 여전히 가능하다. 플레이어가 해결 조건을 달성하면 <CLEAR>를 출력한다.\n");
+            sb.append("자동 배드엔딩이나 '이제 늦었다' 식의 클리어 차단 서술을 하지 마라.\n");
+            sb.append("클리어 성공 시 등급은 D 또는 C. 생존자가 많고 해결이 완벽하면 B도 가능.\n");
+        }
         // GM NPC 배역 섹션
         if (!gmNpcRoleIds.isEmpty() && gdam.has("roles")) {
             sb.append("\n## GM 직접 조종 NPC 배역\n");
