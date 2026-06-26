@@ -51,6 +51,13 @@ public class PlayerData {
     /** 현재 소지 중인 아이템 ID 집합 (통신 기기 추적 등에 사용) */
     public Set<String> heldItemIds = new HashSet<>();
 
+    /** GM 서술 + 행동 기록 (Log GUI용) */
+    public List<String> narrativeLog = new ArrayList<>();
+    /** AI가 추출한 정보 조각 목록 (Info GUI용) */
+    public List<String> infoItems    = new ArrayList<>();
+    public static final int NARRATIVE_LOG_MAX = 60;
+    public static final int INFO_ITEMS_MAX    = 120;
+
     /** 무작위 비공개 연락처 번호 (예: "1186"). 1회차에서 타인은 모름 */
     public String contactId = "";
     /** 이 플레이어가 연락처를 알고 있는 상대들의 UUID */
@@ -113,6 +120,8 @@ public class PlayerData {
         heldItemIds.clear();
         knownContacts.clear();
         contactId    = "";
+        narrativeLog.clear();
+        infoItems.clear();
     }
 
     public String getStatsSummary() {

@@ -57,6 +57,12 @@ public class TurnManager {
         state.nextTurn();
         state.log("action", pd.name, message);
 
+        synchronized (pd.narrativeLog) {
+            pd.narrativeLog.add("[행동▷] " + message);
+            if (pd.narrativeLog.size() > PlayerData.NARRATIVE_LOG_MAX)
+                pd.narrativeLog.remove(0);
+        }
+
         String turnInput = state.buildTurnInput(player, message);
 
         CompletableFuture<Void> future = ai.callGmAi(gmSystemPrompt, turnInput)

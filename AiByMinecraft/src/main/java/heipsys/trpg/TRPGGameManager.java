@@ -6,6 +6,7 @@ import com.google.gson.JsonObject;
 import heipsys.AICraft;
 import heipsys.trpg.model.PlayerData;
 import heipsys.trpg.model.TraitData;
+import net.kyori.adventure.inventory.Book;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.event.HoverEvent;
@@ -2608,6 +2609,11 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         if (!narrative.isBlank() && actor != null && actor.isOnline()) {
             narrativeDelivery.deliver(actor, narrative);
             gameLogger.logGmOutput(actor.getName(), narrative);
+            PlayerData apd = state.getPlayer(actor);
+            if (apd != null) {
+                appendNarrativeLog(apd, narrative);
+                extractAndStoreInfo(narrative, apd);
+            }
         }
         ai.parseWitnessTags(raw).forEach((pName, witnessText) -> {
             if (witnessText.isBlank()) return;
@@ -2616,13 +2622,94 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                 .findFirst()
                 .ifPresent(pd -> {
                     Player target = Bukkit.getPlayer(pd.uuid);
-                    // 같은 위치 협력 상황도 WITNESS로 오므로, 본 서술과 동일하게
-                    // 색상·타이프라이터 처리해 가독성을 맞춘다.
-                    if (target != null && target.isOnline())
+                    if (target != null && target.isOnline()) {
                         narrativeDelivery.deliver(target, witnessText);
+                        appendNarrativeLog(pd, witnessText);
+                        extractAndStoreInfo(witnessText, pd);
+                    }
                     gameLogger.logGmOutput(pName + "(목격)", witnessText);
                 });
         });
+    }
+
+    private void appendNarrativeLog(PlayerData pd, String text) {
+        synchronized (pd.narrativeLog) {
+            pd.narrativeLog.add(text.trim());
+            if (pd.narrativeLog.size() > PlayerData.NARRATIVE_LOG_MAX)
+                pd.narrativeLog.remove(0);
+        }
+    }
+
+    private void extractAndStoreInfo(String narrative, PlayerData pd) {
+        if (narrative.isBlank()) return;
+        String task = "아래 TRPG 서술에서 정보가 담긴 내용만 추출해줘.\n"
+            + "포함: NPC 발언, 관찰·발견, 독백, 추론 단서\n"
+            + "제외: 분위기 서술, 이동 서술, 결과 없는 행동 묘사\n"
+            + "정보가 없으면 '없음'만. 있으면 '• 내용' 형식 한 줄씩 (최대 3줄).";
+        ai.callAssistant(task, narrative).thenAccept(result -> {
+            if (result == null || result.isBlank()) return;
+            for (String line : result.split("\n")) {
+                String clean = line.trim();
+                if (clean.isEmpty() || clean.equals("없음")) continue;
+                if (!clean.startsWith("•")) clean = "• " + clean;
+                synchronized (pd.infoItems) {
+                    pd.infoItems.add(clean);
+                    if (pd.infoItems.size() > PlayerData.INFO_ITEMS_MAX)
+                        pd.infoItems.remove(0);
+                }
+            }
+        });
+    }
+
+    public void openNarrativeLog(Player player) {
+        PlayerData pd = state.getPlayer(player);
+        if (pd == null) { player.sendMessage("§c참여 중인 캐릭터가 없습니다."); return; }
+        List<String> log;
+        synchronized (pd.narrativeLog) { log = new ArrayList<>(pd.narrativeLog); }
+        if (log.isEmpty()) {
+            player.sendMessage("§7아직 기록된 서술이 없습니다.");
+            return;
+        }
+        String author = pd.charName.isEmpty() ? pd.name : pd.charName;
+        player.openBook(Book.book(
+            Component.text("서술 기록"),
+            Component.text(author),
+            buildBookPages(log, 230)
+        ));
+    }
+
+    public void openInfoBook(Player player) {
+        PlayerData pd = state.getPlayer(player);
+        if (pd == null) { player.sendMessage("§c참여 중인 캐릭터가 없습니다."); return; }
+        List<String> items;
+        synchronized (pd.infoItems) { items = new ArrayList<>(pd.infoItems); }
+        if (items.isEmpty()) {
+            player.sendMessage("§7아직 수집된 정보가 없습니다.");
+            return;
+        }
+        String author = pd.charName.isEmpty() ? pd.name : pd.charName;
+        player.openBook(Book.book(
+            Component.text("수집 정보"),
+            Component.text(author),
+            buildBookPages(items, 230)
+        ));
+    }
+
+    private static List<Component> buildBookPages(List<String> entries, int maxCharsPerPage) {
+        List<Component> pages = new ArrayList<>();
+        StringBuilder page = new StringBuilder();
+        for (String entry : entries) {
+            String clean = entry.replaceAll("§[0-9a-fk-or]", "");
+            if (page.length() + clean.length() + 1 > maxCharsPerPage && page.length() > 0) {
+                pages.add(Component.text(page.toString()));
+                page = new StringBuilder();
+            }
+            if (page.length() > 0) page.append("\n");
+            page.append(clean);
+        }
+        if (page.length() > 0) pages.add(Component.text(page.toString()));
+        if (pages.isEmpty()) pages.add(Component.text("기록 없음"));
+        return pages.subList(0, Math.min(pages.size(), 100));
     }
 
     // ──────────────────────────────────────────────────────────────
