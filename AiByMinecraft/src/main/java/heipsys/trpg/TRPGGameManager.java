@@ -1028,8 +1028,9 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
      * @return 플레이어에게 표시할 요약 문자열 (없으면 빈 문자열)
      */
     private String applyRoleStats(PlayerData pd, JsonObject roleData) {
-        // 나이는 role_stats 유무와 무관하게 배역 age_range에 맞춰 조정
+        // 나이·직업은 role_stats 유무와 무관하게 배역 age_range·job_pool에 맞춰 조정
         applyRoleAge(pd, roleData);
+        applyRoleJob(pd, roleData);
         if (!roleData.has("role_stats")) return "";
         JsonObject rs = roleData.getAsJsonObject("role_stats");
 
@@ -1082,6 +1083,18 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             }
         }
         pd.roleAge = pd.age;
+    }
+
+    /**
+     * 배역 job_pool에서 직업을 선택해 pd.job에 적용한다.
+     * applyRoleStats()에서 applyRoleAge() 직후 호출하며,
+     * clearRoleData() 시 pd.baseJob으로 자동 복귀된다.
+     */
+    private void applyRoleJob(PlayerData pd, JsonObject roleData) {
+        if (roleData == null || !roleData.has("job_pool")) return;
+        JsonArray pool = roleData.getAsJsonArray("job_pool");
+        if (pool.size() == 0) return;
+        pd.job = pool.get(ThreadLocalRandom.current().nextInt(pool.size())).getAsString();
     }
 
     /** gdam relationships 기반으로 mutual_contact:true 배역끼리 연락처를 미리 교환 */
