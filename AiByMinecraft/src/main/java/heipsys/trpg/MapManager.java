@@ -343,7 +343,9 @@ public class MapManager {
     }
 
     private Set<String> visibleZones(PlayerData pd, boolean full, String filterArea) {
-        Set<String> base = full ? new LinkedHashSet<>(zoneOrder) : new LinkedHashSet<>(pd.visitedZones);
+        // 단일 구역 시나리오: 처음부터 전체 공개 (플레이어가 한 맵에서 진행하는 경우 대응)
+        boolean singleArea = areaOrder.size() <= 1;
+        Set<String> base = (full || singleArea) ? new LinkedHashSet<>(zoneOrder) : new LinkedHashSet<>(pd.visitedZones);
         base.retainAll(zoneNames.keySet());
         if (filterArea != null) base.removeIf(z -> !filterArea.equals(zoneArea.get(z)));
         return base;

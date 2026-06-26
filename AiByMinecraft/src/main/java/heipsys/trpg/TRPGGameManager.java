@@ -535,6 +535,11 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     private final Map<String, String> npcZones = new ConcurrentHashMap<>();
     /** 미등장 배역별 서술 호출 횟수 (비트 진행 추적) */
     private final Map<UUID, Integer> preSpawnCallCounts = new ConcurrentHashMap<>();
+    /** 클리어 보상 특성 성장 3선택지 — /trpg trait 재열기용 */
+    private final Map<UUID, TraitManager.StageEndChoices> pendingStageEndChoices = new ConcurrentHashMap<>();
+    private final Map<UUID, String[]> pendingStageEndNames = new ConcurrentHashMap<>();
+    /** 마지막으로 생성된 엔딩 해설 페이지 — /trpg ending 재열기용 */
+    private List<DialogManager.EndingSection> lastEndingPages = null;
     private String gmSystemPrompt = GM_SYSTEM_BASE;
     private BossBar loadingBar;
 
@@ -758,6 +763,8 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         pendingSaintTrait.clear();
         pendingAreaScanInput.clear();
         pendingLinkAllyInput.clear();
+        pendingStageEndChoices.clear();
+        pendingStageEndNames.clear();
         spawnedPlayers.clear();
         commChannels.clear();
         lastDeadNotice.clear();
@@ -766,6 +773,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         gmNpcRoleIds.clear();
         npcZones.clear();
         preSpawnCallCounts.clear();
+        lastEndingPages = null;
         concludingEnding = false;
         replayLock = false;
         currentPhase = Phase.IDLE;
@@ -824,6 +832,8 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         pendingSaintTrait.clear();
         pendingAreaScanInput.clear();
         pendingLinkAllyInput.clear();
+        pendingStageEndChoices.clear();
+        pendingStageEndNames.clear();
         spawnedPlayers.clear();
         preSpawnCallCounts.clear();
         commChannels.clear();
@@ -887,8 +897,11 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         pendingSaintTrait.clear();
         pendingAreaScanInput.clear();
         pendingLinkAllyInput.clear();
+        pendingStageEndChoices.clear();
+        pendingStageEndNames.clear();
         spawnedPlayers.clear();
         commChannels.clear();
+        lastEndingPages = null;
         state.getAllPlayers().forEach(pd -> traitMan.resetStageTraits(pd));
         preAssignedRoleData.clear();
         preAssignments.clear();
@@ -1213,7 +1226,12 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             // 초기 zone 설정
             PlayerData pd = state.getPlayer(player);
             if (pd != null && r.has("zone")) {
-                pd.zone = r.get("zone").getAsString();
+                String initZone = r.get("zone").getAsString();
+                pd.zone = initZone;
+                if (!initZone.isBlank()) {
+                    pd.visitedZones.add(initZone);
+                    pd.visitedZones.addAll(mapMan.getAdjacentZones(initZone));
+                }
             }
 
             if (r.has("start_item")) {
@@ -1374,6 +1392,8 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             // 캐릭터 정보 아이템 지급 (우클릭으로 능력치·특성 GUI 열기)
             giveInfoItem(p);
             giveRecordItem(p); // 기록(로그/정보) 아이템 지급
+            mapMan.giveStartMap(p); // 현장 약도 지급
+            giveNotepadItem(p); // 메모장(책과 깃털) 지급
         });
 
         // 등장 배역: 각자의 위치/역할 기준 개인 프롤로그
@@ -2015,8 +2035,11 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                 player.sendMessage("§7당신의 연락처: §f" + pd.contactId);
                 announceKnownContacts(player, pd);
             }
-            // 게임 진행 중(캐릭터 생성 이후)이면 정보·기록 아이템 복원
-            if (pd.roleAssigned) { giveInfoItem(player); giveRecordItem(player); }
+            // 게임 진행 중(캐릭터 생성 이후)이면 정보·기록·지도·메모장 아이템 복원
+            if (pd.roleAssigned) {
+                giveInfoItem(player); giveRecordItem(player);
+                mapMan.giveStartMap(player); giveNotepadItem(player);
+            }
         } else {
             player.sendMessage("§c이 세션의 참가자가 아닙니다. 게임은 시작 전에 참여해야 합니다.");
         }
@@ -2076,6 +2099,8 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     private void handleStageEndTraitSelect(Player player, PlayerData pd,
                                             TraitManager.StageEndChoices choices, int idx) {
         pendingTraitSelect.remove(player.getUniqueId());
+        pendingStageEndChoices.remove(player.getUniqueId());
+        pendingStageEndNames.remove(player.getUniqueId());
         switch (idx) {
             case 1 -> {
                 TraitData upg = choices.myUpgrade();
@@ -2104,6 +2129,50 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                 }
             }
         }
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  특성 선택창·엔딩 해설 재열기
+    // ──────────────────────────────────────────────────────────────
+
+    /** /trpg trait — 특성 선택창을 닫았을 때 다시 열기 */
+    public void reopenTraitDialog(Player player) {
+        UUID uuid = player.getUniqueId();
+        if (!pendingTraitSelect.contains(uuid)) {
+            player.sendMessage("§7현재 선택 가능한 특성이 없습니다.");
+            return;
+        }
+        TraitManager.StageEndChoices choices = pendingStageEndChoices.get(uuid);
+        PlayerData pd = state.getPlayer(player);
+        if (pd == null) return;
+        if (choices != null) {
+            String[] names = pendingStageEndNames.getOrDefault(uuid, new String[]{null, null});
+            dialogMan.showStageEndTraitChoice(player, choices, names[0], names[1],
+                idx -> handleStageEndTraitSelect(player, pd, choices, idx));
+        } else {
+            List<TraitData> traitList = dialogMan.getTraitChoices(player);
+            if (!traitList.isEmpty()) {
+                dialogMan.showTraitSelection(player, traitList, !pd.traits.isEmpty(),
+                    idx -> handleTraitSelect(player, idx));
+            } else {
+                player.sendMessage("§7특성 선택 정보가 만료되었습니다. 관리자에게 문의하세요.");
+            }
+        }
+    }
+
+    /** /trpg ending — 엔딩 해설 다이얼로그 다시 열기 */
+    public void reopenEndingDialog(Player player) {
+        if (lastEndingPages == null || lastEndingPages.isEmpty()) {
+            player.sendMessage("§7아직 엔딩 해설이 생성되지 않았습니다.");
+            return;
+        }
+        dialogMan.showEndingDialog(player, lastEndingPages, 0);
+    }
+
+    /** 초기 스탯 약세에 따른 클리어 보상 보정 등급 수 */
+    private int computeWeaknessBonus(PlayerData pd) {
+        int hpSanBase = pd.baseHp[1] + pd.baseSan[1];
+        return Math.max(0, Math.min(3, (10 - hpSanBase) / 2));
     }
 
     private void handleTraitUse(Player player, String traitId) {
@@ -2748,6 +2817,29 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         }
     }
 
+    /** 메모장(책과 깃털) 지급 — 플레이어가 자유롭게 메모하도록. 이미 있어도 지급하지 않음. */
+    private void giveNotepadItem(Player p) {
+        for (ItemStack it : p.getInventory().getContents()) {
+            if (it != null && it.getType() == Material.WRITABLE_BOOK
+                    && it.hasItemMeta()
+                    && it.getItemMeta().getPersistentDataContainer()
+                           .has(notepadKey(), PersistentDataType.BYTE)) return;
+        }
+        ItemStack note = new ItemStack(Material.WRITABLE_BOOK);
+        ItemMeta nm = note.getItemMeta();
+        if (nm != null) {
+            nm.displayName(Component.text("메모장", NamedTextColor.WHITE, TextDecoration.BOLD)
+                .decoration(TextDecoration.ITALIC, false));
+            nm.lore(List.of(
+                Component.text("자유롭게 메모를 남길 수 있습니다.", NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false)));
+            nm.getPersistentDataContainer().set(notepadKey(), PersistentDataType.BYTE, (byte) 1);
+            note.setItemMeta(nm);
+        }
+        p.getInventory().addItem(note);
+    }
+
+    private NamespacedKey notepadKey() { return new NamespacedKey(plugin, "trpg_notepad"); }
+
     /** /trpg map — 직접 그린 현장 약도(지도 아이템)를 손에 넣는다 */
     public void openMap(Player player) {
         mapMan.giveMapItem(player);
@@ -2794,13 +2886,16 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         state.getAllPlayers().stream()
             .filter(playerData -> !playerData.isDead)
             .forEach(playerData -> {
-                // 기여도 기반 특성 성장 3선택지 생성 (오염도만큼 보상 등급 상향)
-                traitMan.generateStageEndChoices(playerData, gdamTheme, corruptMan.getLevel()).thenAccept(choices -> {
+                // 기여도 기반 특성 성장 3선택지 생성 (오염도 + 초기 스탯 약세 보정만큼 보상 등급 상향)
+                int weaknessBonus = computeWeaknessBonus(playerData);
+                traitMan.generateStageEndChoices(playerData, gdamTheme, corruptMan.getLevel() + weaknessBonus).thenAccept(choices -> {
                     if (choices == null) return;
                     Player p = Bukkit.getPlayer(playerData.uuid);
                     if (p == null || !p.isOnline()) return;
                     plugin.getServer().getScheduler().runTask(plugin, () -> {
                         p.sendMessage("§6§l[클리어 보상] 특성 성장을 선택하세요!");
+                        if (weaknessBonus > 0)
+                            p.sendMessage("§7(초기 스탯 약세 보정 +" + weaknessBonus + "단계 적용됨)");
                         String srcMyName = choices.myUpgrade() != null && choices.myUpgrade().replacesId != null
                             ? traitMan.getTrait(playerData, choices.myUpgrade().replacesId)
                                       .map(t -> t.name).orElse("") : null;
@@ -2810,6 +2905,9 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                         dialogMan.showStageEndTraitChoice(p, choices, srcMyName, srcMapName,
                             idx -> handleStageEndTraitSelect(p, playerData, choices, idx));
                         pendingTraitSelect.add(p.getUniqueId());
+                        pendingStageEndChoices.put(p.getUniqueId(), choices);
+                        pendingStageEndNames.put(p.getUniqueId(), new String[]{srcMyName, srcMapName});
+                        p.sendMessage("§8(/trpg trait 으로 선택창을 다시 열 수 있습니다)");
                     });
                 });
             });
@@ -2838,7 +2936,9 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                 String story = ai.stripTags(r);
                 if (!story.isBlank()) gameLogger.logGmOutput("전체(뒷이야기)", story);
                 List<DialogManager.EndingSection> pages = buildEndingPages(endingLabel, story);
+                lastEndingPages = pages;
                 broadcast("§e§l📖 엔딩 해설이 공개되었습니다. 다이얼로그를 확인하세요.");
+                broadcast("§8(/trpg ending 으로 언제든 다시 열람 가능)");
                 for (org.bukkit.entity.Player p : plugin.getServer().getOnlinePlayers()) {
                     dialogMan.showEndingDialog(p, pages, 0);
                 }

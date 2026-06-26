@@ -83,6 +83,8 @@ public class CMDTrpg implements CommandExecutor, TabCompleter {
             case "log"    -> trpg.openRecordLog(player);
             case "info"   -> trpg.openRecordInfo(player);
             case "map"    -> trpg.openMap(player);
+            case "trait"  -> trpg.reopenTraitDialog(player);
+            case "ending" -> trpg.reopenEndingDialog(player);
             case "help"   -> sendHelp(player);
             case "givetrait" -> {
                 if (!player.isOp()) { player.sendMessage("§c권한이 없습니다."); return true; }
@@ -114,7 +116,7 @@ public class CMDTrpg implements CommandExecutor, TabCompleter {
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (args.length == 1) {
-            List<String> subs = List.of("start", "stop", "retry", "next", "load", "read", "replay", "replaylist", "list", "status", "me", "log", "info", "map", "givetrait", "help");
+            List<String> subs = List.of("start", "stop", "retry", "next", "load", "read", "replay", "replaylist", "list", "status", "me", "log", "info", "map", "trait", "ending", "givetrait", "help");
             String partial = args[0].toLowerCase();
             return subs.stream()
                 .filter(s -> s.startsWith(partial))
@@ -175,6 +177,8 @@ public class CMDTrpg implements CommandExecutor, TabCompleter {
         player.sendMessage("§f/trpg log §7— 전체 대화 기록 열람 (다이얼로그, '기록' 아이템 우클릭도 가능)");
         player.sendMessage("§f/trpg info §7— 수집 정보 열람 (다이얼로그, '기록' 아이템 우클릭도 가능)");
         player.sendMessage("§f/trpg map §7— 가 본 곳으로 현장 약도 그리기 (지도 아이템)");
+        player.sendMessage("§f/trpg trait §7— 특성 선택창이 닫힌 경우 다시 열기 (클리어 보상 선택 중에만 유효)");
+        player.sendMessage("§f/trpg ending §7— 엔딩 해설 다이얼로그 다시 열기");
         player.sendMessage("§f/trpg givetrait <플레이어> <ID> §7— 시스템 특성 부여 (OP)");
         player.sendMessage("§f/join §7— 진행 중인 세션 참여");
     }
