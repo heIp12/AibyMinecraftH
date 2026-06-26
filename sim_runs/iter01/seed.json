@@ -1,0 +1,108 @@
+{
+  "seed": "#SIM3-K7P2",
+  "room": 3,
+  "scale": "시티",
+  "_sim_note": "프롬프트 검증 시뮬용 평문 .gdam. 실제 게임은 AES-256-GCM(설치별 키)로 암호화 저장하므로 이 파일을 그대로 로드할 수는 없음(내용 검토용).",
+  "entity": {
+    "name": "망각의 편집자",
+    "type": "규칙형",
+    "rules": [
+      "어떤 사실(정보·증거·기억)이 동일한 내용으로 세 명 이상에게 동시에 알려지는 순간, 그 사실은 현실에서 지워진다.",
+      "지워진 사실은 알고 있던 모든 사람의 기억에서 즉시 삭제되고, 관련 물리적 기록·증거도 소멸한다.",
+      "단 두 명이 같은 사실을 알고 있는 상태에서는 현실이 유지된다. 두 번째 사람에게 알려질 때마다 오염도가 1 상승한다.",
+      "괴담은 플레이어들이 정보를 공유하도록 유도한다. NPC를 이용해 '같이 확인하러 가자'는 상황을 만든다."
+    ],
+    "weakness": "세 사람이 동시에 알아야 지워지는 규칙을, 한 사람만 알고 있는 사실로 역이용하면 규칙을 붕괴시킬 수 있다.",
+    "solution": "괴담의 핵심 기원 기록(entity의 최초 발생 사유가 적힌 문서)을 단 한 사람만 읽고 그 내용을 행정 시스템에 '공식 기록'으로 등록하면, 괴담 자체가 자신의 규칙에 의해 지워진다.",
+    "exploit_path": "괴담의 규칙은 '세 사람이 동시에 아는 것'에만 작동한다. 이 한계를 역이용하면 괴담 자신이 그 규칙의 피해자가 될 수 있다.",
+    "escape": "청사 외부로 나가 6시간 이상 복귀하지 않으면 영향권 밖으로 이탈 가능. 단 기억의 일부를 잃은 채로.",
+    "hidden_rules": [
+      "괴담은 지워진 사실이 쌓일수록 강해진다. 지워진 사실의 수 = 오염도 상승 배율.",
+      "첫 번째 희생자(야간 경비원 오재호)는 아직 기억이 완전히 지워지지 않아, 단서를 전달할 수 있는 상태로 청사 어딘가를 배회한다.",
+      "괴담의 기원 문서는 '1975년 시청 건립 당시 매립된 건의서'다. 시청 건립에 반대한 주민 수백 명의 서명이 담긴 것으로, 그 집단적 의지가 괴담의 씨앗이 되었다."
+    ],
+    "independent_ai": true,
+    "can_impersonate": false,
+    "ai_context": {
+      "personality": "조용하고 체계적. 플레이어들이 스스로 정보를 공유하도록 상황을 설계한다.",
+      "initial_pattern": "NPC를 통해 '같이 확인하러 가자'는 상황을 유도. 직접 나타나지 않는다.",
+      "corruption_behavior": {
+        "0": "기록이 없어지는 사소한 이상. 방금 봤던 문서가 사라진다.",
+        "1": "NPC들이 서로 모순된 기억을 가진다. 같은 사건을 다르게 기억한다.",
+        "2": "플레이어 중 한 명의 출입 기록이 사라진다. 청사 보안이 그를 침입자로 본다.",
+        "3": "플레이어들이 알고 있는 단서 중 하나가 실제로 지워진다.",
+        "4": "청사 전체의 과거 20년치 기록이 소멸 중. 도시 행정이 마비된다."
+      }
+    }
+  },
+  "world_rules": {
+    "core": "세 사람이 동시에 같은 사실을 알게 되면 그 사실은 현실에서 지워진다.",
+    "details": [
+      "단 두 사람이 아는 상태에서는 현실이 유지된다. 두 번째 공유 시 오염도 +1.",
+      "지워진 사실은 물리적 기록·기억 모두 소멸한다.",
+      "괴담은 NPC를 이용해 세 번째 '공유'를 유도한다."
+    ],
+    "hidden": true,
+    "loophole": "정보를 두 명 이하로만 유지하면 규칙이 작동하지 않는다. 단, 한 명이라도 죽거나 기억을 잃으면 그 사실 자체가 위험해진다.",
+    "collapse_condition": "괴담의 기원 문서를 단 한 사람만 읽고, 그 내용을 시청 행정 시스템에 '공식 등록'하면 괴담 자신이 자기 규칙에 의해 존재에서 지워진다.",
+    "npc_dependency": "mid"
+  },
+  "constraints": {
+    "era": "현대",
+    "phone_usable": true,
+    "outside_contact": true,
+    "can_leave_scene": true,
+    "comms_monitored": true,
+    "notes": ["청사 내부는 공식 보안 CCTV와 통신 모니터링 시스템이 작동 중. 괴담이 이를 이용해 통신 내용을 감청한다.", "야간에는 외부인 출입이 제한된다."]
+  },
+  "timeline": {
+    "daily_turns": 4,
+    "start_time": "18:00",
+    "end_time": "03:00",
+    "minutes_per_turn": 20,
+    "time_visible": true,
+    "main_events": [
+      {"id":"E1","time":"18:00","label":"일상 파트 종료 / 기록실 이상","condition":"일상 파트 종료","effect":"기록실 3층에서 야간 경비원이 실종 신고됨. 오염도 1 시작.","blockable":false},
+      {"id":"E2","time":"20:00","label":"1차 기록 소멸 사건","condition":"오염도 2 이상","effect":"시청 1층 민원 접수 창구의 2018~2020년 기록이 모두 사라짐. 담당 직원이 기억도 잃음.","blockable":true,"branches":{"auto":{"condition":"막지 못하면","next":"E3"},"intervene":[{"condition":"기록 소멸 원인을 파악하면","next":"E3-B"},{"condition":"기원 문서 단서를 입수하면","next":"E_HINT"}]}},
+      {"id":"E3","time":"22:00","label":"보안 시스템 오작동","condition":"오염도 3 이상","effect":"청사 CCTV가 과거 영상을 반복 재생하기 시작. 보안팀이 혼란에 빠짐.","blockable":true},
+      {"id":"E3-B","time":"22:00","label":"원인 파악 후 반격 가능","condition":"원인 파악 후","effect":"기원 문서의 위치 단서가 추가로 드러남.","blockable":false},
+      {"id":"E_HINT","time":"21:30","label":"오재호의 목격담","condition":"기원 문서 단서 입수 시","effect":"실종된 야간 경비원 오재호가 잠시 나타나 쪽지를 남김.","blockable":false},
+      {"id":"E4","time":"01:00","label":"20년 기록 대량 소멸 시작","condition":"기원 문서 미발견","effect":"시청 행정 전산망 20년치 기록이 소멸 시작. 도시 행정 마비 직전.","blockable":true},
+      {"id":"E_END","time":"03:00","label":"완전 소멸","condition":"미해결","effect":"끝. 청사의 모든 기록이 소멸하고 관련자들의 기억도 지워진다.","blockable":false,"is_end":true}
+    ],
+    "1": {"condition":"오염도 1~2. 사소한 기록 소실 발생.", "effect":"NPC들이 서로 다른 기억을 가진다. 플레이어들이 '무언가 이상하다'고 느끼기 시작."},
+    "2": {"condition":"오염도 2~3. 중요 기록 소멸 시작.", "effect":"플레이어 중 한 명의 출입 기록이 사라져 보안의 의심을 받음."},
+    "3": {"condition":"오염도 3~4. 괴담이 본격 작동.", "effect":"플레이어가 공유한 단서 중 하나가 실제로 지워진다. 규칙의 실체를 직접 경험."},
+    "4": {"condition":"오염도 4. 극한 압박.", "effect":"도시 행정 마비 직전. 모든 기록이 소멸 위기. 플레이어들이 각자 아는 사실을 절대 세 명 동시에 공유할 수 없는 상황."}
+  },
+  "npcs": [
+    {"id":"npc_jaehO","name":"오재호","zone":"zone_C","critical":true,"role_type":"열쇠","true_role":"실종된 경비원. 기원 문서의 위치를 알고 있다. 기억이 부분적으로 지워진 상태로 청사를 배회한다.",
+     "personality":"겁에 질려 있지만 누군가를 도우려 한다. 말하려 할 때마다 기억 일부가 빠져나간다.",
+     "motivation":"자신이 목격한 것을 알리고 싶지만, 알리는 순간 그 기억이 지워질까봐 두려워한다.",
+     "knowledge":["기원 문서가 지하 서고 G-7 구역 벽 뒤에 숨겨져 있다는 사실","1975년 건립 반대 서명 문서의 존재","세 명이 동시에 알면 사라진다는 규칙을 본능적으로 느끼고 있다"],
+     "schedule":[
+       {"time":"E1 이후 1턴","action":"3층 기록실 창고 구석에 숨어 있다가 혼자 있는 플레이어에게 접근을 시도한다.","will":"약함"},
+       {"time":"반응","condition":"혼자인 플레이어가 접근하면","action":"단편적인 힌트를 쪽지에 적어 건네고 사라진다.","will":"강함"},
+       {"time":"반응","condition":"두 명 이상의 플레이어가 동시에 접근하면","action":"즉시 사라진다. 아무것도 전달하지 않는다.","will":"강함"}
+     ]
+    },
+    {"id":"npc_security","name":"박도현(보안팀장)","zone":"zone_E","critical":false,"role_type":"방어막","true_role":"괴담에 의해 청사 내부를 '지키고 있는' 존재. 제거하면 괴담의 영향이 오히려 청사 밖으로 확산된다."},
+    {"id":"npc_clerk","name":"이미선(야간 민원 직원)","zone":"zone_A","critical":false,"role_type":"무관","true_role":"단순히 야근 중인 직원. 괴담과 무관하지만 정보를 잘못 해석해 플레이어를 혼란시킬 수 있다."}
+  ],
+  "zones": [
+    {"zone_id":"zone_A","name":"1층 민원실","area":"1층","accessible_by":["role_B"],"exclusive":false,"connections":["zone_B","zone_D"]},
+    {"zone_id":"zone_B","name":"1층 로비","area":"1층","accessible_by":[],"exclusive":false,"connections":["zone_A","zone_C_stairs"]},
+    {"zone_id":"zone_C_stairs","name":"계단·복도","area":"전환","accessible_by":[],"exclusive":false,"connections":["zone_B","zone_C","zone_E"]},
+    {"zone_id":"zone_C","name":"3층 기록실","area":"3층","accessible_by":["role_A"],"exclusive":false,"connections":["zone_C_stairs","zone_F"]},
+    {"zone_id":"zone_D","name":"지하 서고","area":"지하","accessible_by":[],"exclusive":false,"connections":["zone_A","zone_G"]},
+    {"zone_id":"zone_E","name":"2층 보안실","area":"2층","accessible_by":[],"exclusive":false,"connections":["zone_C_stairs"]},
+    {"zone_id":"zone_F","name":"3층 관리자실","area":"3층","accessible_by":[],"exclusive":false,"connections":["zone_C"]},
+    {"zone_id":"zone_G","name":"지하 기계실","area":"지하","accessible_by":[],"exclusive":false,"connections":["zone_D"]}
+  ],
+  "roles": [
+    {"role_id":"role_A","name":"야간 기록관","char_name":"서지원","gender":"여성","spawn_timeline":"시작 즉시","zone":"zone_C","knowledge_advantage":false},
+    {"role_id":"role_B","name":"민원 처리 담당자","char_name":"강태양","gender":"남성","spawn_timeline":"시작 즉시","zone":"zone_A","knowledge_advantage":false},
+    {"role_id":"role_C","name":"외부 조사 기자","char_name":"임하린","gender":"여성","spawn_timeline":"타임라인 1단계","zone":"zone_A","knowledge_advantage":true}
+  ],
+  "_roles_full_note": "roles 상세(스탯/직업풀/initial_info/hidden_info/pre_spawn_beats/start_item)는 로그의 캐릭터시트 및 에이전트 결과에 기록됨. 요약본만 여기 보존."
+}
