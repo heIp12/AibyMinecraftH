@@ -198,6 +198,17 @@ type 값 규칙: "written_book"=책/일기/문서류, "paper"=쪽지/메모, "ma
   * blockable:true 사건은 플레이어가 저지할 수 있는 사건(문 잠금 등), false는 반드시 일어나는 사건(괴담 각성 등).
 - 기존 timeline.1~4 단계(condition/effect)는 추상적 압박 단계로 계속 채운다(큰 사건과 별개 — 둘 다 작성).
 
+## npcs 설계 원칙 ★ (하이브리드 NPC)
+npcs 배열은 시나리오에 등장하는 주변 인물(플레이어 배역 외)을 정의한다.
+- critical: false (일반 NPC): GM AI가 서술에 통합하여 직접 조종. name·zone만 필수.
+- critical: true (중요 NPC): 독립 AI 인스턴스로 자율 행동. 스테이지당 1~2명으로 제한.
+  * personality: 성격·숨겨진 면 한 문장 (예: "겁쟁이지만 사건의 비밀을 알고 있다")
+  * motivation: 이 NPC의 목표 한 문장 (예: "살아남기 위해 진실을 숨기려 한다")
+  * knowledge: 이 NPC만 알고 있는 정보 목록 (GM 참고 — 직접 노출 금지, 힌트로만)
+  * zone: NPC가 주로 머무는 zone_id (플레이어가 접근 가능한 zone이어야 한다)
+★ critical NPC는 자신의 성격·목표에 따라 독자적으로 행동하므로 GM이 직접 조종하지 않는다.
+★ 단서를 통째로 알려주는 NPC로 설계하지 마라. 플레이어가 탐색해야 알 수 있게 행동 방식을 설계하라.
+
 ## 출력 JSON 스키마
 {
   "seed": "",
@@ -275,7 +286,10 @@ type 값 규칙: "written_book"=책/일기/문서류, "paper"=쪽지/메모, "ma
     }
   ],
   "zones": [{"zone_id":"zone_A","name":"","accessible_by":[],"exclusive":false}],
-  "npcs": [],
+  "npcs": [
+    {"id":"npc_A","name":"","zone":"zone_A","critical":false},
+    {"id":"npc_B","name":"","zone":"zone_B","critical":true,"personality":"","motivation":"","knowledge":[]}
+  ],
   "key_items": [
     {"id":"item_일지","name":"관리 일지","type":"written_book","description":"낡은 가죽 표지","lore_info":"이전 관리인의 야간 기록","content":["1월 3일. 새 유물이 들어왔다.","1월 7일. 밤마다 그 소리가 들린다."],"location":"관리실 서랍","clue_value":"괴담 단서"}
   ],

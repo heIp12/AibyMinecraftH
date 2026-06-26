@@ -495,6 +495,8 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     private final Map<UUID, RoleManager.RoleAssignment> preAssignments = new ConcurrentHashMap<>();
     /** 플레이어가 없어 GM이 직접 조종하는 배역 ID 집합 */
     private final Set<String> gmNpcRoleIds = ConcurrentHashMap.newKeySet();
+    /** 중요 NPC 현재 위치 (npc_id → zone_id) — .gdam npcs[].zone 기본값, 세션 중 이동 시 갱신 */
+    private final Map<String, String> npcZones = new ConcurrentHashMap<>();
     /** 미등장 배역별 서술 호출 횟수 (비트 진행 추적) */
     private final Map<UUID, Integer> preSpawnCallCounts = new ConcurrentHashMap<>();
     private String gmSystemPrompt = GM_SYSTEM_BASE;
@@ -669,6 +671,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         preAssignedRoleData.clear();
         preAssignments.clear();
         gmNpcRoleIds.clear();
+        npcZones.clear();
         preSpawnCallCounts.clear();
         concludingEnding = false;
         replayLock = false;
@@ -1223,6 +1226,8 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     // ──────────────────────────────────────────────────────────────
 
     private void startDailyPhase() {
+        // 중요 NPC 초기 위치 로드
+        initNpcZones(state.getGdamData());
         // 재현 파일 기록 (정상 시작 한정 — 재현 세션에선 다시 기록하지 않음)
         if (!replayLock) {
             String code = replayMan.writeReplay(state.getRoomNumber(), state.getCurrentSeed(), state.getAllPlayers());
@@ -1582,6 +1587,11 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                         });
                     });
                 });
+            }
+
+            // 11b. 중요 NPC 자율 AI (괴담 파트, 3턴마다)
+            if (currentPhase == Phase.HORROR && state.getCurrentTurn() % 3 == 0) {
+                fireNpcAiForTurn();
             }
 
             // 12. 미등장 배역에게 자동 배경 서술 전송
@@ -2804,6 +2814,100 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         return sb.toString();
     }
 
+    // ──────────────────────────────────────────────────────────────
+    //  하이브리드 NPC — 중요 NPC 독립 AI 호출
+    // ──────────────────────────────────────────────────────────────
+
+    /** .gdam npcs[]에서 critical:true인 NPC 목록 반환 */
+    private List<JsonObject> getCriticalNpcs() {
+        JsonObject gdam = state.getGdamData();
+        if (gdam == null || !gdam.has("npcs")) return List.of();
+        List<JsonObject> out = new ArrayList<>();
+        for (JsonElement el : gdam.getAsJsonArray("npcs")) {
+            if (!el.isJsonObject()) continue;
+            JsonObject npc = el.getAsJsonObject();
+            if (npc.has("critical") && npc.get("critical").getAsBoolean()) out.add(npc);
+        }
+        return out;
+    }
+
+    /** .gdam npcs[].zone을 npcZones 맵에 초기화 (세션·재현 시작 시 호출) */
+    private void initNpcZones(JsonObject gdam) {
+        npcZones.clear();
+        if (gdam == null || !gdam.has("npcs")) return;
+        for (JsonElement el : gdam.getAsJsonArray("npcs")) {
+            if (!el.isJsonObject()) continue;
+            JsonObject npc = el.getAsJsonObject();
+            if (!npc.has("id")) continue;
+            String zone = npc.has("zone") ? npc.get("zone").getAsString() : "";
+            npcZones.put(npc.get("id").getAsString(), zone);
+        }
+    }
+
+    /** critical NPC 전용 시스템 프롬프트 생성 */
+    private String buildNpcSystemPrompt(JsonObject npcObj) {
+        String name = npcObj.has("name") ? npcObj.get("name").getAsString() : "NPC";
+        StringBuilder sb = new StringBuilder();
+        sb.append("너는 하드코어 생존 괴담 TRPG의 NPC '").append(name).append("'야.\n");
+        sb.append("플레이어들의 최근 행동에 반응하여 이 NPC가 지금 무엇을 하는지 자율적으로 결정한다.\n\n");
+        if (npcObj.has("personality"))
+            sb.append("성격: ").append(npcObj.get("personality").getAsString()).append("\n");
+        if (npcObj.has("motivation"))
+            sb.append("목표: ").append(npcObj.get("motivation").getAsString()).append("\n");
+        if (npcObj.has("knowledge") && npcObj.get("knowledge").isJsonArray()) {
+            sb.append("알고 있는 정보: ");
+            npcObj.getAsJsonArray("knowledge").forEach(k -> sb.append(k.getAsString()).append(" / "));
+            sb.append("\n");
+        }
+        sb.append("\n## 출력 원칙\n");
+        sb.append("- 2~3문장으로 NPC의 행동·반응·대사를 서술한다.\n");
+        sb.append("- 3인칭 행동 서술. 1인칭('나는...') 금지.\n");
+        sb.append("- 성격·목표에 충실하게 행동하라. 플레이어가 불리해지는 행동도 가능하다.\n");
+        sb.append("- 단서를 통째로 알려주지 마라. 흘리거나 은폐할 수 있다.\n");
+        sb.append("- 마크다운·XML 태그·메타 해설 일체 금지. 순수 서술 텍스트만 출력하라.\n");
+        sb.append("- 플레이어 스탯·특성·GM 판정 내역은 알지 못한다. 겉으로 드러난 행동만 인지한다.\n");
+        return sb.toString();
+    }
+
+    /**
+     * 괴담 파트 N턴마다 critical NPC 독립 AI 호출.
+     * NPC 행동은 같은 zone의 플레이어에게 직접 전달되고, GM 컨텍스트에 주입된다.
+     */
+    private void fireNpcAiForTurn() {
+        List<JsonObject> criticals = getCriticalNpcs();
+        if (criticals.isEmpty()) return;
+
+        String actionLog = state.buildEntityLog(4);
+
+        for (JsonObject npcObj : criticals) {
+            String npcId   = npcObj.has("id")   ? npcObj.get("id").getAsString()   : "npc";
+            String npcName = npcObj.has("name") ? npcObj.get("name").getAsString() : "NPC";
+            String npcZone = npcZones.getOrDefault(npcId,
+                npcObj.has("zone") ? npcObj.get("zone").getAsString() : "");
+            String npcPrompt = buildNpcSystemPrompt(npcObj);
+
+            ai.callNpcAi(npcId, npcPrompt, actionLog).thenAccept(npcResp -> {
+                if (npcResp == null || npcResp.startsWith("§c")) return;
+                String trimmed = ai.stripTags(npcResp).trim();
+                if (trimmed.isEmpty()) return;
+
+                plugin.getServer().getScheduler().runTask(plugin, () -> {
+                    // NPC 행동을 같은 zone의 생존·등장 플레이어에게 전달
+                    for (PlayerData pd : state.getAllPlayers()) {
+                        if (pd.isDead || !spawnedPlayers.contains(pd.uuid)) continue;
+                        if (!npcZone.isEmpty() && !npcZone.equals(pd.zone)) continue;
+                        Player sp = Bukkit.getPlayer(pd.uuid);
+                        if (sp != null && sp.isOnline())
+                            narrativeDelivery.deliver(sp, trimmed);
+                    }
+                    // GM 컨텍스트 주입 — 다음 턴 GM이 NPC 행동을 일관되게 반영
+                    ai.injectGmSystem("[NPC 자율 행동] " + npcName + ": " + trimmed);
+                    gameLogger.logGmOutput("NPC(" + npcName + ")", trimmed);
+                });
+            });
+        }
+    }
+
     /**
      * 괴담 현상의 강도 지침. 오염도(corruption)와 타임라인 진행도에 비례한다.
      * 초반·저오염: 그냥 흘려보낼 사소한 위화감(시나리오 영향 없음).
@@ -3255,6 +3359,20 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                 sb.append("\n");
             }
             sb.append("위 NPC는 플레이어가 없으므로 GM이 자연스럽게 스토리에 통합한다.\n");
+        }
+        // 중요 NPC (하이브리드) 섹션 — GM과 분리, 독립 AI가 조종
+        List<JsonObject> critNpcs = getCriticalNpcs();
+        if (!critNpcs.isEmpty()) {
+            sb.append("\n## 자율 NPC (독립 AI 조종 — GM 직접 개입 금지) ★\n");
+            sb.append("아래 NPC는 별도 AI 인스턴스가 자율 행동한다. GM은 이들의 행동을 서술하지 않는다.\n");
+            sb.append("단, '[NPC 자율 행동]' 태그로 주입된 NPC 행동은 GM의 다음 서술에 자연스럽게 반영하라.\n");
+            for (JsonObject npc : critNpcs) {
+                String nname = npc.has("name") ? npc.get("name").getAsString() : "?";
+                String nzone = npc.has("zone") ? npc.get("zone").getAsString() : "?";
+                sb.append("- ").append(nname).append(" (").append(nzone).append(")");
+                if (npc.has("motivation")) sb.append(" — ").append(npc.get("motivation").getAsString());
+                sb.append("\n");
+            }
         }
         // 패시브 시스템 특성 보유자 컨텍스트
         StringBuilder passiveBlock  = new StringBuilder(); // passive_gm: 항상 고려
