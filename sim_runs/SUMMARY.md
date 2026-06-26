@@ -30,3 +30,10 @@
 - 검증: P1·P3·P4·P5·P6 완료 / P2 일부 미흡 → P8로 보강 / 협력판정 P6 공식 2회 적용.
 - 신규: P8(mislead 단서 필수)·P9(NPC duration_turns). 합의-트리거는 시나리오 특화로 기록만.
 - 파일: iter03/seed.json·log.txt·replay.json. 플러그인 .java 미변경.
+
+## iter04 — 2026-06-26 19:18 — #QR5M-2HBK (스테이지2·시티·1963년 부산)
+- 괴담: "잠든 이름" — 봉인 명부의 이름을 발화하면 목소리가 영구 교체. 과거 시대(phone_usable=false, 쪽지/전령/유선).
+- 결과: 명부 소각 성공이나 잔류자 발생 → 생존판정 C. ★P7: 스테이지2라 생존판정도 스테이지3 진출 허용(CLEAR reason 명시).
+- 검증: P7·P8(mislead 2개)·P9(duration_turns 3/1) 핵심 검증. P1·P2·P3·P5·P6도 확인. P4는 대상 없음.
+- 신규: P10(mislead 타이밍)·P11(after_duration)·P12(해결/생존 경계 high).
+- 파일: iter04/seed.json·log.txt·replay.json. 플러그인 .java 미변경.

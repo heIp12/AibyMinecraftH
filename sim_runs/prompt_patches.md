@@ -64,3 +64,23 @@
 
 ### (시나리오 특화 — 범용 패치 아님, 기록만)
 - ISSUE-1/3 '합의 형성=괴담 트리거' 계열은 '조율사'류 시나리오에서만 유효. 범용 GM_SYSTEM_BASE에 강제 주입하면 다른 괴담을 왜곡하므로 패치화하지 않음. 단, 해당 괴담이면 entity.rules에 자체 명시하도록 생성 단계에서 처리(이미 entity.rules 자유 서술로 가능).
+
+## iter04 (#QR5M-2HBK, 스테이지2 시티·1963년 과거) 발견 패치
+(P1·P2·P3·P5·P6·P7·P8·P9 검증 완료 / P4는 phone_usable=false라 대상 없음)
+
+### P10. mislead 단서 발동 타이밍 (med, P8 보완)
+- [대상] GDAM_SYSTEM_PROMPT / GM mislead 운용
+- [문제] 가짜 단서가 언제 오답으로 드러나야 하는지 지침 없음.
+- [수정안] "mislead 단서는 진짜 단서 2개 이상 확보된 뒤 자연스럽게 오답임이 드러나게 한다(처음부터 거짓 티 내지 말 것)."
+
+### P11. NPC duration 종료 후 행동(after_duration) (med, P9 보완)
+- [대상] buildNpcSystemPrompt schedule / 스키마
+- [문제] duration_turns 종료 후 NPC 행동 공백.
+- [수정안] schedule 항목에 선택적 after_duration("복귀"/"대기"/"도주" 등). buildNpcSystemPrompt가 "N턴 지속 후 → after_duration" 한 줄로 주입.
+
+### P12. 해결/생존 판정 경계 — 부분 collapse + 잔류자 (high)
+- [대상] GM_SYSTEM_BASE 클리어 판정
+- [문제] collapse_condition 부분 충족(예: 소각 성공)인데 잔류 피해자 발생 시 해결/생존 경계가 GM 재량에 과의존.
+- [수정안] 기준선 한 줄: "collapse_condition 완전 충족 + 위협권 인원 전원 탈출/생존 = 해결판정. collapse 부분 충족이나 잔류·미구출 발생 = 생존판정(또는 등급 강등). 모호하면 생존판정 쪽으로."
+
+### (기록만) phone_usable=false 시대의 대체 통신(쪽지/전령) 발각·도청 기준 — low, 시대 시나리오 한정.
