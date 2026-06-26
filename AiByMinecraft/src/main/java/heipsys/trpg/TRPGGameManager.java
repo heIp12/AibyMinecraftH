@@ -2131,11 +2131,51 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             player.sendMessage("§c[" + td.name + "] 이번 스테이지 사용 횟수를 모두 소진했습니다.");
             return;
         }
-        applyTraitUsed(pd, td.id, state.getCurrentTurn());
-        pendingPrayerInput.put(player.getUniqueId(), td.id);
-        int remaining = uses - td.usedThisStage; // after increment
-        player.sendMessage("§d[" + td.name + "] 채팅으로 GM에게 질문을 입력하세요. §8(남은 횟수: " + remaining + "회)");
-        player.sendMessage("§8질문이 구체적일수록 더 명확한 답을 받습니다.");
+        if (td.param("auto_fire", 0) == 1) {
+            // 자동 회상·직관 타입: AI가 경험을 직접 서술
+            applyTraitUsed(pd, td.id, state.getCurrentTurn());
+            activateAiQueryAutoFire(player, pd, td);
+        } else {
+            // 질문 입력 타입: 다이얼로그로 안내 후 채팅 대기
+            int remaining = uses - td.usedThisStage;
+            dialogMan.showQueryInput(player, td, remaining, () -> {
+                applyTraitUsed(pd, td.id, state.getCurrentTurn());
+                pendingPrayerInput.put(player.getUniqueId(), td.id);
+                player.sendMessage("§d[" + td.name + "] §7채팅창에 질문을 입력하세요. §8(구체적일수록 더 명확한 답)");
+            });
+        }
+    }
+
+    private void activateAiQueryAutoFire(Player player, PlayerData pd, TraitData td) {
+        int info = td.param("info", 1);
+        String depthRule = switch (info) {
+            case 3 -> "- 핵심에 근접한 정보를 꽤 구체적으로 담아 2~4문장으로 묘사한다. (해결법 자체는 직접 알려주지 않음)\n";
+            case 2 -> "- 관련 사실 하나 정도를 암시하는 방향으로 2~3문장 묘사한다.\n";
+            default -> "- '어렴풋한 느낌·예감·낌새' 형식으로만 1~2문장 묘사한다. 직접적 단서 나열 금지.\n";
+        };
+        String charDisplay = pd.charName.isEmpty() ? pd.name : pd.charName;
+        String directive = (td.effect != null && !td.effect.isBlank())
+            ? td.effect : "캐릭터가 어떤 기억이나 직관을 경험한다.";
+
+        String autoCtx = "\n## " + td.name + " — 자동 회상·직관 서술 (정보 깊이 " + info + "/3)\n"
+            + "플레이어가 '" + td.name + "' 특성을 발동했다. 이 특성의 효과: " + directive + "\n"
+            + "규칙:\n"
+            + "- 캐릭터(" + charDisplay + ")가 지금 이 순간 기억·직관·감각을 경험하는 장면을 생생하게 서술한다.\n"
+            + "- 마치 기억이 어렴풋이 떠오르거나, 직관이 번뜩이거나, 눈앞에 잔상이 스치는 것처럼 묘사한다.\n"
+            + depthRule
+            + "- 독백·내면의 소리는 <-내용-> 형식으로 표현할 수 있다.\n"
+            + "- 서술 완료 후 게임 진행을 타임라인에 적절히 반영한다.\n";
+
+        String prompt = charDisplay + "이(가) '" + td.name + "' 특성으로 기억·직관을 경험한다. "
+            + "이 순간의 내면 경험을 GM 서술로 묘사해줘.";
+
+        player.sendMessage("§d[" + td.name + " 발동 중...]");
+        ai.callGmAiOnce(gmSystemPrompt + autoCtx, prompt).thenAccept(response ->
+            plugin.getServer().getScheduler().runTask(plugin, () -> {
+                String stripped = ai.stripTags(response).trim();
+                if (!stripped.isBlank()) narrativeDelivery.deliver(player, stripped);
+            })
+        );
     }
 
     private void activateChoiceAction(Player player, PlayerData pd, TraitData td) {
@@ -2187,8 +2227,6 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             player.sendMessage("§c[" + td.name + "] 이번 스테이지 사용 횟수를 모두 소진했습니다.");
             return;
         }
-        applyTraitUsed(pd, td.id, state.getCurrentTurn());
-        pendingAreaScanInput.put(player.getUniqueId(), td.id);
         int scope = td.param("scope", 2);
         String scopeStr = switch (scope) {
             case 3  -> "건물 전체 광역 탐색";
@@ -2196,8 +2234,12 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             default -> "현재 위치 정밀 탐색";
         };
         int remaining = uses - td.usedThisStage;
-        player.sendMessage("§b[" + td.name + "] " + scopeStr + " — 채팅으로 무엇을 탐색할지 입력하세요. §8(남은 횟수: " + remaining + "회)");
-        player.sendMessage("§8예: \"수상한 냄새\", \"숨겨진 출구\", \"다른 사람의 흔적\"");
+        dialogMan.showScanInput(player, td, scopeStr, remaining, () -> {
+            applyTraitUsed(pd, td.id, state.getCurrentTurn());
+            pendingAreaScanInput.put(player.getUniqueId(), td.id);
+            player.sendMessage("§b[" + td.name + "] §7채팅창에 탐색 목표를 입력하세요.");
+            player.sendMessage("§8예: \"수상한 냄새\", \"숨겨진 출구\", \"다른 사람의 흔적\"");
+        });
     }
 
     private void activateSacrifice(Player player, PlayerData pd, TraitData td) {
@@ -2235,10 +2277,10 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             return;
         }
         int depth = td.param("depth", 1);
-        applyTraitUsed(pd, td.id, state.getCurrentTurn());
 
         if (depth == 1) {
             // 로컬 판정: 생존 여부만 즉시 표시 (AI 불필요)
+            applyTraitUsed(pd, td.id, state.getCurrentTurn());
             List<PlayerData> others = state.getAllPlayers().stream()
                 .filter(p2 -> !p2.uuid.equals(player.getUniqueId()))
                 .collect(java.util.stream.Collectors.toList());
@@ -2254,11 +2296,14 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                 player.sendMessage("  " + status + " §f" + name);
             }
         } else {
-            // AI 서술: 아군 위치·상태 파악 또는 소통 경로 감지
-            pendingLinkAllyInput.put(player.getUniqueId(), td.id);
+            // AI 서술: 아군 위치·상태 파악 또는 소통 경로 감지. 다이얼로그 확인 후 사용 차감.
             String depthStr = depth >= 3 ? "소통 경로 발견 포함" : "상태·위치 파악";
-            player.sendMessage("§a[" + td.name + "] " + depthStr + " — 채팅으로 무엇을 감지하려는지 입력하세요.");
-            player.sendMessage("§8예: \"가장 가까운 아군의 위치\", \"다친 아군이 있는지\"");
+            dialogMan.showLinkAllyInput(player, td, depthStr, () -> {
+                applyTraitUsed(pd, td.id, state.getCurrentTurn());
+                pendingLinkAllyInput.put(player.getUniqueId(), td.id);
+                player.sendMessage("§a[" + td.name + "] §7채팅창에 감지 목표를 입력하세요.");
+                player.sendMessage("§8예: \"가장 가까운 아군의 위치\", \"다친 아군이 있는지\"");
+            });
         }
     }
 
