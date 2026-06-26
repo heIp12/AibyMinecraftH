@@ -18,20 +18,21 @@ public class ScoreboardManager {
     }
 
     /** 플레이어 스코어보드 갱신 */
-    public void update(Player player, PlayerData pd, int roomNumber) {
+    public void update(Player player, PlayerData pd, int roomNumber, String zoneName) {
         Scoreboard sb = sbm.getNewScoreboard();
 
         Objective obj = sb.registerNewObjective("trpg", Criteria.DUMMY, "§e§l[ TRPG ]");
         obj.setDisplaySlot(DisplaySlot.SIDEBAR);
 
         // 사이드바는 핵심 정보만 간략하게. 상세 정보(스탯·특성)는 '캐릭터 정보'(네더의 별) GUI에서.
-        int line = 9;
+        int line = 10;
         set(obj, "§f" + pd.name,                         line--);
         set(obj, "§8─────────────────",                  line--);
         set(obj, hpBar(pd),                               line--);
         set(obj, sanBar(pd),                              line--);
         set(obj, "§8─────────────────",                  line--);
         set(obj, "§f스테이지: §e" + roomNumber,           line--);
+        set(obj, "§f위치: §a" + zoneName,                 line--);
         set(obj, "§8─────────────────",                  line--);
         set(obj, "§7상세: §b네더의 별 우클릭",            line);
 

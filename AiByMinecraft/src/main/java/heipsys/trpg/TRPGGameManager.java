@@ -3138,8 +3138,23 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     private void updateAllScoreboards() {
         state.getAllPlayers().forEach(pd -> {
             Player p = Bukkit.getPlayer(pd.uuid);
-            if (p != null) scoreMan.update(p, pd, state.getRoomNumber());
+            if (p != null) scoreMan.update(p, pd, state.getRoomNumber(), resolveZoneName(pd.zone));
         });
+    }
+
+    private String resolveZoneName(String zoneId) {
+        if (zoneId == null || zoneId.isEmpty()) return "?";
+        JsonObject gdam = state.getGdamData();
+        if (gdam == null || !gdam.has("zones")) return zoneId;
+        for (JsonElement el : gdam.getAsJsonArray("zones")) {
+            JsonObject z = el.getAsJsonObject();
+            String id = z.has("zone_id") ? z.get("zone_id").getAsString() : "";
+            if (zoneId.equals(id)) {
+                String name = z.has("name") ? z.get("name").getAsString() : "";
+                return name.isEmpty() ? zoneId : name;
+            }
+        }
+        return zoneId;
     }
 
     private String buildGmPrompt(JsonObject gdam) {
