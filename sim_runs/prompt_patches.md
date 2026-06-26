@@ -154,3 +154,26 @@
 ### (기록만 — 코드 도메인, 프롬프트 외라 루프에서 미적용. 추후 .java 작업 시 반영 후보)
 - CODE-1 (WEAK-03, low): generateFamiliarConcept의 region 선택이 roomNumber 의존이라 초반 인덱스 편향 가능 → region 오프셋을 roomNumber 무관 무작위로 분리(리팩토링). ※프롬프트 아님 → 본 루프 미적용.
 - CODE-2 (WEAK-04, low, P7 보강): 스테이지1~2 생존판정 진출 특례가 CLEAR reason 수동 주입 의존 → buildGmPrompt가 room≤2일 때 특례 문장을 '자동' 주입하도록(코드). ※프롬프트 내용(P7)은 이미 충분; 자동화는 코드 TODO → 본 루프 미적용.
+
+## iter08 (#LK3P-9TWM, 스테이지3 로컬·★단일 주체 괴담·조선 후기 1780s·보수귀) 발견 패치
+(P1·P3·P6·P8·P10·P12·P16·P20·P9·P11·P17·P21·P23 전부 검증 / P13·P14·P18·P19·P22 대상없음. ★단일 주체 × 먼 과거 첫 검증 — 새 구조축에서 high 1건 재발견. '수렴' 판단은 보류)
+
+### P24. 단일 주체 괴담의 해결(collapse_condition) 경로 보존 (★high, 범용·단일 주체형)
+- [대상] GDAM_SYSTEM_PROMPT 스케일 너프 지침 / world_rules.collapse_condition 설계
+- [문제] 생성 프롬프트의 스케일 초과 너프("해결 목표는 탈출·봉인 위주")가 단일 주체 괴담에서 collapse_condition 설계를 억제 → 단일 주체를 '탈출 전용'으로 만들면 스테이지3+ 게이트(해결판정 필수 진출)와 구조적 충돌(영영 진출 불가). 단일 주체여도 약점이 명확하면 소멸 경로가 있어야 함(쿠네쿠네式 순수 회피형은 예외로 허용하되, 그 경우 스테이지 배치를 1~2로 권고).
+- [수정안] 한 줄: "단일 주체 괴담이라도 entity.weakness/exploit_path에서 논리적으로 도출되는 소멸·해제 조건이 존재하면 world_rules.collapse_condition을 반드시 채워라(탈출 전용으로 비우지 마라). 진짜로 해결 불가한 순수 회피형(쿠네쿠네類)이면 그 사실을 명시하고 스테이지 1~2 난이도로 배치 권고(스테이지3+는 해결판정 필수라 부적합)."
+
+### P25. 단일 주체형 배역 분산 강제 완화 (med, 한정·단일 주체형)
+- [대상] GDAM_SYSTEM_PROMPT 배역 설계 원칙 / meeting_design
+- [문제] "핵심 배역 3~4개·각기 다른 시작 위치·구조적 만남 보장" 원칙이 단일 주체 시나리오에도 강제돼, NPC가 적어도 '배역(플레이어 캐릭터)' 자체가 미니 앙상블을 형성 → 단일 주체 특유의 고독·압박이 희석.
+- [수정안] 단일 사물/단일 주체 괴담(npc_dependency=low, _single_entity)에 한해: "배역 2인 최소 운용 허용. 만남 창(meeting_window)을 늦게 설정 가능. 대신 단서 비대칭을 충분히 확보해 협력 동기를 유지하라." (다인 앙상블형은 기존 3~4 배역 원칙 유지)
+
+### P26. 단일 독립 AI 운용 지침 (med, 범용)
+- [대상] GM_SYSTEM_BASE 괴담 AI 서술 원칙
+- [문제] entity.independent_ai=true·can_impersonate=false인 단일 주체를 GM이 어떤 원칙으로 서술할지(패턴 단조 회피·압박 단계 상승·정지 페널티 타이밍) 전용 지침이 없어, ai_context.corruption_behavior를 무시한 임의 서술 가능.
+- [수정안] GM_SYSTEM_BASE에 단락 추가: "entity.independent_ai=true이고 can_impersonate=false인 단일 주체는 ai_context.corruption_behavior의 단계 순서를 반드시 준수하고, 한 응답에서 corruption 단계를 2단계 이상 건너뛰지 마라. 위협은 물리 현상·환경 변화로만 간접 표현하는 원칙을 단일 주체에서 특히 엄격히 적용한다(직접 묘사로 신비 소진 금지)."
+
+### P27. 먼 과거 시대 대체 통신 판정 기준 명시 (med, 한정·과거 시대)
+- [대상] GDAM_SYSTEM_PROMPT constraints / GM 통신 판정
+- [문제] phone_usable=false인 과거(조선·중세·에도 등)에서 구전·서신·봉화·연기 신호 등 대체 통신의 도달 시간·발각 위험·신뢰도 기준이 없어 GM이 현대 통신처럼 즉시 취급하거나 완전 차단하는 양극단.
+- [수정안] constraints.era가 과거이고 phone_usable=false이면 constraints.notes에 "대체 통신 수단명 + 도달 소요(예: '서신-하루 이상', '봉화-즉시이나 가시범위 한정') + 도청/발각 위험 수준"을 반드시 명시. comms_monitored 대신 이 notes 기준으로 도청·지연 판정(P14는 현대 감시통신용, 과거는 본 조항).
