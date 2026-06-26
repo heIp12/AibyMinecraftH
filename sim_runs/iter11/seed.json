@@ -1,0 +1,336 @@
+{
+  "_sim_note": "프롬프트 검증용 평문(실게임은 AES-256-GCM 설치별 키)",
+  "_patches_applied": ["P1","P3","P6","P8","P9","P10","P11","P12","P16","P17","P20","P21","P32","P33"],
+  "_sim_id": "#WZ3T-8NQK",
+  "_iter": 11,
+
+  "seed": "WZ3T-8NQK",
+  "room": 4,
+  "scale": "시티",
+
+  "entity": {
+    "name": "구획 봉인자(區劃封印者)",
+    "type": "영역형 지능체 — 구역 간 연결을 잠식해 인간 사이의 연결망을 단절시키는 존재",
+    "rules": [
+      "봉인자는 한 번에 하나의 구역 경계를 '잠금'할 수 있다. 잠긴 경계는 물리적으로 통과 불가능하다.",
+      "잠금은 순차적으로 확산된다 — 인접 경계로 30분마다 한 칸씩 번진다.",
+      "봉인자는 구역이 완전히 고립될 때마다 그 구역 안의 모든 전자 통신을 일시 차단한다(고립 구역 내부끼리는 유선·직접 접촉으로 통신 가능, 외부와는 불가).",
+      "봉인자의 잠금을 강제로 깨려고 하면 그 충격이 시도자에게 역류한다(HP/SAN 피해).",
+      "봉인자는 경계 자체에 기생하며 물리적 형체가 없다. 단, 두 구역이 동시에 연결을 재확립하면 기생 지점이 노출된다."
+    ],
+    "weakness": "두 개 이상의 구역 경계를 동시에 재개방하는 시도가 봉인자의 잠금 논리를 충돌시켜 기생 지점을 드러낸다.",
+    "solution": "핵심 교차로(zone_D 제어실)의 물리 스위치를 조작해 zone_C와 zone_F를 동시에 재연결하면 봉인자의 기생 지점이 경계에 노출된다. 노출된 지점에 전류를 흘려 소각하면 소멸한다.",
+    "exploit_path": "봉인자는 '하나의 경계만 처리한다'는 규칙을 스스로 따른다. 여러 경계를 동시에 재활성화하면 봉인자의 처리 용량을 초과해 내부 모순이 발생한다.",
+    "escape": "zone_A 옥외 비상구를 통해 건물 밖으로 탈출하면 봉인자의 영향권을 벗어날 수 있다. 단, 비상구에 가장 가까운 경계(zone_A-zone_B 사이)가 이미 잠겼다면 우회로(zone_G)를 확보해야 한다.",
+    "hidden_rules": [
+      "봉인자는 인간의 '호출'이 아니라 도시 재개발 공사 중 발굴된 구획 표석에서 깨어났다. 표석을 손상시키면 약화된다.",
+      "봉인자는 고립 구역 내부 통신을 차단하지 않는다 — 외부로 나가는 신호만 차단한다. 이 점이 mislead가 된다.",
+      "제어실 물리 스위치는 시건장치가 걸려 있다. 열쇠는 두 경로로 입수 가능하다: (1) zone_E 관리사무소 철제 캐비닛, (2) NPC 황지훈이 소지."
+    ],
+    "independent_ai": true,
+    "can_impersonate": false,
+    "ai_context": {
+      "personality": "감정이 없는 기계적 확산. 인간을 표적이 아니라 '연결망의 잡음'으로 처리한다.",
+      "initial_pattern": "잠금을 서서히 확산하며 구역들을 차례로 고립시킨다. 직접 접근하지 않는다.",
+      "corruption_behavior": {
+        "0": "경계 1~2곳에 진동·냉기·이음매 균열 등 이상 현상이 느껴진다.",
+        "1": "첫 경계가 잠긴다. zone_B-zone_C 연결 차단. 해당 구역 간 전화 신호 두절.",
+        "2": "경계 확산 가속. zone_D 인근 전력 불안정. 고립 구역이 하나 더 생긴다.",
+        "3": "건물 전체 구역의 절반 이상이 격리 상태. 통신 가능 창이 좁아진다.",
+        "4": "완전 고립 직전. 봉인자가 마지막 경계를 처리하러 이동 중 — 제어실만이 유일한 역전 지점."
+      }
+    }
+  },
+
+  "world_rules": {
+    "core": "구역 간 경계가 차례로 잠기며 사람들 사이의 연결이 끊긴다. 완전히 고립된 구역의 인간은 봉인자에게 '제거'된다.",
+    "details": [
+      "경계가 잠기면 그 사이를 지나는 모든 신호(디지털·무선)가 차단된다. 고립 구역 내부끼리는 직접 접촉·유선으로만 통신 가능.",
+      "고립 구역의 인간이 외부 구역으로 탈출하지 못하고 '완전 고립' 상태가 30분 이상 지속되면 봉인자가 그 구역을 '처리'한다.",
+      "물리 경계를 직접 파괴하려는 시도는 역류 피해를 일으킨다. 다른 방법(스위치·우회로·규칙 논리)을 써야 한다.",
+      "봉인자는 구역 경계에 기생하므로 두 구역이 동시에 재연결되면 기생 지점이 노출·취약해진다."
+    ],
+    "hidden": true,
+    "loophole": "봉인자는 동시 다중 경계 재활성화를 처리하지 못한다. 제어실에서 두 경계를 동시에 여는 것이 역이용의 핵심이다.",
+    "collapse_condition": "zone_C와 zone_F를 동시에 재연결(제어실 물리 스위치 조작)한 뒤, 노출된 봉인자 기생 지점에 전류 방전 장치를 작동시킨다.",
+    "npc_dependency": "mid"
+  },
+
+  "constraints": {
+    "era": "현대",
+    "phone_usable": true,
+    "outside_contact": false,
+    "can_leave_scene": true,
+    "comms_monitored": false,
+    "notes": [
+      "통신 가능 여부는 구역 격리 상태에 연동된다: 두 구역 사이의 경계가 잠기면 그 경계를 사이에 둔 구역 간 무선 통신(전화·문자)이 두절된다.",
+      "같은 구역 안에 있는 인원끼리는 경계 잠금과 무관하게 대면·직접 통신 가능.",
+      "경계가 잠기지 않은 구역 쌍끼리는 간헐적으로 통신 가능 — 잠금 확산 타이밍에 따라 통신 가능 창이 열리고 닫힌다.",
+      "외부(경찰·소방)와의 통신은 건물 진입 직후 차단됨(봉인자 첫 발동).",
+      "★ 간헐적 통신 단절: 잠금이 확산되는 30분 주기마다 가용 통신 경로가 달라진다. 통신이 가능한 구간과 두절 구간이 교차한다.",
+      "P32: collapse_condition의 핵심 정보(열쇠 위치)는 두 경로로 입수 가능 — zone_E 캐비닛 또는 NPC 황지훈 소지."
+    ]
+  },
+
+  "timeline": {
+    "daily_turns": 5,
+    "start_time": "19:00",
+    "end_time": "23:30",
+    "minutes_per_turn": 15,
+    "time_visible": true,
+    "main_events": [
+      {"id":"E1","time":"19:00","label":"첫 번째 잠금 — zone_B-C 경계 차단","condition":"괴담 파트 시작","effect":"zone_B와 zone_C 사이 통신 두절, 물리 통로 봉쇄.","blockable":false},
+      {"id":"E2","time":"19:45","label":"두 번째 잠금 — zone_D-E 경계 차단","condition":"첫 잠금 30분 경과","effect":"zone_D와 zone_E 사이 통신 두절. zone_C가 완전 고립 위기.","blockable":true,"branches":{"auto":{"condition":"막지 못하면","next":"E3"},"intervene":[{"condition":"zone_D 제어실 접근 시도","next":"E2-B"},{"condition":"NPC 황지훈 설득","next":"E2-C"}]}},
+      {"id":"E2-B","time":"19:50","label":"제어실 접근 — 시건장치 발견","condition":"zone_D 도달","effect":"제어실 입구에 자물쇠. 열쇠 확보 필요.","blockable":false},
+      {"id":"E2-C","time":"19:50","label":"황지훈 협조","condition":"NPC 황지훈 설득 성공","effect":"황지훈이 열쇠를 넘기거나 제어실로 안내한다.","blockable":false},
+      {"id":"E3","time":"20:30","label":"세 번째 잠금 — zone_F-G 경계 차단","condition":"두 번째 잠금 45분 경과","effect":"zone_F도 고립 구역에 추가. 탈출 우회로 차단.","blockable":true,"branches":{"auto":{"condition":"막지 못하면","next":"E4"},"intervene":[{"condition":"zone_G에서 탈출로 확보","next":"E3-B"}]}},
+      {"id":"E3-B","time":"20:35","label":"탈출로 일부 확보","condition":"zone_G 우회로 개방","effect":"zone_A-G 경로가 열린다. 탈출 가능하나 해결 미완.","blockable":false},
+      {"id":"E4","time":"21:15","label":"건물 전력 대폭 불안정 — 통신 창 극도로 좁아짐","condition":"세 번째 잠금 이후","effect":"간헐적 통신 창이 5분 이내로 짧아진다. 이 순간 이후 통화는 15초 이내로만 가능.","blockable":false},
+      {"id":"E5","time":"22:00","label":"최종 잠금 카운트다운 — zone_C 처리 임박","condition":"zone_C 완전 고립 2시간 경과","effect":"봉인자가 zone_C 방향으로 수렴 중. zone_C에 고립된 인원에게 극한 압박.","blockable":true,"branches":{"auto":{"condition":"제어실 스위치 미조작","next":"E_END"},"intervene":[{"condition":"동시 재연결 스위치 조작","next":"E_COLLAPSE"}]}},
+      {"id":"E_COLLAPSE","time":"22:10","label":"봉인자 기생 지점 노출 — collapse","condition":"동시 재연결 달성","effect":"봉인자가 경계 교차점에 노출된다. 전류 방전 장치 작동 시 소멸 가능.","blockable":false},
+      {"id":"E_END","time":"23:30","label":"완전 고립 — 구획 확정","condition":"미해결","effect":"끝 — 봉인자가 zone_C를 처리한다.","blockable":false,"is_end":true}
+    ],
+    "1": {"condition":"경계 1곳 잠금 / 통신 일부 두절","effect":"zone_B-C 간 연락 불가. 현장 소음 이상."},
+    "2": {"condition":"경계 2곳 이상 잠금 / 구역 고립 발생","effect":"플레이어 일부 통신 두절. 전력 불안정."},
+    "3": {"condition":"절반 이상 고립 / 제어실만 열쇠","effect":"탈출로 위기. 단서 통합 없으면 해결 불가."},
+    "4": {"condition":"최종 잠금 임박 / 봉인자 수렴","effect":"zone_C 고립자 극한 압박. 동시 재연결만이 역전 수단."}
+  },
+
+  "roles": [
+    {
+      "role_id": "role_A",
+      "name": "통신 엔지니어",
+      "char_name": "이수연",
+      "gender": "여성",
+      "is_core": true,
+      "age_range": [28, 38],
+      "job_pool": ["통신 설비 엔지니어", "네트워크 기술자", "IT 인프라 담당자", "전기통신 기술사", "시설 관리 엔지니어", "데이터센터 운영자", "통신사 현장 직원"],
+      "spawn_timeline": "시작 즉시",
+      "spawn_location": "zone_A 로비 — 건물 통신 설비 점검 차 방문",
+      "zone": "zone_A",
+      "initial_info": [
+        "이 건물의 통신망 설계도를 사전에 검토했다. zone_D 제어실에 통신 및 전력 분배 스위치가 집중되어 있다는 것을 안다.",
+        "각 구역 간 경계에 물리 차단기가 설치되어 있으며, 제어실에서 일괄 제어 가능하다는 것을 알고 있다."
+      ],
+      "hidden_info": [
+        "zone_E 관리사무소 철제 캐비닛에 제어실 열쇠가 있다. 이 경로는 이수연이 점검 전 수령한 문서에 표기되어 있다."
+      ],
+      "pre_spawn_beats": [],
+      "start_item": ["스마트폰", "노트북 가방", "건물 통신망 설계도(문서)"],
+      "knowledge_advantage": false,
+      "role_stats": {"spr_add": 2, "str_add": -1, "cha_add": 1, "summary": "통신 엔지니어: 정신력+2, 근력-1, 매력+1"}
+    },
+    {
+      "role_id": "role_B",
+      "name": "보안 요원",
+      "char_name": "강태민",
+      "gender": "남성",
+      "is_core": true,
+      "age_range": [30, 45],
+      "job_pool": ["시설 보안 요원", "경비원", "전직 경찰관", "사설 탐정", "군 제대자", "경호원", "보안 컨설턴트"],
+      "spawn_timeline": "시작 즉시",
+      "spawn_location": "zone_B 지하 주차장 — 야간 순찰 중",
+      "zone": "zone_B",
+      "initial_info": [
+        "건물 보안 순찰 담당. 각 구역 위치와 비상구 위치를 외우고 있다.",
+        "오늘 저녁 zone_E 관리사무소에 야간 관리자 황지훈이 혼자 근무 중이라는 것을 알고 있다."
+      ],
+      "hidden_info": [
+        "강태민은 zone_D 인근 구획에서 발굴된 '표석'에 대한 소문을 들었다. 공사 인부 중 하나가 이상한 증상을 보였다는 것."
+      ],
+      "pre_spawn_beats": [],
+      "start_item": ["스마트폰", "무전기(채널3)", "손전등", "마스터 키(zone_A~C 일반 잠금 해제용)"],
+      "knowledge_advantage": false,
+      "role_stats": {"str_add": 3, "cha_add": -1, "luk_fixed": 4, "summary": "보안 요원: 근력+3, 매력-1, 행운 4로 고정"}
+    },
+    {
+      "role_id": "role_C",
+      "name": "재개발 현장 감독",
+      "char_name": "박현우",
+      "gender": "남성",
+      "is_core": true,
+      "age_range": [35, 50],
+      "job_pool": ["건설 현장 감독", "도시 재개발 기획자", "토목 엔지니어", "문화재 조사원", "부동산 개발업자", "건축사", "시공 관리자"],
+      "spawn_timeline": "타임라인 1단계",
+      "spawn_location": "zone_C 지하 발굴 현장 — 야간 긴급 점검 차 홀로 진입",
+      "zone": "zone_C",
+      "initial_info": [
+        "zone_C 지하 발굴 현장의 관리 책임자. 오늘 저녁 이상 진동 보고를 받고 혼자 현장 점검을 왔다.",
+        "발굴 현장에서 구획 표석이 출토됐다는 것을 알고 있다. 표석에 이상한 균열이 생겼다는 보고가 있었다."
+      ],
+      "hidden_info": [
+        "표석의 균열이 봉인자 각성의 트리거라는 것을 모른다. 하지만 표석을 손상시키면 봉인자가 약화된다는 단서가 표석 주변 문서에 있다.",
+        "zone_C는 E1 잠금 이후 외부 통신이 완전히 두절된 고립 구역이 된다. 박현우는 이후 내부에서 단서를 발견하지만 외부에 알릴 방법이 없다."
+      ],
+      "pre_spawn_beats": [
+        "사무실에서 야간 긴급 보고 문자를 받는다. 발굴 현장에서 진동이 감지됐다는 내용.",
+        "건물 입구에서 이상한 냉기를 느끼며 입장한다. 경비를 만나지 못한다.",
+        "zone_C 지하로 내려가며 경계 이음매에 균열이 생긴 것을 발견한다.",
+        "발굴 현장에서 표석 주변 고문서 조각을 발견한다 — '경계를 동시에 열면 기생하는 것이 드러난다'는 내용의 구절."
+      ],
+      "start_item": ["스마트폰", "안전모", "현장 점검 일지"],
+      "knowledge_advantage": true,
+      "role_stats": {"str_add": 1, "spr_add": 1, "san_max_add": -1, "summary": "현장 감독: 근력+1, 정신력+1, 정신력 최대치-1"}
+    }
+  ],
+
+  "relationships": [
+    {"roles": ["role_A", "role_B"], "description": "건물 점검 차 각자 방문한 타인. 오늘 처음 만남."},
+    {"roles": ["role_A", "role_C"], "description": "같은 건물 관련 업무로 서류상 접점이 있지만 대면은 처음."},
+    {"roles": ["role_B", "role_C"], "description": "완전한 타인. 강태민이 박현우가 건물에 있다는 것을 모른다."}
+  ],
+
+  "npcs": [
+    {
+      "npc_id": "npc_hwang",
+      "name": "황지훈",
+      "critical": true,
+      "zone": "zone_E",
+      "role_type": "복합(열쇠+방어막)",
+      "true_role": "열쇠: 제어실 열쇠를 소지. 방어막: 봉인자의 확산 속도를 간접적으로 늦추는 건물 구획 설정 권한을 가짐. 죽이면 열쇠와 방어막 동시 상실.",
+      "personality": "겁쟁이지만 건물 구조를 속속들이 아는 노련한 야간 관리자. 처음엔 숨으려 하지만 설득 가능.",
+      "motivation": "살아서 이 건물을 빠져나가는 것. 혼자서는 움직이지 않으나 신뢰하는 사람이 생기면 적극 협조한다.",
+      "knowledge": [
+        "제어실 열쇠를 주머니에 소지하고 있다.",
+        "zone_E 관리사무소 캐비닛에 제어실 열쇠 예비가 있다(비밀번호: 1998).",
+        "zone_C 지하 발굴 때 구획 표석이 나왔고, 이상한 일이 생겼다고 공사 인부에게 들었다."
+      ],
+      "schedule": [
+        {
+          "time": "19:00",
+          "action": "이상한 소리를 듣고 zone_E 관리사무소에 숨어 문을 걸어 잠근다.",
+          "will": "강함",
+          "duration_turns": 4,
+          "after_duration": "복귀(숨기 한계 — 스스로 문을 열고 복도로 나온다)"
+        },
+        {
+          "time": "E2 이후 1턴",
+          "action": "내부 유선 전화로 경비 쪽에 연락을 시도한다. 연결이 안 되자 유선 라디오를 켠다.",
+          "will": "상황",
+          "condition": "zone_D-E 경계 잠금 직후"
+        },
+        {
+          "time": "반응",
+          "action": "플레이어가 문을 두드리거나 유선 인터콤을 누르면 조심스럽게 응답한다.",
+          "will": "반응",
+          "condition": "문 두드리기·인터콤 조작·이름을 부르는 구체적 행동",
+          "aux_trigger_turns": 6,
+          "aux_trigger_action": "6턴 경과 시 황지훈이 먼저 문을 살짝 열고 복도를 살핀다 — 일부라도 접촉 기회 제공(P33 보조 트리거)"
+        },
+        {
+          "time": "반응",
+          "action": "충분히 신뢰하면 제어실 열쇠를 건네고 동행을 제안한다.",
+          "will": "약함",
+          "condition": "설득·신뢰 형성 후 열쇠 요청"
+        }
+      ]
+    },
+    {
+      "npc_id": "npc_ghost_worker",
+      "name": "공사 인부 유령(이름 미상)",
+      "critical": false,
+      "zone": "zone_C",
+      "role_type": "피해자",
+      "true_role": "봉인자에게 처리된 이전 피해자의 잔상. zone_C 고립 구역에서만 출현. 위협 요소이나 해결에 직접 관여하지 않는다.",
+      "personality": "말이 없다. 경계 이음매 근처에서 나타났다 사라진다.",
+      "motivation": "특정 동기 없음. 봉인자의 잔재로 구역을 배회한다.",
+      "knowledge": []
+    }
+  ],
+
+  "clues": [
+    {
+      "id": "clue_01",
+      "type": "real",
+      "location": "zone_A 로비 — 벽면 안내판",
+      "content": "건물 내 비상 통신망: 구역 간 유선 인터콤 zone_A-B-D-E 연결. zone_C는 독립 회선(개별 내선 전용).",
+      "path": ["role_A 설계도와 대조하면 zone_C가 외부 통신망에서 분리된 독립 회선임을 확인할 수 있다."]
+    },
+    {
+      "id": "clue_02",
+      "type": "real",
+      "location": "zone_E 관리사무소 책상 — 점검 일지",
+      "content": "구획 표석 발굴 보고 (11월 3일): 표석 표면에 이상 균열. 공사 인부 2명이 다음 날 연락 두절됨. 표석은 zone_C 지하 격납고에 임시 보관 중.",
+      "path": ["표석과 잠금 확산의 연관을 추론할 수 있다."]
+    },
+    {
+      "id": "clue_03",
+      "type": "real",
+      "location": "zone_C 지하 격납고 — 표석 주변 고문서 조각",
+      "content": "한자·고어 혼용. 판독 가능 부분: '...경계를 동시에 열면 기생하는 것이 드러나고... 전류로써 소각하면 소멸한다...'",
+      "path": ["박현우(role_C) 지식 우위로 판독 가능. 또는 통신이 복구된 창에 사진 전송 시 역사학자 NPC 없어도 이수연이 번역 앱으로 해석 가능."]
+    },
+    {
+      "id": "clue_04",
+      "type": "mislead",
+      "location": "zone_B 지하 주차장 — 낙서",
+      "content": "누군가 급히 쓴 듯한 낙서: '벽을 부수면 열린다'. 이전에 갇혔던 사람이 쓴 것으로 보인다.",
+      "path": ["잠긴 경계를 물리적으로 부수면 된다는 오해를 유도. 실제로 시도하면 역류 피해 발생."]
+    },
+    {
+      "id": "clue_05",
+      "type": "mislead",
+      "location": "zone_D 제어실 외벽 — 경고 표지",
+      "content": "경고: 구역 재연결 스위치는 반드시 순차적으로 조작할 것. 동시 조작 시 과전류 위험.",
+      "path": ["동시 재연결이 위험하다는 오해를 유도. 실제로는 동시 조작이 봉인자를 무너뜨리는 핵심 방법이다."]
+    },
+    {
+      "id": "clue_06",
+      "type": "real",
+      "location": "zone_D 제어실 내부 — 회로도 메모(열쇠 없이는 접근 불가)",
+      "content": "zone_C - zone_F 동시 재연결 시험 기록. 담당자 메모: '시험 중 경계 이음매에서 이상한 진동 관측. 1회성인지 확인 필요.'",
+      "path": ["제어실 진입 후 발견. 동시 재연결 단서를 공식 기록으로 확인."]
+    }
+  ],
+
+  "key_items": [
+    {
+      "id": "item_control_key",
+      "name": "제어실 열쇠",
+      "type": "physical:TRIPWIRE_HOOK",
+      "description": "무거운 철제 열쇠. 손잡이에 'D-CTRL' 각인.",
+      "lore_info": "zone_D 제어실 자물쇠 전용. 두 곳에서 입수 가능: zone_E 캐비닛(비밀번호 1998) 또는 NPC 황지훈 소지.",
+      "location": "zone_E 관리사무소 철제 캐비닛 / 또는 NPC 황지훈",
+      "clue_value": "zone_D 제어실 진입 가능. P32 적용 — 단일 장애점 없이 2개 독립 경로."
+    },
+    {
+      "id": "item_discharge_device",
+      "name": "휴대용 방전 장치",
+      "type": "physical:COMPARATOR",
+      "description": "전기 설비 점검용 소형 방전기. 이수연의 장비.",
+      "lore_info": "고전압 방전 가능. 봉인자 노출 시 소각 수단으로 활용 가능.",
+      "location": "role_A(이수연) 소지",
+      "clue_value": "봉인자 기생 지점 소각 수단."
+    },
+    {
+      "id": "item_ancient_doc",
+      "name": "고문서 조각",
+      "type": "paper",
+      "description": "색이 바랜 종이. 한자·고어 혼용.",
+      "lore_info": "경계 동시 재개방과 전류 소각 방법이 적힌 핵심 단서.",
+      "content": ["...界를 同時에 開하면 寄生하는 者가 드러나고...", "...電流로써 燒却하면 消滅하리라..."],
+      "location": "zone_C 지하 격납고",
+      "clue_value": "collapse_condition 해결법 핵심. 박현우(role_C)가 최초 발견."
+    }
+  ],
+
+  "zones": [
+    {"zone_id": "zone_A", "name": "1층 로비", "area": "본관1층", "connections": ["zone_B", "zone_G"], "description": "건물 입구. 비상 탈출구 있음."},
+    {"zone_id": "zone_B", "name": "지하주차장", "area": "지하", "connections": ["zone_A", "zone_C"], "description": "지하 1층 주차장. 강태민 순찰 구역."},
+    {"zone_id": "zone_C", "name": "지하발굴현장", "area": "지하", "connections": ["zone_B"], "description": "지하 2층 발굴 구역. 표석 격납고 있음. E1 이후 고립 구역."},
+    {"zone_id": "zone_D", "name": "제어실복도", "area": "본관2층", "connections": ["zone_A", "zone_E", "zone_F"], "description": "2층 제어실 인근 복도. 핵심 제어실 입구."},
+    {"zone_id": "zone_E", "name": "관리사무소", "area": "본관2층", "connections": ["zone_D"], "description": "야간 관리자 황지훈 근무지. 캐비닛·유선 전화."},
+    {"zone_id": "zone_F", "name": "2층비상계단", "area": "본관2층", "connections": ["zone_D", "zone_G"], "description": "2층 비상 계단. E3 이후 경계 잠금 위험."},
+    {"zone_id": "zone_G", "name": "옥외통로", "area": "외부", "connections": ["zone_A", "zone_F"], "description": "건물 외부 비상 통로. 탈출 우회로. E3 미발동이면 항상 개방."}
+  ],
+
+  "meeting_design": {
+    "note": "P32 적용: 핵심 단서(고문서)는 zone_C 박현우가 발견. 통신 두절로 직접 공유 불가. 통신 가능 창에 사진 전송(이수연에게) 또는 박현우의 희생적 탈출(zone_C 봉인 전) 중 하나로 정보 전달. 이수연은 설계도로 독립 경로(zone_E 캐비닛) 접근 가능 — 두 경로 모두 열려 있음.",
+    "comm_windows": [
+      "E1 이전: 전 구역 통신 자유",
+      "E1 이후: zone_B-C 간 통신 두절. zone_A-D-E 간 통신 가능.",
+      "E2 이후: zone_D-E 간도 두절. zone_A-D 간, zone_A-G 간만 가능.",
+      "E4 이후: 통신 창 5분 이내로 극단 단축 — 15초 통화만 가능."
+    ]
+  }
+}
