@@ -323,6 +323,158 @@ str_add/cha_add/luk_add/spr_add/hp_max_add/san_max_add: B급 이하는 0이 원�
         return pd.traits.stream().filter(t -> t.id.equals(traitId)).findFirst();
     }
 
+    // ──────────────────────────────────────────────────────────────
+    //  스테이지 종료 특성 성장 3선택지
+    // ──────────────────────────────────────────────────────────────
+
+    public record StageEndChoices(
+        TraitData myUpgrade,   // 플레이어 특성 강화 (replacesId 세팅)
+        TraitData mapUpgrade,  // 맵 특성 → 범용 강화 (replacesId 세팅, roleSpecific=false)
+        TraitData newTrait     // 신규 범용 특성
+    ) {}
+
+    /**
+     * 스테이지 클리어 후 3가지 특성 성장 선택지를 AI로 생성한다.
+     * myUpgrade: 기여도 높은 플레이어(영구) 특성 강화
+     * mapUpgrade: 기여도 높은 배역 전용 특성 → 범용 강화
+     * newTrait: 새 범용 특성
+     */
+    public CompletableFuture<StageEndChoices> generateStageEndChoices(PlayerData pd, String gdamTheme) {
+        // 기여도(사용 횟수) 높은 순으로 선택
+        TraitData bestPlayer = pd.traits.stream()
+            .filter(t -> !t.roleSpecific)
+            .max(Comparator.comparingInt((TraitData t) -> t.usedThisStage)
+                .thenComparingInt(t -> gradeToInt(t.grade)))
+            .orElse(null);
+        TraitData bestMap = pd.traits.stream()
+            .filter(t -> t.roleSpecific)
+            .max(Comparator.comparingInt((TraitData t) -> t.usedThisStage)
+                .thenComparingInt(t -> gradeToInt(t.grade)))
+            .orElse(null);
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("괴담 테마(직접 언급 금지): ").append(gdamTheme).append("\n");
+        sb.append("플레이어 직업: ").append(pd.job).append("\n\n");
+
+        if (bestPlayer != null) {
+            sb.append("## 내 특성 강화 대상\n")
+              .append("이름: ").append(bestPlayer.name).append("\n")
+              .append("현재 등급: ").append(bestPlayer.grade).append("\n")
+              .append("효과: ").append(bestPlayer.effect).append("\n")
+              .append("이번 게임 사용 횟수: ").append(bestPlayer.usedThisStage).append("\n")
+              .append("목표 등급: ").append(computeUpgradeGrade(bestPlayer)).append("\n\n");
+        } else {
+            sb.append("## 내 특성 강화 대상: 없음 (new_trait2 항목 대신 생성)\n\n");
+        }
+
+        if (bestMap != null) {
+            sb.append("## 맵 전용 특성 → 범용화 대상\n")
+              .append("이름: ").append(bestMap.name).append("\n")
+              .append("현재 등급: ").append(bestMap.grade).append("\n")
+              .append("효과: ").append(bestMap.effect).append("\n")
+              .append("이번 게임 사용 횟수: ").append(bestMap.usedThisStage).append("\n")
+              .append("목표 등급: ").append(computeUpgradeGrade(bestMap)).append("\n\n");
+        } else {
+            sb.append("## 맵 전용 특성 → 범용화 대상: 없음 (null로 응답)\n\n");
+        }
+
+        String system = """
+너는 TRPG 특성 성장 시스템이야.
+아래 JSON 형식으로만 응답 (다른 텍스트 금지):
+{"my_upgrade":{...},"map_upgrade":{...},"new_trait":{...}}
+각 특성 JSON 스키마:
+{"id":"","name":"","grade":"","description":"","active":false,"effect":"","cooldown_turns":0,"str_add":0,"cha_add":0,"luk_add":0,"spr_add":0,"hp_max_add":0,"san_max_add":0}
+
+my_upgrade 규칙:
+- '내 특성 강화 대상'의 강화 버전. 대상이 없으면 새 범용 특성 생성.
+- grade는 반드시 '목표 등급'을 사용 (대상이 없으면 B).
+- 같은 정체성 유지, 효과 강화·정교화. 범용성 유지.
+
+map_upgrade 규칙:
+- '맵 전용 특성 → 범용화 대상'의 범용 강화 버전.
+- 대상이 없으면 null로 응답.
+- grade는 반드시 '목표 등급'을 사용.
+- 시나리오 한정 내용 제거, 다른 상황에서도 통하게 범용화. 사건 직접 언급 금지.
+
+new_trait: 완전히 새로운 범용 특성. 직업·테마에서 착안하되 사건 직접 언급 금지.
+
+공통:
+- description: 최대 18자 명사구 한 줄. 장황 금지.
+- effect: 한 문장으로 간결하게.
+- 스탯 약어(STR/HP/SAN/CHA/LUK/SPR) 절대 금지. 한국어.
+""";
+        String prompt = sb + "\n위 내용을 바탕으로 3가지 특성을 JSON으로 생성해줘.";
+
+        final TraitData fp = bestPlayer;
+        final TraitData fm = bestMap;
+
+        return aiManager.callAssistant(system, prompt).thenApply(raw -> {
+            try {
+                String cleaned = raw.replaceAll("```json", "").replaceAll("```", "").trim();
+                int s = cleaned.indexOf('{'), e = cleaned.lastIndexOf('}');
+                if (s == -1 || e == -1) return null;
+                JsonObject root = gson.fromJson(cleaned.substring(s, e + 1), JsonObject.class);
+
+                TraitData myUpg = fp != null && root.has("my_upgrade") && !root.get("my_upgrade").isJsonNull()
+                    ? parseStageEndTrait(root.getAsJsonObject("my_upgrade"), computeUpgradeGrade(fp))
+                    : (root.has("my_upgrade") && !root.get("my_upgrade").isJsonNull()
+                       ? parseStageEndTrait(root.getAsJsonObject("my_upgrade"), "B") : null);
+                if (myUpg != null && fp != null) myUpg.replacesId = fp.id;
+
+                TraitData mapUpg = fm != null && root.has("map_upgrade") && !root.get("map_upgrade").isJsonNull()
+                    ? parseStageEndTrait(root.getAsJsonObject("map_upgrade"), computeUpgradeGrade(fm)) : null;
+                if (mapUpg != null) { mapUpg.replacesId = fm.id; mapUpg.roleSpecific = false; }
+
+                TraitData newT = root.has("new_trait") && !root.get("new_trait").isJsonNull()
+                    ? parseStageEndTrait(root.getAsJsonObject("new_trait"), null) : null;
+
+                return new StageEndChoices(myUpg, mapUpg, newT);
+            } catch (Exception ex) {
+                return null;
+            }
+        });
+    }
+
+    private TraitData parseStageEndTrait(JsonObject obj, String gradeOverride) {
+        TraitData td = new TraitData();
+        td.id = "se_" + UUID.randomUUID().toString().substring(0, 6);
+        td.name        = obj.has("name")        ? obj.get("name").getAsString()        : "강화 특성";
+        td.grade       = gradeOverride != null   ? gradeOverride
+                       : (obj.has("grade")       ? obj.get("grade").getAsString()       : "C");
+        td.description = obj.has("description") ? obj.get("description").getAsString() : "";
+        td.active      = obj.has("active")      && obj.get("active").getAsBoolean();
+        td.effect      = obj.has("effect")      ? obj.get("effect").getAsString()      : "";
+        td.cooldownTurns = obj.has("cooldown_turns") ? obj.get("cooldown_turns").getAsInt() : 0;
+        td.str_add    = obj.has("str_add")    ? obj.get("str_add").getAsInt()    : 0;
+        td.cha_add    = obj.has("cha_add")    ? obj.get("cha_add").getAsInt()    : 0;
+        td.luk_add    = obj.has("luk_add")    ? obj.get("luk_add").getAsInt()    : 0;
+        td.spr_add    = obj.has("spr_add")    ? obj.get("spr_add").getAsInt()    : 0;
+        td.hp_max_add = obj.has("hp_max_add") ? obj.get("hp_max_add").getAsInt() : 0;
+        td.san_max_add = obj.has("san_max_add") ? obj.get("san_max_add").getAsInt() : 0;
+        td.roleSpecific = false;
+        return td;
+    }
+
+    /** 기여도(usedThisStage) + 현재 등급 → 목표 등급 계산 */
+    private String computeUpgradeGrade(TraitData t) {
+        int u = t.usedThisStage;
+        return switch (t.grade) {
+            case "S" -> "S";
+            case "A" -> u >= 3 ? "S" : "A";
+            case "B" -> u >= 2 ? "A" : (u >= 1 ? "B" : "B");
+            case "C" -> u >= 2 ? "B" : (u >= 1 ? "C" : "C");
+            case "D" -> u >= 1 ? "C" : "D";
+            case "F" -> u >= 1 ? "D" : "F";
+            default  -> t.grade;
+        };
+    }
+
+    private int gradeToInt(String g) {
+        return switch (g == null ? "" : g) {
+            case "S" -> 5; case "A" -> 4; case "B" -> 3; case "C" -> 2; case "D" -> 1; default -> 0;
+        };
+    }
+
     /** 스테이지 종료/재도전 시 스테이지당 1회 쿨다운(-1)과 usedThisStage 초기화 */
     public void resetStageTraits(PlayerData pd) {
         for (TraitData t : pd.traits) {

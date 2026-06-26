@@ -538,8 +538,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
 
             survivors.forEach(p -> {
                 pendingCreation.add(p.getUniqueId());
-                JsonObject roleData = preAssignedRoleData.get(p.getUniqueId());
-                charGen.generate(p, roleData)
+                charGen.generate(p) // 시나리오 무관 완전 무작위 캐릭터 생성
                     .thenAccept(pd -> {
                         state.addPlayer(pd);
                         plugin.getServer().getScheduler().runTask(plugin, () -> {
@@ -771,26 +770,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                 catch (NumberFormatException e) { player.sendMessage("§c번호를 입력해주세요."); }
             }
             case "_use_trait"  -> handleTraitUse(player, args.length > 1 ? args[1] : "");
-            case "_trait_commit" -> {
-                String traitId = pendingTraitActivation.remove(player.getUniqueId());
-                if (traitId == null) {
-                    player.sendMessage("§7(발동 대기 중인 특성이 없습니다.)");
-                } else {
-                    PlayerData pd = state.getPlayer(player);
-                    if (pd != null) {
-                        String msg = traitBtn.buildTraitUseMessage(pd, traitId);
-                        if (msg != null) {
-                            applyTraitUsed(pd, traitId, state.getCurrentTurn());
-                            boolean accepted = turnMan.handleAction(player, msg, gmSystemPrompt);
-                            if (!accepted) {
-                                player.sendMessage("§7행동 처리 중입니다. 잠시 후 다시 시도하세요.");
-                            } else {
-                                player.sendMessage("§7[특성 발동 중...]");
-                            }
-                        }
-                    }
-                }
-            }
+            case "_trait_commit" -> commitTrait(player);
             case "_trait_cancel" -> {
                 pendingTraitActivation.remove(player.getUniqueId());
                 player.sendMessage("§7특성 발동을 취소했습니다.");
@@ -841,8 +821,9 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         pd.diceRollsRemaining--;
         player.sendMessage("§7재굴림 중...");
 
-        JsonObject roleData = preAssignedRoleData.get(player.getUniqueId());
-        charGen.generate(player, roleData).thenAccept(newPd -> {
+        // 캐릭터 본체는 시나리오와 무관하게 완전 무작위로 재굴림.
+        // (시나리오 배역은 이후 배역 배정 단계에서 별도로 덮어쓴다)
+        charGen.generate(player).thenAccept(newPd -> {
             newPd.diceRollsRemaining = pd.diceRollsRemaining;
             state.addPlayer(newPd);
             plugin.getServer().getScheduler().runTask(plugin, () ->
@@ -1695,6 +1676,40 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         scoreMan.update(player, pd, state.getRoomNumber());
     }
 
+    /** 스테이지 종료 특성 성장 3선택지 처리 (1=내특성, 2=맵특성, 3=신규) */
+    private void handleStageEndTraitSelect(Player player, PlayerData pd,
+                                            TraitManager.StageEndChoices choices, int idx) {
+        pendingTraitSelect.remove(player.getUniqueId());
+        switch (idx) {
+            case 1 -> {
+                TraitData upg = choices.myUpgrade();
+                if (upg != null && upg.replacesId != null) {
+                    traitMan.removeTrait(pd, upg.replacesId);
+                    traitMan.addTrait(pd, upg);
+                    player.sendMessage("§b내 특성을 강화했습니다 → §f" + upg.name + " §7(" + upg.grade + ")");
+                    scoreMan.update(player, pd, state.getRoomNumber());
+                }
+            }
+            case 2 -> {
+                TraitData upg = choices.mapUpgrade();
+                if (upg != null && upg.replacesId != null) {
+                    traitMan.removeTrait(pd, upg.replacesId);
+                    traitMan.addTrait(pd, upg);
+                    player.sendMessage("§6맵 특성을 영구 획득했습니다 → §f" + upg.name + " §7(" + upg.grade + ")");
+                    scoreMan.update(player, pd, state.getRoomNumber());
+                }
+            }
+            case 3 -> {
+                TraitData newT = choices.newTrait();
+                if (newT != null) {
+                    traitMan.addTrait(pd, newT);
+                    player.sendMessage("§a새로운 특성 '§f" + newT.name + "§a'을(를) 획득했습니다!");
+                    scoreMan.update(player, pd, state.getRoomNumber());
+                }
+            }
+        }
+    }
+
     private void handleTraitUse(Player player, String traitId) {
         PlayerData pd = state.getPlayer(player);
         if (pd == null) return;
@@ -1721,20 +1736,28 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
 
         pendingTraitActivation.put(player.getUniqueId(), traitId);
 
-        String warnMsg = trait.usedThisStage >= 2
-            ? "\n§e⚠ 이번 스테이지에서 이미 " + trait.usedThisStage + "회 사용 — 효과가 감소하거나 역효과가 있을 수 있습니다." : "";
+        if (trait.usedThisStage >= 2) {
+            player.sendMessage("§e⚠ 이번 스테이지에서 이미 " + trait.usedThisStage + "회 사용 — 효과가 감소하거나 역효과가 있을 수 있습니다.");
+        }
 
-        player.sendMessage("§b[" + trait.name + "] 발동 준비." + warnMsg);
-        player.sendMessage("§7채팅으로 행동을 입력하면 특성과 함께 처리됩니다.");
+        // Paper Dialog로 발동 선택지 표시
+        dialogMan.showTraitActivation(player, trait, pd.zone,
+            () -> commitTrait(player),
+            () -> player.sendMessage("§7채팅으로 행동을 입력하면 특성과 함께 처리됩니다. §8[취소: /trpg _trait_cancel]")
+        );
+    }
 
-        Component commitBtn = Component.text("[특성에 맡기기]", NamedTextColor.GREEN, TextDecoration.BOLD)
-            .hoverEvent(HoverEvent.showText(Component.text("추가 행동 없이 특성 효과만으로 턴을 진행합니다.", NamedTextColor.GRAY)))
-            .clickEvent(ClickEvent.runCommand("/trpg _trait_commit"));
-        player.sendMessage(commitBtn);
-
-        Component cancelBtn = Component.text("[취소]", NamedTextColor.GRAY)
-            .clickEvent(ClickEvent.runCommand("/trpg _trait_cancel"));
-        player.sendMessage(cancelBtn);
+    private void commitTrait(Player player) {
+        String traitId = pendingTraitActivation.remove(player.getUniqueId());
+        if (traitId == null) { player.sendMessage("§7(발동 대기 중인 특성이 없습니다.)"); return; }
+        PlayerData pd = state.getPlayer(player);
+        if (pd == null) return;
+        String msg = traitBtn.buildTraitUseMessage(pd, traitId);
+        if (msg != null) {
+            applyTraitUsed(pd, traitId, state.getCurrentTurn());
+            boolean accepted = turnMan.handleAction(player, msg, gmSystemPrompt);
+            player.sendMessage(accepted ? "§7[특성 발동 중...]" : "§7행동 처리 중입니다. 잠시 후 다시 시도하세요.");
+        }
     }
 
     private void applyTraitUsed(PlayerData pd, String traitId, int currentTurn) {
@@ -1828,27 +1851,24 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         state.getAllPlayers().stream()
             .filter(playerData -> !playerData.isDead)
             .forEach(playerData -> {
-                // 신규 특성 + 이번 세션 특성 강화본을 함께 제시
-                var newF = traitMan.generateClearTraits(finalGrade, playerData, gdamTheme);
-                var enhF = traitMan.generateEnhancedTraits(playerData, gdamTheme);
-                newF.thenCombine(enhF, (newTraits, enhTraits) -> {
-                        List<TraitData> combined = new ArrayList<>();
-                        if (newTraits != null) combined.addAll(newTraits);
-                        if (enhTraits != null) combined.addAll(enhTraits);
-                        return combined;
-                    })
-                    .thenAccept(choices -> {
-                        if (choices.isEmpty()) return;
-                        Player p = Bukkit.getPlayer(playerData.uuid);
-                        if (p == null || !p.isOnline()) return;
-                        plugin.getServer().getScheduler().runTask(plugin, () -> {
-                            p.sendMessage("§6§l[클리어 보상] 특성을 선택하세요! §7(✦ 신규 / ⬆ 강화)");
-                            boolean canRemove = playerData.traits.size() >= 3;
-                            dialogMan.showTraitSelection(p, choices, canRemove,
-                                idx -> handleTraitSelect(p, idx));
-                            pendingTraitSelect.add(p.getUniqueId());
-                        });
+                // 기여도 기반 특성 성장 3선택지 생성
+                traitMan.generateStageEndChoices(playerData, gdamTheme).thenAccept(choices -> {
+                    if (choices == null) return;
+                    Player p = Bukkit.getPlayer(playerData.uuid);
+                    if (p == null || !p.isOnline()) return;
+                    plugin.getServer().getScheduler().runTask(plugin, () -> {
+                        p.sendMessage("§6§l[클리어 보상] 특성 성장을 선택하세요!");
+                        String srcMyName = choices.myUpgrade() != null && choices.myUpgrade().replacesId != null
+                            ? traitMan.getTrait(playerData, choices.myUpgrade().replacesId)
+                                      .map(t -> t.name).orElse("") : null;
+                        String srcMapName = choices.mapUpgrade() != null && choices.mapUpgrade().replacesId != null
+                            ? traitMan.getTrait(playerData, choices.mapUpgrade().replacesId)
+                                      .map(t -> t.name).orElse("") : null;
+                        dialogMan.showStageEndTraitChoice(p, choices, srcMyName, srcMapName,
+                            idx -> handleStageEndTraitSelect(p, playerData, choices, idx));
+                        pendingTraitSelect.add(p.getUniqueId());
                     });
+                });
             });
 
         broadcast("§6특성을 선택한 뒤 §f/trpg stop §6으로 세션을 종료하세요.");
@@ -2718,8 +2738,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
 
         survivors.forEach(p -> {
             pendingCreation.add(p.getUniqueId());
-            JsonObject roleData = preAssignedRoleData.get(p.getUniqueId());
-            charGen.generate(p, roleData)
+            charGen.generate(p) // 시나리오 무관 완전 무작위 캐릭터 생성
                 .thenAccept(pd -> {
                     state.addPlayer(pd);
                     plugin.getServer().getScheduler().runTask(plugin, () -> {
