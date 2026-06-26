@@ -1,0 +1,651 @@
+{
+  "_sim_note": "프롬프트 검증용 평문(실게임은 AES-256-GCM 설치별 키 암호화라 그대로 로드 불가)",
+  "seed": "#MB7X-4QKN",
+  "room": 3,
+  "scale": "시티",
+  "entity": {
+    "name": "부채무(負債霧) — 빚의 안개",
+    "type": "규칙형·환경형",
+    "rules": [
+      "이 시설 안에서 타인에게 '부탁'하거나 '도움을 받으면' 그 행위가 즉시 물성화된 채무로 고착된다.",
+      "채무는 시간이 지날수록 이자가 붙듯 무게(체력 압박)와 안개 농도(SAN 압박)로 나타난다.",
+      "채무자가 물성화된 채무를 지불하지 않은 채 시설 밖으로 나가려 하면 안개가 출구를 완전히 막는다.",
+      "채무는 대여·증여·희생으로도 상환 가능하다. 단, 상환 행위도 새 채무를 만들 수 있다.",
+      "오염도 2단계 이상에서 '이미 상환한 채무'가 복리로 재발생한다 — 진짜 상환이었는지 의심하게 만든다."
+    ],
+    "weakness": "부채무는 '자발적 희생(대가 없는 증여)'에 반응하지 못한다 — 대가를 기대하지 않는 순수 증여는 채무를 생성하지 않고 오히려 안개를 흩뿐다.",
+    "solution": "시설 내부 서버실의 '채무 원장 데이터'를 완전 삭제하면 부채무의 물성화 근거가 사라져 규칙이 붕괴된다.",
+    "exploit_path": "채무 생성의 전제인 '거래 쌍방의 암묵적 합의'가 성립하지 않는 조건을 만들면 규칙 자체가 작동 불가 상태에 빠진다 — 대가를 기대하지 않는 일방 행위는 채무 생성 트리거를 우회한다.",
+    "escape": "채무를 모두 상환하거나, 상환 없이 비상 탈출구(B2층 환기 덕트)를 통해 시설 외부로 나간다. 단 채무가 남아 있으면 탈출 후에도 안개가 신체에 잔류(부분 SAN 손실 지속).",
+    "hidden_rules": [
+      "부채무의 원장은 본래 이 건물 지하 데이터센터를 운영했던 스타트업의 과도한 부채 회계 데이터에서 자생했다 — 인간의 채무 기록이 임界를 넘어 자의식을 가진 규칙이 된 것이다.",
+      "안개 속에 보이는 희미한 숫자들은 실제로 이전 피해자들의 미상환 채무 잔액이다 — 읽을 수 있으면 그들의 최후를 알 수 있다.",
+      "채무 원장 데이터는 백업이 클라우드에도 존재한다. 로컬 삭제만으로는 48시간 후 자동 복원되므로 클라우드 접근 권한도 파괴해야 한다.",
+      "시설 보안망이 부채무와 공생 관계다 — 보안망이 통신을 감청해 채무 발생 순간을 실시간 기록하고, 부채무는 그 기록으로 채무를 강화한다."
+    ],
+    "independent_ai": true,
+    "can_impersonate": false,
+    "ai_context": {
+      "personality": "조용하고 침착하다. 감정이 없으며, 오직 채무의 논리로만 움직인다. 자비도 악의도 없는 회계적 공정성.",
+      "initial_pattern": "처음에는 미세한 무게감과 짙어지는 안개로만 존재를 암시한다.",
+      "corruption_behavior": {
+        "0": "특정 구역에서 이유 없이 발걸음이 무거워지는 느낌. 안개가 창가에 얇게 낀 것처럼 보인다.",
+        "1": "도움을 주고받은 직후 공기가 잠시 탁해진다. 어깨에 뭔가 얹힌 것 같은 압박감.",
+        "2": "채무자의 움직임이 물속에서처럼 둔해진다. 안개가 복도 끝을 지운다. 숫자들이 벽에 희미하게 보인다.",
+        "3": "채무가 쌓인 캐릭터 주변에 안개가 집중되어 시야를 심각하게 제한한다. 호흡이 가빠진다.",
+        "4": "안개가 건물 전체를 뒤덮는다. 채무가 있는 자는 한 발짝도 출구 방향으로 이동할 수 없다."
+      }
+    }
+  },
+  "world_rules": {
+    "core": "이 시설 안에서 타인의 도움을 받거나 부탁을 수락하면 그 행위가 물성화된 채무로 고착되어, 상환하지 않으면 시설을 탈출할 수 없다.",
+    "details": [
+      "채무는 눈에 보이지 않지만 신체 무게 증가(HP 압박)와 안개 농도(SAN 압박)로 체감된다.",
+      "채무 상환 방법: 동등한 대가 제공 / 물건·정보 양도 / 자기 자신을 희생(일방적 증여).",
+      "출구는 채무가 0인 자만 통과할 수 있다. 채무가 있으면 출구가 안개로 막힌다.",
+      "채무의 증식 속도는 오염도에 비례한다. 초반에는 느리고, 오염도 3 이상에서 급격히 가속된다."
+    ],
+    "hidden": true,
+    "loophole": "대가를 기대하지 않는 순수 증여(채무 의도 없는 일방 희생)는 채무를 생성하지 않으며 안개를 오히려 흩는다.",
+    "collapse_condition": "B2층 서버실의 채무 원장 데이터 + 클라우드 백업 접근 권한을 동시에 파괴하면 부채무의 규칙 근거가 소멸한다.",
+    "npc_dependency": "high"
+  },
+  "constraints": {
+    "era": "현대(2024년)",
+    "phone_usable": true,
+    "outside_contact": false,
+    "can_leave_scene": false,
+    "comms_monitored": true,
+    "notes": [
+      "건물 전체가 자동 잠금 상태(비상 봉쇄 프로토콜 발동) — 외부 구조대도 진입 불가.",
+      "엘리베이터 작동 중단. 계단만 이동 수단.",
+      "비상발전기 가동 중 — 조명은 유지되나 외부 인터넷 접속 속도 저하.",
+      "시설 보안망이 내부 통신(통화·무전·사내 메신저)을 실시간 감청 중 — comms_monitored 참조.",
+      "gated_zones: 카드키 등 인증 잠금 구역이 다수 존재 — 미인증자는 bypass 조건 없이 진입 불가."
+    ],
+    "gated_zones": [
+      {
+        "zone": "zone_F",
+        "name": "B1층 서버룸",
+        "requires": "레벨3 카드키 또는 생체인증(지문·홍채)",
+        "bypass": "서버룸 관리자(npc_A 이현도)의 동행 또는 npc_B가 보유한 마스터키 카드"
+      },
+      {
+        "zone": "zone_G",
+        "name": "B2층 데이터센터(원장 서버)",
+        "requires": "레벨4 카드키 + 홍채인증 2인 동시",
+        "bypass": "우회 불가 — 단, 환기 덕트(비상 탈출용) 역방향 침투로 물리적 진입 가능(위험)"
+      },
+      {
+        "zone": "zone_D",
+        "name": "3층 임원실",
+        "requires": "레벨2 카드키",
+        "bypass": "잠금 패널 하단 배선 단락(STR 판정 DC14 또는 SPR 판정 DC12)"
+      },
+      {
+        "zone": "zone_E",
+        "name": "2층 보안통제실",
+        "requires": "레벨2 카드키 또는 보안요원 동행",
+        "bypass": "잠금 패널 물리 파괴(STR DC16) 또는 배선 단락(SPR DC13)"
+      }
+    ]
+  },
+  "timeline": {
+    "daily_turns": 4,
+    "start_time": "19:00",
+    "end_time": "03:00",
+    "minutes_per_turn": 15,
+    "time_visible": true,
+    "main_events": [
+      {
+        "id": "E1",
+        "time": "19:00",
+        "label": "비상 봉쇄 발동",
+        "condition": "게임 시작",
+        "effect": "건물 자동 잠금, 모든 출구 봉쇄. 외부 연락 두절. 채무 안개 최초 감지.",
+        "blockable": false
+      },
+      {
+        "id": "E2",
+        "time": "20:30",
+        "label": "1차 채무 압박",
+        "condition": "플레이어 간 첫 도움 교환 발생 후",
+        "effect": "채무 물성화 1단계 — 안개가 복도를 타고 퍼지기 시작. 채무자 HP -1.",
+        "blockable": true,
+        "branches": {
+          "auto": {
+            "condition": "채무 상환 없이 방치",
+            "next": "E3"
+          },
+          "intervene": [
+            {
+              "condition": "채무를 즉시 상환(대가 제공)",
+              "next": "E2-B"
+            },
+            {
+              "condition": "일방 희생(대가 없는 증여) 실행",
+              "next": "E2-C"
+            }
+          ]
+        }
+      },
+      {
+        "id": "E2-B",
+        "time": "20:30",
+        "label": "채무 즉시 상환",
+        "condition": "즉각 대가 제공",
+        "effect": "해당 채무 소멸. 안개 일시 후퇴. 단, 상환 행위 자체가 새 채무 가능성을 내포함.",
+        "blockable": false
+      },
+      {
+        "id": "E2-C",
+        "time": "20:30",
+        "label": "규칙 허점 발견",
+        "condition": "대가 없는 일방 희생",
+        "effect": "안개가 흩어지고 채무 미생성 확인. 핵심 단서 1개 획득 기회.",
+        "blockable": false
+      },
+      {
+        "id": "E3",
+        "time": "22:00",
+        "label": "2차 압박 — 안개 농도 상승",
+        "condition": "채무 누적 2건 이상",
+        "effect": "오염도 +1. 채무자 SAN -2. 숫자들이 벽에 나타나기 시작.",
+        "blockable": true,
+        "branches": {
+          "auto": {
+            "condition": "채무 미상환",
+            "next": "E4"
+          },
+          "intervene": [
+            {
+              "condition": "서버룸 진입 성공",
+              "next": "E3-B"
+            }
+          ]
+        }
+      },
+      {
+        "id": "E3-B",
+        "time": "22:00",
+        "label": "원장 데이터 발견",
+        "condition": "서버룸(zone_F) 진입 후 탐색",
+        "effect": "채무 원장 데이터 위치 확인. B2층 데이터센터로 이어지는 경로 파악.",
+        "blockable": false
+      },
+      {
+        "id": "E4",
+        "time": "00:00",
+        "label": "자정 압박 — 출구 완전 봉쇄",
+        "condition": "채무 미해결 상태로 자정 도달",
+        "effect": "모든 출구가 안개로 완전 봉쇄. 채무자 HP -2, SAN -3. 오염도 +1.",
+        "blockable": true,
+        "branches": {
+          "auto": {
+            "condition": "collapse_condition 미충족",
+            "next": "E_END"
+          },
+          "intervene": [
+            {
+              "condition": "채무 원장 + 클라우드 접근권 동시 파괴",
+              "next": "E_RESOLVE"
+            }
+          ]
+        }
+      },
+      {
+        "id": "E_RESOLVE",
+        "time": "00:00",
+        "label": "규칙 붕괴 — 해결",
+        "condition": "collapse_condition 완전 충족",
+        "effect": "부채무 소멸. 안개 즉시 소산. 출구 개방. 해결판정 CLEAR.",
+        "blockable": false,
+        "is_end": true
+      },
+      {
+        "id": "E_END",
+        "time": "03:00",
+        "label": "파국",
+        "condition": "미해결",
+        "effect": "채무가 폭주하여 전원 안개에 잠식. 끝.",
+        "blockable": false,
+        "is_end": true
+      }
+    ],
+    "1": {
+      "condition": "채무 1건 발생",
+      "effect": "안개가 창가와 복도 끝에 얇게 낀다. 채무자 체감 무게 증가."
+    },
+    "2": {
+      "condition": "채무 3건 이상 누적 또는 오염도 1",
+      "effect": "안개가 건물 내부 전체로 확산. 벽면에 희미한 숫자 패턴이 나타난다. 채무자 이동 속도 체감 감소."
+    },
+    "3": {
+      "condition": "채무 상환 없이 시간 경과 or 오염도 2",
+      "effect": "안개가 시야를 심각하게 제한한다. 특정 구역 접근 시 압박감이 극심해진다. 채무 이자 가속."
+    },
+    "4": {
+      "condition": "자정 이후 미해결 or 오염도 3",
+      "effect": "건물 전체 완전 안개 봉쇄. 채무자는 한 발짝도 출구 방향 이동 불가. 최후의 해결 시도만 가능."
+    }
+  },
+  "roles": [
+    {
+      "role_id": "role_A",
+      "name": "야근 잔류 IT엔지니어",
+      "char_name": "오세준",
+      "gender": "남성",
+      "is_core": true,
+      "age_range": [27, 38],
+      "job_pool": ["시스템 엔지니어", "DevOps 엔지니어", "서버 관리자", "네트워크 엔지니어", "클라우드 아키텍트", "IT 인프라 담당자", "보안 엔지니어"],
+      "spawn_timeline": "시작 즉시",
+      "spawn_location": "2층 개발실(zone_C)",
+      "zone": "zone_C",
+      "initial_info": [
+        "오늘 야근 중 갑자기 건물 봉쇄 프로토콜이 발동했다.",
+        "B1층 서버룸에 접근하려면 레벨3 카드키가 필요하다는 것을 안다.",
+        "건물 보안망이 내부 통신을 모니터링한다는 사실을 어렴풋이 알고 있다."
+      ],
+      "hidden_info": [
+        "3개월 전 회사 채무 구조조정 당시 서버 데이터 일부를 임의로 삭제했던 전력이 있다.",
+        "B2층 데이터센터 환기 덕트의 내부 구조를 안다."
+      ],
+      "pre_spawn_beats": [],
+      "start_item": ["사원증(레벨1 카드키)", "노트북", "스마트폰", "에너지 드링크"],
+      "knowledge_advantage": false,
+      "role_stats": {
+        "str_add": 0,
+        "cha_add": 0,
+        "luk_add": 0,
+        "spr_add": 3,
+        "hp_max_add": 0,
+        "san_max_add": 0,
+        "luk_fixed": -1,
+        "summary": "IT엔지니어: 기술 판정+3"
+      }
+    },
+    {
+      "role_id": "role_B",
+      "name": "외부 감사인",
+      "char_name": "한수현",
+      "gender": "여성",
+      "is_core": true,
+      "age_range": [31, 45],
+      "job_pool": ["공인회계사", "외부감사인", "세무조사관", "금융감독원 직원", "회계법인 파트너", "내부감사팀장", "재무분석가"],
+      "spawn_timeline": "시작 즉시",
+      "spawn_location": "3층 임원실 외부 복도(zone_D 앞)",
+      "zone": "zone_D",
+      "initial_info": [
+        "오늘 이 회사의 재무 서류 감사를 위해 방문했다가 봉쇄에 갇혔다.",
+        "3층 임원실에 레벨2 카드키가 필요하다는 것을 방문 전 안내받았다.",
+        "회사의 부채 규모가 비정상적으로 컸다는 감사 예비 자료를 갖고 있다."
+      ],
+      "hidden_info": [
+        "실은 내부고발자의 제보를 받고 특별 감사 목적으로 왔다. 제보 내용엔 '데이터가 스스로 기록된다'는 내용이 있었다.",
+        "레벨2 카드키의 발급 코드를 우연히 메모해 두었다(임원이 복도에서 말하는 것을 들었다)."
+      ],
+      "pre_spawn_beats": [],
+      "start_item": ["스마트폰", "감사 서류 파일(회사 재무 이상 단서 포함)", "볼펜", "레벨2 카드키 발급 코드 메모"],
+      "knowledge_advantage": false,
+      "role_stats": {
+        "str_add": 0,
+        "cha_add": 2,
+        "luk_add": 0,
+        "spr_add": 0,
+        "hp_max_add": 0,
+        "san_max_add": 1,
+        "luk_fixed": -1,
+        "summary": "감사인: 매력+2, 정신력최대+1"
+      }
+    },
+    {
+      "role_id": "role_C",
+      "name": "건물 보안요원",
+      "char_name": "박도현",
+      "gender": "남성",
+      "is_core": true,
+      "age_range": [24, 40],
+      "job_pool": ["건물 보안요원", "경비원", "전직 경찰관", "사설탐정", "전직 군인", "보안회사 직원", "방범업체 직원"],
+      "spawn_timeline": "시작 즉시",
+      "spawn_location": "1층 보안 데스크(zone_A)",
+      "zone": "zone_A",
+      "initial_info": [
+        "봉쇄 프로토콜이 자동 발동했다. 외부와 연락이 두절된 상태다.",
+        "레벨2 카드키를 소지하고 있다.",
+        "건물 보안 시스템이 내부 통신을 모두 기록한다는 것을 안다."
+      ],
+      "hidden_info": [
+        "마스터키 카드(레벨4에 준하는 물리적 잠금 해제 카드)를 보안 데스크 서랍에 보관하고 있다.",
+        "3개월 전 야간에 이 건물에서 이상한 소리를 들었다 — 숫자가 읽히는 소리. 기록은 남겼지만 무시했다."
+      ],
+      "pre_spawn_beats": [],
+      "start_item": ["스마트폰", "무전기", "레벨2 카드키", "손전등", "보안 일지"],
+      "knowledge_advantage": false,
+      "role_stats": {
+        "str_add": 2,
+        "cha_add": 0,
+        "luk_add": 1,
+        "spr_add": 0,
+        "hp_max_add": 1,
+        "san_max_add": 0,
+        "luk_fixed": -1,
+        "summary": "보안요원: 근력+2, 행운+1, HP최대+1"
+      }
+    }
+  ],
+  "relationships": [
+    {
+      "type": "완전_타인",
+      "roles": ["role_A", "role_B"],
+      "mutual_contact": false,
+      "same_start_zone": false,
+      "description": "처음 만나는 사이. 같은 건물에 갇혔다는 것만 공유."
+    },
+    {
+      "type": "업무_접촉",
+      "roles": ["role_B", "role_C"],
+      "mutual_contact": true,
+      "same_start_zone": false,
+      "description": "감사인 방문 시 보안요원이 방문자 등록을 처리했다. 얼굴은 안다."
+    },
+    {
+      "type": "직장_관계",
+      "roles": ["role_A", "role_C"],
+      "mutual_contact": true,
+      "same_start_zone": false,
+      "description": "같은 건물에서 일하는 사이. 가끔 마주친 정도."
+    }
+  ],
+  "zones": [
+    {
+      "zone_id": "zone_A",
+      "name": "1층 로비",
+      "area": "1층",
+      "accessible_by": [],
+      "exclusive": false,
+      "connections": ["zone_B", "zone_E_stairs"]
+    },
+    {
+      "zone_id": "zone_B",
+      "name": "1층 복도",
+      "area": "1층",
+      "accessible_by": [],
+      "exclusive": false,
+      "connections": ["zone_A", "zone_E_stairs", "zone_C_stairs"]
+    },
+    {
+      "zone_id": "zone_C",
+      "name": "2층 개발실",
+      "area": "2층",
+      "accessible_by": [],
+      "exclusive": false,
+      "connections": ["zone_C_stairs", "zone_E"]
+    },
+    {
+      "zone_id": "zone_C_stairs",
+      "name": "계단(1-2층)",
+      "area": "공용",
+      "accessible_by": [],
+      "exclusive": false,
+      "connections": ["zone_B", "zone_C", "zone_D_stairs"]
+    },
+    {
+      "zone_id": "zone_D",
+      "name": "3층 임원실",
+      "area": "3층",
+      "accessible_by": ["레벨2 카드키 이상"],
+      "exclusive": true,
+      "connections": ["zone_D_stairs", "zone_E"]
+    },
+    {
+      "zone_id": "zone_D_stairs",
+      "name": "계단(2-3층)",
+      "area": "공용",
+      "accessible_by": [],
+      "exclusive": false,
+      "connections": ["zone_C_stairs", "zone_D", "zone_E"]
+    },
+    {
+      "zone_id": "zone_E",
+      "name": "2층 보안통제실",
+      "area": "2층",
+      "accessible_by": ["레벨2 카드키 또는 보안요원 동행"],
+      "exclusive": true,
+      "connections": ["zone_C", "zone_D", "zone_F_stairs"]
+    },
+    {
+      "zone_id": "zone_E_stairs",
+      "name": "계단(지하-1층)",
+      "area": "공용",
+      "accessible_by": [],
+      "exclusive": false,
+      "connections": ["zone_A", "zone_B", "zone_F"]
+    },
+    {
+      "zone_id": "zone_F",
+      "name": "B1층 서버룸",
+      "area": "B1층",
+      "accessible_by": ["레벨3 카드키 또는 생체인증(지문·홍채)"],
+      "exclusive": true,
+      "connections": ["zone_E_stairs", "zone_G_duct"]
+    },
+    {
+      "zone_id": "zone_G_duct",
+      "name": "환기 덕트",
+      "area": "B층 공용",
+      "accessible_by": ["물리적 진입(위험, STR DC13)"],
+      "exclusive": false,
+      "connections": ["zone_F", "zone_G"]
+    },
+    {
+      "zone_id": "zone_G",
+      "name": "B2층 데이터센터",
+      "area": "B2층",
+      "accessible_by": ["레벨4 카드키 + 홍채인증 2인 동시"],
+      "exclusive": true,
+      "connections": ["zone_G_duct"]
+    }
+  ],
+  "npcs": [
+    {
+      "id": "npc_A",
+      "name": "이현도",
+      "zone": "zone_F",
+      "critical": true,
+      "role_type": "열쇠",
+      "true_role": "B2층 데이터센터 접근 권한(홍채+레벨4 카드키)을 가진 유일한 인물. 죽이면 홍채인증 불가로 정석 해결 경로 차단.",
+      "personality": "냉철한 중년 IT관리자. 상황을 파악하고 있으며 혼자 살아남으려는 경향이 강하지만, 진실을 알고 있어 결정적 순간 협력할 수 있다.",
+      "motivation": "이 건물의 비밀을 외부에 알리지 않으면서 스스로 탈출하고 싶다.",
+      "knowledge": [
+        "채무 원장 데이터가 B2층에 있다는 사실",
+        "클라우드 백업 접근 토큰이 자신의 스마트폰에 저장되어 있다는 사실",
+        "부채무가 '도움을 받는 행위'를 채무로 기록한다는 사실을 어렴풋이 안다(경험 기반)"
+      ],
+      "schedule": [
+        {
+          "time": "E1 이후 1턴",
+          "action": "B1층 서버룸에 혼자 숨어 상황을 파악하려 한다. 문을 잠근 채 내부에서 데이터를 확인.",
+          "will": "강함"
+        },
+        {
+          "time": "E3 이후",
+          "action": "안개가 심해지자 플레이어와의 접촉을 고려하기 시작한다. 단, 먼저 접근하지는 않는다.",
+          "will": "상황"
+        },
+        {
+          "time": "반응",
+          "condition": "플레이어가 서버룸 문을 세 번 이상 두드리거나 협상을 제안하면",
+          "action": "문을 조금 열고 정보를 교환하려 한다. 단, 대가를 요구한다.",
+          "will": "약함",
+          "duration_turns": 3,
+          "after_duration": "협상이 성사되지 않으면 다시 문을 잠그고 복귀"
+        }
+      ]
+    },
+    {
+      "id": "npc_B",
+      "name": "박미래",
+      "zone": "zone_D",
+      "critical": false,
+      "role_type": "방어막",
+      "true_role": "본인도 모르게 채무 안개의 발생을 억제하는 역할을 하고 있다 — 제거하면 안개 확산 가속. 실제로는 회사의 '부채 구조조정 설계자'로, 부채무의 원인 제공자이기도 하다.",
+      "personality": "30대 회사 재무팀장. 겉으로는 협조적이나 실제로는 자신의 책임을 은폐하려 한다."
+    }
+  ],
+  "key_items": [
+    {
+      "id": "item_audit",
+      "name": "감사 예비 서류",
+      "type": "written_book",
+      "description": "파란색 파일 폴더. 상단에 '대외비'",
+      "lore_info": "회사 재무 이상 징후 기록. role_B 소지.",
+      "content": [
+        "[감사 예비 보고서 발췌] 대상: (주)넥사드 / 감사 기간: 2024.10 / 작성: 한수현\n부채 총액 1,240억 원 — 자산 대비 비율 비정상(업계 평균 3.1배 초과). 특이사항: 일부 채무 항목이 발생 원인 기록 없이 자동 생성된 정황 포착. 회계 시스템 내 자동 기록 루틴 확인 필요.",
+        "[내부고발자 제보 메모(손글씨)] '데이터가 스스로 기록합니다. 야간에 숫자가 움직이는 걸 봤어요. B2층에서. 누군가 도와달라고 하면 그게 기록된대요.' — 익명"
+      ],
+      "location": "role_B 시작 인벤토리",
+      "clue_value": "부채무 메커니즘 첫 단서 / B2층 존재 확인"
+    },
+    {
+      "id": "item_security_log",
+      "name": "보안 일지",
+      "type": "written_book",
+      "description": "낡은 검은색 노트. 연도별 탭 구분.",
+      "lore_info": "3개월 치 야간 근무 기록. role_C 소지.",
+      "content": [
+        "[2024.07.18 23:42] B1층에서 이상 소리 감지. 숫자를 읽는 것 같은 반복음. 5분 후 소멸. 원인 불명. 상부에 보고했으나 '환기 소음'으로 처리됨.",
+        "[2024.08.03 02:15] 이현도 과장이 야간에 B2층에서 나오는 것 목격. 질문했더니 '서버 점검'이라 했음. 표정이 이상했다.",
+        "[2024.09.11] 오늘 처음으로 복도에서 안개 같은 것을 봤다. 사진을 찍었지만 아무것도 찍히지 않음. 다음 날 아무 일 없음."
+      ],
+      "location": "role_C 시작 인벤토리",
+      "clue_value": "부채무 역사적 단서 / 이현도 의심 / B2층 연관"
+    },
+    {
+      "id": "item_lv3_card",
+      "name": "레벨3 카드키",
+      "type": "physical:TRIPWIRE_HOOK",
+      "description": "빨간 줄이 그어진 카드. 'SERVER ROOM ACCESS' 각인.",
+      "lore_info": "B1층 서버룸(zone_F) 진입 가능. 이현도 또는 임원실 서랍에서 발견 가능.",
+      "location": "3층 임원실 서랍(zone_D — 레벨2 카드키로 진입 후)",
+      "clue_value": "B1층 서버룸 진입 열쇠"
+    },
+    {
+      "id": "item_cloud_token",
+      "name": "클라우드 접근 토큰 카드",
+      "type": "physical:COMPARATOR",
+      "description": "작은 OTP 발생기처럼 생긴 USB 카드.",
+      "lore_info": "이현도의 스마트폰 잠금화면에 '비상 백업 토큰'이라는 앱 아이콘이 보인다 — 이것이 클라우드 접근권.",
+      "location": "npc_A(이현도) 소지",
+      "clue_value": "클라우드 백업 파괴 필수 아이템"
+    },
+    {
+      "id": "item_debt_ledger",
+      "name": "채무 원장 단말",
+      "type": "physical:COMPARATOR",
+      "description": "B2층 서버실 중앙 랙에 연결된 독립 단말기.",
+      "lore_info": "화면에 실시간으로 채무 내역이 자동 갱신 중. 'ROOT DELETE 명령어: _DEBT_PURGE_' 스티커가 붙어 있다(전 관리자가 비상용으로 남긴 듯).",
+      "location": "B2층 데이터센터(zone_G)",
+      "clue_value": "핵심 해결 도구 — 명령어 입력으로 원장 삭제 가능"
+    },
+    {
+      "id": "item_mislead_a",
+      "name": "재무팀장 메모",
+      "type": "paper",
+      "description": "포스트잇에 쓰인 손글씨 메모.",
+      "lore_info": "3층 임원실 화이트보드에 붙어 있음.",
+      "content": [
+        "'안개 = 채무자가 건물 밖으로 나가면 사라진다. 나간 뒤 다시 들어오지 않으면 OK.' — 박미래"
+      ],
+      "location": "3층 임원실 화이트보드(zone_D)",
+      "clue_value": "mislead A — 탈출하면 해결된다는 잘못된 정보(실제론 채무 미상환 탈출 시 SAN 지속 손실)"
+    },
+    {
+      "id": "item_mislead_b",
+      "name": "이전 직원 낙서",
+      "type": "paper",
+      "description": "B1층 서버룸 벽면에 연필로 적힌 낙서.",
+      "lore_info": "희미하게 '서버 전원 차단 → 안개 소멸' 이라고 쓰여 있다.",
+      "content": [
+        "서버 전원 끄면 됨. B1 메인 차단기. 직접 해봤는데 10분 후 사라짐. 하지만 발전기가 켜져 있으면 무의미."
+      ],
+      "location": "B1층 서버룸 벽면(zone_F)",
+      "clue_value": "mislead B — 전원 차단으로 해결된다는 잘못된 정보(실제론 데이터 삭제가 필요)"
+    }
+  ],
+  "clues": [
+    {
+      "id": "clue_1",
+      "type": "observe",
+      "location": "zone_A",
+      "description": "로비 바닥에 희미하게 숫자들이 새겨진 듯한 패턴이 보인다. 가까이 보면 소수점 이하 채무 잔액처럼 보이는 숫자열."
+    },
+    {
+      "id": "clue_2",
+      "type": "observe",
+      "location": "zone_C",
+      "description": "개발실 화면 중 하나에 이상한 로그가 실시간 생성 중 — '도움 수신: 오세준 → 잔액 +1.0' 형식의 내부 로그."
+    },
+    {
+      "id": "clue_3",
+      "type": "npc_hint",
+      "location": "zone_F",
+      "description": "이현도가 부분적으로 흘리는 정보 — '도와달라는 말을 하면 안 돼요. 기록되거든요.' (정확한 메커니즘은 말하지 않음)"
+    },
+    {
+      "id": "clue_4",
+      "type": "document",
+      "location": "zone_G",
+      "description": "채무 원장 단말의 화면에서 이전 피해자 기록 확인 가능 — 채무 미상환 상태로 출구에 접근한 기록과 그 결과."
+    },
+    {
+      "id": "clue_5",
+      "type": "observe",
+      "location": "zone_D",
+      "description": "임원실 벽면의 숫자 패턴이 박미래가 가까이 있을 때 흐려진다 — 그녀가 안개를 억제하고 있다는 간접 단서."
+    },
+    {
+      "id": "clue_mislead_A",
+      "type": "document",
+      "is_mislead": true,
+      "location": "zone_D",
+      "description": "재무팀장 메모(item_mislead_a) — 탈출이 해결책이라는 가짜 단서."
+    },
+    {
+      "id": "clue_mislead_B",
+      "type": "observe",
+      "is_mislead": true,
+      "location": "zone_F",
+      "description": "서버룸 벽 낙서(item_mislead_b) — 전원 차단이 해결책이라는 가짜 단서."
+    }
+  ],
+  "daily_prologue": {
+    "turns": 4,
+    "role_placements": [
+      {"role_id": "role_A", "location": "2층 개발실, 야근 중"},
+      {"role_id": "role_B", "location": "3층 임원실 앞 복도, 감사 서류 검토 중"},
+      {"role_id": "role_C", "location": "1층 보안 데스크, 순찰 준비 중"}
+    ],
+    "foreshadowing": [
+      "복도 끝에서 희미하게 무언가 뿌연 것이 스치는 것 같다",
+      "도와달라는 말을 입에 담는 순간 공기가 잠시 무거워지는 느낌"
+    ]
+  },
+  "meeting_design": {
+    "physically_possible": true,
+    "meeting_window": "타임라인 1~2단계 (계단 또는 보안통제실에서 합류 가능)",
+    "natural_barriers": [
+      "role_B는 레벨2 카드키 없이 임원실에 들어갈 수 없다(복도에서 대기)",
+      "role_C는 보안 데스크가 기본 위치 — 먼저 움직이지 않으면 다른 플레이어가 찾아와야 한다"
+    ]
+  },
+  "join_system": {
+    "mid_join_allowed": true,
+    "timeline_limit": 3
+  },
+  "common_items": ["smartphone"],
+  "info_sharing": {
+    "chat_allowed": true,
+    "item_transfer": true,
+    "remote_item_transfer": false
+  }
+}

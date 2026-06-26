@@ -114,3 +114,26 @@
 - [수정안] schedule will=반응 항목의 condition은 '구체적 행위/사건'으로 적게 한다(단순 위치 이동·방문 금지). buildNpcSystemPrompt 주입문 보강: "반응은 condition에 적힌 구체적 행위가 실제 일어난 직후 다음 1턴에만 발동하며, 단순 접근·방문만으로는 발동하지 않는다."
 
 ### (P10 보강 — 별도 패치화 없이 P10 문구에 합산 운용) mislead 단서는 진짜 단서가 충분히 모이기 전에 분기 실증으로 '너무 빨리' 해소되지 않게 한다. 가짜 단서를 신뢰한 플레이어가 실제 행동(예: 잘못된 차단·봉쇄)을 한 번은 실행해보도록 유도한 뒤 오답을 드러내라.
+
+## iter06 (#MB7X-4QKN, 스테이지3 시티·현대·'부채무(負債霧)') 발견 패치
+(P13·P14·P15·P16·P17·P10보강 전부 검증 완료 / P1·P6·P8·P12 확인. 신규는 모두 기존 패치의 빈틈 보완·범용)
+
+### P18. comms_monitored '핵심 정보' 판별 기준 (med, P14 보완)
+- [대상] GM_SYSTEM_BASE 도청 / buildGmPrompt comms_monitored 주입 (P14 문구에 합산)
+- [문제] P14가 "핵심 정보를 감시 채널로 넘기면 괴담이 대처법을 모방"이라고 했으나, '핵심 정보'의 경계를 GM이 임의 판정 → 사소한 잡담까지 과반응하거나 반대로 무반응.
+- [수정안] P14 문구에 정의 한 줄 추가: "여기서 '핵심 정보'란 collapse_condition·weakness·exploit_path·loophole에 직접 연관된 내용을 말한다. 일반 위치·안부 대화는 오염도 +1만 적용하고 모방 트리거는 발동하지 않는다."
+
+### P19. gated_zones 우회 판정 DC를 buildGmPrompt에 함께 주입 (med, P13 보완)
+- [대상] buildGmPrompt gated_zones 주입부 / constraints.gated_zones 스키마
+- [문제] gated_zones[].bypass(물리 우회 등)의 성공 판정 DC가 seed에만 있고 GM 프롬프트에 안 들어가, GM이 우회 난이도를 임의 결정.
+- [수정안] gated_zones 항목에 선택적 `bypass_dc` 필드. buildGmPrompt 주입 형식 보강: "구역 [zone]: [requires] 필요. 우회: [bypass] (판정 DC [bypass_dc], 미정의 시 DC 15)". bypass 자체가 없으면 "우회 불가".
+
+### P20. 괴담 종속 축적값의 리트라이 유지 (med, P16 보완)
+- [대상] GM_SYSTEM_BASE 클리어/재시도 판정 (P16 문구에 합산)
+- [문제] P16이 HP/SAN만 명시 → 괴담 고유 축적값(채무 잔액·감염 수치·저주 스택·NPC 관계 변화 등)이 리트라이 시 유지되는지 불명.
+- [수정안] P16에 한 줄 추가: "괴담 고유 축적값(채무·감염·저주 스택·오염도 누적·NPC 관계 등 시나리오 종속 수치)도 리트라이 진입 시 유지된다. 단 '다음 스테이지 진출' 시에는 전원 부활과 함께 초기화된다."
+
+### P21. after_duration 실행 주체 명시 (low, P11/P17 보완)
+- [대상] buildNpcSystemPrompt schedule after_duration 주입부
+- [문제] duration_turns 종료 후 after_duration("복귀"/"도주"/"대기")을 NPC AI가 자율 수행하는지 GM이 서술로 처리하는지 불명 → 누락·중복 위험.
+- [수정안] 주입문 한 줄: "duration_turns 종료 후 after_duration은 해당 NPC AI가 자신의 동기에 따라 자율 결정·연기하고, GM은 그 결과를 다음 장면 서술에 자연스럽게 녹인다(GM이 임의로 NPC 행동을 대신 정하지 않는다)."

@@ -44,3 +44,10 @@
 - 검증: P1·P2·P3·P6·P8·P9·P11·P12 완료. P10 일부 심도 부족(가짜단서 조기 실증), P5 일부 미흡(반응 condition 느슨).
 - 신규: P13(장비·기술 착용 분기 high)·P14(comms_monitored 발동 트리거)·P15(대규모 zones 접근권 주입)·P16(리트라이 부분피해 유지)·P17(반응 condition 엄밀화)·P10 보강.
 - 파일: iter05/seed.json(10 zones·9 events·mislead 2)·log.txt(581줄)·replay.json(stage4·3인). 플러그인 .java 미변경.
+
+## iter06 — 2026-06-26 19:46 — #MB7X-4QKN (스테이지3·시티·현대)
+- 괴담: "부채무(負債霧)" — 시설 안에서 도움/부탁을 수락하면 물성화된 채무로 고착, 미상환 시 안개가 출구를 봉쇄해 탈출 불가능. 현대 폐쇄 병동.
+- 결과: 1차 — 통화로 대처법 노출(P14 발동, 오염도+1·덕트 안개 강화) → STR 실패 → 생존판정(resolved:false), 스테이지3+ 게이트에 차단. 리트라이 — 1차 부분피해(HP/SAN) 유지(P16) 상태로 재개 → '대가 없는 순수 증여'로 loophole 실증·채무 상환 → P6 협력판정(d20+4=20) 덕트 돌파 → 원장 삭제로 collapse 완전 충족 → 해결판정 A·전원생존·스테이지4 진출. 재도전 강등 없음(P1).
+- 검증: P13(gated_zones 인증잠금 4개)·P14(comms 트리거)·P15(zones 11 접근권)·P16(부분피해 유지)·P17(반응 condition)·P10보강 전부 + P1·P6·P8·P12 확인.
+- 신규: P18(comms 핵심정보 정의)·P19(gated bypass DC 주입)·P20(괴담 종속 축적값 리트라이 유지)·P21(after_duration 실행주체). 모두 기존 패치 빈틈 보완·범용.
+- 파일: iter06/seed.json(11 zones·9 events·gated 4·mislead 2)·log.txt(604줄)·replay.json(stage3·3인). 플러그인 .java 미변경.
