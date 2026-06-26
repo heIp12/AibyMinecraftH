@@ -47,7 +47,8 @@ public class ReplayManager {
             root.addProperty("seed", seed);
             root.addProperty("created", now.toString());
             JsonArray arr = new JsonArray();
-            for (PlayerData pd : players) arr.add(serializePlayer(pd));
+            int slot = 1;
+            for (PlayerData pd : players) arr.add(serializePlayer(pd, slot++));
             root.add("players", arr);
 
             String fname = buildFileName(stage, seed, now);
@@ -100,9 +101,15 @@ public class ReplayManager {
     //  직렬화 / 역직렬화
     // ──────────────────────────────────────────────────────────────
 
-    private JsonObject serializePlayer(PlayerData pd) {
+    /**
+     * 캐릭터 빌드를 직렬화한다.
+     * name에는 실제 마인크래프트 계정명 대신 익명 슬롯명("플레이어1", "플레이어2"…)을 기록한다.
+     * 재현 로드 시 캐릭터는 슬롯 순서대로 접속 플레이어에게 배정되고 그 자리에서 실제 이름이 입혀지므로,
+     * 누구나(원래 플레이어가 아니어도) 이 파일로 동일한 시작을 재현할 수 있다.
+     */
+    private JsonObject serializePlayer(PlayerData pd, int slot) {
         JsonObject o = new JsonObject();
-        o.addProperty("name",     pd.name);
+        o.addProperty("name",     "플레이어" + slot);
         o.addProperty("charName", pd.charName);
         o.addProperty("gender",   pd.gender);
         o.addProperty("age",      pd.age);
