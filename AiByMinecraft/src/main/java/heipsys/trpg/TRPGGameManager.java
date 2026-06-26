@@ -427,6 +427,8 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
 
     private enum Phase { IDLE, CHAR_CREATION, ROLE_ASSIGNMENT, DAILY, HORROR, CLEAR, GAMEOVER }
 
+    private record OracleChoice(String text, String outcome) {}
+
     private static final Set<String> COMM_ITEM_KEYWORDS = Set.of(
         "전화", "phone", "폰", "무전", "walkie", "radio", "라디오", "휴대폰", "핸드폰", "스마트폰", "통신", "intercom", "인터콤"
     );
@@ -472,11 +474,13 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     private final Set<UUID> spawnedPlayers      = ConcurrentHashMap.newKeySet();
     /** 특성 발동 대기 중인 플레이어 UUID → 트레이트 ID (행동 입력 전까지 유지) */
     private final Map<UUID, String> pendingTraitActivation = new ConcurrentHashMap<>();
-    private final Set<UUID> pendingPrayerInput  = ConcurrentHashMap.newKeySet();
-    private final Set<UUID> pendingOracleInput  = ConcurrentHashMap.newKeySet();
+    private final Map<UUID, String> pendingPrayerInput = new ConcurrentHashMap<>(); // UUID → traitId
+    private final Map<UUID, String> pendingOracleInput = new ConcurrentHashMap<>(); // UUID → traitId
     private final Map<UUID, Integer> pendingLuckModifier   = new ConcurrentHashMap<>();
     private final Map<UUID, List<OracleChoice>> pendingOracleChoices = new ConcurrentHashMap<>();
     private final Map<UUID, String> pendingSaintTrait = new ConcurrentHashMap<>();
+    private final Map<UUID, String> pendingAreaScanInput = new ConcurrentHashMap<>(); // UUID → traitId
+    private final Map<UUID, String> pendingLinkAllyInput = new ConcurrentHashMap<>(); // UUID → traitId
     /** GM이 개설한 기기 통신 채널: A → {B, C, ...} (양방향 저장) */
     private final Map<UUID, Set<UUID>> commChannels = new ConcurrentHashMap<>();
     /** 캐릭터 생성 전 선제 배역 배정 결과 (UUID → 배역 JsonObject) */
@@ -645,6 +649,13 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         pendingCreation.clear();
         pendingTraitSelect.clear();
         pendingTraitActivation.clear();
+        pendingPrayerInput.clear();
+        pendingOracleInput.clear();
+        pendingLuckModifier.clear();
+        pendingOracleChoices.clear();
+        pendingSaintTrait.clear();
+        pendingAreaScanInput.clear();
+        pendingLinkAllyInput.clear();
         spawnedPlayers.clear();
         commChannels.clear();
         preAssignedRoleData.clear();
@@ -684,6 +695,13 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
 
         // 등장 상태·대기 서술·통신 채널 초기화
         pendingTraitActivation.clear();
+        pendingPrayerInput.clear();
+        pendingOracleInput.clear();
+        pendingLuckModifier.clear();
+        pendingOracleChoices.clear();
+        pendingSaintTrait.clear();
+        pendingAreaScanInput.clear();
+        pendingLinkAllyInput.clear();
         spawnedPlayers.clear();
         preSpawnCallCounts.clear();
         commChannels.clear();
@@ -735,6 +753,13 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         pendingCreation.clear();
         pendingTraitSelect.clear();
         pendingTraitActivation.clear();
+        pendingPrayerInput.clear();
+        pendingOracleInput.clear();
+        pendingLuckModifier.clear();
+        pendingOracleChoices.clear();
+        pendingSaintTrait.clear();
+        pendingAreaScanInput.clear();
+        pendingLinkAllyInput.clear();
         spawnedPlayers.clear();
         commChannels.clear();
         state.getAllPlayers().forEach(pd -> traitMan.resetStageTraits(pd));
@@ -815,6 +840,14 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             case "_trait_cancel" -> {
                 pendingTraitActivation.remove(player.getUniqueId());
                 player.sendMessage("§7특성 발동을 취소했습니다.");
+            }
+            case "_oracle_select" -> {
+                try { handleOracleSelect(player, args.length > 1 ? Integer.parseInt(args[1]) : -1); }
+                catch (NumberFormatException e) { player.sendMessage("§c잘못된 선택입니다."); }
+            }
+            case "_saint_cancel" -> {
+                pendingSaintTrait.remove(player.getUniqueId());
+                player.sendMessage("§7[성녀] 취소했습니다.");
             }
         }
     }
@@ -961,6 +994,11 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             p.sendMessage("§e§l[배역 배정]");
             p.sendMessage(roleMan.getRoleBriefing(asgn.roleId(), corruptMan.getLevel()));
             giveRoleStartItems(p, asgn.roleId());
+            // 시나리오 이해(scenario_insight) 특성 — 배역 배정 시 추가 정보 전달
+            if (myPd != null) {
+                myPd.traits.stream().filter(t -> "scenario_insight".equals(t.effectType))
+                    .findFirst().ifPresent(t -> deliverInsightInfo(p, t));
+            }
             if (myPd != null) {
                 gameLogger.logEvent("배역 배정: " + myPd.name + " → " + asgn.roleId()
                     + " (" + myPd.age + "세 " + myPd.job + ", zone " + asgn.zone() + ")");
@@ -1287,6 +1325,50 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         // 플레이어 입력 기록 (행동/대사/통신 모두)
         gameLogger.logPlayerInput(player.getName(), message);
 
+        // 질문형 시스템 특성 처리 (행동으로 처리되지 않음)
+        String prayerTraitId = pendingPrayerInput.remove(player.getUniqueId());
+        if (prayerTraitId != null) {
+            handlePrayerQuestion(player, pd, prayerTraitId, message);
+            return;
+        }
+        // 선택지 행동형 시스템 특성 처리
+        String oracleTraitId = pendingOracleInput.remove(player.getUniqueId());
+        if (oracleTraitId != null) {
+            handleOracleAction(player, pd, oracleTraitId, message);
+            return;
+        }
+        // 환경 탐색형 시스템 특성 처리
+        String areaScanTraitId = pendingAreaScanInput.remove(player.getUniqueId());
+        if (areaScanTraitId != null) {
+            handleScanObservation(player, pd, areaScanTraitId, message);
+            return;
+        }
+        // 아군 연결형 시스템 특성 처리
+        String linkAllyTraitId = pendingLinkAllyInput.remove(player.getUniqueId());
+        if (linkAllyTraitId != null) {
+            handleLinkAllyQuery(player, pd, linkAllyTraitId, message);
+            return;
+        }
+        // 회복·부활형 대상 선택
+        if (pendingSaintTrait.containsKey(player.getUniqueId())) {
+            try {
+                int idx = Integer.parseInt(message.trim()) - 1;
+                List<PlayerData> targets = state.getAllPlayers().stream()
+                    .filter(p2 -> !p2.uuid.equals(player.getUniqueId()))
+                    .collect(java.util.stream.Collectors.toList());
+                if (idx < 0 || idx >= targets.size()) {
+                    player.sendMessage("§c올바른 번호를 입력하세요. (1~" + targets.size() + ")");
+                    return;
+                }
+                String saintTraitId = pendingSaintTrait.remove(player.getUniqueId());
+                PlayerData target = targets.get(idx);
+                applySaintEffect(player, pd, saintTraitId, target);
+            } catch (NumberFormatException ex) {
+                player.sendMessage("§c숫자를 입력하세요.");
+            }
+            return;
+        }
+
         // 직접 통신 시도: @이름 메시지
         if (message.startsWith("@")) {
             handleDirectComm(player, pd, message);
@@ -1303,11 +1385,23 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         // 대기 중인 특성 발동이 있으면 행동에 포함
         String pendingTrait = pendingTraitActivation.remove(player.getUniqueId());
         if (pendingTrait != null) {
+            TraitData ptd = pd.traits.stream().filter(t -> t.id.equals(pendingTrait)).findFirst().orElse(null);
+            if (ptd != null && SystemTraitRegistry.isSystemEffect(ptd)) {
+                // 시스템 특성은 채팅 행동과 결합하지 않고 전용 처리로 분기 (입력한 행동은 이번엔 무시)
+                handleSystemTraitActivation(player, pd, ptd);
+                return;
+            }
             String traitMsg = traitBtn.buildTraitUseMessage(pd, pendingTrait);
             if (traitMsg != null) {
                 applyTraitUsed(pd, pendingTrait, state.getCurrentTurn());
                 actionMessage = traitMsg + "\n플레이어 추가 행동: " + actionMessage;
             }
+        }
+
+        // 행운 보정 (이번 행동 1회 적용 후 소멸)
+        Integer luckMod = pendingLuckModifier.remove(player.getUniqueId());
+        if (luckMod != null) {
+            actionMessage = actionMessage + " §8[행운 보정 " + (luckMod > 0 ? "+" : "") + luckMod + "]";
         }
 
         // 괴담이 이 플레이어의 말투·행동을 학습 (정체 차용/흉내에 사용)
@@ -1784,10 +1878,20 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             player.sendMessage("§c[" + trait.name + "] 이번 스테이지에서 이미 사용했습니다.");
             return;
         }
+        // 시스템 효과: uses 기반 사용 횟수 상한 검사 (ai_query 등)
+        boolean systemEffect = SystemTraitRegistry.isSystemEffect(trait);
+        if (systemEffect) {
+            int maxUses = SystemTraitRegistry.maxUsesPerStage(trait);
+            if (maxUses > 0 && trait.usedThisStage >= maxUses) {
+                player.sendMessage("§c[" + trait.name + "] 이번 스테이지 사용 횟수를 모두 소진했습니다.");
+                return;
+            }
+        }
 
         pendingTraitActivation.put(player.getUniqueId(), traitId);
 
-        if (trait.usedThisStage >= 1) {
+        // 일반 능동 특성만 연속 사용 경고 (시스템 효과는 자체 횟수/쿨다운 규칙을 따름)
+        if (!systemEffect && trait.usedThisStage >= 1) {
             player.sendMessage("§e⚠ 이번 스테이지에서 이미 " + trait.usedThisStage + "회 사용 — 효과가 감소하거나 역효과가 있을 수 있습니다.");
         }
 
@@ -1803,6 +1907,11 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         if (traitId == null) { player.sendMessage("§7(발동 대기 중인 특성이 없습니다.)"); return; }
         PlayerData pd = state.getPlayer(player);
         if (pd == null) return;
+        TraitData td = pd.traits.stream().filter(t -> t.id.equals(traitId)).findFirst().orElse(null);
+        if (td != null && SystemTraitRegistry.isSystemEffect(td)) {
+            handleSystemTraitActivation(player, pd, td);
+            return;
+        }
         String msg = traitBtn.buildTraitUseMessage(pd, traitId);
         if (msg != null) {
             applyTraitUsed(pd, traitId, state.getCurrentTurn());
@@ -1818,6 +1927,423 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             if (t.cooldownTurns > 0) t.remainingCooldown = t.cooldownTurns;
             else if (t.cooldownTurns == -1) t.remainingCooldown = Integer.MAX_VALUE;
         });
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  시스템 특성 발동 처리
+    // ──────────────────────────────────────────────────────────────
+
+    private void handleSystemTraitActivation(Player player, PlayerData pd, TraitData td) {
+        SystemTraitRegistry.Effect e = SystemTraitRegistry.Effect.byKey(td.effectType);
+        if (e == null) { player.sendMessage("§7이 특성은 자동으로 효과가 적용됩니다."); return; }
+        switch (e) {
+            case INSTANT_CLEAR -> activateInstantClear(player, pd, td);
+            case REVIVE_ALLY   -> activateRevive(player, pd, td);
+            case AI_QUERY      -> activateAiQuery(player, pd, td);
+            case CHOICE_ACTION -> activateChoiceAction(player, pd, td);
+            case LUCK_ROLL     -> activateLuckRoll(player, pd, td);
+            case SHOW_PROGRESS -> activateShowProgress(player, pd, td);
+            case GM_DIRECTIVE  -> activateGmDirective(player, pd, td);
+            case AREA_SCAN     -> activateAreaScan(player, pd, td);
+            case SACRIFICE     -> activateSacrifice(player, pd, td);
+            case LINK_ALLY     -> activateLinkAlly(player, pd, td);
+            default            -> player.sendMessage("§7이 특성은 상시(패시브)로 적용됩니다.");
+        }
+    }
+
+    private void activateInstantClear(Player player, PlayerData pd, TraitData td) {
+        broadcast("§6§l[" + td.name + "] " + (pd.charName.isEmpty() ? pd.name : pd.charName)
+            + "이(가) 즉시 생존 판정을 발동했다!");
+        applyTraitUsed(pd, td.id, state.getCurrentTurn());
+        traitMan.removeTrait(pd, td.id);
+        plugin.getServer().getScheduler().runTaskLater(plugin,
+            () -> onClearEnding("F", td.name + " 발동 — 즉시 생존 처리"), 20L);
+    }
+
+    private void activateRevive(Player player, PlayerData pd, TraitData td) {
+        List<PlayerData> targets = state.getAllPlayers().stream()
+            .filter(p2 -> !p2.uuid.equals(player.getUniqueId()))
+            .collect(java.util.stream.Collectors.toList());
+        if (targets.isEmpty()) {
+            player.sendMessage("§c[" + td.name + "] 회복시킬 다른 플레이어가 없습니다.");
+            return;
+        }
+        pendingSaintTrait.put(player.getUniqueId(), td.id);
+        player.sendMessage("§a[" + td.name + "] 회복시킬 플레이어를 선택하세요 (채팅으로 번호 입력):");
+        for (int i = 0; i < targets.size(); i++) {
+            PlayerData t = targets.get(i);
+            String status = t.isDead ? "§c[사망]" : (t.hp[0] < t.hp[1] || t.san[0] < t.san[1]) ? "§e[부상]" : "§a[정상]";
+            player.sendMessage("§f[" + (i + 1) + "] " + (t.charName.isEmpty() ? t.name : t.charName) + " " + status);
+        }
+    }
+
+    private void activateAiQuery(Player player, PlayerData pd, TraitData td) {
+        int uses = SystemTraitRegistry.maxUsesPerStage(td);
+        if (td.usedThisStage >= uses) {
+            player.sendMessage("§c[" + td.name + "] 이번 스테이지 사용 횟수를 모두 소진했습니다.");
+            return;
+        }
+        applyTraitUsed(pd, td.id, state.getCurrentTurn());
+        pendingPrayerInput.put(player.getUniqueId(), td.id);
+        int remaining = uses - td.usedThisStage; // after increment
+        player.sendMessage("§d[" + td.name + "] 채팅으로 GM에게 질문을 입력하세요. §8(남은 횟수: " + remaining + "회)");
+        player.sendMessage("§8질문이 구체적일수록 더 명확한 답을 받습니다.");
+    }
+
+    private void activateChoiceAction(Player player, PlayerData pd, TraitData td) {
+        applyTraitUsed(pd, td.id, state.getCurrentTurn());
+        pendingOracleInput.put(player.getUniqueId(), td.id);
+        player.sendMessage("§5[" + td.name + "] 채팅으로 행동을 입력하면 선택지가 제시됩니다.");
+        player.sendMessage("§8선택지 중 정답을 고르면 큰 보정, 오답이면 큰 패널티가 적용됩니다.");
+    }
+
+    private void activateLuckRoll(Player player, PlayerData pd, TraitData td) {
+        applyTraitUsed(pd, td.id, state.getCurrentTurn());
+        int dice  = Math.max(2, td.param("dice", 6));
+        int scale = Math.max(1, td.param("scale", 10));
+        int roll  = java.util.concurrent.ThreadLocalRandom.current().nextInt(dice) + 1;
+        // 1 → -scale, dice → +scale 로 선형 매핑
+        double t = (dice == 1) ? 1.0 : (double) (roll - 1) / (dice - 1); // 0..1
+        int modifier = (int) Math.round((t * 2 - 1) * scale); // -scale..+scale
+        pendingLuckModifier.put(player.getUniqueId(), modifier);
+        String color = modifier > 0 ? "§a" : (modifier < 0 ? "§c" : "§7");
+        player.sendMessage("§e[" + td.name + "] 주사위(d" + dice + "): §f" + roll
+            + "§e  →  " + color + (modifier > 0 ? "+" : "") + modifier + " 행운 보정");
+        player.sendMessage("§7다음 행동 1회에 행운 보정이 적용됩니다.");
+    }
+
+    private void activateShowProgress(Player player, PlayerData pd, TraitData td) {
+        applyTraitUsed(pd, td.id, state.getCurrentTurn());
+        String phaseStr = state.isDailyPhase()
+            ? "일상 파트 (남은 " + state.getDailyTurnsLeft() + "턴)"
+            : "괴담 파트 — 타임라인 " + state.getTimelineStage() + "단계";
+        player.sendMessage("§e[" + td.name + "] 현재 괴담 진행 상태:");
+        player.sendMessage("§7  단계: §f" + phaseStr);
+        player.sendMessage("§7  오염도: §f" + corruptMan.getLevel() + " (" + corruptMan.getAttempts() + "회차)");
+    }
+
+    private void activateGmDirective(Player player, PlayerData pd, TraitData td) {
+        applyTraitUsed(pd, td.id, state.getCurrentTurn());
+        String charDisplay = pd.charName.isEmpty() ? pd.name : pd.charName;
+        String directive = (td.effect != null && !td.effect.isBlank())
+            ? td.effect : "이 특성의 효과를 사건 전개에 자연스럽게 반영하라.";
+        String gmMsg = "[시스템 특성: " + td.name + " 발동] " + charDisplay
+            + "이(가) '" + td.name + "' 특성을 발동했다. GM 지시: " + directive;
+        boolean accepted = turnMan.handleAction(player, gmMsg, gmSystemPrompt);
+        player.sendMessage(accepted ? "§7[" + td.name + " 발동 중...]" : "§7행동 처리 중입니다. 잠시 후 다시 시도하세요.");
+    }
+
+    private void activateAreaScan(Player player, PlayerData pd, TraitData td) {
+        int uses = SystemTraitRegistry.maxUsesPerStage(td);
+        if (td.usedThisStage >= uses) {
+            player.sendMessage("§c[" + td.name + "] 이번 스테이지 사용 횟수를 모두 소진했습니다.");
+            return;
+        }
+        applyTraitUsed(pd, td.id, state.getCurrentTurn());
+        pendingAreaScanInput.put(player.getUniqueId(), td.id);
+        int scope = td.param("scope", 2);
+        String scopeStr = switch (scope) {
+            case 3  -> "건물 전체 광역 탐색";
+            case 2  -> "인접 구역·층 탐색";
+            default -> "현재 위치 정밀 탐색";
+        };
+        int remaining = uses - td.usedThisStage;
+        player.sendMessage("§b[" + td.name + "] " + scopeStr + " — 채팅으로 무엇을 탐색할지 입력하세요. §8(남은 횟수: " + remaining + "회)");
+        player.sendMessage("§8예: \"수상한 냄새\", \"숨겨진 출구\", \"다른 사람의 흔적\"");
+    }
+
+    private void activateSacrifice(Player player, PlayerData pd, TraitData td) {
+        int cost    = td.param("cost", 10);
+        boolean useSan = td.param("use_san", 0) == 1;
+        String resource = useSan ? "정신력" : "체력";
+        if (useSan) {
+            pd.san[0] = Math.max(0, pd.san[0] - cost);
+        } else {
+            pd.hp[0]  = Math.max(0, pd.hp[0] - cost);
+        }
+        updateAllScoreboards();
+        applyTraitUsed(pd, td.id, state.getCurrentTurn());
+        int scale = td.param("scale", 2);
+        String scaleStr = switch (scale) {
+            case 3  -> "강력한";
+            case 1  -> "미약한";
+            default -> "상당한";
+        };
+        player.sendMessage("§c[" + td.name + "] " + resource + " " + cost + "을(를) 소모합니다.");
+        String charDisplay = pd.charName.isEmpty() ? pd.name : pd.charName;
+        String benefit = (td.effect != null && !td.effect.isBlank())
+            ? td.effect : "이 희생의 효과를 이야기에 반영하라.";
+        String gmMsg = "[시스템 특성: " + td.name + " 발동] " + charDisplay
+            + "이(가) " + resource + " " + cost + "을(를) 소모해 힘을 얻었다(" + scaleStr + " 효과). "
+            + "GM 지시: " + benefit + " 이야기에 자연스럽게 반영하라.";
+        boolean accepted = turnMan.handleAction(player, gmMsg, gmSystemPrompt);
+        player.sendMessage(accepted ? "§7[" + td.name + " 발동 중...]" : "§7행동 처리 중입니다. 잠시 후 다시 시도하세요.");
+    }
+
+    private void activateLinkAlly(Player player, PlayerData pd, TraitData td) {
+        int uses = SystemTraitRegistry.maxUsesPerStage(td);
+        if (td.usedThisStage >= uses) {
+            player.sendMessage("§c[" + td.name + "] 이번 스테이지 사용 횟수를 모두 소진했습니다.");
+            return;
+        }
+        int depth = td.param("depth", 1);
+        applyTraitUsed(pd, td.id, state.getCurrentTurn());
+
+        if (depth == 1) {
+            // 로컬 판정: 생존 여부만 즉시 표시 (AI 불필요)
+            List<PlayerData> others = state.getAllPlayers().stream()
+                .filter(p2 -> !p2.uuid.equals(player.getUniqueId()))
+                .collect(java.util.stream.Collectors.toList());
+            if (others.isEmpty()) {
+                player.sendMessage("§c[" + td.name + "] 감지할 다른 플레이어가 없습니다.");
+                return;
+            }
+            player.sendMessage("§a[" + td.name + "] 아군의 생존 상태를 감지합니다:");
+            for (PlayerData op : others) {
+                String name = op.charName.isEmpty() ? op.name : op.charName;
+                String status = op.isDead ? "§c[사망]"
+                    : (op.hp[0] < op.hp[1] / 2) ? "§e[중상]" : "§a[생존]";
+                player.sendMessage("  " + status + " §f" + name);
+            }
+        } else {
+            // AI 서술: 아군 위치·상태 파악 또는 소통 경로 감지
+            pendingLinkAllyInput.put(player.getUniqueId(), td.id);
+            String depthStr = depth >= 3 ? "소통 경로 발견 포함" : "상태·위치 파악";
+            player.sendMessage("§a[" + td.name + "] " + depthStr + " — 채팅으로 무엇을 감지하려는지 입력하세요.");
+            player.sendMessage("§8예: \"가장 가까운 아군의 위치\", \"다친 아군이 있는지\"");
+        }
+    }
+
+    private void handleScanObservation(Player player, PlayerData pd, String traitId, String target) {
+        TraitData td = pd.traits.stream().filter(t -> t.id.equals(traitId)).findFirst().orElse(null);
+        int scope = td != null ? td.param("scope", 2) : 2;
+        String scopeStr = switch (scope) {
+            case 3  -> "건물 전체";
+            case 2  -> "인접 구역·층";
+            default -> "현재 위치";
+        };
+        String traitName = td != null ? td.name : "환경 탐색";
+        String scanCtx = "\n## " + traitName + " 탐색 처리 (범위: " + scopeStr + ")\n"
+            + "플레이어가 체계적 탐색으로 단서를 찾고 있다. 규칙:\n"
+            + "- 탐색 범위(" + scopeStr + ") 안에서 찾을 수 있는 것만 서술한다.\n"
+            + "- 새로운 단서는 최대 1개. 핵심 해결법·답은 직접 알려주지 않는다.\n"
+            + "- 아무것도 없으면 '아무것도 발견하지 못했다' 서술. 억지로 단서를 만들지 않는다.\n"
+            + "- 탐색 행동 자체도 타임라인에 적절히 반영한다.\n";
+        String charDisplay = pd.charName.isEmpty() ? pd.name : pd.charName;
+        String prompt = charDisplay + "이(가) '" + traitName + "' 특성으로 " + scopeStr
+            + " 범위에서 '" + target + "'을(를) 탐색한다.";
+        boolean accepted = turnMan.handleAction(player, prompt, gmSystemPrompt + scanCtx);
+        if (!accepted) player.sendMessage("§7행동 처리 중입니다. 잠시 후 다시 시도하세요.");
+    }
+
+    private void handleLinkAllyQuery(Player player, PlayerData pd, String traitId, String query) {
+        TraitData td = pd.traits.stream().filter(t -> t.id.equals(traitId)).findFirst().orElse(null);
+        int depth = td != null ? td.param("depth", 2) : 2;
+        String traitName = td != null ? td.name : "아군 감지";
+
+        StringBuilder allyCtx = new StringBuilder();
+        for (PlayerData op : state.getAllPlayers()) {
+            if (op.uuid.equals(player.getUniqueId())) continue;
+            String name = op.charName.isEmpty() ? op.name : op.charName;
+            allyCtx.append("  - ").append(name).append(": ")
+                   .append(op.isDead ? "사망" : "생존 (위치: " + op.zone + ")").append("\n");
+        }
+        String depthRule = depth >= 3
+            ? "- 위치·상태를 꽤 구체적으로 암시하고, 소통 수단(연락 방법·접촉 경로)을 발견할 수 있게 한다.\n"
+            : "- 아군의 대략적 방향·생존 여부 정도만 감각으로 암시한다. 정확한 위치나 소통 수단은 직접 알려주지 않는다.\n";
+        String linkCtx = "\n## " + traitName + " 처리 (감지 깊이 " + depth + "/3)\n"
+            + "플레이어가 초감각으로 아군을 탐지하고 있다. 현재 아군 상태:\n" + allyCtx
+            + "규칙:\n" + depthRule
+            + "- 직접 통신 채널을 여는 것은 불가. 감각적 인지·이야기 서술로만 표현한다.\n";
+        String charDisplay = pd.charName.isEmpty() ? pd.name : pd.charName;
+        String prompt = charDisplay + "이(가) '" + traitName + "' 특성으로 아군을 탐지한다. 탐지 목표: \"" + query + "\"";
+        ai.callGmAiOnce(gmSystemPrompt + linkCtx, prompt).thenAccept(response ->
+            plugin.getServer().getScheduler().runTask(plugin, () -> {
+                String stripped = ai.stripTags(response).trim();
+                if (!stripped.isBlank())
+                    player.sendMessage("§a[" + traitName + "] §7" + stripped);
+            })
+        );
+    }
+
+    private void handlePrayerQuestion(Player player, PlayerData pd, String traitId, String question) {
+        TraitData td = pd.traits.stream().filter(t -> t.id.equals(traitId)).findFirst().orElse(null);
+        int info = td != null ? td.param("info", 1) : 1;
+        String depthRule = switch (info) {
+            case 3  -> "- 핵심 해결법을 통째로 알려주진 않되, 약점·방향을 꽤 구체적으로 짚어줘도 된다.\n"
+                     + "- 관련 사실을 2~3문장으로 비교적 명확히 답한다.\n";
+            case 2  -> "- 핵심 해결법·약점을 직접 알려주지 않는다.\n"
+                     + "- 질문과 관련된 사실을 1~2가지 암시한다(2문장 이내).\n";
+            default -> "- 핵심 해결법·약점을 직접 알려주지 않는다.\n"
+                     + "- '느낌·예감·낌새' 형식으로만 모호하게 답한다(2문장 이내). 직접적 단서 나열 금지.\n"
+                     + "- 예: \"그 방향에 뭔가 있다는 예감이 든다.\"\n";
+        };
+        String name = td != null ? td.name : "질문";
+        String prayerCtx = "\n## " + name + " 질문 처리 (정보 깊이 " + info + "/3)\n"
+            + "플레이어가 시스템 특성으로 GM에게 직접 질문했다.\n규칙:\n" + depthRule;
+
+        String prompt = pd.name + "이(가) '" + name + "' 특성으로 질문한다: \"" + question + "\" "
+            + "위 규칙에 맞춰 답해줘.";
+
+        ai.callGmAiOnce(gmSystemPrompt + prayerCtx, prompt).thenAccept(response ->
+            plugin.getServer().getScheduler().runTask(plugin, () -> {
+                String stripped = ai.stripTags(response).trim();
+                if (!stripped.isBlank())
+                    player.sendMessage("§d[" + name + "] §7" + stripped);
+            })
+        );
+    }
+
+    private void handleOracleAction(Player player, PlayerData pd, String traitId, String action) {
+        TraitData td = pd.traits.stream().filter(t -> t.id.equals(traitId)).findFirst().orElse(null);
+        int numChoices = td != null ? Math.max(2, Math.min(4, td.param("choices", 3))) : 3;
+        String oracleCtx = "\n## 선택지 모드\n"
+            + "플레이어의 행동 의도를 받아 " + numChoices + "가지 선택지를 JSON으로 제시하라:\n"
+            + "{\"choices\":[{\"text\":\"선택지(15자 이내)\",\"outcome\":\"good|bad|neutral\"},...]}\n"
+            + "- good: 현 상황에서 가장 효과적인 방법 (큰 보정+) — 정확히 1개\n"
+            + "- bad: 역효과를 낼 방법 (큰 패널티-) — 1개 이상\n"
+            + "- neutral: 무난하나 특별한 보정 없음\n"
+            + "순서는 랜덤하게 섞어 정답을 알기 어렵게 할 것. JSON만 출력.\n";
+
+        String prompt = "플레이어 행동 의도: \"" + action + "\". " + numChoices + "가지 선택지를 JSON으로.";
+
+        ai.callGmAiOnce(gmSystemPrompt + oracleCtx, prompt).thenAccept(raw ->
+            plugin.getServer().getScheduler().runTask(plugin, () -> {
+                try {
+                    String cleaned = raw.replaceAll("```json", "").replaceAll("```", "").trim();
+                    int s = cleaned.indexOf('{'), e = cleaned.lastIndexOf('}');
+                    if (s < 0 || e < 0) { fallbackOracleAction(player, pd, action); return; }
+                    JsonObject json = new com.google.gson.Gson().fromJson(cleaned.substring(s, e + 1), JsonObject.class);
+                    JsonArray choicesArr = json.getAsJsonArray("choices");
+                    if (choicesArr == null || choicesArr.size() == 0) { fallbackOracleAction(player, pd, action); return; }
+
+                    List<OracleChoice> choices = new ArrayList<>();
+                    for (JsonElement el : choicesArr) {
+                        JsonObject c = el.getAsJsonObject();
+                        choices.add(new OracleChoice(
+                            c.has("text")    ? c.get("text").getAsString()    : "선택지",
+                            c.has("outcome") ? c.get("outcome").getAsString() : "neutral"
+                        ));
+                    }
+                    pendingOracleChoices.put(player.getUniqueId(), choices);
+
+                    player.sendMessage("§5[신내림] 다음 중 하나를 선택하세요:");
+                    for (int i = 0; i < choices.size(); i++) {
+                        net.kyori.adventure.text.Component btn = net.kyori.adventure.text.Component
+                            .text("[" + (i + 1) + "] " + choices.get(i).text(), net.kyori.adventure.text.format.NamedTextColor.AQUA)
+                            .clickEvent(net.kyori.adventure.text.event.ClickEvent.runCommand("/trpg _oracle_select " + i));
+                        player.sendMessage(btn);
+                    }
+                } catch (Exception ex) {
+                    fallbackOracleAction(player, pd, action);
+                }
+            })
+        );
+    }
+
+    private void fallbackOracleAction(Player player, PlayerData pd, String action) {
+        player.sendMessage("§c[신내림] 선택지 생성에 실패했습니다. 일반 행동으로 처리합니다.");
+        boolean accepted = turnMan.handleAction(player, action, gmSystemPrompt);
+        if (!accepted) player.sendMessage("§7행동 처리 중입니다. 잠시 후 다시 시도하세요.");
+    }
+
+    private void handleOracleSelect(Player player, int idx) {
+        List<OracleChoice> choices = pendingOracleChoices.remove(player.getUniqueId());
+        if (choices == null || idx < 0 || idx >= choices.size()) {
+            player.sendMessage("§c[선택지] 잘못된 선택입니다.");
+            return;
+        }
+        PlayerData pd = state.getPlayer(player);
+        if (pd == null) return;
+        OracleChoice chosen = choices.get(idx);
+        String modifier = switch (chosen.outcome()) {
+            case "good"    -> " (계시 — 최적 선택: 큰 보정 적용)";
+            case "bad"     -> " (계시 — 역효과 선택: 큰 패널티 적용)";
+            default        -> " (계시 — 무난한 선택)";
+        };
+        String msg = "[선택지 행동] " + (pd.charName.isEmpty() ? pd.name : pd.charName)
+            + "이(가) '" + chosen.text() + "'" + modifier + " 행동을 취한다.";
+        boolean accepted = turnMan.handleAction(player, msg, gmSystemPrompt);
+        player.sendMessage(accepted ? "§7[행동 전달 중...]" : "§7행동 처리 중입니다. 잠시 후 다시 시도하세요.");
+    }
+
+    public void giveSystemTrait(Player admin, Player target, String traitId) {
+        SystemTraitRegistry.Preset preset = SystemTraitRegistry.getPreset(traitId).orElse(null);
+        if (preset == null) {
+            admin.sendMessage("§c알 수 없는 시스템 특성 ID: " + traitId);
+            admin.sendMessage("§7사용 가능한 ID 목록:");
+            SystemTraitRegistry.printCatalog(admin);
+            return;
+        }
+        PlayerData pd = state.getPlayer(target.getUniqueId());
+        if (pd == null) {
+            admin.sendMessage("§c" + target.getName() + "은(는) 현재 세션 참가자가 아닙니다.");
+            return;
+        }
+        if (pd.traits.stream().anyMatch(t -> t.id.equals(traitId))) {
+            admin.sendMessage("§c" + target.getName() + "은(는) 이미 해당 특성을 보유하고 있습니다.");
+            return;
+        }
+        TraitData td = preset.toTraitData();
+        traitMan.addTrait(pd, td);
+        admin.sendMessage("§a[시스템 특성] " + target.getName() + "에게 §e(" + td.grade + ") " + td.name + "§a을(를) 부여했습니다.");
+        target.sendMessage("§e[특성 획득] §f(" + td.grade + ") " + td.name + " §7— " + td.description);
+        gameLogger.logEvent("[시스템 특성 부여] " + target.getName() + " ← " + td.name + " (" + traitId + ")");
+
+        // 시나리오 이해 특성을 배역 배정 후 부여했다면 지금 바로 정보 전달
+        if ("scenario_insight".equals(td.effectType) && pd.roleAssigned) {
+            deliverInsightInfo(target, td);
+        }
+    }
+
+    private void deliverInsightInfo(Player player, TraitData td) {
+        JsonObject gdam = state.getGdamData();
+        if (gdam == null) return;
+        int depth = td != null ? td.param("depth", 2) : 2;
+        StringBuilder insight = new StringBuilder();
+        insight.append("§d[").append(td != null ? td.name : "시나리오 이해")
+               .append("] 당신은 이 상황의 전체적인 흐름을 어렴풋이 알고 있습니다:\n");
+        if (gdam.has("entity")) {
+            JsonObject e = gdam.getAsJsonObject("entity");
+            String type = e.has("type") ? e.get("type").getAsString() : "알 수 없음";
+            insight.append("§7  ▸ 이 사건의 핵심 존재 유형: §f").append(type).append("\n");
+            if (e.has("rules") && e.getAsJsonArray("rules").size() > 0)
+                insight.append("§7  ▸ 이 존재에는 특정 규칙이 있습니다 (총 ").append(e.getAsJsonArray("rules").size()).append("가지)\n");
+            if (e.has("weakness") && !e.get("weakness").getAsString().isBlank())
+                insight.append("§7  ▸ 분명한 약점이 존재합니다\n");
+            // 상세 깊이: 약점·해결 방향을 한 줄 힌트로 추가 노출 (핵심 전체 공개는 아님)
+            if (depth >= 3 && e.has("weakness") && !e.get("weakness").getAsString().isBlank()) {
+                String w = e.get("weakness").getAsString();
+                insight.append("§7  ▸ 약점의 실마리: §f").append(w.length() > 40 ? w.substring(0, 40) + "…" : w).append("\n");
+            }
+        }
+        if (gdam.has("scale") && !gdam.get("scale").getAsString().isBlank())
+            insight.append("§7  ▸ 사건 규모: §f").append(gdam.get("scale").getAsString()).append("\n");
+        insight.append("§8(핵심 정보·해결법은 직접 탐색으로 알아내야 합니다)");
+        player.sendMessage(insight.toString());
+    }
+
+    private void applySaintEffect(Player player, PlayerData pd, String traitId, PlayerData target) {
+        TraitData td = pd.traits.stream().filter(t -> t.id.equals(traitId)).findFirst().orElse(null);
+        String traitName = td != null ? td.name : "회복";
+        boolean wasDeadBefore = target.isDead;
+        target.hp[0]  = target.hp[1];
+        target.san[0] = target.san[1];
+        target.status = "normal";
+        target.isDead = false;
+        applyTraitUsed(pd, traitId, state.getCurrentTurn());
+        updateAllScoreboards();
+        String targetDisplay = target.charName.isEmpty() ? target.name : target.charName;
+        String playerDisplay = pd.charName.isEmpty() ? pd.name : pd.charName;
+        player.sendMessage("§a[" + traitName + "] " + targetDisplay + "을(를) 완전히 회복시켰습니다.");
+        Player targetPlayer = Bukkit.getPlayer(target.uuid);
+        if (targetPlayer != null) {
+            if (wasDeadBefore) targetPlayer.sendMessage("§a당신은 부활했습니다! 체력과 정신력이 완전히 회복되었습니다.");
+            else               targetPlayer.sendMessage("§a" + playerDisplay + "이(가) 당신의 체력과 정신력을 완전히 회복시켰습니다!");
+        }
+        String gmMsg = "[시스템 특성: " + traitName + " 발동] " + playerDisplay + "이(가) " + targetDisplay
+            + "을(를) 완전히 회복시켰다." + (wasDeadBefore ? " 부활." : "") + " 이야기에 이 회복 효과를 자연스럽게 반영하라.";
+        turnMan.handleAction(player, gmMsg, gmSystemPrompt);
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -2664,6 +3190,48 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                 sb.append("\n");
             }
             sb.append("위 NPC는 플레이어가 없으므로 GM이 자연스럽게 스토리에 통합한다.\n");
+        }
+        // 패시브 시스템 특성 보유자 컨텍스트
+        StringBuilder passiveBlock  = new StringBuilder(); // passive_gm: 항상 고려
+        StringBuilder triggerBlock  = new StringBuilder(); // passive_trigger: 조건 충족 시 자동 발동
+        StringBuilder protectBlock  = new StringBuilder(); // protect: 피해·효과 자동 경감
+        for (PlayerData p : state.getAllPlayers()) {
+            for (TraitData t : p.traits) {
+                String n   = p.charName.isEmpty() ? p.name : p.charName;
+                String eff = (t.effect != null && !t.effect.isBlank()) ? t.effect : t.description;
+                switch (t.effectType == null ? "" : t.effectType) {
+                    case "passive_gm" ->
+                        passiveBlock.append("- ").append(n).append(" (").append(t.name).append("): ")
+                                    .append(eff).append("\n");
+                    case "passive_trigger" -> {
+                        int intensity = t.param("intensity", 2);
+                        String ig = intensity >= 3 ? "강" : intensity == 2 ? "중" : "약";
+                        triggerBlock.append("- ").append(n).append(" (").append(t.name).append(", 강도 ").append(ig).append("): ")
+                                    .append(eff).append("\n");
+                    }
+                    case "protect" -> {
+                        int power    = t.param("power", 2);
+                        int useLimit = t.param("uses", 0);
+                        String pg = power >= 3 ? "거의 무효화" : power == 2 ? "절반 경감" : "소폭 경감";
+                        String ul = useLimit > 0 ? " (스테이지당 " + useLimit + "회 한정)" : "";
+                        protectBlock.append("- ").append(n).append(" (").append(t.name).append("): ")
+                                    .append(eff).append(" [").append(pg).append(ul).append("]\n");
+                    }
+                    default -> {}
+                }
+            }
+        }
+        if (passiveBlock.length() > 0) {
+            sb.append("\n## 상시 특성 보유자 (매 턴 자연스럽게 반영, 직접 언급 금지)\n");
+            sb.append(passiveBlock);
+        }
+        if (triggerBlock.length() > 0) {
+            sb.append("\n## 자동 발동 특성 보유자 (조건 충족 시 GM이 자동으로 효과 발동, 직접 언급 금지)\n");
+            sb.append(triggerBlock);
+        }
+        if (protectBlock.length() > 0) {
+            sb.append("\n## 방어 특성 보유자 (해당 피해·효과 발생 시 자동 적용, 직접 언급 금지)\n");
+            sb.append(protectBlock);
         }
         // 오염 컨텍스트 추가
         sb.append(corruptMan.buildCorruptionContext(gdam));

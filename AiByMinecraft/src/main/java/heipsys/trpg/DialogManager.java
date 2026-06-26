@@ -622,6 +622,30 @@ public class DialogManager {
                 .append(Component.text(t.effect, NamedTextColor.WHITE));
         }
 
+        // 능동 특성: 쿨다운·제약·남은 사용 횟수 표시 (내 정보에서 확인)
+        if (t.active) {
+            StringBuilder meta = new StringBuilder();
+            if (t.cooldownTurns == -1) {
+                meta.append(t.usedThisStage > 0 ? "이번 스테이지 사용 완료" : "스테이지당 1회");
+            } else {
+                if (t.remainingCooldown > 0 && t.remainingCooldown != Integer.MAX_VALUE)
+                    meta.append("쿨다운 ").append(t.remainingCooldown).append("턴 남음");
+                else if (t.cooldownTurns > 0)
+                    meta.append("쿨다운 ").append(t.cooldownTurns).append("턴");
+                int maxUses = SystemTraitRegistry.maxUsesPerStage(t);
+                if (maxUses > 0) {
+                    if (meta.length() > 0) meta.append(" · ");
+                    meta.append("남은 사용 ").append(Math.max(0, maxUses - t.usedThisStage))
+                        .append("/").append(maxUses).append("회");
+                }
+            }
+            if (meta.length() > 0) {
+                builder.append(Component.newline())
+                    .append(Component.text("[제약]  ", NamedTextColor.GOLD))
+                    .append(Component.text(meta.toString(), NamedTextColor.GRAY));
+            }
+        }
+
         return builder.build();
     }
 
