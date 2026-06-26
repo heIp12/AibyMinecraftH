@@ -236,11 +236,11 @@ LUK 10+: 자주, 극적인 행운
   판단 과정을 절대 출력하지 않는다. 이야기 서술만 출력한다.
 
 ### 기절·꼭두각시 상태 ★ 서버 자동 적용
-체력 0 → 서버가 자동으로 기절([기절]) 상태 부여. 플레이어는 90초간 행동 불가, 이후 HP 1로 회복.
+체력 0 → 서버가 자동으로 기절([기절]) 상태 부여. 플레이어는 행동 불가, 이후 HP 1로 회복.
 기절 중 재피해(체력 0) → 영구 탈락.
 정신력 0 → 서버가 자동으로 꼭두각시([꼭두각시]) 상태 부여. 플레이어 행동은 괴담에 의해 조종됨.
-꼭두각시 상태에서 정신력 0 재도달 → 영구 탈락.
-기절+정신력 0 동시 → 영구 탈락.
+꼭두각시 상태에서 정신력 0 재도달 → 완전 잠식(관전 상태). 약 8턴 후 자아 일부 회복. 탈락하지 않는다.
+기절+정신력 0 동시 → 꼭두각시 완전 잠식(관전 상태). 탈락하지 않는다.
 GM 역할: 기절은 쓰러진 상태를 서술. 꼭두각시는 행동을 스토리에 맞게 조정 서술.
 각성(꼭두각시): 강한 충격/특수 아이템 → san_change 양수 + status_change:"normal" 출력.
 
@@ -1465,6 +1465,11 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
 
         PlayerData pd = state.getPlayer(player);
         if (pd == null || pd.isDead) return;
+        if (pd.puppetRecoveryTurns > 0) {
+            player.sendMessage("§5완전히 조종되어 스스로 행동할 수 없습니다...");
+            player.sendMessage("§8(관전 중 | 상태: §5꼭두각시 완전 잠식 §8| 회복까지 약 §f" + pd.puppetRecoveryTurns + "§8턴)");
+            return;
+        }
 
         // 미등장 배역: 채팅 차단, 대기 안내
         if (!spawnedPlayers.contains(player.getUniqueId())) {
@@ -1781,12 +1786,28 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                     int before = pd.san[0];
                     pd.san[0] = Math.max(0, Math.min(pd.san[1], pd.san[0] + delta));
                     notifyVitalChange(pd, "정신력", "§b", before, pd.san[0], pd.san[1]);
+                    // 관전 중인 꼭두각시가 SAN 회복 → 완전 잠식 해제(행동 가능한 puppet으로 복귀)
+                    if (pd.puppetRecoveryTurns > 0 && pd.san[0] > 0) {
+                        pd.puppetRecoveryTurns = 0;
+                        Player t2 = Bukkit.getPlayer(pd.uuid);
+                        if (t2 != null) {
+                            t2.sendMessage("§a정신이 서서히 되살아납니다... 희미한 자아가 돌아왔습니다.");
+                            t2.sendMessage("§5아직 조종의 영향 아래이지만 다시 행동할 수 있습니다.");
+                        }
+                        ai.injectGmSystem("[잠식 해제] " + commDisplayName(pd) + "의 자아가 돌아왔다. 관전 해제. 아직 puppet.");
+                    }
                     if (horrorActive && pd.san[0] <= 0 && !pd.isDead) {
                         Player target = Bukkit.getPlayer(pd.uuid);
                         if ("puppet".equals(pd.status) || "faint".equals(pd.status)) {
-                            // 꼭두각시 상태에서 SAN=0 재도달 or 기절 중 정신 붕괴 → 영구 탈락
-                            pd.isDead = true;
-                            if (target != null) target.sendMessage("§4이성이 완전히 무너졌다. 당신은 영원히 돌아올 수 없게 되었습니다...");
+                            // 꼭두각시·기절 상태에서 SAN=0 재도달 → 완전 잠식(관전). 탈락하지 않음.
+                            pd.faintTurnsRemaining = 0; // 기절 타이머 리셋 (완전 잠식이 우선)
+                            pd.status = "puppet";
+                            pd.puppetRecoveryTurns = 8;
+                            if (target != null) {
+                                target.sendMessage("§5의식이 완전히 잠식되었습니다. 육체만이 남아 움직입니다...");
+                                target.sendMessage("§8(관전 상태 — 약 8턴 후 자아 일부 회복)");
+                            }
+                            ai.injectGmSystem("[완전 잠식] " + commDisplayName(pd) + "의 의식이 무너졌다. 육체가 괴담의 손발로 움직인다. 8턴 후 자아 일부 회복.");
                         } else {
                             pd.status = "puppet";
                             if (target != null) target.sendMessage("§5이성이 무너져 내린다... 당신의 의지가 서서히 사라지는 것이 느껴진다.");
@@ -1794,16 +1815,24 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                     }
                 }
                 if (update.has("timeline_change")) {
-                    state.advanceTimeline(update.get("timeline_change").getAsInt());
+                    int tc = update.get("timeline_change").getAsInt();
+                    state.advanceTimeline(tc);
+                    // timeline_change > 1이면 시계도 추가 진행 (tickClock이 1턴분 이미 처리)
+                    if (tc > 1) state.skipTime((tc - 1) * state.getMinutesPerTurn());
                     checkAndAutoSpawn();
                 }
                 if (update.has("status_change") && !update.get("status_change").isJsonNull()) {
                     String newStatus = update.get("status_change").getAsString();
                     Player target = Bukkit.getPlayer(pd.uuid);
                     if ("puppet".equals(newStatus) && "puppet".equals(pd.status)) {
-                        // 꼭두각시 재발 → 영구 탈락
-                        if (horrorActive) pd.isDead = true;
-                        if (target != null) target.sendMessage("§4당신은 완전히 잠식되어 영원히 돌아올 수 없게 되었습니다...");
+                        // 꼭두각시 재발 → 완전 잠식(관전). 탈락하지 않음.
+                        if (horrorActive) {
+                            pd.puppetRecoveryTurns = 8;
+                            if (target != null) {
+                                target.sendMessage("§5자아의 흔적마저 지워집니다... 완전히 조종됩니다.");
+                                target.sendMessage("§8(관전 상태 — 약 8턴 후 자아 일부 회복)");
+                            }
+                        }
                     } else if ("faint".equals(newStatus) && !pd.isDead) {
                         applyFaint(pd);
                     } else if ("normal".equals(newStatus)) {
@@ -3754,16 +3783,40 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
 
     private void tickFaintCounters() {
         for (PlayerData pd : state.getAllPlayers()) {
-            if (!"faint".equals(pd.status) || pd.isDead) continue;
-            pd.faintTurnsRemaining--;
-            if (pd.faintTurnsRemaining <= 0) {
-                pd.status = "normal";
-                pd.hp[0]  = 1;
-                pd.faintTurnsRemaining = 0;
-                updateAllScoreboards();
+            if (pd.isDead) continue;
+
+            // 기절 회복 카운터
+            if ("faint".equals(pd.status) && pd.faintTurnsRemaining > 0) {
+                pd.faintTurnsRemaining--;
+                if (pd.faintTurnsRemaining <= 0) {
+                    pd.status = "normal";
+                    pd.hp[0]  = 1;
+                    pd.faintTurnsRemaining = 0;
+                    updateAllScoreboards();
+                    Player rp = Bukkit.getPlayer(pd.uuid);
+                    if (rp != null) rp.sendMessage("§a의식이 돌아왔다. 간신히 일어선다...");
+                    ai.injectGmSystem("[회복] " + commDisplayName(pd) + "이(가) 기절에서 깨어났다. HP 1로 회복. 서술에 반영하라.");
+                }
+            }
+
+            // 완전 잠식(관전) 자동회복 카운터
+            if ("puppet".equals(pd.status) && pd.puppetRecoveryTurns > 0) {
+                pd.puppetRecoveryTurns--;
                 Player rp = Bukkit.getPlayer(pd.uuid);
-                if (rp != null) rp.sendMessage("§a의식이 돌아왔다. 간신히 일어선다...");
-                ai.injectGmSystem("[회복] " + commDisplayName(pd) + "이(가) 기절에서 깨어났다. HP 1로 회복. 서술에 반영하라.");
+                if (pd.puppetRecoveryTurns <= 0) {
+                    // 자동 회복: SAN 1 복구, 관전 해제 (puppet 상태는 유지)
+                    pd.san[0] = Math.max(1, pd.san[0]);
+                    pd.puppetRecoveryTurns = 0;
+                    updateAllScoreboards();
+                    if (rp != null) {
+                        rp.sendMessage("§a정신의 실낱 같은 불꽃이 다시 타오릅니다...");
+                        rp.sendMessage("§5아직 조종의 영향이 남아있지만 다시 행동할 수 있습니다.");
+                    }
+                    ai.injectGmSystem("[자아 회복] " + commDisplayName(pd) + "의 자아가 일부 돌아왔다. SAN 1 회복, 관전 해제. 아직 puppet 상태. 서술에 반영하라.");
+                } else if (pd.puppetRecoveryTurns % 3 == 0) {
+                    // 3턴마다 상태 알림
+                    if (rp != null) rp.sendMessage("§8(관전 중 | §5꼭두각시 완전 잠식 §8| 회복까지 약 §f" + pd.puppetRecoveryTurns + "§8턴)");
+                }
             }
         }
     }

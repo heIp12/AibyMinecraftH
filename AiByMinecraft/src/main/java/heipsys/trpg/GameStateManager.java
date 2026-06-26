@@ -502,6 +502,7 @@ public class GameStateManager {
     public boolean     isSessionActive()    { return sessionActive; }
     public int         getRoomNumber()      { return roomNumber; }
     public int         getTimelineStage()   { return timelineStage; }
+    public int         getMinutesPerTurn()  { return minutesPerTurn; }
     public int         getDailyTurnsLeft()  { return dailyTurnsLeft; }
     public boolean     isDailyPhase()       { return dailyPhase; }
     public String      getCurrentSeed()     { return currentSeed; }
