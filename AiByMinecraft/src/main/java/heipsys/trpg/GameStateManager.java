@@ -36,7 +36,14 @@ public class GameStateManager {
             return 4;
         }
 
-        /** 세션 완전 종료 시 리셋 */
+        /** 다음 스테이지 이동 시 부분 리셋 — entity 메모리·오염도만, 플레이어 프로파일 유지 */
+        public void resetForNewStage() {
+            level = 0;
+            attempts = 0;
+            entityMemory.clear();
+        }
+
+        /** 세션 완전 종료 시 전체 리셋 */
         public void reset() {
             level = 0;
             attempts = 0;
