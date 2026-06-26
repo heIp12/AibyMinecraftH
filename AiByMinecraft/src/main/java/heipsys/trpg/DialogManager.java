@@ -783,6 +783,113 @@ public class DialogManager {
     }
 
     // ──────────────────────────────────────────────────────────────
+    //  채팅 입력 유도 다이얼로그 (ai_query / area_scan / link_ally)
+    // ──────────────────────────────────────────────────────────────
+
+    /** ai_query — 질문 입력 안내 다이얼로그. 확인 클릭 시 onConfirm 호출(이후 채팅 대기). */
+    public void showQueryInput(Player player, TraitData trait, int remaining, Runnable onConfirm) {
+        Component body = Component.text()
+            .append(Component.text("GM에게 직접 질문할 수 있습니다.\n\n", NamedTextColor.WHITE))
+            .append(Component.text("효과: ", NamedTextColor.GRAY))
+            .append(Component.text(trait.effect != null && !trait.effect.isBlank() ? trait.effect : "GM에게 질문", NamedTextColor.AQUA))
+            .appendNewline().appendNewline()
+            .append(Component.text("남은 횟수: ", NamedTextColor.YELLOW))
+            .append(Component.text(remaining + "회", NamedTextColor.WHITE))
+            .appendNewline().appendNewline()
+            .append(Component.text("확인을 누르면 채팅창에 질문을 입력할 수 있습니다.", NamedTextColor.GRAY))
+            .append(Component.text("\n질문이 구체적일수록 더 명확한 답을 받습니다.", NamedTextColor.DARK_GRAY))
+            .build();
+
+        ActionButton confirmBtn = ActionButton.create(
+            Component.text("✎ 질문 입력하기", NamedTextColor.AQUA, TextDecoration.BOLD),
+            Component.text("확인 후 채팅창에 질문을 입력하세요.", NamedTextColor.GRAY),
+            200,
+            DialogAction.customClick((v, a) -> onConfirm.run(),
+                ClickCallback.Options.builder().uses(1).build())
+        );
+        ActionButton cancelBtn = ActionButton.create(
+            Component.text("취소", TextColor.color(0xAAAAAA)), null, 100, null
+        );
+
+        Dialog dialog = Dialog.create(b -> b.empty()
+            .base(DialogBase.builder(Component.text("[" + trait.name + "] 질문하기"))
+                .body(List.of(DialogBody.plainMessage(body)))
+                .build())
+            .type(DialogType.multiAction(List.of(confirmBtn), cancelBtn, 1))
+        );
+        player.showDialog(dialog);
+    }
+
+    /** area_scan — 탐색 목표 입력 안내 다이얼로그. */
+    public void showScanInput(Player player, TraitData trait, String scopeStr, int remaining, Runnable onConfirm) {
+        Component body = Component.text()
+            .append(Component.text("탐색 범위: ", NamedTextColor.GRAY))
+            .append(Component.text(scopeStr, NamedTextColor.AQUA))
+            .appendNewline()
+            .append(Component.text("남은 횟수: ", NamedTextColor.YELLOW))
+            .append(Component.text(remaining + "회", NamedTextColor.WHITE))
+            .appendNewline().appendNewline()
+            .append(Component.text("효과: ", NamedTextColor.GRAY))
+            .append(Component.text(trait.effect != null && !trait.effect.isBlank() ? trait.effect : "구역 탐색", NamedTextColor.WHITE))
+            .appendNewline().appendNewline()
+            .append(Component.text("확인 후 채팅창에 탐색 목표를 입력하세요.", NamedTextColor.GRAY))
+            .append(Component.text("\n예: '수상한 냄새', '숨겨진 출구', '다른 사람의 흔적'", NamedTextColor.DARK_GRAY))
+            .build();
+
+        ActionButton confirmBtn = ActionButton.create(
+            Component.text("🔍 탐색 시작", NamedTextColor.AQUA, TextDecoration.BOLD),
+            Component.text("확인 후 채팅창에 탐색 목표를 입력하세요.", NamedTextColor.GRAY),
+            200,
+            DialogAction.customClick((v, a) -> onConfirm.run(),
+                ClickCallback.Options.builder().uses(1).build())
+        );
+        ActionButton cancelBtn = ActionButton.create(
+            Component.text("취소", TextColor.color(0xAAAAAA)), null, 100, null
+        );
+
+        Dialog dialog = Dialog.create(b -> b.empty()
+            .base(DialogBase.builder(Component.text("[" + trait.name + "] 탐색"))
+                .body(List.of(DialogBody.plainMessage(body)))
+                .build())
+            .type(DialogType.multiAction(List.of(confirmBtn), cancelBtn, 1))
+        );
+        player.showDialog(dialog);
+    }
+
+    /** link_ally (depth≥2) — 감지 목표 입력 안내 다이얼로그. */
+    public void showLinkAllyInput(Player player, TraitData trait, String depthStr, Runnable onConfirm) {
+        Component body = Component.text()
+            .append(Component.text("감지 범위: ", NamedTextColor.GRAY))
+            .append(Component.text(depthStr, NamedTextColor.GREEN))
+            .appendNewline().appendNewline()
+            .append(Component.text("효과: ", NamedTextColor.GRAY))
+            .append(Component.text(trait.effect != null && !trait.effect.isBlank() ? trait.effect : "아군 감지", NamedTextColor.WHITE))
+            .appendNewline().appendNewline()
+            .append(Component.text("확인 후 채팅창에 감지 목표를 입력하세요.", NamedTextColor.GRAY))
+            .append(Component.text("\n예: '가장 가까운 아군의 위치', '다친 아군이 있는지'", NamedTextColor.DARK_GRAY))
+            .build();
+
+        ActionButton confirmBtn = ActionButton.create(
+            Component.text("👁 감지 시작", NamedTextColor.GREEN, TextDecoration.BOLD),
+            Component.text("확인 후 채팅창에 감지 목표를 입력하세요.", NamedTextColor.GRAY),
+            200,
+            DialogAction.customClick((v, a) -> onConfirm.run(),
+                ClickCallback.Options.builder().uses(1).build())
+        );
+        ActionButton cancelBtn = ActionButton.create(
+            Component.text("취소", TextColor.color(0xAAAAAA)), null, 100, null
+        );
+
+        Dialog dialog = Dialog.create(b -> b.empty()
+            .base(DialogBase.builder(Component.text("[" + trait.name + "] 아군 감지"))
+                .body(List.of(DialogBody.plainMessage(body)))
+                .build())
+            .type(DialogType.multiAction(List.of(confirmBtn), cancelBtn, 1))
+        );
+        player.showDialog(dialog);
+    }
+
+    // ──────────────────────────────────────────────────────────────
     //  특성 오버레이 컴포넌트 빌더
     // ──────────────────────────────────────────────────────────────
 

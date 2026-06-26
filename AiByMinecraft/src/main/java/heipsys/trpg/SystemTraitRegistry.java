@@ -21,8 +21,8 @@ public class SystemTraitRegistry {
 
         // ─── 능동 효과 (active = true) ───────────────────────────────────────────────
         AI_QUERY("ai_query", true,
-            "발동 시 플레이어가 GM에게 직접 질문할 수 있다. 질문이 구체적일수록 더 정확히 답한다.",
-            "uses=스테이지당 질문 횟수(1~3), info=정보 깊이(1=암시·적은정보, 2=중간, 3=핵심 근접)"),
+            "발동 시 플레이어가 GM에게 직접 질문할 수 있다(플레이어가 직접 타이핑). 질문이 구체적일수록 더 정확히 답한다. ★기억회상·직관·환각 등 캐릭터가 자동으로 정보를 경험하는 효과는 gm_directive를 사용할 것.",
+            "uses=스테이지당 질문 횟수(1~3), info=정보 깊이(1=암시·적은정보, 2=중간, 3=핵심 근접), auto_fire=자동발동여부(0=플레이어가질문타이핑[기본], 1=AI가자동서술)"),
         INSTANT_CLEAR("instant_clear", true,
             "발동 시 현재 스테이지를 즉시 생존 클리어 처리한다(평가 등급은 최하 고정).",
             "uses=사용 횟수(보통 1)"),
@@ -39,7 +39,7 @@ public class SystemTraitRegistry {
             "발동 시 다음 행동을 직접 입력 대신 선택지로 제시한다. 정답엔 큰 보정, 오답엔 큰 패널티.",
             "uses=사용 횟수, choices=선택지 개수(2~4)"),
         GM_DIRECTIVE("gm_directive", true,
-            "발동 시 effect에 적힌 지시를 GM에게 전달해 사건 전개에 반영시킨다(예: 우군 NPC 등장).",
+            "발동 시 effect에 적힌 지시를 GM에게 전달해 사건 전개에 반영시킨다. ★기억회상·직관·예지·환각·내면경험(캐릭터가 자동으로 정보를 경험하는 효과) 특성에 반드시 사용. effect 텍스트에 '무엇을 떠올리는지/경험하는지' 서술하면 AI가 그 장면을 생생하게 묘사한다.",
             "uses=사용 횟수"),
         AREA_SCAN("area_scan", true,
             "발동 후 채팅으로 무엇을 찾는지 입력하면 현재 구역을 탐색해 숨겨진 정보·단서·위험 요소를 파악한다. 질문(ai_query)과 달리 관찰·탐색 기반이며 타임라인이 소모된다.",
@@ -161,6 +161,16 @@ public class SystemTraitRegistry {
         sb.append("  A: link_ally(depth=2), effect=\"감각으로 아군의 위치와 상태를 파악하고 소통 실마리를 찾는다\" → '소통탐지'\n");
         sb.append("  A: area_scan(scope=3, uses=2), effect=\"광역 탐색으로 숨겨진 위험·단서를 발견한다\" → '공간인식'\n\n");
 
+        sb.append("## ★ ai_query vs gm_directive 선택 규칙 (매우 중요) ★\n");
+        sb.append("- ai_query: '플레이어가 직접 질문 내용을 타이핑'하는 경우만 사용.\n");
+        sb.append("  예) '기도자' — 스테이지당 2회 GM에게 원하는 질문 가능 → ai_query(uses=2, info=1)\n");
+        sb.append("- gm_directive: '캐릭터가 자동으로 기억·직관·환각·예지 등을 경험'하는 경우에 반드시 사용.\n");
+        sb.append("  AI가 effect 텍스트 내용을 바탕으로 그 기억/경험 장면을 생생하게 서술한다.\n");
+        sb.append("  예) '흐릿한 기억 더듬기' — 형과의 과거에서 정보 하나를 떠올린다 → gm_directive\n");
+        sb.append("  예) '직관의 섬광' — 위기 직전 번뜩이는 예감 → gm_directive\n");
+        sb.append("  예) '악몽의 잔상' — 지난 악몽에서 단서 한 조각 → gm_directive\n");
+        sb.append("★ 이 구분을 절대 무시하지 말 것. 회상·직관·내면 경험형 특성에 ai_query를 쓰면 치명적 버그 발생.\n\n");
+
         sb.append("## 규칙\n");
         sb.append("- 능동 효과는 active=true, 패시브(scenario_insight/passive_gm/passive_trigger/protect)는 active=false.\n");
         sb.append("- 스테이지당 여러 번 쓰는 효과(ai_query/area_scan 등)는 cooldown_turns=0, uses 파라미터로 제한.\n");
@@ -189,7 +199,8 @@ public class SystemTraitRegistry {
             case AI_QUERY -> {
                 td.effectParams.putIfAbsent("uses", 2);
                 td.effectParams.putIfAbsent("info", 1);
-                clamp(td, "uses", 1, 3); clamp(td, "info", 1, 3);
+                td.effectParams.putIfAbsent("auto_fire", 0);
+                clamp(td, "uses", 1, 3); clamp(td, "info", 1, 3); clamp(td, "auto_fire", 0, 1);
             }
             case INSTANT_CLEAR, REVIVE_ALLY, GM_DIRECTIVE -> {
                 td.effectParams.putIfAbsent("uses", 1);
