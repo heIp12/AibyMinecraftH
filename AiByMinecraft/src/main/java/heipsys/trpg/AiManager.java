@@ -330,13 +330,24 @@ public class AiManager {
             case "claude" -> {
                 builder.uri(URI.create("https://api.anthropic.com/v1/messages"))
                        .header("x-api-key", apiKey)
-                       .header("anthropic-version", "2023-06-01");
+                       .header("anthropic-version", "2023-06-01")
+                       .header("anthropic-beta", "prompt-caching-2024-07-31");
 
                 JsonObject req = new JsonObject();
                 req.addProperty("model", model);
                 req.addProperty("max_tokens", maxTokens);
-                if (system != null && !system.isBlank())
-                    req.addProperty("system", system);
+                if (system != null && !system.isBlank()) {
+                    // system을 cache_control 포함 배열로 전송 → 캐시 히트 시 입력 토큰 ~90% 절약
+                    JsonObject sysBlock = new JsonObject();
+                    sysBlock.addProperty("type", "text");
+                    sysBlock.addProperty("text", system);
+                    JsonObject cacheCtrl = new JsonObject();
+                    cacheCtrl.addProperty("type", "ephemeral");
+                    sysBlock.add("cache_control", cacheCtrl);
+                    JsonArray sysArr = new JsonArray();
+                    sysArr.add(sysBlock);
+                    req.add("system", sysArr);
+                }
 
                 JsonArray arr = new JsonArray();
                 for (JsonObject m : messages) {
