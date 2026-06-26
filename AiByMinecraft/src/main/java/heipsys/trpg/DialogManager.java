@@ -305,8 +305,12 @@ public class DialogManager {
             null, 100, null
         );
 
+        // 시나리오 중 배역 이름(charName)이 있으면 우선 표시, 없으면 마인크래프트 이름
+        String displayName = pd.charName.isEmpty() ? pd.name : pd.charName;
         Component title = Component.text()
-            .append(Component.text(pd.name, NamedTextColor.YELLOW))
+            .append(Component.text(displayName, NamedTextColor.YELLOW))
+            .append(pd.charName.isEmpty() ? Component.empty()
+                : Component.text(" (" + pd.name + ")", NamedTextColor.DARK_GRAY))
             .append(Component.text("  —  캐릭터 정보", NamedTextColor.GRAY))
             .build();
 
