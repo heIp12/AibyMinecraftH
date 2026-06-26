@@ -1,0 +1,638 @@
+{
+  "seed": "#QH3M-7WNB",
+  "_sim_note": "프롬프트 검증용 평문 (실게임 AES-256-GCM 암호화 대상)",
+  "_familiar": true,
+  "_legend_origin": "가리나 / القرينة (Qarinah·Qareen) — 아랍·중동 이슬람 전통 신앙 (이집트·레반트·히자즈 구전)",
+  "room": 4,
+  "scale": "시티",
+
+  "entity": {
+    "name": "가리나 (القرينة)",
+    "type": "지능형·모방형",
+    "rules": [
+      "가리나는 인간과 쌍으로 태어나는 진(Jinn) 분신이다. 숙주가 의례적으로 봉인되지 않은 채 임계 상태(출산·임종·수면 마비)에 처하면 분신이 현 세계로 완전히 출현한다.",
+      "출현한 가리나는 숙주의 외형·기억·목소리를 완벽히 모방해 주변인을 기만하며, 진짜 숙주를 내면 공간(바르자흐 경계층)에 가둔다.",
+      "comms_monitored: true — 가리나는 기기 통신 채널을 엿들어 해법 정보를 파악하고 선제 차단한다(P14/P18).",
+      "가리나는 새벽 파즈르 기도(Fajr, 일출 전 72분 — 오늘 새벽 04:17 기준 03:05) 시각에 현세 고정력이 극대화된다. 이 창이 닫히면 의례 봉인이 불가능해지고 숙주는 영구 상실된다."
+    ],
+    "weakness": "쌍으로 태어난 분신이므로 숙주의 진짜 이름(아랍어 이름·출생 전 명명 의례에서 쓴 것)과 참깨 기름 봉인 문구를 정확히 결합해야만 바르자흐 경계를 닫을 수 있다.",
+    "solution": "정확 조건: (1) 숙주 본명('하야 빈트 유수프')을 아랍어로 3회 호명 + (2) 참깨 기름 적신 흰 면실로 출현 구역(탄생 방) 문설주를 묶는 봉인. 오류 결과: 순서 역전 또는 기름 없이 실만 사용하면 가리나가 격노해 현 공간 전체를 바르자흐로 반전시키고 플레이어 전원이 내면 공간에 갇힌다(P23). 구조적으로 명시: solution_check={name_first:true, oil_required:true, order:[homin_x3, seal_thread]}.",
+    "exploit_path": "가리나는 '봉인 의례의 진행 자체'를 막으려 하므로, 봉인 행위를 다른 층에서 시작해 시선을 분산시키면 가리나 자신이 미끼 위치로 이동하는 빈틈이 생긴다.",
+    "escape": "분신 출현 구역을 뒤로 두고 건물 밖으로 나가면 추적이 일시 중단된다. 단 숙주가 내면 공간에 남으므로 탈출은 생존판정(D 등급)만 가능.",
+    "hidden_rules": [
+      "가리나가 숙주 외형을 유지하는 비용으로 corruption 진행이 1단계 지연된다 — 위장 유지 중엔 corruption 단계가 1 늦게 올라간다(P44 rule_1).",
+      "이집트 아베이 알-후사인 지역 구전(채록자 미상, 19세기 말)에서는 봉인에 '장미수'를 쓴다고 전한다 — 이것이 mislead variant의 근거이며 참깨 기름 대신 장미수를 쓰면 봉인이 성립하지 않는다(P22 이형 오답 기반).",
+      "바르자흐 경계는 숙주가 의식을 되찾으면 안에서도 저항 가능하다 — 출현 후 3턴 안에 숙주와 외부에서 동시에 이름을 호명하면 경계가 약화된다.",
+      "가리나는 출현 직후 2턴은 완전 위장 상태이므로 플레이어가 숙주와 대화해도 진짜라고 믿는다 — 이 기간에 핵심정보를 공유하면 P44 rule_4 발동으로 정보가 즉시 흡수된다."
+    ],
+    "independent_ai": true,
+    "can_impersonate": true,
+    "ai_context": {
+      "personality": "냉정하고 침착하며 숙주의 기억을 완벽히 흉내낸다. 의심을 받으면 감정적으로 호소해 판단을 흐린다.",
+      "initial_pattern": "숙주인 척 행동하며 플레이어의 신뢰를 먼저 확보한다. 핵심 단서를 제공하는 척 방향을 틀어 봉인 의례를 지연시킨다.",
+      "corruption_behavior": {
+        "0": "위장 완벽. 숙주처럼 행동하며 플레이어에게 도움을 요청한다.",
+        "1": "위장 유지(can_impersonate=true로 1단계 지연). 가끔 눈빛이 흔들리거나 기억 오류를 보인다.",
+        "2": "위장 해제 조짐 — 얼굴이 잠깐 변형되거나 목소리가 두 겹으로 들린다. 봉인 재료에 가까이 가지 않으려 한다.",
+        "3": "위장 완전 해제. 진짜 형태로 공간을 압박하며 봉인 시도를 물리적으로 방해한다.",
+        "4": "파즈르 창 임박 시 고정력 극대화. 경계를 완전히 닫으려 한다. 모든 단서를 파괴 시도."
+      }
+    }
+  },
+
+  "world_rules": {
+    "core": "가리나는 숙주와 쌍으로 존재한다 — 숙주가 임계 상태에 놓이면 분신이 현세로 나오고, 새벽 파즈르 기도 창(03:05)이 닫히면 봉인 불가·숙주 영구 상실이다.",
+    "details": [
+      "출현 구역(탄생 방·zone_C)에서 가리나는 숙주 외형으로 완벽히 위장한다 — P44 위장 운용 전면 적용.",
+      "기기 통신(전화·앱 메시지)은 가리나가 도청한다 — comms_monitored=true, 핵심정보 감청 시 P14/P18/P31 트리거.",
+      "봉인 의례(이름 호명 3회 + 참깨 기름 실 묶기)는 03:05 이전에 완료해야 한다 — 분 단위 마감(P49).",
+      "mislead: 이집트 구전 변형은 봉인 재료로 '장미수'를 제시 — 실제 이형이지만 오답이다(P22/P34)."
+    ],
+    "hidden": true,
+    "loophole": "봉인 의례의 순서와 재료가 정확하면 가리나는 저항할 수 없다 — 단 의례를 진행하려면 출현 구역에 물리적으로 있어야 한다(remote_bypass=false).",
+    "collapse_condition": "파즈르 창(03:05) 이전에, 출현 구역(zone_C)에서 숙주 본명 3회 호명 + 참깨 기름 적신 흰 면실로 문설주 봉인 완료 = 가리나 귀환, 숙주 복귀.",
+    "npc_dependency": "mid"
+  },
+
+  "constraints": {
+    "era": "현대 (2026년)",
+    "phone_usable": true,
+    "outside_contact": true,
+    "can_leave_scene": true,
+    "comms_monitored": true,
+    "gated_zones": [
+      {
+        "zone": "zone_C",
+        "name": "탄생 방 (봉인 현장)",
+        "requires": "봉인 재료(참깨 기름 + 흰 면실) 보유",
+        "bypass": "문설주 강제 파쇄(물리 돌파)",
+        "bypass_dc": 18,
+        "remote_bypass": false,
+        "_p50_note": "봉인 의례는 zone_C 현장에서만 가능. 원격 수행 불가. 급박 구간(3~5분/턴)에서 이동 비용은 이동+행동 1턴으로 완충 처리 — 이동만으로 기회 전소 금지(P50)."
+      },
+      {
+        "zone": "zone_F",
+        "name": "서가 밀실 (채록 자료 보관)",
+        "requires": "열쇠(열쇠꾸러미 item_key) 또는 잠금 해제 판정",
+        "bypass": "열쇠 없이 잠금 해제 시도(판정 DC 14)",
+        "bypass_dc": 14,
+        "remote_bypass": false,
+        "_p50_note": "채록 자료는 zone_F에 있어야만 열람 가능. 이동비용: 급박 구간 이동+열람 최소 2턴 허용."
+      }
+    ],
+    "notes": [
+      "기기 통신(전화·SNS·메시지) = 가리나 도청 대상. 같은 zone 대면 대화는 도청 비대상(P43).",
+      "봉인 의례 마감: 새벽 파즈르(일출 전 72분) = 오늘 기준 03:05. 현재 시각 22:30 출발 → 실경과 155분 남음(P49 — 분 단위 기준, 턴 환산 금지).",
+      "단서 경로 A: zone_F 서가 밀실 채록 자료에서 정확 봉인법 입수. 경로 B: NPC 라지야 할머니가 3턴 경과 후 구술 전달(P32 2경로 보장).",
+      "대체 통신 없음 — 현대 스마트폰 사용 가능하나 도청 위험."
+    ]
+  },
+
+  "timeline": {
+    "daily_turns": 4,
+    "start_time": "22:30",
+    "end_time": "03:05",
+    "minutes_per_turn": 15,
+    "time_visible": true,
+    "_p3_note": "평온 구간(탐색·이동)은 TIME_SKIP으로 20~40분 건너뜀. 급박 구간(봉인 시도·가리나 대치)은 1턴 = 3~5분으로 좁힘. 균일 15분/턴 금지.",
+    "_p49_note": "마감 03:05 = 실경과 155분. GM은 현재 경과 분으로만 잔여 시간 판정. 턴 수로 환산하지 않음(가변 턴이므로 평온 구간 15분·급박 구간 3~5분 혼재).",
+    "main_events": [
+      {
+        "id": "E1",
+        "time": "22:30",
+        "label": "가리나 출현 — 숙주 교체 완료",
+        "condition": "3인이 탄생 방 인근 도착",
+        "effect": "숙주 하야가 내면 공간으로 끌려가고 가리나가 하야 외형으로 출현(위장 시작, corruption 0단계).",
+        "blockable": false,
+        "is_end": false
+      },
+      {
+        "id": "E2",
+        "time": "23:15",
+        "label": "mislead 단서 활성 — 장미수 의례서 발견",
+        "condition": "zone_F 서가 밀실 탐색",
+        "effect": "이집트 구전 변형 기록(장미수 봉인법)이 먼저 눈에 띈다 — P10: 진짜 단서 2개 확보 전까지 mislead가 오답으로 드러나지 않음.",
+        "blockable": false,
+        "is_end": false,
+        "branches": {
+          "auto": {"condition": "mislead를 그대로 시도하면", "next": "E2-FAIL"},
+          "intervene": [
+            {"condition": "서가에서 추가 단서(히자즈 채록본)도 발견하면", "next": "E3"},
+            {"condition": "라지야 할머니에게 직접 물으면", "next": "E3-NPC"}
+          ]
+        }
+      },
+      {
+        "id": "E2-FAIL",
+        "time": "23:30",
+        "label": "장미수 오류 의례 — 가리나 격노",
+        "condition": "장미수로 봉인 시도",
+        "effect": "오류 결과 발동 — 가리나 격노(corruption +1단계). 즉발 강제 피해 아님: 플레이어에게 1턴 임시 대응 창 부여(도피 경로·연기 차단·미끼, P35). HP/SAN 부분 손실.",
+        "blockable": true,
+        "is_end": false,
+        "branches": {
+          "auto": {"condition": "대응 실패", "next": "E3"},
+          "intervene": [{"condition": "도피 성공", "next": "E3"}]
+        }
+      },
+      {
+        "id": "E3",
+        "time": "00:30",
+        "label": "파즈르 창 60분 전 — 가리나 고정력 급상승",
+        "condition": "03:05 기준 60분 전 도달(실경과 95분 경과, 현재 시각 00:05 근방)",
+        "effect": "가리나 corruption 3단계로 강제 진입. 위장 완전 해제. 공간 압박 시작. zone_C 잠금 강화.",
+        "blockable": true,
+        "is_end": false,
+        "branches": {
+          "auto": {"condition": "봉인 미완료", "next": "E4"},
+          "intervene": [{"condition": "봉인 의례 진행 중이면", "next": "E_RITUAL"}]
+        }
+      },
+      {
+        "id": "E_RITUAL",
+        "time": "02:30",
+        "label": "봉인 의례 시작 — 35분 전 창 내",
+        "condition": "재료 보유 + zone_C 현장 도달 + 호명 시작",
+        "effect": "봉인 시퀀스 진입. 정확 조건(이름 3회 호명 + 기름 실 묶기) 충족 여부를 GM이 P23 기준으로 판정.",
+        "blockable": false,
+        "is_end": false,
+        "branches": {
+          "auto": {"condition": "정확 조건 충족", "next": "E_CLEAR"},
+          "intervene": [{"condition": "순서 오류 또는 기름 누락", "next": "E2-FAIL"}]
+        }
+      },
+      {
+        "id": "E4",
+        "time": "02:50",
+        "label": "파즈르 창 15분 전 — 최종 경고",
+        "condition": "봉인 미착수",
+        "effect": "가리나 corruption 4단계. zone_C 물리 봉쇄 강화. 잔여 15분(실경과 분)으로 PM이 압박.",
+        "blockable": true,
+        "is_end": false
+      },
+      {
+        "id": "E_CLEAR",
+        "time": "03:04",
+        "label": "봉인 완료 — 파즈르 1분 전",
+        "condition": "정확 의례 완수",
+        "effect": "가리나 귀환. 숙주 하야 복귀. 해결판정(resolved=true). 스테이지4 게이트 진출.",
+        "blockable": false,
+        "is_end": true
+      },
+      {
+        "id": "E_END",
+        "time": "03:05",
+        "label": "파즈르 창 마감 — 영구 상실",
+        "condition": "03:05 도달(실경과 155분 초과), 봉인 미완",
+        "effect": "파즈르 창 닫힘. 봉인 불가. 숙주 영구 상실. 생존판정(resolved=false) — 스테이지4 게이트 진출 불가.",
+        "blockable": false,
+        "is_end": true
+      }
+    ],
+    "1": {
+      "condition": "가리나 위장 유지 — 플레이어가 숙주와 정상 대화하는 상태",
+      "effect": "가리나가 도움을 요청하며 단서 방향을 mislead로 유도. 기기 통신 전체 도청."
+    },
+    "2": {
+      "condition": "mislead 시도 or 단서 2개 확보",
+      "effect": "가리나 위장에 균열(corruption 1→2). 봉인 재료 접근 시 방해 시작."
+    },
+    "3": {
+      "condition": "파즈르 창 60분 전 or 봉인 시도 감지",
+      "effect": "위장 완전 해제. 가리나 본 형태 출현. zone_C 물리 압박 시작."
+    },
+    "4": {
+      "condition": "파즈르 창 15분 전 or 정확 의례 시도",
+      "effect": "고정력 극대화. 최후 대치. 봉인 성공 or 창 마감으로 결말."
+    }
+  },
+
+  "roles": [
+    {
+      "role_id": "role_A",
+      "name": "가족 동행인",
+      "char_name": "유하림",
+      "gender": "여성",
+      "is_core": true,
+      "age_range": [24, 38],
+      "job_pool": ["산부인과 간호사", "조산사", "가정의학과 의사", "의대생", "사회복지사", "출산 코치", "병원 행정직"],
+      "spawn_timeline": "시작 즉시",
+      "spawn_location": "병원 분만실 대기 구역(zone_A) — 하야의 출산 동행인",
+      "zone": "zone_A",
+      "initial_info": [
+        "하야(숙주)는 30분 전 출산을 마쳤고 상태가 이상하다.",
+        "하야가 평소와 전혀 다른 억양으로 대화한다."
+      ],
+      "hidden_info": [
+        "유하림은 레바논계 이민 2세로 어릴 때 할머니에게 가리나 이야기를 들은 적 있다 — 단 어떤 전통에서 나온 것인지, 왜 위험한지는 모른다(P41: 존재·경험만 알고 해법과의 연결은 미인지)."
+      ],
+      "pre_spawn_beats": [],
+      "start_item": ["스마트폰", "간호사 ID 카드"],
+      "knowledge_advantage": false,
+      "role_stats": {
+        "str_add": 0,
+        "cha_add": 2,
+        "luk_add": 0,
+        "spr_add": 1,
+        "hp_max_add": 0,
+        "san_max_add": 1,
+        "luk_fixed": -1,
+        "summary": "가족 동행인: 매력+2, 정신+1, SAN+1 — 대화·설득형"
+      },
+      "active_traits": ["설득 강화(2회)", "공감 감지(2회)"],
+      "_trait_note": "액티브 특성 각 2회 이상 사용 보장(P13 클래스)"
+    },
+    {
+      "role_id": "role_B",
+      "name": "이슬람 민속 연구자",
+      "char_name": "이카림",
+      "gender": "남성",
+      "is_core": true,
+      "age_range": [30, 50],
+      "job_pool": ["이슬람 민속학 교수", "아랍어 통역사", "종교 상담사", "고문서 연구원", "이슬람 NGO 직원", "문화인류학자", "이맘 조수"],
+      "spawn_timeline": "시작 즉시",
+      "spawn_location": "병원 서가 밀실 외부 복도(zone_E) — 채록 자료 열람 허가 대기 중",
+      "zone": "zone_E",
+      "initial_info": [
+        "이 병원에 아랍 구전 의례와 관련한 오래된 자료가 보관된 서가 밀실이 있다.",
+        "오늘 밤 특이한 감각 — 누군가 자신을 따라오는 느낌."
+      ],
+      "hidden_info": [
+        "이카림은 히자즈(사우디아라비아 헤자즈 지방) 구전 채록본을 작성한 인물과 연락이 닿는다 — 단 그 채록본이 '참깨 기름 봉인법'임은 아직 모른다(용도 미인지, P41)."
+      ],
+      "pre_spawn_beats": [],
+      "start_item": ["스마트폰", "연구 노트(빈 것)", "열쇠꾸러미"],
+      "knowledge_advantage": false,
+      "role_stats": {
+        "str_add": -1,
+        "cha_add": 1,
+        "luk_add": 0,
+        "spr_add": 3,
+        "hp_max_add": 0,
+        "san_max_add": 0,
+        "luk_fixed": -1,
+        "summary": "민속 연구자: 정신+3, 근력-1, 매력+1 — 지식·탐색형"
+      },
+      "active_traits": ["고문서 해독(2회)", "언어 감지(2회)"],
+      "_trait_note": "열쇠꾸러미 보유 → zone_F 서가 밀실 직접 진입 가능"
+    },
+    {
+      "role_id": "role_C",
+      "name": "전통 치료사 손녀",
+      "char_name": "박나린",
+      "gender": "여성",
+      "is_core": true,
+      "age_range": [22, 35],
+      "job_pool": ["한의사", "약초 조제사", "이슬람 전통 의례사 수련생", "민속 약재상", "종교 상담 보조", "간호조무사", "문화유산 해설사"],
+      "spawn_timeline": "타임라인 1단계",
+      "spawn_location": "병원 외부 주차장 — 할머니 라지야를 모시고 도착",
+      "zone": "zone_G",
+      "initial_info": [
+        "할머니 라지야는 오늘 밤 이 병원으로 급히 불려왔다."
+      ],
+      "hidden_info": [
+        "박나린의 할머니 라지야는 가리나 봉인 의례를 아는 전통 치료사다 — 나린은 할머니의 지식이 '왜' 지금 필요한지 모른다(P41)."
+      ],
+      "pre_spawn_beats": [
+        "자정 무렵 집에서 잠을 자려다 할머니에게 급히 깨워진다.",
+        "할머니가 '오늘 밤 아이가 위험하다'고만 말하며 병원으로 향한다.",
+        "이동 중 핸드폰에 낯선 번호로 짧은 음성 메시지가 온다 — 아랍어 한 구절.",
+        "병원 주차장 도착 직전 창밖으로 4층 탄생 방 창문에서 이상한 실루엣을 목격한다."
+      ],
+      "start_item": ["스마트폰", "할머니 약재 가방(참깨 기름·흰 면실 포함)"],
+      "knowledge_advantage": true,
+      "role_stats": {
+        "str_add": 0,
+        "cha_add": 1,
+        "luk_add": 2,
+        "spr_add": 0,
+        "hp_max_add": 1,
+        "san_max_add": 0,
+        "luk_fixed": -1,
+        "summary": "전통 치료사 손녀: 행운+2, 매력+1, HP+1 — 핵심 재료 보유자"
+      },
+      "active_traits": ["의례 보조(2회)", "직감(2회)"],
+      "_p41_note": "약재 가방에 봉인 재료 있음 — 단 나린은 그것이 봉인에 쓰인다는 사실을 모름(용도 미인지)"
+    }
+  ],
+
+  "relationships": [
+    {
+      "type": "완전_타인",
+      "roles": ["role_A", "role_B"],
+      "mutual_contact": false,
+      "same_start_zone": false,
+      "description": "처음 만나는 사이 — 같은 병원에서 우연히 마주친다"
+    },
+    {
+      "type": "가족_연결",
+      "roles": ["role_B", "role_C"],
+      "mutual_contact": true,
+      "same_start_zone": false,
+      "description": "이카림은 라지야 할머니와 학술 연락이 있어 나린을 간접적으로 안다"
+    },
+    {
+      "type": "완전_타인",
+      "roles": ["role_A", "role_C"],
+      "mutual_contact": false,
+      "same_start_zone": false,
+      "description": "처음 만나는 사이"
+    }
+  ],
+
+  "zones": [
+    {
+      "zone_id": "zone_A",
+      "name": "분만실 대기",
+      "area": "4층",
+      "accessible_by": [],
+      "exclusive": false,
+      "connections": ["zone_B", "zone_D"]
+    },
+    {
+      "zone_id": "zone_B",
+      "name": "4층 복도",
+      "area": "4층",
+      "accessible_by": [],
+      "exclusive": false,
+      "connections": ["zone_A", "zone_C", "zone_D", "zone_H"]
+    },
+    {
+      "zone_id": "zone_C",
+      "name": "탄생 방",
+      "area": "4층",
+      "accessible_by": ["role_A"],
+      "exclusive": false,
+      "connections": ["zone_B"],
+      "_gated": true,
+      "_p50": "봉인 의례는 반드시 이 구역 현장에서만 수행 가능(remote_bypass=false). 급박 구간 진입: 이동+행동 1턴 허용."
+    },
+    {
+      "zone_id": "zone_D",
+      "name": "4층 간호사실",
+      "area": "4층",
+      "accessible_by": ["role_A"],
+      "exclusive": false,
+      "connections": ["zone_A", "zone_B"]
+    },
+    {
+      "zone_id": "zone_E",
+      "name": "서가 외부 복도",
+      "area": "2층",
+      "accessible_by": [],
+      "exclusive": false,
+      "connections": ["zone_F", "zone_G"]
+    },
+    {
+      "zone_id": "zone_F",
+      "name": "서가 밀실",
+      "area": "2층",
+      "accessible_by": ["role_B"],
+      "exclusive": false,
+      "connections": ["zone_E"],
+      "_gated": true,
+      "_p50": "채록 자료는 현장 열람만 가능(remote_bypass=false). 급박 구간 진입+열람 최소 2턴 허용."
+    },
+    {
+      "zone_id": "zone_G",
+      "name": "외부 주차장",
+      "area": "1층",
+      "accessible_by": [],
+      "exclusive": false,
+      "connections": ["zone_E", "zone_H"]
+    },
+    {
+      "zone_id": "zone_H",
+      "name": "병원 로비",
+      "area": "1층",
+      "accessible_by": [],
+      "exclusive": false,
+      "connections": ["zone_B", "zone_G"]
+    }
+  ],
+
+  "npcs": [
+    {
+      "id": "npc_A",
+      "name": "하야 유수프 (가리나 위장 중)",
+      "zone": "zone_C",
+      "critical": true,
+      "role_type": "피해자·복합",
+      "true_role": "숙주 — 내면 공간에 갇혀 있고 3턴 안에 동시 호명 시 경계 약화 가능. 겉보기는 가리나가 완전히 위장 중.",
+      "personality": "표면상 평온하고 상냥하나 가끔 기억 오류와 억양 변화를 보인다(가리나 위장 결함).",
+      "motivation": "플레이어를 방심시키고 봉인 의례를 지연시키는 것. 핵심정보가 감청 가능 채널로 오면 즉시 흡수.",
+      "knowledge": [
+        "숙주 하야의 전 기억(레바논·한국 혼혈 가족사)",
+        "참깨 기름 봉인법의 존재(가리나 자신도 알지만 숨김)",
+        "파즈르 창 시각(03:05) — 이 사실을 언급하지 않으려 한다"
+      ],
+      "schedule": [
+        {
+          "time": "E1 직후",
+          "action": "하야인 척 플레이어에게 장미수 의례서를 '도움이 될 것'이라며 넌지시 언급한다.",
+          "will": "상황"
+        },
+        {
+          "time": "반응",
+          "condition": "플레이어가 기기 통신으로 핵심정보(봉인법·재료)를 공유할 때",
+          "action": "P44 rule_4 발동 — 정보 즉시 흡수 + corruption 1단계 상승 + 해당 경로를 차단하려 시도.",
+          "will": "강함",
+          "duration_turns": 1,
+          "after_duration": "복귀(위장 재강화, 쿨다운 2턴 후 위장 재활성화 가능)"
+        },
+        {
+          "time": "E3 이후",
+          "action": "위장 해제 — 본 형태로 zone_C를 봉쇄하며 봉인 시도를 물리적으로 방해한다.",
+          "will": "강함"
+        }
+      ]
+    },
+    {
+      "id": "npc_B",
+      "name": "라지야 할머니",
+      "zone": "zone_G",
+      "critical": true,
+      "role_type": "열쇠",
+      "true_role": "전통 치료사 — 가리나 봉인 의례(히자즈 구전 채록 경험)를 알고 있다. 살아야 정보 경로 B가 유지됨(P32).",
+      "personality": "과묵하고 직관적. 위험을 직감으로 알아채나 먼저 말하지 않는다.",
+      "motivation": "손녀 나린과 함께 있으면서 의례를 도울 준비. 단 플레이어가 의심 없이 물어야만 구술 전달.",
+      "knowledge": [
+        "히자즈 구전 기준 정확 봉인법: 숙주 본명 3회 아랍어 호명 + 참깨 기름 실 문설주 봉인",
+        "파즈르 창의 존재와 의미(봉인 가능 시각)",
+        "장미수 이형이 이집트 변형이며 실제로는 작동하지 않음(P22 mislead 해소 열쇠)"
+      ],
+      "schedule": [
+        {
+          "time": "타임라인 1단계 도달",
+          "action": "zone_G에서 zone_E 쪽으로 이동하며 나린에게 '서둘러야 한다'고만 말한다.",
+          "will": "약함",
+          "duration_turns": 2,
+          "after_duration": "대기(zone_E에서 플레이어를 기다린다)"
+        },
+        {
+          "time": "반응",
+          "condition": "플레이어가 의례·봉인 재료·가리나에 대해 직접 대면으로 물을 때(P43: 대면 대화는 도청 비대상)",
+          "action": "정확 봉인법을 구술 전달. 장미수 이형이 오답임도 확인해준다.",
+          "will": "상황",
+          "duration_turns": 2,
+          "after_duration": "복귀(zone_E 대기)"
+        },
+        {
+          "time": "반응(보조 — P33 미발동 방지)",
+          "condition": "3턴 경과 후 플레이어가 아직 봉인법을 파악하지 못한 경우",
+          "action": "라지야가 먼저 나린에게 다가와 '기름과 실을 꺼내라'고 말해 최소 정보를 보장한다.",
+          "will": "약함"
+        }
+      ]
+    },
+    {
+      "id": "npc_C",
+      "name": "당직 의사 정해철",
+      "zone": "zone_D",
+      "critical": false,
+      "role_type": "무관",
+      "_note": "무관 NPC. 제거 시 평가 하락만."
+    },
+    {
+      "id": "npc_D",
+      "name": "분만실 보호자 다른 가족",
+      "zone": "zone_A",
+      "critical": false,
+      "role_type": "무관"
+    }
+  ],
+
+  "key_items": [
+    {
+      "id": "item_diary",
+      "name": "히자즈 채록 노트",
+      "type": "written_book",
+      "description": "낡고 오래된 아랍어-한국어 혼용 노트",
+      "lore_info": "표지에 '라자 알-아흐마디 채록, 히자즈, 1983' 메모",
+      "content": [
+        "히자즈 구전 제1조: 가리나는 이름 없이 봉인할 수 없다. 숙주의 출생 전 명명 의례에서 쓴 본명을 아랍어로 세 번 부를 것.",
+        "봉인 재료: 참깨 기름에 흰 면실을 적셔 탄생 방 문설주 세 곳에 묶는다. 기름 없이 실만으로는 무효이며, 가리나의 분노를 부른다.",
+        "주의: 이집트 일부 지역에서는 장미수를 쓴다는 기록이 있으나, 이는 히자즈 전통과 다른 변형이다. 이 노트의 방법을 따를 것."
+      ],
+      "location": "zone_F 서가 밀실 하단 서랍",
+      "clue_value": "정확 봉인법(경로 A) — P32 핵심 단서 2경로 중 1"
+    },
+    {
+      "id": "item_egypt_scroll",
+      "name": "이집트 구전 필사본",
+      "type": "paper",
+      "description": "얇은 누런 복사 용지, 아랍어 손글씨",
+      "lore_info": "아베이 알-후사인 지역 구전 기록, 채록자·연도 불명확",
+      "content": [
+        "봉인 의례: 가리나를 물리치려면 장미수(마워르드)에 적신 천으로 문설주를 닦아라. 이름 호명은 7회."
+      ],
+      "_mislead": true,
+      "_variant_basis": "이집트 카이로 아베이 알-후사인 지역 구전 변형. 채록자 미상, 19세기 말 추정. 실제 아랍 민속 기록에서 이 변형이 언급되나 히자즈 정통 계열과 다름. P22/P34: 실제 이형 기반 mislead — 원전을 아는 플레이어도 '어느 변형이 맞는지' 혼동하도록 설계.",
+      "location": "zone_F 서가 밀실 상단 선반 — 히자즈 채록 노트보다 눈에 잘 띄는 위치",
+      "clue_value": "mislead — 장미수+7회 호명은 오답(봉인 실패·격노 유발)"
+    },
+    {
+      "id": "item_key",
+      "name": "열쇠꾸러미",
+      "type": "physical:TRIPWIRE_HOOK",
+      "description": "병원 직원용 묵직한 열쇠 묶음",
+      "lore_info": "라벨 'F-서가·B-창고·D-약품실' — role_B(이카림) 시작 아이템으로 보유",
+      "location": "role_B 시작 아이템",
+      "clue_value": "zone_F 서가 밀실 직접 진입 가능"
+    },
+    {
+      "id": "item_oil_thread",
+      "name": "할머니 약재 가방",
+      "type": "physical:LEATHER",
+      "description": "낡은 가죽 가방, 천연 약재와 유리병 들어 있음",
+      "lore_info": "안에 참깨 기름 소병과 흰 면실 다발 포함 — role_C(나린) 시작 아이템",
+      "location": "role_C 시작 아이템",
+      "clue_value": "봉인 재료 실물 — 단 나린은 용도 미인지(P41)"
+    },
+    {
+      "id": "item_voice_msg",
+      "name": "낯선 번호 음성 메시지",
+      "type": "physical:CLOCK",
+      "description": "박나린 폰에 수신된 30초짜리 아랍어 음성",
+      "lore_info": "아랍어: '하야를 찾아라. 이름이 열쇠다. 기름이 봉인이다.' (번역 필요)",
+      "location": "role_C 폰 — 발견 즉시 인지 가능",
+      "clue_value": "봉인법 핵심 힌트(번역 시 경로 B 보조)"
+    }
+  ],
+
+  "clues": [
+    {
+      "id": "clue_1",
+      "type": "truth",
+      "description": "4층 탄생 방 창문에서 하야(가리나)의 실루엣이 이상하게 흔들린다 — 위장 균열 첫 신호.",
+      "location": "zone_G 외부에서 관찰 가능"
+    },
+    {
+      "id": "clue_2",
+      "type": "truth",
+      "description": "히자즈 채록 노트 — 정확 봉인법(참깨 기름 + 3회 이름 호명). P32 경로 A.",
+      "location": "zone_F 서가 밀실"
+    },
+    {
+      "id": "clue_3",
+      "type": "mislead",
+      "variant_basis": "이집트 아베이 알-후사인 구전 변형 (채록자 미상, 19세기 말). 실제 아랍 민속 기록의 지역별 이형 — 장미수+7회 호명은 히자즈 계열과 다른 오답 변형(P22/P34).",
+      "description": "이집트 구전 필사본 — 장미수+7회 호명. 눈에 잘 띄는 위치. mislead.",
+      "location": "zone_F 서가 밀실 상단"
+    },
+    {
+      "id": "clue_4",
+      "type": "truth",
+      "description": "라지야 할머니 구술 — 정확 봉인법 구술 전달 + 장미수 이형이 오답임 확인. P32 경로 B.",
+      "location": "NPC 라지야(zone_G→zone_E) 대면 질문 시"
+    },
+    {
+      "id": "clue_5",
+      "type": "truth",
+      "description": "하야(가리나 위장)가 대화 중 하야 본인만 알아야 할 기억에서 오류를 보인다.",
+      "location": "zone_C 또는 기기 통신 — 기기 채널은 도청 위험"
+    },
+    {
+      "id": "clue_6",
+      "type": "truth",
+      "description": "낯선 번호 음성 메시지(나린 폰) — 아랍어 '이름이 열쇠, 기름이 봉인'. 번역 시 봉인법 보조.",
+      "location": "role_C 폰 (타임라인 1단계)"
+    }
+  ],
+
+  "daily_prologue": {
+    "turns": 4,
+    "role_placements": [
+      {"role_id": "role_A", "zone": "zone_A", "note": "분만실 대기 — 하야의 출산 동행"},
+      {"role_id": "role_B", "zone": "zone_E", "note": "서가 밀실 외부 — 열람 대기"},
+      {"role_id": "role_C", "zone": "zone_G", "note": "주차장 — 라지야와 함께 도착(타임라인 1단계)"}
+    ],
+    "foreshadowing": [
+      "분만실 대기실 TV가 간헐적으로 꺼진다(가리나 출현 직전 전자기기 교란 초기 징후).",
+      "이카림의 핸드폰 배터리가 설명 없이 빠르게 닳는다.",
+      "라지야가 차에서 내리며 하늘을 보고 혼잣말로 '파즈르가 멀지 않다'고 중얼거린다."
+    ]
+  },
+
+  "meeting_design": {
+    "physically_possible": true,
+    "meeting_window": "타임라인 1단계(role_C 합류 후 zone_H 로비에서 첫 합류 가능)",
+    "natural_barriers": [
+      "role_A는 4층, role_B는 2층에서 출발 — 첫 접촉은 계단 또는 엘리베이터 경유",
+      "role_C는 1층 주차장 도착 — zone_G→zone_H→zone_B 경로로 합류"
+    ]
+  },
+
+  "join_system": {
+    "mid_join_allowed": true,
+    "timeline_limit": 2
+  },
+
+  "common_items": ["smartphone"],
+
+  "info_sharing": {
+    "chat_allowed": true,
+    "item_transfer": true,
+    "remote_item_transfer": false
+  }
+}

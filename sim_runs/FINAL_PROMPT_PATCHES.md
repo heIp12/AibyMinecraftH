@@ -344,6 +344,8 @@ gated_zones가 있으면 각 항목에 대해 주입: "구역 [zone]: [requires]
 | P40 (G4 희생) | 희생형 collapse | GDAM_SYSTEM_PROMPT entity.rules/solution | 충격파 범위·안전 대피 기준 필수 명시 (G4에 포함) |
 | P13·P19 (G18) | 장비·인증 잠금 구역 있음 | GDAM constraints 스키마 + buildGmPrompt | gated_zones[] 배열·bypass_dc 주입 |
 | P44·P44b (G3) | can_impersonate=true | GM_SYSTEM_BASE 괴담 AI 운용 | 위장 4규칙·정보흡수 comm 로그 기준 (G3에 포함) |
+| P49 | 가변 턴 + 시간기반 마감/무효 조건 공존 | GDAM_SYSTEM_PROMPT collapse_condition·main_events + GM 시간 판정 | 시간 마감은 '실제 경과 분'으로만 계산·턴 환산 금지(분 단위 명시). iter20 검증 PASS |
+| P50 | 대규모 다구역 + 위치 의존 bypass | constraints.gated_zones + buildGmPrompt | remote_bypass(true/false) 필드·현장 필수 시 이동 비용 명시·급박 구간 이동만으로 기회 전소 금지. iter20 검증 PASS |
 
 ---
 

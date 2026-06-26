@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "stage": 4,
+  "seed": "#QH3M-7WNB",
+  "created": "2026-06-26",
+  "familiar": true,
+  "legend_origin": "가리나 / القرينة — 중동·아랍 이슬람 전통 신앙",
+  "scale": "시티",
+  "clear_grade": "A",
+  "resolved": true,
+  "players": [
+    {
+      "role_id": "role_A",
+      "char_name": "유하림",
+      "gender": "여성",
+      "role": "가족 동행인",
+      "grade": "A",
+      "highlight": "도청 감지 후 대면 채널 전환(P43 활용). 1차 오봉인 시 미끼 행동으로 팀 도피 성공(P35).",
+      "penalties": ["기기 통신으로 가리나 접촉 → 오염도 +1"],
+      "trait_reward": "상위 보상 1개 (설득 강화·공감 감지 각 2회 활용)",
+      "final_hp_loss": 2,
+      "final_san_loss": 1
+    },
+    {
+      "role_id": "role_B",
+      "char_name": "이카림",
+      "gender": "남성",
+      "role": "이슬람 민속 연구자",
+      "grade": "B",
+      "highlight": "열쇠꾸러미로 zone_F 직접 진입. 히자즈 채록 노트(경로 A) 발견.",
+      "penalties": ["장미수 mislead 채택 → 1차 오봉인 주도 (판단 오류, 고의 은폐 아님 — P36 면제)"],
+      "trait_reward": "보통 보상 1개 (고문서 해독 2회 활용)",
+      "final_hp_loss": 1,
+      "final_san_loss": 1
+    },
+    {
+      "role_id": "role_C",
+      "char_name": "박나린",
+      "gender": "여성",
+      "role": "전통 치료사 손녀",
+      "grade": "A",
+      "highlight": "핵심 재료 보유·전달. 라지야 할머니 구술 연결(경로 B). 봉인 실 묶기 직접 수행.",
+      "penalties": [],
+      "trait_reward": "상위 보상 1개 (의례 보조·직감 각 2회 활용)",
+      "final_hp_loss": 0,
+      "final_san_loss": 0
+    }
+  ],
+  "p49_time_deadline": {
+    "deadline_clock": "03:05",
+    "deadline_minutes_from_start": 155,
+    "calculation_method": "실경과 분 기준 (턴 환산 금지)",
+    "result": "봉인 완료 시각 00:19 — 파즈르 창 내 완수 (잔여 166분)"
+  },
+  "p50_gated_zones": [
+    {
+      "zone": "zone_C",
+      "remote_bypass": false,
+      "movement_cost_note": "급박 구간(3~5분/턴): 이동 1턴 후 의례 시작 가능. 이동만으로 기회 전소 없음.",
+      "result": "PASS"
+    },
+    {
+      "zone": "zone_F",
+      "remote_bypass": false,
+      "movement_cost_note": "급박 구간: 진입+열람 최소 2턴 허용.",
+      "result": "PASS"
+    }
+  ],
+  "patch_regressions_checked": "P1~P50(+P44b) 전체 — 상호 충돌 0건",
+  "new_weaknesses_found": 0,
+  "new_weaknesses_note": "신규 약점 없음 — 안정"
+}

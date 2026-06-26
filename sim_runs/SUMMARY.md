@@ -181,3 +181,14 @@
 - 신규: P49(가변 턴 시 시간기반 무효조건은 실경과 분 계산 med·한정)·P50(대규모 위치의존 bypass 이동비용 명시 low·한정). 둘 다 코즈믹/대규모 한정·범용 충돌 아님·코드 변경 불필요.
 - 파일: iter19/seed.json(11 zones·코즈믹)·log.txt(537줄)·replay.json(stage7·3인). 플러그인 .java 미변경.
 - ※코즈믹 극단에서도 패치셋 안정. 누적 P1~P50. 회귀 신뢰도 추가 상승.
+
+## iter20 — 2026-06-26 23:21 — #QH3M-7WNB (스테이지4·★친숙 4지역 중동·P49/P50 검증)
+- 친숙 4번째 지역(중동 — 라틴 iter07·슬라브 iter10·동남아 iter18 외): 가리나(Qarinah/Qareen, 아랍·이슬람 전통). 현대 병원 탄생 방, 파즈르 기도 전 봉인.
+- ★검증 전부 PASS: (a)친숙 P22/P23/P34(장미수+7회 호명 이형 mislead 실제 채록·의례 정확조건+오류결과) (b)★P49 시간마감 분 단위 처리(마감 03:05 파즈르·잔여 분 계산·턴 환산 금지) (c)★P50 현장필수 bypass 이동비용(zone_C/F remote_bypass=false·이동 1턴 후 행동 완충) (d)전체 P1~P50 상호 충돌 0건(P44·P14·P43·P44b 복합 active에도 겹침 없음).
+- 결과: 1차 장미수 오봉인 실패→리트라이(유지)→2차 정확 이름 3회+참깨기름 실 봉인 collapse 충족 해결판정. 강등 없음(P1). ★신규 약점 없음.
+- 파일: iter20/seed.json(친숙·중동·gated remote_bypass·시간마감)·log.txt(263줄)·replay.json(stage4·3인). 플러그인 .java 미변경.
+- ※P49/P50(iter19 도출) 즉시 검증 PASS. 친숙 4지역 전부 안정. iter18·20 연속 신규 0건.
+
+## 회귀 안정 모드 전환 (2026-06-26 23:21, iter20 후)
+- iter16~20(5회) 사실상 무수확(low/niche/0건)·회귀 충돌 0건 → 프롬프트 P1~P50 ★exhaustively 수렴 확정.
+- 사용자 지시('최대 8h/토큰까지')는 존중하되, 빠른 cadence의 무수확 반복은 토큰 낭비 → ★저(低)cadence robustness 모드: 마감까지 ~50분 간격으로 '서로 다른 새 시나리오' 회귀를 띄워 안정성만 추가 확인(드물게 niche 발견 시 P##/CODE-# 누적). 핵심 산출물(FINAL_PROMPT_PATCHES.md·SYNTHESIS.md·SUMMARY.md)은 이미 완비.
