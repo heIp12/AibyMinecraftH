@@ -2043,7 +2043,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         }
 
         // Paper Dialog로 발동 선택지 표시
-        dialogMan.showTraitActivation(player, trait, pd.zone,
+        dialogMan.showTraitActivation(player, trait, zoneDisplayName(pd.zone),
             () -> commitTrait(player),
             () -> player.sendMessage("§7채팅으로 행동을 입력하면 특성과 함께 처리됩니다. §8[취소: /trpg _trait_cancel]")
         );
