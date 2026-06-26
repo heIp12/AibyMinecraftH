@@ -2519,6 +2519,22 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         mapMan.giveMapItem(player);
     }
 
+    /** 약도 아이템 우클릭 → 구역 선택 다이얼로그 */
+    public void openMapSelector(Player player) {
+        PlayerData pd = state.getPlayer(player);
+        if (pd == null) { player.sendMessage("§c참여 중인 캐릭터가 없습니다."); return; }
+        if (!mapMan.hasZones()) { player.sendMessage("§7아직 지도 정보가 없습니다."); return; }
+        if (!mapMan.hasMultiAreas()) {
+            player.sendMessage("§7이 시나리오는 단일 구역으로 구성되어 있습니다.");
+            return;
+        }
+        dialogMan.showMapSelector(player, mapMan.areaNames(),
+            area -> Bukkit.getScheduler().runTask(plugin, () -> mapMan.swapMapView(player, area)));
+    }
+
+    /** 지도 아이템 여부 판별 (ChatListener에서 사용) */
+    public boolean isMapItem(ItemStack it) { return mapMan.isMapItem(it); }
+
     // ──────────────────────────────────────────────────────────────
     //  클리어 엔딩
     // ──────────────────────────────────────────────────────────────

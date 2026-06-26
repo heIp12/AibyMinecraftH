@@ -604,6 +604,39 @@ public class DialogManager {
     }
 
     // ──────────────────────────────────────────────────────────────
+    //  약도 구역 선택 다이얼로그
+    // ──────────────────────────────────────────────────────────────
+
+    /**
+     * 구역 선택 다이얼로그.
+     * 버튼: "전체 지도" (overview) + 구역별 버튼.
+     * 선택 시 onSelect.accept(area) 호출 — area=null이면 전체/overview.
+     */
+    public void showMapSelector(Player player, List<String> areaNames, java.util.function.Consumer<String> onSelect) {
+        List<ActionButton> buttons = new ArrayList<>();
+        buttons.add(ActionButton.create(
+            Component.text("전체 지도", NamedTextColor.GOLD),
+            Component.text("모든 구역이 표시된 개요"), 200,
+            DialogAction.customClick((v, a) -> onSelect.accept(null),
+                ClickCallback.Options.builder().uses(1).build())));
+        for (String area : areaNames) {
+            buttons.add(ActionButton.create(
+                Component.text(area, NamedTextColor.YELLOW),
+                Component.text(area + " 구역 상세 지도"), 200,
+                DialogAction.customClick((v, a) -> onSelect.accept(area),
+                    ClickCallback.Options.builder().uses(1).build())));
+        }
+        ActionButton closeBtn = ActionButton.create(Component.text("닫기", TextColor.color(0xAAAAAA)), null, 100, null);
+        Dialog dialog = Dialog.create(b -> b.empty()
+            .base(DialogBase.builder(Component.text("약도 구역 선택"))
+                .body(List.of(DialogBody.plainMessage(
+                    Component.text("볼 구역을 선택하세요.", NamedTextColor.GRAY))))
+                .build())
+            .type(DialogType.multiAction(buttons, closeBtn, 1)));
+        player.showDialog(dialog);
+    }
+
+    // ──────────────────────────────────────────────────────────────
     //  기록 다이얼로그 (전체 대화 / 수집 정보 — 위치 이동 기준 페이지 넘김)
     // ──────────────────────────────────────────────────────────────
 

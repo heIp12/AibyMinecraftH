@@ -77,6 +77,9 @@ public class ChatListener implements Listener {
         } else if (trpgManager.isRecordItem(event.getItem())) {
             event.setCancelled(true);
             Bukkit.getScheduler().runTask(plugin, () -> trpgManager.openRecords(player));
+        } else if (trpgManager.isMapItem(event.getItem())) {
+            event.setCancelled(true);
+            Bukkit.getScheduler().runTask(plugin, () -> trpgManager.openMapSelector(player));
         }
     }
 
@@ -86,7 +89,7 @@ public class ChatListener implements Listener {
         TRPGGameManager trpgManager = trpg();
         if (trpgManager == null || !trpgManager.isActive()) return;
         var dropped = event.getItemDrop().getItemStack();
-        if (trpgManager.isInfoItem(dropped) || trpgManager.isRecordItem(dropped)) event.setCancelled(true);
+        if (trpgManager.isInfoItem(dropped) || trpgManager.isRecordItem(dropped) || trpgManager.isMapItem(dropped)) event.setCancelled(true);
     }
 
     @EventHandler
