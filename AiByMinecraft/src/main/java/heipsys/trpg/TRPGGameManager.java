@@ -559,6 +559,9 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             // 선제 배역 배정: 캐릭터 생성 시 배역 맥락(나이/직업 범위)을 활용
             doPreAssign(survivors, gdam);
 
+            // 스테이지 시작 인벤토리 초기화 (이전 아이템 제거)
+            survivors.forEach(p -> p.getInventory().clear());
+
             survivors.forEach(p -> {
                 pendingCreation.add(p.getUniqueId());
                 charGen.generate(p) // 시나리오 무관 완전 무작위 캐릭터 생성
@@ -710,7 +713,9 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             pd.clearRoleData();
             pd.statsConfirmed = true;
         });
-        itemMan.reclaimChapterItems(new ArrayList<>(Bukkit.getOnlinePlayers()));
+        // 스테이지 전환 인벤토리 초기화 (이전 스테이지 아이템 전부 제거)
+        Bukkit.getOnlinePlayers().forEach(p -> p.getInventory().clear());
+        itemMan.reclaimChapterItems(new ArrayList<>(Bukkit.getOnlinePlayers())); // chapterBound 추적 정리
 
         turnMan.cancelAll();
         narrativeDelivery.clearAll();
