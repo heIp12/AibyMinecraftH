@@ -13,6 +13,8 @@ public class PlayerData {
     public UUID uuid;
     public String name;
     public String roleId = "";
+    public String charName = ""; // 맵배경에서 배정된 캐릭터 이름 (시나리오 한정)
+    public String gender   = ""; // 맵배경에서 배정된 성별: 남성/여성/미상
     public int age = 25;
     public String job = "일반인";
 
@@ -97,6 +99,8 @@ public class PlayerData {
         resetToBase();
         roleId       = "";
         zone         = "";
+        charName     = "";
+        gender       = "";
         roleAssigned = false;
         heldItemIds.clear();
         knownContacts.clear();
@@ -211,7 +215,7 @@ public class PlayerData {
     /** GM AI turn input용 플레이어 상세 줄 (행동자에게만 사용) */
     public String toTurnLine() {
         StringBuilder sb = new StringBuilder();
-        sb.append(name)
+        sb.append(charName.isEmpty() ? name : charName)
           .append("[").append(roleId.isEmpty() ? "?" : roleId)
           .append(" ").append(age).append("세 ").append(job).append("]")
           .append(" HP").append(hp[0]).append("/").append(hp[1])
