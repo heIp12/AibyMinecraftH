@@ -1,0 +1,108 @@
+{
+  "version": 1,
+  "stage": 5,
+  "seed": "#AF7K-3QNB",
+  "created": "2026-06-26",
+  "title": "흰 꽃의 도시",
+  "familiar": true,
+  "legend_origin": "폰티아낙(Pontianak) — 말레이시아·인도네시아 말레이 구전 전승",
+  "scale": "내셔널",
+  "era": "현대 (2026년, 말레이시아 쿠알라룸푸르 근교 신도시)",
+  "comms_monitored": true,
+  "players": [
+    {
+      "role_id": "role_A",
+      "char_name": "차지수",
+      "role": "야간 담당 인턴 의사",
+      "gender": "여성",
+      "start_zone": "zone_A",
+      "spawn_timeline": "시작 즉시",
+      "start_power": {
+        "str": -1,
+        "cha": 2,
+        "spr": 1,
+        "san_max": 1
+      },
+      "active_traits_used": 2,
+      "final_grade": "S",
+      "highlights": [
+        "에어컨 역풍으로 무향 타이밍 2회 생성 — 1차 격노 억제·2차 의례 핵심 기여",
+        "도청 회피 전술(대면 공유) 시종일관 유지 — P43 전술 정확 실천",
+        "산모 이수진 최종 구조"
+      ],
+      "penalties": []
+    },
+    {
+      "role_id": "role_B",
+      "char_name": "압둘라 라자크",
+      "role": "도시계획 현장 조사원",
+      "gender": "남성",
+      "start_zone": "zone_D",
+      "spawn_timeline": "시작 즉시",
+      "start_power": {
+        "str": 2,
+        "hp_max": 1,
+        "luk": 1
+      },
+      "active_traits_used": 2,
+      "final_grade": "A",
+      "highlights": [
+        "토지이력 보고서로 바나나 줄기 탐색 경로 개척 (P32 경로 2 실현)",
+        "전통 시장에서 상아 못·바나나 줄기 확보",
+        "기기 통화 → 대면 전환 (도청 회피 판단, P43 전술 실천)"
+      ],
+      "penalties": [
+        "1차 의례 실패 시 7회 호명 혼선 유발 (mislead clue_6 신뢰 오류)"
+      ]
+    },
+    {
+      "role_id": "role_C",
+      "char_name": "다뚝 노라이니",
+      "role": "전통 치료사(보모)",
+      "gender": "여성",
+      "start_zone": "zone_B",
+      "spawn_timeline": "타임라인 1단계",
+      "start_power": {
+        "str": -2,
+        "cha": 3,
+        "spr": 2,
+        "hp_max": -1,
+        "san_max": 2,
+        "luk_fixed": 4
+      },
+      "active_traits_used": 3,
+      "final_grade": "A",
+      "highlights": [
+        "기도문 노트로 봉인 의례 핵심 정보 제공 (실제 채록 출처 기반)",
+        "mislead 두 개(철 못·7회 호명) 정확 식별 및 해소",
+        "2차 봉인 의례 직접 수행 성공",
+        "이수진 산모 대피 조율"
+      ],
+      "penalties": [
+        "타임라인 1단계 합류 — 초기 탐색 참여 제한 (구조상 감점 아님)"
+      ]
+    }
+  ],
+  "outcome": {
+    "clear_grade": "S",
+    "resolved": true,
+    "retry_count": 1,
+    "retry_grade_penalty": false,
+    "survivors": 3,
+    "casualties": 0,
+    "npc_status": {
+      "npc_C 하림": "생존·협조",
+      "npc_D 이수진": "대피 성공·무사",
+      "npc_A 장 리나": "경미 부상 후 회복",
+      "npc_B 김동환": "무사"
+    },
+    "collapse_achieved": true,
+    "collapse_method": "상아 못 + 바나나 줄기 + 무향 타이밍(에어컨 정지) + 이름 3회 호명",
+    "mislead_trap_hit": true,
+    "mislead_trap_resolved": true,
+    "comms_monitored_incidents": 1,
+    "comms_tactic_adopted": "대면 채널로 핵심정보 전환 (P43 전술)"
+  },
+  "patch_regression": "P1~P48(+P44b) 전체 회귀 이상 없음. 상호 충돌 미발견.",
+  "next_stage_unlocked": true
+}

@@ -161,3 +161,15 @@
 - 신규: P48(INSTANT_CLEAR F클리어 시 타 플레이어 일괄 하향 방지 med). +CODE-12(INSTANT_CLEAR room≥3 사전경고 dialog 부재 high·UX). CODE-3 재확인(최시엘 S 사망 보상 제외).
 - 파일: iter17/seed.json(7 zones)·log.txt(350줄·INSTANT_CLEAR 44회)·replay.json(stage4·3인). 플러그인 .java 미변경.
 - ※회귀 PASS가 핵심 성과: 누적 47패치가 실제 시나리오에서 상호 모순 없이 동작 확인. 프롬프트 패치셋 안정성 입증.
+
+## iter18 — 2026-06-26 22:50 — #AF7K-3QNB (스테이지5·★친숙 3지역 캡스톤 회귀·폰티아낙)
+- 친숙 3번째 지역(동남아 — 라틴 iter07·슬라브 iter10 외): 폰티아낙(Pontianak, 말레이/인니 구전). 현대 쿠알라룸푸르 신도시 병원, comms_monitored.
+- ★캡스톤 회귀: P1~P48(+P44b) 넓게 동시 활성 — 친숙(P22/P23/P34)·comms(P14/P18/P43)·NPC(P5/P9/P11/P17/P21/P33/P46)·평가(P36)·해결경로(P32)·클리어(P1/P12)·P35 격노 대응창. ★상호 충돌·모순 0건.
+- mislead 2개 실제 채록(자이날 압딘 1963 켈란탄·라자 아흐마드 바다위 1971 슬랑오르). 1차 의례 실패(격노, P35 에어컨 역풍 대응창)→리트라이(유지)→2차 대면 채널 정보공유(P43)+무향 타이밍+상아 못 봉인 collapse 충족 해결판정 S(전원 대피). 강등 없음(P1).
+- 적용 28패치 전부 PASS, 비대상 21패치 정상 미발동. ★신규 약점 없음.
+- 파일: iter18/seed.json(8 zones·_familiar·comms_monitored)·log.txt(223줄)·replay.json(stage5·3인). 플러그인 .java 미변경.
+
+## ★★★ 완전 수렴 확정 (2026-06-26 22:50, iter18 기준)
+- **iter16~18 3회 연속 무(無)-high 프롬프트** + iter18 ★신규 약점 0건 + ★전체 P1~P48 회귀 충돌 0건 → **프롬프트 패치셋 완전 수렴·안정 입증**.
+- **총 18회 시뮬**(+1 false-positive 재시도). **프롬프트 패치 P1~P48(+P44b) = 49건**, **코드 TODO CODE-1~12**.
+- 이후 잔여 시간은 추가 sim(무수확 예상) 대신 ★최종 적용본(FINAL_PROMPT_PATCHES.md — 9개 통합 그룹의 적용 가능 텍스트 + .java 위치 매핑 + CODE TODO 착수 스펙) 생성에 사용.
