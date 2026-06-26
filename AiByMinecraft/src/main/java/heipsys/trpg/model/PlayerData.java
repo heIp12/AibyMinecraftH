@@ -73,6 +73,8 @@ public class PlayerData {
     public String contactId = "";
     /** 이 플레이어가 연락처를 알고 있는 상대들의 UUID */
     public final Set<UUID> knownContacts = new HashSet<>();
+    /** 한 번이라도 알게 된 연락처 (다회차 보정 — 재도전 시 재적용해 이전에 안 번호를 유지) */
+    public final Set<UUID> everKnownContacts = new HashSet<>();
 
     // Base stats snapshot — used to reset on retry
     public int[] baseHp  = {6, 6};
