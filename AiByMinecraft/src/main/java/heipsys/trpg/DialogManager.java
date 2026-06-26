@@ -13,6 +13,7 @@ import net.kyori.adventure.text.event.ClickCallback;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextColor;
 import net.kyori.adventure.text.format.TextDecoration;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.entity.Player;
 
 import java.util.*;
@@ -1002,6 +1003,31 @@ public class DialogManager {
 
     public record EndingSection(String title, List<String> lines) {}
 
+    private static final LegacyComponentSerializer LEGACY = LegacyComponentSerializer.legacySection();
+
+    /**
+     * 엔딩 해설 한 줄에 색을 입힌다.
+     * - § 색코드가 포함된 줄은 그대로 파싱(buildEndingPages에서 색을 직접 지정 가능).
+     * - 그 외에는 구조(구분선·불릿·단계·라벨)에 따라 자동으로 색을 부여해 단색을 피한다.
+     */
+    private static Component colorizeEndingLine(String line) {
+        if (line == null || line.isEmpty()) return Component.empty();
+        if (line.indexOf('§') >= 0) return LEGACY.deserialize(line); // § 코드 우선
+        String t = line.strip();
+        if (t.startsWith("──") || t.endsWith("──"))
+            return Component.text(line, TextColor.color(0xFFCC66), TextDecoration.BOLD); // 구분선 = 금색
+        if (t.startsWith("▸") || t.startsWith("•"))
+            return Component.text(line, NamedTextColor.AQUA);                            // 불릿 = 청록
+        if (t.startsWith("·") || t.startsWith("- "))
+            return Component.text(line, NamedTextColor.GRAY);                            // 하위 항목 = 회색
+        if (t.matches("^\\[\\d+단계\\].*"))
+            return Component.text(line, TextColor.color(0xFFB347));                      // 타임라인 단계 = 주황
+        int colon = t.indexOf(':');
+        if (colon > 0 && colon <= 6)
+            return Component.text(line, NamedTextColor.YELLOW);                          // 짧은 라벨: 값
+        return Component.text(line, NamedTextColor.WHITE);                               // 본문 = 흰색
+    }
+
     public void showEndingDialog(Player player, List<EndingSection> sections, int page) {
         if (sections.isEmpty()) return;
         final int p = Math.max(0, Math.min(page, sections.size() - 1));
@@ -1012,7 +1038,7 @@ public class DialogManager {
         for (String line : sec.lines()) {
             if (!first) bodyB.appendNewline();
             first = false;
-            bodyB.append(Component.text(line, NamedTextColor.WHITE));
+            bodyB.append(colorizeEndingLine(line));
         }
         Component body = bodyB.build();
         String title = "엔딩 해설  " + (p + 1) + "/" + sections.size() + "  [" + sec.title() + "]";
