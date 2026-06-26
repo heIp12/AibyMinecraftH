@@ -711,11 +711,28 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         // 이전 회차의 잔여 행동·서술·통신을 완전히 정리 (이전 플레이어 진행 방지)
         turnMan.cancelAll();
         narrativeDelivery.clearAll();
+
+        // 다회차 기억 (① NPC 기억 스냅샷 — clearAll 직전에 저장)
+        // 오염도가 높을수록 더 많은 과거 행동을 기억한다
+        int snapMax = Math.min(2 + corruptMan.getLevel(), 5);
+        Map<String, List<String>> npcSnapshot = ai.snapshotNpcMemories(snapMax);
+
         ai.clearAll();
 
         // 스탯/상태를 기본값으로 리셋 (HP/SAN 만회, isDead/puppet 해제)
         state.onRetry();
         broadcast("§c오염 단계: §f" + corruptMan.getLevel() + " (" + corruptMan.getAttempts() + "회차)");
+
+        // 다회차 기억 재주입: 오염도에 따라 기억 선명도·양 조절
+        if (corruptMan.getLevel() >= 1 && !npcSnapshot.isEmpty()) {
+            int corrLevel = corruptMan.getLevel();
+            npcSnapshot.forEach((npcId, msgs) -> {
+                int take = Math.min(msgs.size(), corrLevel + 1);
+                List<String> selected = msgs.subList(msgs.size() - take, msgs.size());
+                String prefix = corrLevel == 1 ? "(흐릿하게) " : "";
+                ai.preSeedNpcContext(npcId, prefix + String.join(" / ", selected));
+            });
+        }
 
         // 등장 상태·대기 서술·통신 채널 초기화
         pendingTraitActivation.clear();
@@ -2959,6 +2976,17 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         if (entity.has("rules") && entity.get("rules").isJsonArray()) {
             sb.append("[내부 참고] 규칙: ").append(entity.get("rules").toString()).append("\n");
         }
+
+        // 다회차 기억: 오염도 2 이상에서 괴담의 과거 행동 패턴을 자신에게 주입
+        var entityMem = state.getCorruption().entityMemory;
+        if (!entityMem.isEmpty() && corruptMan.getLevel() >= 2) {
+            sb.append("[이전 회차 행동 기억] 너는 전에 이런 현상을 일으켰다:\n");
+            int from = Math.max(0, entityMem.size() - 3);
+            for (int i = from; i < entityMem.size(); i++)
+                sb.append("  - ").append(entityMem.get(i)).append("\n");
+            sb.append("이 패턴을 토대로 더 정교하게, 더 집요하게 행동하라.\n");
+        }
+
         return sb.toString();
     }
 
@@ -3034,9 +3062,39 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                 npcObj.has("zone") ? npcObj.get("zone").getAsString() : "");
             String npcPrompt = buildNpcSystemPrompt(npcObj);
 
-            ai.callNpcAi(npcId, npcPrompt, actionLog).thenAccept(npcResp -> {
+            // ③ 엿보기: 같은 zone의 엿보기 특성 보유 플레이어 목록
+            final List<Player> eavesdroppers = new ArrayList<>();
+            if (!npcZone.isEmpty()) {
+                state.getAllPlayers().stream()
+                    .filter(pd -> !pd.isDead && npcZone.equals(pd.zone)
+                        && pd.traits.stream().anyMatch(t -> t.id.contains("엿보기") || t.id.contains("eavesdrop")))
+                    .forEach(pd -> {
+                        Player ep = Bukkit.getPlayer(pd.uuid);
+                        if (ep != null && ep.isOnline()) eavesdroppers.add(ep);
+                    });
+            }
+
+            boolean wantThought = !eavesdroppers.isEmpty();
+            String npcPromptFinal = wantThought
+                ? npcPrompt + "\n응답 말미에 <THOUGHT>지금 이 NPC의 내면 생각 1문장</THOUGHT>을 출력하라.\n"
+                : npcPrompt;
+
+            ai.callNpcAi(npcId, npcPromptFinal, actionLog).thenAccept(npcResp -> {
                 if (npcResp == null || npcResp.startsWith("§c")) return;
-                String trimmed = ai.stripTags(npcResp).trim();
+
+                // ③ 엿보기: 내면 사고를 같은 zone 엿보기 플레이어에게 비공개 전달
+                if (wantThought) {
+                    String thought = ai.parseThoughtTag(npcResp);
+                    if (thought != null && !thought.isEmpty()) {
+                        plugin.getServer().getScheduler().runTask(plugin, () -> {
+                            for (Player ep : eavesdroppers)
+                                if (ep.isOnline())
+                                    ep.sendMessage("§8[엿보기] §7" + npcName + " (속마음: " + thought + ")");
+                        });
+                    }
+                }
+
+                String trimmed = ai.stripThought(ai.stripTags(npcResp)).trim();
                 if (trimmed.isEmpty()) return;
 
                 // GM 컨텍스트에만 주입 — 플레이어에게 직접 전달하지 않음.
@@ -3100,9 +3158,17 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         PlayerData targetPd = dialedByNumber ? findByContactId(token) : findByName(token);
 
         if (targetPd == null) {
+            // NPC 이름 대조 (플레이어가 아닌 NPC에게 말 거는 경우)
+            if (!dialedByNumber) {
+                JsonObject npcObj = findNpcByName(token);
+                if (npcObj != null) {
+                    handleNpcDirectComm(sender, senderPd, npcObj, message);
+                    return;
+                }
+            }
             sender.sendMessage(dialedByNumber
                 ? "§c'" + token + "' 번호로 연결되지 않습니다. (없는 번호)"
-                : "§c'" + token + "' 플레이어를 찾을 수 없습니다.");
+                : "§c'" + token + "' 플레이어(또는 NPC)를 찾을 수 없습니다.");
             return;
         }
         if (targetPd.uuid.equals(sender.getUniqueId())) {
@@ -3173,6 +3239,91 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         return state.getAllPlayers().stream()
             .filter(pd -> pd.name.equalsIgnoreCase(name))
             .findFirst().orElse(null);
+    }
+
+    /** critical NPC 목록에서 이름으로 검색 */
+    private JsonObject findNpcByName(String name) {
+        for (JsonObject npc : getCriticalNpcs()) {
+            String npcName = npc.has("name") ? npc.get("name").getAsString() : "";
+            String npcId   = npc.has("id")   ? npc.get("id").getAsString()   : "";
+            if (npcName.equalsIgnoreCase(name) || npcId.equalsIgnoreCase(name)) return npc;
+        }
+        return null;
+    }
+
+    /**
+     * ② 플레이어 → NPC 직접 심문.
+     * GM round-trip 없이 NPC AI(Haiku)가 직접 응답.
+     * 같은 zone에 있어야 대면 가능.
+     */
+    private void handleNpcDirectComm(Player sender, PlayerData senderPd, JsonObject npcObj, String message) {
+        String npcId   = npcObj.has("id")   ? npcObj.get("id").getAsString()   : "npc";
+        String npcName = npcObj.has("name") ? npcObj.get("name").getAsString() : "NPC";
+        String npcZone = npcZones.getOrDefault(npcId,
+            npcObj.has("zone") ? npcObj.get("zone").getAsString() : "");
+
+        // 같은 zone에 있어야 직접 대화 가능
+        if (!senderPd.zone.isEmpty() && !senderPd.zone.equals(npcZone)) {
+            sender.sendMessage("§c" + npcName + "은(는) 같은 위치에 없습니다. 직접 찾아가야 합니다.");
+            return;
+        }
+
+        // ③ 엿보기 특성 여부 확인
+        boolean hasEavesdrop = senderPd.traits.stream()
+            .anyMatch(t -> t.id.contains("엿보기") || t.id.contains("eavesdrop"));
+
+        String npcPrompt = buildNpcDirectConvPrompt(npcObj, hasEavesdrop);
+        String userMsg   = "[" + senderPd.name + "이/가 말한다] " + message;
+
+        sender.sendMessage("§7[→ " + npcName + "] §f" + message);
+
+        ai.callNpcAi(npcId, npcPrompt, userMsg).thenAccept(npcResp -> {
+            if (npcResp == null || npcResp.startsWith("§c")) return;
+
+            // ③ 엿보기: 내면 사고를 먼저 비공개로 전달
+            if (hasEavesdrop) {
+                String thought = ai.parseThoughtTag(npcResp);
+                if (thought != null && !thought.isEmpty()) {
+                    plugin.getServer().getScheduler().runTask(plugin, () -> {
+                        if (sender.isOnline())
+                            sender.sendMessage("§8[엿보기] §7(속마음: " + thought + ")");
+                    });
+                }
+            }
+
+            String visible = ai.stripThought(ai.stripTags(npcResp)).trim();
+            if (visible.isEmpty()) return;
+
+            plugin.getServer().getScheduler().runTask(plugin, () -> {
+                if (sender.isOnline())
+                    sender.sendMessage("§e[" + npcName + "] §f" + visible);
+            });
+
+            // GM 컨텍스트에 요약만 주입 (전체 대화 노출 방지)
+            String summary = visible.length() > 80 ? visible.substring(0, 80) + "…" : visible;
+            ai.injectGmSystem("[NPC 직접 심문] " + senderPd.name + " → " + npcName
+                + ": \"" + (message.length() > 40 ? message.substring(0, 40) + "…" : message)
+                + "\" / NPC 반응: " + summary);
+
+            gameLogger.logGmOutput("NPC직접(" + npcName + ")", visible);
+        });
+    }
+
+    /** 직접 대화용 NPC 시스템 프롬프트 (자율 행동 프롬프트와 별개) */
+    private String buildNpcDirectConvPrompt(JsonObject npcObj, boolean includeThought) {
+        String name = npcObj.has("name") ? npcObj.get("name").getAsString() : "NPC";
+        StringBuilder sb = new StringBuilder(buildNpcSystemPrompt(npcObj));
+        // 자율 행동 프롬프트를 베이스로 삼되 대화 모드 지침을 덮어씀
+        sb.append("\n## 직접 대화 모드\n");
+        sb.append("플레이어가 네게 직접 말을 걸었다. 행동 서술 대신 대화·반응으로 응답하라.\n");
+        sb.append("- 1인칭으로 대화하되 성격·목표에 충실하게 답하라.\n");
+        sb.append("- 진실·단서를 통째로 드러내지 마라. 얼버무리거나 역질문할 수 있다.\n");
+        sb.append("- 2~4문장 이내.\n");
+        if (includeThought) {
+            sb.append("- 응답 말미에 <THOUGHT>네가 실제로 생각하는 것 (한 문장)</THOUGHT>을 출력하라. "
+                     + "이것은 플레이어에게는 표시되지 않는 내면이다.\n");
+        }
+        return sb.toString();
     }
 
     /** 통신 성립 시 양쪽이 서로의 연락처를 알게 됨 (착신/대면 교환) */

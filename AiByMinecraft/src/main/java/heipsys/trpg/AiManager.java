@@ -201,7 +201,7 @@ public class AiManager {
 
     public void injectGmSystem(String content) {
         synchronized (gmLock) {
-            gmContext.add(0, msg("user", "[시스템 주입] " + content));
+            gmContext.add(msg("user", "[시스템 주입] " + content));
         }
     }
 
@@ -215,6 +215,40 @@ public class AiManager {
     public void clearNpc(String npcId) { npcContexts.remove(npcId); }
 
     public int getGmContextSize() { synchronized (gmLock) { return gmContext.size(); } }
+
+    /**
+     * 재도전 직전, NPC별 최근 assistant 발화를 스냅샷으로 반환.
+     * maxPerNpc: 각 NPC에서 가져올 최대 메시지 수.
+     */
+    public Map<String, List<String>> snapshotNpcMemories(int maxPerNpc) {
+        Map<String, List<String>> snapshot = new LinkedHashMap<>();
+        npcContexts.forEach((id, ctx) -> {
+            synchronized (ctx) {
+                List<String> assistantMsgs = new ArrayList<>();
+                for (JsonObject m : ctx) {
+                    if ("assistant".equals(m.get("role").getAsString()))
+                        assistantMsgs.add(m.get("content").getAsString());
+                }
+                if (assistantMsgs.isEmpty()) return;
+                int from = Math.max(0, assistantMsgs.size() - maxPerNpc);
+                snapshot.put(id, new ArrayList<>(assistantMsgs.subList(from, assistantMsgs.size())));
+            }
+        });
+        return snapshot;
+    }
+
+    /**
+     * clearAll() 이후 NPC 컨텍스트에 이전 회차 기억을 주입.
+     * memoryNote: 자연어로 합성된 기억 요약.
+     */
+    public void preSeedNpcContext(String npcId, String memoryNote) {
+        List<JsonObject> ctx = npcContexts.computeIfAbsent(npcId,
+            k -> Collections.synchronizedList(new ArrayList<>()));
+        synchronized (ctx) {
+            ctx.add(msg("user", "[이전 회차 기억]\n" + memoryNote));
+            ctx.add(msg("assistant", "(기억 확인)"));
+        }
+    }
 
     /**
      * GM 컨텍스트 압축. 오래된 앞부분을 summary 한 줄로 교체.
@@ -245,6 +279,7 @@ public class AiManager {
     /** 태그를 제거한 순수 서술 텍스트 반환 */
     public String stripTags(String response) {
         return response
+            .replaceAll("<THOUGHT>[\\s\\S]*?</THOUGHT>", "")
             .replaceAll("<STATE_UPDATE>[\\s\\S]*?</STATE_UPDATE>", "")
             .replaceAll("<ITEM_GRANT>[\\s\\S]*?</ITEM_GRANT>", "")
             .replaceAll("<CLEAR>[\\s\\S]*?</CLEAR>", "")
@@ -266,6 +301,19 @@ public class AiManager {
 
     public JsonObject parseClearTag(String response) {
         return parseTag(response, "<CLEAR>", "</CLEAR>");
+    }
+
+    /** <THOUGHT>...</THOUGHT> 내용 추출. 없으면 null. */
+    public String parseThoughtTag(String response) {
+        int s = response.indexOf("<THOUGHT>");
+        int e = response.indexOf("</THOUGHT>");
+        if (s == -1 || e == -1 || s >= e) return null;
+        return response.substring(s + "<THOUGHT>".length(), e).trim();
+    }
+
+    /** <THOUGHT>...</THOUGHT> 태그를 제거한 텍스트 반환 */
+    public String stripThought(String response) {
+        return response.replaceAll("<THOUGHT>[\\s\\S]*?</THOUGHT>", "").trim();
     }
 
     /** <WITNESS player="name">text</WITNESS> 태그를 파싱 → {playerName: witnessText} */
