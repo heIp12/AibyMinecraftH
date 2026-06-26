@@ -1491,7 +1491,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         turnMan.cancelAll();
         gameLogger.logEvent("배드 엔딩 — 패인: " + reasonLabel);
         broadcast("§4§l[배드 엔딩]");
-        broadcast("§c패인: §f" + reasonLabel);
+        // 패인 레이블은 로그에만 기록 — 플레이어에게 직접 노출하면 게임 내부 구조 스포일러
 
         // 재도전 가능 여부 판정 (3번째 방부터는 생존 성공자가 있어야 재도전 가능)
         boolean retryAllowed = isRetryAllowed();
@@ -1501,8 +1501,9 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             + "단, 괴담의 정체·규칙·해결법을 직접 설명하거나 누설하지 마라(재도전 여지를 남긴다).")
           .thenAccept(r -> plugin.getServer().getScheduler().runTask(plugin, () -> {
               String narrative = ai.stripTags(r);
-              spawnedPlayers.forEach(uid -> {
-                  Player sp = Bukkit.getPlayer(uid);
+              // 미스폰 플레이어 포함 전원에게 배드엔딩 서술 전달
+              state.getAllPlayers().forEach(pd -> {
+                  Player sp = Bukkit.getPlayer(pd.uuid);
                   if (sp != null && sp.isOnline() && !narrative.isBlank())
                       narrativeDelivery.deliver(sp, narrative);
               });
@@ -1533,7 +1534,20 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     private void checkDeaths() {
         // 일상 파트에서는 괴담을 아직 마주치지 않은 상태이므로 배드엔딩 판정 없음
         if (currentPhase != Phase.HORROR) return;
-        if (state.getAliveCount() == 0) onBadEnding("전원 사망");
+        if (state.getAliveCount() == 0) {
+            onBadEnding("전원 사망");
+            return;
+        }
+        // 스폰된 생존자가 0이지만 미스폰 생존자가 남은 경우 — 게임 교착 방지
+        // (스폰된 플레이어 전원 사망 → 행동 제출자 없어 SPAWN 태그 도달 불가)
+        // → 남은 미스폰 플레이어를 즉시 스토리에 투입
+        boolean spawnedAliveExists = state.getAllPlayers().stream()
+            .anyMatch(p -> !p.isDead && spawnedPlayers.contains(p.uuid));
+        if (!spawnedAliveExists) {
+            state.getAllPlayers().stream()
+                .filter(p -> !p.isDead && !spawnedPlayers.contains(p.uuid))
+                .forEach(p -> handleSpawn(p.name));
+        }
     }
 
     public void joinSession(Player player) {
