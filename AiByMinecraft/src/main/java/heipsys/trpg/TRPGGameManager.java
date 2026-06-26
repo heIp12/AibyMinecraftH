@@ -6,6 +6,7 @@ import com.google.gson.JsonObject;
 import heipsys.AICraft;
 import heipsys.trpg.model.PlayerData;
 import heipsys.trpg.model.TraitData;
+import net.kyori.adventure.bossbar.BossBar;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.event.HoverEvent;
@@ -404,10 +405,12 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
 - 강조가 필요하면 마크다운(*별표*)이 아니라 그냥 자연스러운 문장으로 표현하라.
 - 한 응답은 문단 2~3개 이하. 한 문단은 문장 2~3개 이하.
 - 한 문장은 40자 내외로 짧게 끊어라. 길면 마침표로 나눠라.
-- 줄 바꿈(\\n)을 자주 써서 한 줄이 40~50자를 넘지 않게 한다.
+- 문장 2~3개를 같은 줄에 자연스럽게 이어 쓴다. 문단 사이에만 빈 줄 하나를 넣는다.
+  짧은 어구·문장 하나를 단독 행으로 쓰지 마라. (나쁜 예: "저녁 일곱 시." 혼자 한 줄 ✗)
+  대사([이름])·연출(<효과>)·독백(<-내용->)은 각자 새 줄에 쓰되, 서술끼리는 같은 줄에 이어 쓴다.
 
 ### 가독성 색상 표기 ★ 필수 (시스템이 색으로 구분 처리함)
-세 가지 요소를 줄을 나눠 명확히 구분해 출력한다:
+네 가지 요소를 명확히 구분해 출력한다:
 1) 서술(기본): 그냥 문장으로 쓴다. 별도 기호 없음. (흰색으로 표시됨)
 2) 인물 대사: 화자 이름을 대괄호로 표기하고 같은 줄에 대사를 쓴다.
    형식: [이름] 실제 대사 내용
@@ -421,12 +424,16 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
 3) 연출·시스템 효과(시야 변화·암전·장면 전환·갑작스런 감각): 꺾쇠로 감싼다.
    형식: <효과 내용>
    예) <시야가 암전됨>   <쿵 하는 소리와 함께 정신이 흐려진다>
-- 대괄호 [ ] 는 오직 화자 태그에만, 꺾쇠 < > 는 오직 연출 효과에만 사용한다.
+4) 독백·내면의 소리 (캐릭터가 속으로 떠올리는 생각): 화살괄호로 감싼다.
+   형식: <-내면의 생각->
+   예) <-이 사람, 뭔가 숨기고 있다.->   <-아직은 시간이 있다, 침착해.->
+   독백은 캐릭터 본인만 아는 내면이므로 다른 플레이어의 WITNESS에 포함하지 않는다.
+- 대괄호 [ ] 는 오직 화자 태그에만, 꺾쇠 < > 는 연출 효과에만, 화살괄호 <-  -> 는 독백에만 사용한다.
 - 좋은 예:
-  푸른 하늘과 따사로운 날씨. 당신은 산책을 나섰다.
-  [???] 잠깐만요!
-  누군가 뒤에서 부르는 소리가 들려온다.
-  [김민지] 저 민지에요! 이전에 지갑 두고 가셨죠?
+  차고 셔터를 반쯤 내린 채, 당신은 낡은 작업등 아래 서 있다. 손에는 식어버린 캔커피.
+  형이 밤에 들르겠다고 며칠 전 메시지를 보냈었다.
+  [형] 그날 그 돈, 우리 얘기 좀 하자.
+  <-그 메시지에 아직 답을 하지 않았다.->
   <시야가 암전됨>
   둔탁한 소리와 함께 코피가 흐른다.
 """;
@@ -509,6 +516,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     /** 미등장 배역별 서술 호출 횟수 (비트 진행 추적) */
     private final Map<UUID, Integer> preSpawnCallCounts = new ConcurrentHashMap<>();
     private String gmSystemPrompt = GM_SYSTEM_BASE;
+    private BossBar loadingBar;
 
     public TRPGGameManager(AICraft plugin, AiManager ai) {
         this.plugin     = plugin;
@@ -535,6 +543,30 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     }
 
     public boolean isActive() { return currentPhase != Phase.IDLE; }
+
+    // ──────────────────────────────────────────────────────────────
+    //  로딩 바 (게임 초기화 진행률 표시)
+    // ──────────────────────────────────────────────────────────────
+
+    private void startLoadingBar(String label) {
+        loadingBar = BossBar.bossBar(
+            Component.text("§f[로딩] §7" + label),
+            0.0f, BossBar.Color.YELLOW, BossBar.Overlay.PROGRESS);
+        Bukkit.getOnlinePlayers().forEach(p -> p.showBossBar(loadingBar));
+    }
+
+    private void stepLoadingBar(String label, float progress) {
+        if (loadingBar == null) return;
+        loadingBar.name(Component.text("§f[로딩] §7" + label));
+        loadingBar.progress(Math.max(0.0f, Math.min(1.0f, progress)));
+        Bukkit.getOnlinePlayers().forEach(p -> p.showBossBar(loadingBar));
+    }
+
+    private void endLoadingBar() {
+        if (loadingBar == null) return;
+        Bukkit.getOnlinePlayers().forEach(p -> p.hideBossBar(loadingBar));
+        loadingBar = null;
+    }
 
     // ══════════════════════════════════════════════════════════════
     //  세션 시작 (/trpg start)
@@ -563,9 +595,19 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         broadcast("§7.gdam 파일을 생성 중입니다...");
 
         currentPhase = Phase.CHAR_CREATION;
+        startLoadingBar(".gdam 생성 중...");
 
-        gdamGen.generate(room).thenAccept(gdam -> {
+        gdamGen.generate(room, step -> plugin.getServer().getScheduler().runTask(plugin, () -> {
+            switch (step) {
+                case "컨셉" -> stepLoadingBar("컨셉 생성 완료", 0.20f);
+                case "구조" -> stepLoadingBar("구조 생성 완료", 0.45f);
+                case "배역" -> stepLoadingBar("배역 생성 완료", 0.65f);
+                case "아이템" -> stepLoadingBar("아이템 생성 완료", 0.80f);
+                case "저장" -> stepLoadingBar("시나리오 저장 완료", 0.85f);
+            }
+        })).thenAccept(gdam -> {
             if (gdam.has("error")) {
+                plugin.getServer().getScheduler().runTask(plugin, this::endLoadingBar);
                 broadcast("§c[오류] 괴담 생성 실패: " + gdam.get("error").getAsString());
                 currentPhase = Phase.IDLE;
                 return;
@@ -588,6 +630,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                 .collect(Collectors.toList());
 
             if (survivors.isEmpty()) {
+                plugin.getServer().getScheduler().runTask(plugin, this::endLoadingBar);
                 broadcast("§c서바이벌 모드 플레이어가 없습니다.");
                 currentPhase = Phase.IDLE;
                 return;
@@ -599,12 +642,19 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             // 스테이지 시작 인벤토리 초기화 (이전 아이템 제거)
             survivors.forEach(p -> p.getInventory().clear());
 
+            int total = survivors.size();
+            java.util.concurrent.atomic.AtomicInteger charsDone = new java.util.concurrent.atomic.AtomicInteger(0);
+
             survivors.forEach(p -> {
                 pendingCreation.add(p.getUniqueId());
                 charGen.generate(p) // 시나리오 무관 완전 무작위 캐릭터 생성
                     .thenAccept(pd -> {
                         state.addPlayer(pd);
                         plugin.getServer().getScheduler().runTask(plugin, () -> {
+                            int done = charsDone.incrementAndGet();
+                            stepLoadingBar("캐릭터 생성 중... (" + done + "/" + total + ")",
+                                0.85f + 0.15f * done / total);
+                            if (done >= total) endLoadingBar();
                             if (!p.isOnline()) {
                                 pendingCreation.remove(p.getUniqueId());
                                 checkAllConfirmed();
@@ -616,7 +666,11 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                     .exceptionally(ex -> {
                         plugin.getLogger().warning("캐릭터 생성 실패 (" + p.getName() + "): " + ex.getMessage());
                         pendingCreation.remove(p.getUniqueId());
-                        plugin.getServer().getScheduler().runTask(plugin, this::checkAllConfirmed);
+                        plugin.getServer().getScheduler().runTask(plugin, () -> {
+                            int done = charsDone.incrementAndGet();
+                            if (done >= total) endLoadingBar();
+                            checkAllConfirmed();
+                        });
                         return null;
                     });
             });
@@ -814,9 +868,19 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         gmNpcRoleIds.clear();
         preSpawnCallCounts.clear();
         ai.clearAll();
+        startLoadingBar(".gdam 생성 중...");
 
-        gdamGen.generate(nextRoom).thenAccept(gdam -> {
+        gdamGen.generate(nextRoom, step -> plugin.getServer().getScheduler().runTask(plugin, () -> {
+            switch (step) {
+                case "컨셉" -> stepLoadingBar("컨셉 생성 완료", 0.20f);
+                case "구조" -> stepLoadingBar("구조 생성 완료", 0.45f);
+                case "배역" -> stepLoadingBar("배역 생성 완료", 0.65f);
+                case "아이템" -> stepLoadingBar("아이템 생성 완료", 0.80f);
+                case "저장" -> stepLoadingBar("시나리오 저장 완료", 0.95f);
+            }
+        })).thenAccept(gdam -> {
             if (gdam.has("error")) {
+                plugin.getServer().getScheduler().runTask(plugin, this::endLoadingBar);
                 broadcast("§c[오류] 시나리오 생성 실패: " + gdam.get("error").getAsString());
                 currentPhase = Phase.IDLE;
                 return;
@@ -838,6 +902,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                 .collect(Collectors.toList());
 
             if (participants.isEmpty()) {
+                plugin.getServer().getScheduler().runTask(plugin, this::endLoadingBar);
                 broadcast("§c참여 중인 플레이어가 없습니다.");
                 currentPhase = Phase.IDLE;
                 return;
@@ -851,7 +916,10 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                 if (p != null) scoreMan.update(p, pd, nextRoom);
             });
 
-            plugin.getServer().getScheduler().runTask(plugin, this::assignRolesAndStart);
+            plugin.getServer().getScheduler().runTask(plugin, () -> {
+                endLoadingBar();
+                assignRolesAndStart();
+            });
         });
     }
 

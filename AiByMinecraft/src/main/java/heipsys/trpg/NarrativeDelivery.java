@@ -52,10 +52,12 @@ public class NarrativeDelivery {
     public static String format(String raw) {
         if (raw == null) return "";
         String s = raw;
-        s = s.replace('“', '"').replace('”', '"');
-        s = s.replaceAll("(?m)^\\s*#{1,6}\\s*", "");
-        // 연출·시스템 효과 <...> → 노란색 (괄호 포함)
-        s = s.replaceAll("<([^<>\n]+)>", "§e<$1>" + BASE_COLOR);
+        s = s.replace('”', '”').replace('”', '”');
+        s = s.replaceAll(“(?m)^\\s*#{1,6}\\s*”, “”);
+        // 독백·내면의 소리 <-..-> → 회색 (연출 규칙보다 먼저 적용)
+        s = s.replaceAll(“<-([^<>\n]+)->”, “§7<-$1->” + BASE_COLOR);
+        // 연출·시스템 효과 <...> → 노란색 (독백 <-..-> 와 구분: - 로 시작하지 않는 것만 매칭)
+        s = s.replaceAll(“<(?!-)([^<>\n]+)>”, “§e<$1>” + BASE_COLOR);
         // 화자 태그 [이름] → 주황색 (괄호 포함)
         s = s.replaceAll("\\[([^\\[\\]\n]+)\\]", "§6[$1]" + BASE_COLOR);
         // 마크다운 강조 → 노란 강조 후 기본색 복귀
