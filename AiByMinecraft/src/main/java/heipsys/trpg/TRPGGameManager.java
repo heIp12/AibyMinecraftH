@@ -235,12 +235,14 @@ LUK 10+: 자주, 극적인 행운
 - ★ "이 특성은 ~을 대상으로 한다", "현재 상황에서는 효과가 없다" 같은
   판단 과정을 절대 출력하지 않는다. 이야기 서술만 출력한다.
 
-### 꼭두각시 상태 ★ 서버 자동 적용
-정신력 0 → 서버가 자동으로 꼭두각시 상태 부여 (즉시 게임오버 아님).
-꼭두각시 상태에서 정신력이 다시 0이 되면 → 서버가 자동으로 영구 탈락 처리.
-GM 역할: 서술로 꼭두각시 상태를 묘사하고, 해당 플레이어 행동에 "꼭두각시" 영향을 반영한다.
-각성: 강한 충격/오랜 시간/특수 아이템 → san_change 양수 + status_change:"normal" 출력
-체력 0 → 서버가 자동 탈락 처리 (즉시 게임오버).
+### 기절·꼭두각시 상태 ★ 서버 자동 적용
+체력 0 → 서버가 자동으로 기절([기절]) 상태 부여. 플레이어는 90초간 행동 불가, 이후 HP 1로 회복.
+기절 중 재피해(체력 0) → 영구 탈락.
+정신력 0 → 서버가 자동으로 꼭두각시([꼭두각시]) 상태 부여. 플레이어 행동은 괴담에 의해 조종됨.
+꼭두각시 상태에서 정신력 0 재도달 → 영구 탈락.
+기절+정신력 0 동시 → 영구 탈락.
+GM 역할: 기절은 쓰러진 상태를 서술. 꼭두각시는 행동을 스토리에 맞게 조정 서술.
+각성(꼭두각시): 강한 충격/특수 아이템 → san_change 양수 + status_change:"normal" 출력.
 
 ### 아이템 시스템
 아이템 지급 시 반드시 아래 태그 출력:
@@ -509,6 +511,8 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     private final Map<UUID, String> pendingLinkAllyInput = new ConcurrentHashMap<>(); // UUID → traitId
     /** GM이 개설한 기기 통신 채널: A → {B, C, ...} (양방향 저장) */
     private final Map<UUID, Set<UUID>> commChannels = new ConcurrentHashMap<>();
+    /** 기절 상태 회복 예약 태스크 (UUID → 스케줄러 태스크) */
+    private final Map<UUID, org.bukkit.scheduler.BukkitTask> faintTasks = new ConcurrentHashMap<>();
     /** 캐릭터 생성 전 선제 배역 배정 결과 (UUID → 배역 JsonObject) */
     private final Map<UUID, JsonObject> preAssignedRoleData = new ConcurrentHashMap<>();
     /** 캐릭터 생성 전 선제 배역 배정 결과 (UUID → RoleAssignment) */
@@ -740,6 +744,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         commChannels.clear();
         preAssignedRoleData.clear();
         preAssignments.clear();
+        faintTasks.values().forEach(org.bukkit.scheduler.BukkitTask::cancel); faintTasks.clear();
         gmNpcRoleIds.clear();
         npcZones.clear();
         preSpawnCallCounts.clear();
@@ -803,6 +808,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         pendingLinkAllyInput.clear();
         spawnedPlayers.clear();
         preSpawnCallCounts.clear();
+        faintTasks.values().forEach(org.bukkit.scheduler.BukkitTask::cancel); faintTasks.clear();
         commChannels.clear();
         state.getAllPlayers().forEach(pd -> traitMan.resetStageTraits(pd));
 
@@ -865,6 +871,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         pendingAreaScanInput.clear();
         pendingLinkAllyInput.clear();
         spawnedPlayers.clear();
+        faintTasks.values().forEach(org.bukkit.scheduler.BukkitTask::cancel); faintTasks.clear();
         commChannels.clear();
         state.getAllPlayers().forEach(pd -> traitMan.resetStageTraits(pd));
         preAssignedRoleData.clear();
@@ -1499,6 +1506,12 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             return;
         }
 
+        // 기절 상태: 모든 행동 차단
+        if ("faint".equals(pd.status)) {
+            player.sendMessage("§7(기절 상태입니다. 잠시 후 의식이 돌아옵니다...)");
+            return;
+        }
+
         // 직접 통신 시도: @이름 메시지
         if (message.startsWith("@")) {
             handleDirectComm(player, pd, message);
@@ -1745,7 +1758,16 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                     int before = pd.hp[0];
                     pd.hp[0] = Math.max(0, Math.min(pd.hp[1], pd.hp[0] + delta));
                     notifyVitalChange(pd, "체력", "§c", before, pd.hp[0], pd.hp[1]);
-                    if (horrorActive && pd.hp[0] <= 0) pd.isDead = true;
+                    if (horrorActive && pd.hp[0] <= 0 && !pd.isDead) {
+                        if ("faint".equals(pd.status) || "puppet".equals(pd.status)) {
+                            // 기절 중 재피해 or 꼭두각시 상태에서 HP=0 → 영구 탈락
+                            pd.isDead = true;
+                            Player target = Bukkit.getPlayer(pd.uuid);
+                            if (target != null) target.sendMessage("§4더 이상 버틸 수 없었다...");
+                        } else {
+                            applyFaint(pd);
+                        }
+                    }
                 }
                 if (update.has("san_change")) {
                     int delta = update.get("san_change").getAsInt();
@@ -1754,7 +1776,8 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                     notifyVitalChange(pd, "정신력", "§b", before, pd.san[0], pd.san[1]);
                     if (horrorActive && pd.san[0] <= 0 && !pd.isDead) {
                         Player target = Bukkit.getPlayer(pd.uuid);
-                        if ("puppet".equals(pd.status)) {
+                        if ("puppet".equals(pd.status) || "faint".equals(pd.status)) {
+                            // 꼭두각시 상태에서 SAN=0 재도달 or 기절 중 정신 붕괴 → 영구 탈락
                             pd.isDead = true;
                             if (target != null) target.sendMessage("§4이성이 완전히 무너졌다. 당신은 영원히 돌아올 수 없게 되었습니다...");
                         } else {
@@ -1762,7 +1785,6 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                             if (target != null) target.sendMessage("§5이성이 무너져 내린다... 당신의 의지가 서서히 사라지는 것이 느껴진다.");
                         }
                     }
-                    if (horrorActive && pd.hp[0] <= 0) pd.isDead = true;
                 }
                 if (update.has("timeline_change")) {
                     state.advanceTimeline(update.get("timeline_change").getAsInt());
@@ -3679,13 +3701,40 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         return pd.charName.isEmpty() ? pd.name : pd.charName + "[" + pd.name + "]";
     }
 
+    private void applyFaint(PlayerData pd) {
+        pd.status = "faint";
+        Player p = Bukkit.getPlayer(pd.uuid);
+        if (p != null) p.sendMessage("§c정신을 잃었다... §7(90초 후 의식이 돌아옵니다)");
+        ai.injectGmSystem("[기절] " + commDisplayName(pd) + "이(가) 기절했다. HP가 0이 되어 의식을 잃었다. 90초 후 회복 예정.");
+        org.bukkit.scheduler.BukkitTask task = Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            if (!pd.isDead && "faint".equals(pd.status)) {
+                pd.status = "normal";
+                pd.hp[0]  = 1;
+                faintTasks.remove(pd.uuid);
+                updateAllScoreboards();
+                Player rp = Bukkit.getPlayer(pd.uuid);
+                if (rp != null) rp.sendMessage("§a의식이 돌아왔다. 간신히 일어선다...");
+                ai.injectGmSystem("[회복] " + commDisplayName(pd) + "이(가) 기절에서 깨어났다. HP 1로 회복. 서술에 반영하라.");
+            }
+        }, 90L * 20L);
+        org.bukkit.scheduler.BukkitTask prev = faintTasks.put(pd.uuid, task);
+        if (prev != null) prev.cancel();
+    }
+
     /** GM이 플레이어 위치를 zone(+세부 위치 spot)으로 업데이트. 같은 zone 진입 시 연락처 자동 교환 */
     private void updatePlayerZone(String playerName, String newZone, String spot) {
         PlayerData moved = findAnyByName(playerName);
         if (moved == null || newZone == null || newZone.isBlank()) return;
+        boolean firstAssignment = moved.zone.isEmpty();
         boolean zoneChanged = !newZone.equals(moved.zone);
         moved.zone = newZone;
         moved.visitedZones.add(newZone); // 방문 기록 (직접 그린 약도에 반영)
+        // 첫 배치 시: 인접 구역도 약도에 공개 + 지도 자동 지급
+        if (firstAssignment) {
+            moved.visitedZones.addAll(mapMan.getAdjacentZones(newZone));
+            Player mpp = Bukkit.getPlayer(moved.uuid);
+            if (mpp != null && mpp.isOnline()) mapMan.giveStartMap(mpp);
+        }
         // 위치 이동 시 기록에 구분 마커 추가 (기록 다이얼로그 페이지 분할 지점)
         if (zoneChanged && spawnedPlayers.contains(moved.uuid)) {
             appendNarrativeLog(moved, PlayerData.MOVE_TAG + zoneDisplayName(newZone));

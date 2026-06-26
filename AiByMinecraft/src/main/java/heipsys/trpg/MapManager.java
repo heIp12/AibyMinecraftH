@@ -165,6 +165,9 @@ public class MapManager {
     public boolean hasMultiAreas()  { return areaOrder.size() >= 2; }
     public List<String> areaNames() { return Collections.unmodifiableList(areaOrder); }
     public boolean isMapItem(ItemStack it) { return isOurMap(it); }
+    public Set<String> getAdjacentZones(String zoneId) {
+        return Collections.unmodifiableSet(adj.getOrDefault(zoneId, Set.of()));
+    }
 
     // ──────────────────────────────────────────────────────────────
     //  약도 지급
@@ -176,15 +179,20 @@ public class MapManager {
         if (pd == null)             { p.sendMessage("§c참여 중인 캐릭터가 없습니다."); return; }
         if (zoneOrder.isEmpty())    { p.sendMessage("§7아직 지도로 그릴 장소 정보가 없습니다."); return; }
         if (pd.zone != null && !pd.zone.isBlank()) pd.visitedZones.add(pd.zone);
-        if (!pd.hasFullMap && pd.visitedZones.isEmpty()) {
-            p.sendMessage("§7아직 가 본 곳이 없어 약도를 그릴 수 없습니다."); return;
-        }
         if (hasOurMap(p)) {
             lastSig.remove(p.getUniqueId());
             p.sendMessage("§7약도는 이미 손에 있습니다. §8(우클릭 → 구역 전환)"); return;
         }
         give(p, buildMapItem(defaultView(p.getWorld()), "전체"));
         p.sendMessage("§a약도를 손에 넣었습니다. §7우클릭으로 구역 전환, 현위치는 §c깃발§7로 표시됩니다.");
+    }
+
+    /** 시작 시 자동 지급 — 이미 소지 중이면 재렌더만 트리거. 에러 메시지 없음. */
+    public void giveStartMap(Player p) {
+        if (!hasZones()) return;
+        lastSig.remove(p.getUniqueId());
+        if (hasOurMap(p)) return;
+        give(p, buildMapItem(defaultView(p.getWorld()), "전체"));
     }
 
     /** &lt;MAP_GRANT&gt; — 스토리에서 전체 지도 입수. */

@@ -273,7 +273,9 @@ public class PlayerData {
         String display = charName.isEmpty() ? name : charName;
         if (impersonated) return display + "[괴담이 정체 차용 중]";
         if (isDead) return display + "[사망]";
-        String st = status.equals("puppet") ? "[꼭두각시]" : "";
+        String st = status.equals("puppet") ? "[꼭두각시]"
+                  : status.equals("faint")  ? "[기절]"
+                  : "";
         return display + " HP" + hp[0] + "/" + hp[1] + " SAN" + san[0] + "/" + san[1] + st;
     }
 }
