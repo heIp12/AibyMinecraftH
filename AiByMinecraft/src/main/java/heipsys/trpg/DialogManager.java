@@ -955,6 +955,45 @@ public class DialogManager {
     }
 
     // ──────────────────────────────────────────────────────────────
+    //  엔딩 해설 다이얼로그
+    // ──────────────────────────────────────────────────────────────
+
+    public record EndingSection(String title, List<String> lines) {}
+
+    public void showEndingDialog(Player player, List<EndingSection> sections, int page) {
+        if (sections.isEmpty()) return;
+        final int p = Math.max(0, Math.min(page, sections.size() - 1));
+        EndingSection sec = sections.get(p);
+
+        var bodyB = Component.text();
+        boolean first = true;
+        for (String line : sec.lines()) {
+            if (!first) bodyB.appendNewline();
+            first = false;
+            bodyB.append(Component.text(line, NamedTextColor.WHITE));
+        }
+        Component body = bodyB.build();
+        String title = "엔딩 해설  " + (p + 1) + "/" + sections.size() + "  [" + sec.title() + "]";
+
+        List<ActionButton> nav = new ArrayList<>();
+        if (p > 0) nav.add(ActionButton.create(
+            Component.text("◀ 이전", NamedTextColor.WHITE), null, 70,
+            DialogAction.customClick((v, a) -> showEndingDialog(player, sections, p - 1),
+                ClickCallback.Options.builder().uses(1).build())));
+        if (p < sections.size() - 1) nav.add(ActionButton.create(
+            Component.text("다음 ▶", NamedTextColor.WHITE), null, 70,
+            DialogAction.customClick((v, a) -> showEndingDialog(player, sections, p + 1),
+                ClickCallback.Options.builder().uses(1).build())));
+
+        ActionButton closeBtn = ActionButton.create(Component.text("닫기", TextColor.color(0xAAAAAA)), null, 100, null);
+        Dialog dialog = Dialog.create(b -> b.empty()
+            .base(DialogBase.builder(Component.text(title))
+                .body(List.of(DialogBody.plainMessage(body))).build())
+            .type(DialogType.multiAction(nav, closeBtn, 3)));
+        player.showDialog(dialog);
+    }
+
+    // ──────────────────────────────────────────────────────────────
     //  상태 조회 / 초기화
     // ──────────────────────────────────────────────────────────────
 

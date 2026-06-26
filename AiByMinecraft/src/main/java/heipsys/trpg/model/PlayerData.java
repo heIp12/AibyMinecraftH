@@ -36,6 +36,8 @@ public class PlayerData {
 
     public List<TraitData> traits = new ArrayList<>();
     public int diceRollsRemaining = 3;
+    /** 기절 상태 남은 회복 턴 수 (0 = 기절 아님 또는 이미 회복) */
+    public int faintTurnsRemaining = 0;
 
     public String    status       = "normal";  // normal / puppet / dead
     public String    zone         = "";
@@ -103,11 +105,12 @@ public class PlayerData {
         spr = baseSpr;
         // 배역이 있으면 배역 나이로, 없으면 고유 나이로 복귀 (재도전 시 배역 나이 유지)
         age = (roleAge >= 0) ? roleAge : baseAge;
-        isDead       = false;
-        impersonated = false;
-        status       = "normal";
-        spot         = "";
-        turnState    = TurnState.IDLE;
+        isDead             = false;
+        impersonated       = false;
+        status             = "normal";
+        faintTurnsRemaining = 0;
+        spot               = "";
+        turnState          = TurnState.IDLE;
         // heldItemIds / contactId / knownContacts 는 회차(재도전)에도 유지
         // (마인크래프트 인벤토리와 학습한 연락처는 재도전 시 보존됨)
     }

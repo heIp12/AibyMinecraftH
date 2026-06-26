@@ -512,7 +512,6 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     /** GM이 개설한 기기 통신 채널: A → {B, C, ...} (양방향 저장) */
     private final Map<UUID, Set<UUID>> commChannels = new ConcurrentHashMap<>();
     /** 기절 상태 회복 예약 태스크 (UUID → 스케줄러 태스크) */
-    private final Map<UUID, org.bukkit.scheduler.BukkitTask> faintTasks = new ConcurrentHashMap<>();
     /** 캐릭터 생성 전 선제 배역 배정 결과 (UUID → 배역 JsonObject) */
     private final Map<UUID, JsonObject> preAssignedRoleData = new ConcurrentHashMap<>();
     /** 캐릭터 생성 전 선제 배역 배정 결과 (UUID → RoleAssignment) */
@@ -744,7 +743,6 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         commChannels.clear();
         preAssignedRoleData.clear();
         preAssignments.clear();
-        faintTasks.values().forEach(org.bukkit.scheduler.BukkitTask::cancel); faintTasks.clear();
         gmNpcRoleIds.clear();
         npcZones.clear();
         preSpawnCallCounts.clear();
@@ -808,7 +806,6 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         pendingLinkAllyInput.clear();
         spawnedPlayers.clear();
         preSpawnCallCounts.clear();
-        faintTasks.values().forEach(org.bukkit.scheduler.BukkitTask::cancel); faintTasks.clear();
         commChannels.clear();
         state.getAllPlayers().forEach(pd -> traitMan.resetStageTraits(pd));
 
@@ -871,7 +868,6 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         pendingAreaScanInput.clear();
         pendingLinkAllyInput.clear();
         spawnedPlayers.clear();
-        faintTasks.values().forEach(org.bukkit.scheduler.BukkitTask::cancel); faintTasks.clear();
         commChannels.clear();
         state.getAllPlayers().forEach(pd -> traitMan.resetStageTraits(pd));
         preAssignedRoleData.clear();
@@ -1721,6 +1717,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
 
             // 12. 스테이지 기반 자동 등장 체크 (STATE_UPDATE 외부에서 stage 이미 변경된 경우 보정)
             checkAndAutoSpawn();
+            tickFaintCounters();
 
             // 12c. 타임라인 정체 방지 — 3턴 이상 진행 없으면 자동 1단계 상승
             if (currentPhase == Phase.HORROR && state.tickStagnation()) {
@@ -1758,16 +1755,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                     int before = pd.hp[0];
                     pd.hp[0] = Math.max(0, Math.min(pd.hp[1], pd.hp[0] + delta));
                     notifyVitalChange(pd, "체력", "§c", before, pd.hp[0], pd.hp[1]);
-                    if (horrorActive && pd.hp[0] <= 0 && !pd.isDead) {
-                        if ("faint".equals(pd.status) || "puppet".equals(pd.status)) {
-                            // 기절 중 재피해 or 꼭두각시 상태에서 HP=0 → 영구 탈락
-                            pd.isDead = true;
-                            Player target = Bukkit.getPlayer(pd.uuid);
-                            if (target != null) target.sendMessage("§4더 이상 버틸 수 없었다...");
-                        } else {
-                            applyFaint(pd);
-                        }
-                    }
+                    if (horrorActive && pd.hp[0] <= 0) pd.isDead = true;
                 }
                 if (update.has("san_change")) {
                     int delta = update.get("san_change").getAsInt();
@@ -1794,15 +1782,21 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                     String newStatus = update.get("status_change").getAsString();
                     Player target = Bukkit.getPlayer(pd.uuid);
                     if ("puppet".equals(newStatus) && "puppet".equals(pd.status)) {
-                        // 꼭두각시 재발 → 영구 탈락 (본인에게만 알림, 공포 파트에서만 유효)
+                        // 꼭두각시 재발 → 영구 탈락
                         if (horrorActive) pd.isDead = true;
                         if (target != null) target.sendMessage("§4당신은 완전히 잠식되어 영원히 돌아올 수 없게 되었습니다...");
+                    } else if ("faint".equals(newStatus) && !pd.isDead) {
+                        applyFaint(pd);
+                    } else if ("normal".equals(newStatus)) {
+                        boolean wasFaint  = "faint".equals(pd.status);
+                        boolean wasPuppet = "puppet".equals(pd.status);
+                        pd.status = "normal";
+                        pd.faintTurnsRemaining = 0;
+                        if (wasFaint  && target != null) target.sendMessage("§a의식이 돌아왔다. 간신히 일어선다...");
+                        if (wasPuppet && target != null) target.sendMessage("§a정신이 들었다. 잠시 동안 자신으로 돌아온 것 같다.");
                     } else {
-                        if ("puppet".equals(newStatus) && !"puppet".equals(pd.status)) {
-                            if (target != null) target.sendMessage("§5당신의 의지가 서서히 녹아내리는 것이 느껴진다...");
-                        } else if ("normal".equals(newStatus) && "puppet".equals(pd.status)) {
-                            if (target != null) target.sendMessage("§a정신이 들었다. 잠시 동안 자신으로 돌아온 것 같다.");
-                        }
+                        if ("puppet".equals(newStatus) && target != null)
+                            target.sendMessage("§5당신의 의지가 서서히 녹아내리는 것이 느껴진다...");
                         pd.status = newStatus;
                     }
                 }
@@ -2777,85 +2771,114 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         ai.callGmAiOnce(gmSystemPrompt, prompt)
             .thenAccept(r -> plugin.getServer().getScheduler().runTask(plugin, () -> {
                 String story = ai.stripTags(r);
-                if (!story.isBlank()) {
-                    broadcast("");
-                    broadcast("§e§l📖 뒷이야기");
-                    for (String line : NarrativeDelivery.format(story).split("\n")) {
-                        if (!line.isBlank()) broadcast("§7" + line);
-                    }
-                    gameLogger.logGmOutput("전체(뒷이야기)", story);
+                if (!story.isBlank()) gameLogger.logGmOutput("전체(뒷이야기)", story);
+                List<DialogManager.EndingSection> pages = buildEndingPages(endingLabel, story);
+                broadcast("§e§l📖 엔딩 해설이 공개되었습니다. 다이얼로그를 확인하세요.");
+                for (org.bukkit.entity.Player p : plugin.getServer().getOnlinePlayers()) {
+                    dialogMan.showEndingDialog(p, pages, 0);
                 }
-                broadcast(buildEndingReveal());
                 gameLogger.logEvent("엔딩 해설 공개 (" + endingLabel + ")");
                 if (onDone != null) onDone.run();
             }));
     }
 
-    /** 엔딩 시 .gdam 내부 설계(정체·규칙·타임라인·스케일·해결법 등)를 공개하는 해설 텍스트 */
-    private String buildEndingReveal() {
+    private List<DialogManager.EndingSection> buildEndingPages(String endingLabel, String epilogue) {
+        List<DialogManager.EndingSection> pages = new ArrayList<>();
         JsonObject gdam = state.getGdamData();
-        if (gdam == null) return "";
-        StringBuilder sb = new StringBuilder();
-        sb.append("\n§8§l━━━━━━━━━━━━━━━━━━━━\n");
-        sb.append("§e§l  엔딩 해설  §7씨드 ").append(state.getCurrentSeed()).append("\n");
-        sb.append("§8§l━━━━━━━━━━━━━━━━━━━━");
 
-        JsonObject e = gdam.has("entity") ? gdam.getAsJsonObject("entity") : null;
-        if (e != null) {
-            sb.append("\n\n§c§l🎭 괴담의 정체\n§f").append(getStr(e, "name"));
-            String type = getStr(e, "type");
-            if (!type.isBlank()) sb.append(" §7(").append(type).append(")");
-            if (e.has("ai_context")) {
-                String pers = getStr(e.getAsJsonObject("ai_context"), "personality");
-                if (!pers.isBlank()) sb.append("\n§7").append(pers);
-            }
-            if (e.has("rules") && e.getAsJsonArray("rules").size() > 0) {
-                sb.append("\n\n§b§l📐 핵심 규칙\n");
-                int i = 1;
-                for (JsonElement r : e.getAsJsonArray("rules"))
-                    sb.append("§7").append(i++).append(". §f").append(r.getAsString()).append("\n");
-            }
-            appendSection(sb, "§d§l⚠ 약점", getStr(e, "weakness"));
-            appendSection(sb, "§a§l✅ 정석 해결법", getStr(e, "solution"));
-            appendSection(sb, "§6§l💡 역이용 경로", getStr(e, "exploit_path"));
-            appendSection(sb, "§9§l🚪 생존법", getStr(e, "escape"));
-            if (e.has("hidden_rules") && e.getAsJsonArray("hidden_rules").size() > 0) {
-                sb.append("\n§5§l🧩 숨겨진 규칙\n");
-                for (JsonElement hr : e.getAsJsonArray("hidden_rules"))
-                    sb.append("§7▸ §f").append(hr.getAsString()).append("\n");
+        // 개요
+        List<String> overview = new ArrayList<>();
+        overview.add("결말: " + endingLabel);
+        overview.add("씨드: " + state.getCurrentSeed());
+        if (!epilogue.isBlank()) {
+            overview.add("");
+            overview.add("── 뒷이야기 ──");
+            for (String line : NarrativeDelivery.format(epilogue).split("\n")) {
+                if (!line.isBlank()) overview.add(line);
             }
         }
-        appendSection(sb, "§e§l🗺 스케일", getStr(gdam, "scale"));
+        pages.add(new DialogManager.EndingSection("개요", overview));
 
+        if (gdam == null) return pages;
+
+        JsonObject e = gdam.has("entity") ? gdam.getAsJsonObject("entity") : null;
+
+        // 괴담의 정체
+        if (e != null) {
+            List<String> identity = new ArrayList<>();
+            String name = getStr(e, "name");
+            String type = getStr(e, "type");
+            if (!name.isBlank()) identity.add("이름: " + name + (type.isBlank() ? "" : " (" + type + ")"));
+            if (e.has("ai_context")) {
+                String pers = getStr(e.getAsJsonObject("ai_context"), "personality");
+                if (!pers.isBlank()) { identity.add(""); identity.add(pers); }
+            }
+            String scale = getStr(gdam, "scale");
+            if (!scale.isBlank()) { identity.add(""); identity.add("스케일: " + scale); }
+            if (!identity.isEmpty()) pages.add(new DialogManager.EndingSection("괴담의 정체", identity));
+        }
+
+        // 핵심 규칙 + 숨겨진 규칙
+        if (e != null) {
+            List<String> rules = new ArrayList<>();
+            if (e.has("rules")) {
+                int i = 1;
+                for (JsonElement r : e.getAsJsonArray("rules"))
+                    rules.add(i++ + ". " + r.getAsString());
+            }
+            if (e.has("hidden_rules") && e.getAsJsonArray("hidden_rules").size() > 0) {
+                if (!rules.isEmpty()) rules.add("");
+                rules.add("── 숨겨진 규칙 ──");
+                for (JsonElement hr : e.getAsJsonArray("hidden_rules"))
+                    rules.add("▸ " + hr.getAsString());
+            }
+            if (!rules.isEmpty()) pages.add(new DialogManager.EndingSection("핵심 규칙", rules));
+        }
+
+        // 타임라인
         if (gdam.has("timeline")) {
             JsonObject tl = gdam.getAsJsonObject("timeline");
-            StringBuilder tlsb = new StringBuilder();
+            List<String> timeline = new ArrayList<>();
             for (String k : new String[]{"1", "2", "3", "4"}) {
                 if (tl.has(k) && tl.get(k).isJsonObject()) {
                     String eff = getStr(tl.getAsJsonObject(k), "effect");
-                    if (!eff.isBlank()) tlsb.append("§7[").append(k).append("단계] §f").append(eff).append("\n");
+                    if (!eff.isBlank()) timeline.add("[" + k + "단계] " + eff);
                 }
             }
-            if (tlsb.length() > 0) sb.append("\n§c§l⏱ 타임라인\n").append(tlsb);
+            if (!timeline.isEmpty()) pages.add(new DialogManager.EndingSection("타임라인", timeline));
         }
 
+        // 단서
         if (gdam.has("clues") && gdam.getAsJsonArray("clues").size() > 0) {
             JsonArray clues = gdam.getAsJsonArray("clues");
             int found = state.getDiscoveredClues().size();
-            sb.append("\n§7§l🔍 배치된 단서 §8(발견 ").append(found).append("/").append(clues.size()).append(")\n");
+            List<String> clueList = new ArrayList<>();
+            clueList.add("발견: " + found + "/" + clues.size());
+            clueList.add("");
             for (JsonElement c : clues) {
                 String desc = c.isJsonObject()
                     ? firstNonBlank(getStr(c.getAsJsonObject(), "description"), getStr(c.getAsJsonObject(), "id"))
                     : c.getAsString();
-                if (!desc.isBlank()) sb.append("§8▸ §7").append(desc).append("\n");
+                if (!desc.isBlank()) clueList.add("▸ " + desc);
             }
+            pages.add(new DialogManager.EndingSection("단서", clueList));
         }
-        return sb.toString();
-    }
 
-    private static void appendSection(StringBuilder sb, String header, String body) {
-        if (body == null || body.isBlank()) return;
-        sb.append("\n").append(header).append("\n§f").append(body).append("\n");
+        // 해결법
+        if (e != null) {
+            List<String> sol = new ArrayList<>();
+            String weakness = getStr(e, "weakness");
+            String solution = getStr(e, "solution");
+            String exploit  = getStr(e, "exploit_path");
+            String escape   = getStr(e, "escape");
+            if (!weakness.isBlank()) { sol.add("── 약점 ──"); sol.add(weakness); sol.add(""); }
+            if (!solution.isBlank()) { sol.add("── 정석 해결법 ──"); sol.add(solution); sol.add(""); }
+            if (!exploit.isBlank())  { sol.add("── 역이용 경로 ──"); sol.add(exploit); sol.add(""); }
+            if (!escape.isBlank())   { sol.add("── 생존법 ──"); sol.add(escape); }
+            if (!sol.isEmpty()) pages.add(new DialogManager.EndingSection("해결법", sol));
+        }
+
+        return pages;
     }
 
     private static String firstNonBlank(String a, String b) {
@@ -3703,22 +3726,26 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
 
     private void applyFaint(PlayerData pd) {
         pd.status = "faint";
+        pd.faintTurnsRemaining = 3;
         Player p = Bukkit.getPlayer(pd.uuid);
-        if (p != null) p.sendMessage("§c정신을 잃었다... §7(90초 후 의식이 돌아옵니다)");
-        ai.injectGmSystem("[기절] " + commDisplayName(pd) + "이(가) 기절했다. HP가 0이 되어 의식을 잃었다. 90초 후 회복 예정.");
-        org.bukkit.scheduler.BukkitTask task = Bukkit.getScheduler().runTaskLater(plugin, () -> {
-            if (!pd.isDead && "faint".equals(pd.status)) {
+        if (p != null) p.sendMessage("§c정신을 잃었다... §7(3턴 후 의식이 돌아옵니다)");
+        ai.injectGmSystem("[기절] " + commDisplayName(pd) + "이(가) 기절했다. 3턴 후 회복 예정.");
+    }
+
+    private void tickFaintCounters() {
+        for (PlayerData pd : state.getAllPlayers()) {
+            if (!"faint".equals(pd.status) || pd.isDead) continue;
+            pd.faintTurnsRemaining--;
+            if (pd.faintTurnsRemaining <= 0) {
                 pd.status = "normal";
                 pd.hp[0]  = 1;
-                faintTasks.remove(pd.uuid);
+                pd.faintTurnsRemaining = 0;
                 updateAllScoreboards();
                 Player rp = Bukkit.getPlayer(pd.uuid);
                 if (rp != null) rp.sendMessage("§a의식이 돌아왔다. 간신히 일어선다...");
                 ai.injectGmSystem("[회복] " + commDisplayName(pd) + "이(가) 기절에서 깨어났다. HP 1로 회복. 서술에 반영하라.");
             }
-        }, 90L * 20L);
-        org.bukkit.scheduler.BukkitTask prev = faintTasks.put(pd.uuid, task);
-        if (prev != null) prev.cancel();
+        }
     }
 
     /** GM이 플레이어 위치를 zone(+세부 위치 spot)으로 업데이트. 같은 zone 진입 시 연락처 자동 교환 */
