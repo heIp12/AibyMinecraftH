@@ -62,7 +62,7 @@ public class ChatListener implements Listener {
         trpgManager.getNarrativeDelivery().onSneak(event.getPlayer());
     }
 
-    /** 캐릭터 정보 아이템 우클릭 → 정보 GUI 열기 */
+    /** 캐릭터 정보 / 기록 아이템 우클릭 → 해당 GUI 열기 */
     @EventHandler
     public void onInfoItemUse(PlayerInteractEvent event) {
         TRPGGameManager trpgManager = trpg();
@@ -70,19 +70,26 @@ public class ChatListener implements Listener {
         if (event.getHand() != EquipmentSlot.HAND) return; // 양손 중복 방지
         Action action = event.getAction();
         if (action != Action.RIGHT_CLICK_AIR && action != Action.RIGHT_CLICK_BLOCK) return;
-        if (!trpgManager.isInfoItem(event.getItem())) return;
-
-        event.setCancelled(true);
         Player player = event.getPlayer();
-        Bukkit.getScheduler().runTask(plugin, () -> trpgManager.openCharacterInfo(player));
+        if (trpgManager.isInfoItem(event.getItem())) {
+            event.setCancelled(true);
+            Bukkit.getScheduler().runTask(plugin, () -> trpgManager.openCharacterInfo(player));
+        } else if (trpgManager.isRecordItem(event.getItem())) {
+            event.setCancelled(true);
+            Bukkit.getScheduler().runTask(plugin, () -> trpgManager.openRecords(player));
+        } else if (trpgManager.isMapItem(event.getItem())) {
+            event.setCancelled(true);
+            Bukkit.getScheduler().runTask(plugin, () -> trpgManager.openMapSelector(player));
+        }
     }
 
-    /** 캐릭터 정보 아이템은 버릴 수 없음 */
+    /** 캐릭터 정보 / 기록 아이템은 버릴 수 없음 */
     @EventHandler
     public void onInfoItemDrop(PlayerDropItemEvent event) {
         TRPGGameManager trpgManager = trpg();
         if (trpgManager == null || !trpgManager.isActive()) return;
-        if (trpgManager.isInfoItem(event.getItemDrop().getItemStack())) event.setCancelled(true);
+        var dropped = event.getItemDrop().getItemStack();
+        if (trpgManager.isInfoItem(dropped) || trpgManager.isRecordItem(dropped) || trpgManager.isMapItem(dropped)) event.setCancelled(true);
     }
 
     @EventHandler

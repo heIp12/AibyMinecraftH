@@ -3,9 +3,11 @@ package heipsys.trpg;
 import com.google.gson.*;
 import net.kyori.adventure.text.Component;
 import org.bukkit.Material;
+import org.bukkit.NamespacedKey;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.BookMeta;
+import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.Plugin;
 
 import java.util.*;
@@ -18,12 +20,13 @@ public class ItemManager {
 
     private final Plugin           plugin;
     private final GameStateManager state;
-
-    private final Map<UUID, List<String>> chapterBound = new HashMap<>();
+    /** 챕터 종료 시 회수 대상 아이템에 붙는 보이지 않는 PDC 마커 키 */
+    private final NamespacedKey    boundKey;
 
     public ItemManager(Plugin plugin, GameStateManager state) {
-        this.plugin = plugin;
-        this.state  = state;
+        this.plugin   = plugin;
+        this.state    = state;
+        this.boundKey = new NamespacedKey(plugin, "chapter_bound");
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -70,14 +73,20 @@ public class ItemManager {
         }
 
         final String boundId = id;
+        if (chapBound) tagChapterBound(item);  // 타입(책/쪽지/지도/물건) 무관하게 회수 마커 부착
         plugin.getServer().getScheduler().runTask(plugin, () -> {
             Map<Integer, ItemStack> leftover = player.getInventory().addItem(item);
             leftover.values().forEach(i -> player.getWorld().dropItemNaturally(player.getLocation(), i));
-            if (chapBound) {
-                chapterBound.computeIfAbsent(player.getUniqueId(), k -> new ArrayList<>()).add(boundId);
-            }
             state.collectItem(boundId);
         });
+    }
+
+    /** 챕터 종료 시 회수 대상임을 아이템에 보이지 않게(PDC) 표시 — 모든 아이템 타입 공통 */
+    private void tagChapterBound(ItemStack item) {
+        var meta = item.getItemMeta();
+        if (meta == null) return;
+        meta.getPersistentDataContainer().set(boundKey, PersistentDataType.BYTE, (byte) 1);
+        item.setItemMeta(meta);
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -99,11 +108,12 @@ public class ItemManager {
         List<Component> lore = new ArrayList<>();
         lore.add(Component.text("§7[TRPG 아이템]"));
         if (def.has("description")) {
-            String desc = def.get("description").getAsString();
-            for (int i = 0; i < desc.length(); i += 40) {
-                lore.add(Component.text("§f" + desc.substring(i, Math.min(i + 40, desc.length()))));
-            }
+            appendWrapped(lore, def.get("description").getAsString(), "§f");
         }
+        // 주요 정보(lore_info)를 강조색으로 추가 — 물건형 아이템의 핵심 단서
+        appendLoreInfo(lore, def);
+        // content(본문)가 있으면 lore에도 일부 노출 (쪽지·라벨류)
+        appendContentToLore(lore, def);
         meta.lore(lore);
         item.setItemMeta(meta);
         return item;
@@ -116,13 +126,16 @@ public class ItemManager {
         meta.setTitle(title);
         meta.setAuthor(playerName);
         meta.displayName(Component.text(title));
-        if (def.has("pages")) {
-            List<Component> pageComps = new ArrayList<>();
-            for (JsonElement page : def.getAsJsonArray("pages")) {
-                pageComps.add(Component.text(page.getAsString()));
-            }
-            meta.pages(pageComps);
+        List<Component> pageComps = new ArrayList<>();
+        // content(신규) 우선, 없으면 pages(구) 호환
+        JsonArray body = readBody(def);
+        if (body != null) {
+            for (JsonElement page : body) pageComps.add(Component.text(page.getAsString()));
         }
+        if (pageComps.isEmpty() && def.has("description")) {
+            pageComps.add(Component.text(def.get("description").getAsString()));
+        }
+        if (!pageComps.isEmpty()) meta.pages(pageComps);
         book.setItemMeta(meta);
         return book;
     }
@@ -133,16 +146,55 @@ public class ItemManager {
         if (meta == null) return paper;
         meta.displayName(Component.text("§e" + title));
         List<Component> lore = new ArrayList<>();
-        lore.add(Component.text("§7[TRPG 아이템]"));
-        if (def.has("pages") && def.getAsJsonArray("pages").size() > 0) {
-            String content = def.getAsJsonArray("pages").get(0).getAsString();
-            for (int i = 0; i < content.length(); i += 40) {
-                lore.add(Component.text("§f" + content.substring(i, Math.min(i + 40, content.length()))));
-            }
+        lore.add(Component.text("§7[" + (isMap ? "지도" : "쪽지") + "]"));
+        // 쪽지·지도의 실제 본문을 lore에 줄바꿈해 표시 (마우스 오버로 읽음)
+        JsonArray body = readBody(def);
+        if (body != null) {
+            for (JsonElement el : body) appendWrapped(lore, el.getAsString(), "§f");
+        } else if (def.has("description")) {
+            appendWrapped(lore, def.get("description").getAsString(), "§f");
         }
+        appendLoreInfo(lore, def);
         meta.lore(lore);
         paper.setItemMeta(meta);
         return paper;
+    }
+
+    /** content(신규) 또는 pages(구) 배열을 반환. 둘 다 없으면 null. */
+    private JsonArray readBody(JsonObject def) {
+        if (def.has("content") && def.get("content").isJsonArray()
+            && def.getAsJsonArray("content").size() > 0) {
+            return def.getAsJsonArray("content");
+        }
+        if (def.has("pages") && def.get("pages").isJsonArray()
+            && def.getAsJsonArray("pages").size() > 0) {
+            return def.getAsJsonArray("pages");
+        }
+        return null;
+    }
+
+    /** lore_info(주요 정보)를 강조색으로 lore에 추가 */
+    private void appendLoreInfo(List<Component> lore, JsonObject def) {
+        if (def.has("lore_info") && !def.get("lore_info").getAsString().isBlank()) {
+            lore.add(Component.text("§6▸ 정보"));
+            appendWrapped(lore, def.get("lore_info").getAsString(), "§e");
+        }
+    }
+
+    /** 물건형 아이템에 짧은 content가 있으면 lore에 미리보기로 표시 */
+    private void appendContentToLore(List<Component> lore, JsonObject def) {
+        JsonArray body = readBody(def);
+        if (body == null) return;
+        lore.add(Component.text("§7― 적힌 내용 ―"));
+        for (JsonElement el : body) appendWrapped(lore, el.getAsString(), "§f");
+    }
+
+    /** 긴 문자열을 38자 단위로 줄바꿈해 lore에 추가 */
+    private void appendWrapped(List<Component> lore, String text, String color) {
+        if (text == null || text.isBlank()) return;
+        for (int i = 0; i < text.length(); i += 38) {
+            lore.add(Component.text(color + text.substring(i, Math.min(i + 38, text.length()))));
+        }
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -226,21 +278,21 @@ public class ItemManager {
 
     public void reclaimChapterItems(Collection<Player> players) {
         for (Player p : players) {
-            List<String> boundIds = chapterBound.getOrDefault(p.getUniqueId(), Collections.emptyList());
-            if (boundIds.isEmpty()) continue;
             plugin.getServer().getScheduler().runTask(plugin, () -> {
-                p.getInventory().forEach(item -> {
-                    if (item == null) return;
+                ItemStack[] contents = p.getInventory().getContents();
+                boolean removed = false;
+                for (int i = 0; i < contents.length; i++) {
+                    ItemStack item = contents[i];
+                    if (item == null) continue;
                     var meta = item.getItemMeta();
-                    if (meta == null || !meta.hasLore()) return;
-                    boolean isTrpg = meta.lore().stream()
-                        .map(c -> net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText().serialize(c))
-                        .anyMatch(s -> s.contains("[TRPG 아이템]"));
-                    if (isTrpg) p.getInventory().remove(item);
-                });
-                p.sendMessage("§7[챕터 종료] 챕터 아이템이 회수되었습니다.");
+                    if (meta != null
+                        && meta.getPersistentDataContainer().has(boundKey, PersistentDataType.BYTE)) {
+                        p.getInventory().setItem(i, null);  // 슬롯 단위 정확 제거 (책/쪽지/지도 포함)
+                        removed = true;
+                    }
+                }
+                if (removed) p.sendMessage("§7[챕터 종료] 챕터 아이템이 회수되었습니다.");
             });
         }
-        chapterBound.clear();
     }
 }

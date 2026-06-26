@@ -13,6 +13,8 @@ public class PlayerData {
     public UUID uuid;
     public String name;
     public String roleId = "";
+    public String charName = ""; // 맵배경에서 배정된 캐릭터 이름 (시나리오 한정)
+    public String gender   = ""; // 맵배경에서 배정된 성별: 남성/여성/미상
     public int age = 25;
     public String job = "일반인";
 
@@ -20,6 +22,9 @@ public class PlayerData {
     public int baseAge = 25;
     /** 현재 배역에 맞춰 임시로 부여된 나이 (-1 = 배역 없음) */
     public int roleAge = -1;
+
+    /** 캐릭터 고유(기본) 직업 — 배역이 없을 때 복귀할 값 */
+    public String baseJob = "일반인";
 
     // [current, max]
     public int[] hp  = {6, 6};
@@ -34,6 +39,7 @@ public class PlayerData {
 
     public String    status       = "normal";  // normal / puppet / dead
     public String    zone         = "";
+    public String    spot         = "";        // 세부 위치 (zone 내 위치, 예: 계단앞)
     public boolean   isDead       = false;
     /** 괴담이 이 배역을 제거하고 정체를 차지한 상태 (다른 플레이어 기만) */
     public boolean   impersonated = false;
@@ -44,6 +50,20 @@ public class PlayerData {
 
     /** 현재 소지 중인 아이템 ID 집합 (통신 기기 추적 등에 사용) */
     public Set<String> heldItemIds = new HashSet<>();
+
+    /** GM 서술 + 행동 기록 (Log GUI용) */
+    public List<String> narrativeLog = new ArrayList<>();
+    /** AI가 추출한 정보 조각 목록 (Info GUI용) */
+    public List<String> infoItems    = new ArrayList<>();
+    public static final int NARRATIVE_LOG_MAX = 80;
+    public static final int INFO_ITEMS_MAX    = 120;
+    /** narrativeLog 안의 '위치 이동' 구분 마커 접두사 (페이지 분할 지점). PUA 문자라 trim/일반 텍스트와 충돌 없음 */
+    public static final String MOVE_TAG = "##MOVE##";
+
+    /** 방문해 본 zone 집합 (직접 그린 약도에 드러나는 범위) */
+    public Set<String> visitedZones = new HashSet<>();
+    /** 전체 지도를 입수했는지 (true면 약도에 모든 zone 표시) */
+    public boolean hasFullMap = false;
 
     /** 무작위 비공개 연락처 번호 (예: "1186"). 1회차에서 타인은 모름 */
     public String contactId = "";
@@ -71,6 +91,7 @@ public class PlayerData {
         baseLuk = luk;
         baseSpr = spr;
         baseAge = age;
+        baseJob = job;
     }
 
     public void resetToBase() {
@@ -85,6 +106,7 @@ public class PlayerData {
         isDead       = false;
         impersonated = false;
         status       = "normal";
+        spot         = "";
         turnState    = TurnState.IDLE;
         // heldItemIds / contactId / knownContacts 는 회차(재도전)에도 유지
         // (마인크래프트 인벤토리와 학습한 연락처는 재도전 시 보존됨)
@@ -94,13 +116,21 @@ public class PlayerData {
     public void clearRoleData() {
         traits.removeIf(t -> t.roleSpecific);
         roleAge = -1;          // 배역 해제 → 다음 배역 전까지 고유 나이로
+        job = baseJob;         // 배역 해제 → 고유 직업으로 복귀
         resetToBase();
         roleId       = "";
         zone         = "";
+        spot         = "";
+        charName     = "";
+        gender       = "";
         roleAssigned = false;
         heldItemIds.clear();
         knownContacts.clear();
         contactId    = "";
+        narrativeLog.clear();
+        infoItems.clear();
+        visitedZones.clear();
+        hasFullMap = false;
     }
 
     public String getStatsSummary() {
@@ -150,6 +180,55 @@ public class PlayerData {
         else if (value <= 3) weaknesses.add(low);
     }
 
+    /** 개별 능력치 값을 자연어로 짧게 설명한다 (hover 표시용). key: "hp","san","str","cha","luk","spr" */
+    public static String statDesc(String key, int v) {
+        return switch (key) {
+            case "hp"  -> v <= 1 ? "조금만 다쳐도 위험한 상태입니다."
+                        : v <= 2 ? "매우 허약한 편입니다."
+                        : v <= 3 ? "평균보다 약한 체력입니다."
+                        : v <= 5 ? "평범한 성인의 체력입니다."
+                        : v <= 6 ? "체력 관리가 잘 된 사람 수준입니다."
+                        : v <= 7 ? "운동선수급 지구력입니다."
+                        :          "인간 한계에 근접한 강인함입니다.";
+            case "san" -> v <= 1 ? "정신이 이미 한계에 다다른 상태입니다."
+                        : v <= 2 ? "극히 불안정한 정신 상태입니다."
+                        : v <= 3 ? "충격에 예민한 편입니다."
+                        : v <= 5 ? "평범한 수준의 정신력입니다."
+                        : v <= 6 ? "웬만한 공포엔 흔들리지 않습니다."
+                        : v <= 7 ? "강인한 정신력을 갖고 있습니다."
+                        :          "거의 무너지지 않는 정신입니다.";
+            case "str" -> v <= 1 ? "거의 힘이 없습니다."
+                        : v <= 2 ? "아이 수준의 완력입니다."
+                        : v <= 3 ? "초등학생 정도의 힘입니다."
+                        : v <= 5 ? "평범한 성인의 힘입니다."
+                        : v <= 6 ? "꾸준히 운동하는 사람 수준입니다."
+                        : v <= 7 ? "탄탄한 근육질 체형입니다."
+                        :          "인간 한계에 가까운 근력입니다.";
+            case "cha" -> v <= 1 ? "대화 자체가 부담스러운 편입니다."
+                        : v <= 2 ? "낯가림이 심하고 인상이 강하지 않습니다."
+                        : v <= 3 ? "다소 어색하게 소통하는 편입니다."
+                        : v <= 5 ? "무리 없이 어울릴 수 있습니다."
+                        : v <= 6 ? "사람들이 자연스레 호감을 느낍니다."
+                        : v <= 7 ? "설득력과 카리스마가 있습니다."
+                        :          "존재감 자체가 특별합니다.";
+            case "luk" -> v <= 1 ? "무언가 잘 풀리는 법이 없습니다."
+                        : v <= 2 ? "운이 잘 따르지 않는 편입니다."
+                        : v <= 3 ? "평균보다 조금 불운한 편입니다."
+                        : v <= 5 ? "가끔 운이 도와주는 편입니다."
+                        : v <= 6 ? "중요한 순간에 운이 따릅니다."
+                        : v <= 7 ? "위기를 행운으로 넘길 때가 많습니다."
+                        :          "타고난 행운아입니다.";
+            case "spr" -> v <= 1 ? "육감이나 직감이 거의 없습니다."
+                        : v <= 2 ? "낌새를 눈치채는 게 느린 편입니다."
+                        : v <= 3 ? "직감이 무딘 편입니다."
+                        : v <= 5 ? "가끔 이상한 낌새를 감지합니다."
+                        : v <= 6 ? "직감이 예민한 편입니다."
+                        : v <= 7 ? "강렬한 예감을 종종 느낍니다."
+                        :          "예지에 가까운 직감을 갖고 있습니다.";
+            default    -> "";
+        };
+    }
+
     public String getTraitsDisplay() {
         if (traits.isEmpty()) return "없음";
         StringBuilder sb = new StringBuilder();
@@ -162,7 +241,7 @@ public class PlayerData {
     /** GM AI turn input용 플레이어 상세 줄 (행동자에게만 사용) */
     public String toTurnLine() {
         StringBuilder sb = new StringBuilder();
-        sb.append(name)
+        sb.append(charName.isEmpty() ? name : charName)
           .append("[").append(roleId.isEmpty() ? "?" : roleId)
           .append(" ").append(age).append("세 ").append(job).append("]")
           .append(" HP").append(hp[0]).append("/").append(hp[1])
@@ -173,7 +252,12 @@ public class PlayerData {
           .append(" SPR").append(spr);
         if (!traits.isEmpty()) {
             sb.append(" 특성:");
-            traits.forEach(t -> sb.append(t.name).append("(").append(t.grade).append(")"));
+            traits.forEach(t -> {
+                sb.append(t.name).append("(").append(t.grade);
+                if (t.active) sb.append(",능동");
+                if (t.effect != null && !t.effect.isBlank()) sb.append(",효과:").append(t.effect);
+                sb.append(")");
+            });
         }
         if (!heldItemIds.isEmpty()) {
             sb.append(" 소지품:").append(String.join(",", heldItemIds));

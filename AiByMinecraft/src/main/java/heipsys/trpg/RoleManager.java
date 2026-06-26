@@ -15,7 +15,9 @@ public class RoleManager {
     private final GameStateManager state;
 
     /** 배역 배정 결과 */
-    public record RoleAssignment(String roleId, String roleName, String zone, List<String> initialInfo, boolean knowledgeAdvantage) {}
+    public record RoleAssignment(String roleId, String roleName, String zone,
+                                  List<String> initialInfo, boolean knowledgeAdvantage,
+                                  String charName, String gender) {}
 
     /** 도중 참여 가능 최대 타임라인 단계 */
     private static final int MID_JOIN_TIMELINE_LIMIT = 3;
@@ -60,8 +62,10 @@ public class RoleManager {
 
             PlayerData pd = state.getPlayer(p);
             if (pd != null) {
-                pd.roleId = asgn.roleId();
-                pd.zone   = asgn.zone();
+                pd.roleId   = asgn.roleId();
+                pd.zone     = asgn.zone();
+                pd.charName = asgn.charName();
+                pd.gender   = asgn.gender();
                 pd.roleAssigned = true;
             }
         }
@@ -88,7 +92,13 @@ public class RoleManager {
             if (!assignedRoles.contains(rid)) {
                 RoleAssignment asgn = toAssignment(r);
                 PlayerData pd = state.getPlayer(player);
-                if (pd != null) { pd.roleId = asgn.roleId(); pd.zone = asgn.zone(); pd.roleAssigned = true; }
+                if (pd != null) {
+                    pd.roleId   = asgn.roleId();
+                    pd.zone     = asgn.zone();
+                    pd.charName = asgn.charName();
+                    pd.gender   = asgn.gender();
+                    pd.roleAssigned = true;
+                }
                 return Optional.of(asgn);
             }
         }
@@ -96,7 +106,7 @@ public class RoleManager {
         // 없으면 주변인 배역 생성
         RoleAssignment peripheral = new RoleAssignment(
             "role_peripheral", "주변인", "zone_A",
-            List.of("현재 상황에 갑자기 휘말린 인물이다."), false
+            List.of("현재 상황에 갑자기 휘말린 인물이다."), false, "", ""
         );
         PlayerData pd = state.getPlayer(player);
         if (pd != null) { pd.roleId = "role_peripheral"; pd.zone = "zone_A"; pd.roleAssigned = true; }
@@ -142,11 +152,13 @@ public class RoleManager {
         String roleName = r.has("name")      ? r.get("name").getAsString()      : "알 수 없는 배역";
         String zone     = r.has("zone")      ? r.get("zone").getAsString()      : "zone_A";
         boolean adv     = r.has("knowledge_advantage") && r.get("knowledge_advantage").getAsBoolean();
+        String charName = r.has("char_name") ? r.get("char_name").getAsString() : "";
+        String gender   = r.has("gender")    ? r.get("gender").getAsString()    : "";
 
         List<String> info = new ArrayList<>();
         if (r.has("initial_info")) {
             r.getAsJsonArray("initial_info").forEach(i -> info.add(i.getAsString()));
         }
-        return new RoleAssignment(roleId, roleName, zone, info, adv);
+        return new RoleAssignment(roleId, roleName, zone, info, adv, charName, gender);
     }
 }

@@ -257,6 +257,10 @@ public class AiManager {
             .replaceAll("<IMPERSONATE [^/]*/?>", "")
             .replaceAll("<IMPERSONATE_END [^/]*/?>", "")
             .replaceAll("<ZONE_UPDATE [^/]*/?>", "")
+            .replaceAll("<MAP_GRANT [^/]*/?>", "")
+            .replaceAll("<TIME_SKIP [^/]*/?>", "")
+            .replaceAll("<EVENT_BLOCK [^/]*/?>", "")
+            .replaceAll("<TIME_VISIBLE [^/]*/?>", "")
             .trim();
     }
 
@@ -281,6 +285,15 @@ public class AiManager {
             from = close + "</WITNESS>".length();
         }
         return result;
+    }
+
+    /** <MAP_GRANT player="name"/> 태그들에서 플레이어명 목록 추출 (지도 전체 입수) */
+    public java.util.List<String> parseMapGrantTags(String response) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        java.util.regex.Matcher m = java.util.regex.Pattern
+            .compile("<MAP_GRANT\\s+player=\"([^\"]+)\"\\s*/?>").matcher(response);
+        while (m.find()) out.add(m.group(1));
+        return out;
     }
 
     /** <SPAWN player="name"/> 태그에서 플레이어명 추출 */
@@ -312,6 +325,11 @@ public class AiManager {
 
     private String send(String model, String system, List<JsonObject> messages, int maxTokens)
             throws Exception {
+        return send(model, system, messages, maxTokens, 0);
+    }
+
+    private String send(String model, String system, List<JsonObject> messages, int maxTokens, int attempt)
+            throws Exception {
 
         String body;
         HttpRequest.Builder builder = HttpRequest.newBuilder()
@@ -322,13 +340,24 @@ public class AiManager {
             case "claude" -> {
                 builder.uri(URI.create("https://api.anthropic.com/v1/messages"))
                        .header("x-api-key", apiKey)
-                       .header("anthropic-version", "2023-06-01");
+                       .header("anthropic-version", "2023-06-01")
+                       .header("anthropic-beta", "prompt-caching-2024-07-31");
 
                 JsonObject req = new JsonObject();
                 req.addProperty("model", model);
                 req.addProperty("max_tokens", maxTokens);
-                if (system != null && !system.isBlank())
-                    req.addProperty("system", system);
+                if (system != null && !system.isBlank()) {
+                    // system을 cache_control 포함 배열로 전송 → 캐시 히트 시 입력 토큰 ~90% 절약
+                    JsonObject sysBlock = new JsonObject();
+                    sysBlock.addProperty("type", "text");
+                    sysBlock.addProperty("text", system);
+                    JsonObject cacheCtrl = new JsonObject();
+                    cacheCtrl.addProperty("type", "ephemeral");
+                    sysBlock.add("cache_control", cacheCtrl);
+                    JsonArray sysArr = new JsonArray();
+                    sysArr.add(sysBlock);
+                    req.add("system", sysArr);
+                }
 
                 JsonArray arr = new JsonArray();
                 for (JsonObject m : messages) {
@@ -376,8 +405,9 @@ public class AiManager {
         HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
 
         if (response.statusCode() == 429) {
-            Thread.sleep(7000);
-            return send(model, system, messages, maxTokens);
+            if (attempt >= 3) throw new RuntimeException("API 429: 재시도 횟수 초과 (3회)");
+            Thread.sleep(7000L * (attempt + 1));
+            return send(model, system, messages, maxTokens, attempt + 1);
         }
         if (response.statusCode() != 200) {
             throw new RuntimeException("API " + response.statusCode() + ": " + response.body().substring(0, Math.min(200, response.body().length())));
@@ -428,8 +458,7 @@ public class AiManager {
         final String PREFIX = "<COMM ";
         int idx = response.indexOf(PREFIX);
         if (idx == -1) return null;
-        // <COMM_CLOSE 와 혼동 방지: 바로 다음 문자가 '_' 이면 스킵
-        if (idx + PREFIX.length() <= response.length() && response.charAt(idx + PREFIX.length() - 1) == '_') return null;
+        // PREFIX = "<COMM " 이므로 "<COMM_CLOSE"와 이미 구별됨 (공백 vs 밑줄)
         int end = response.indexOf("/>", idx);
         if (end == -1) return null;
         String attrs = response.substring(idx + PREFIX.length(), end).trim();
@@ -488,7 +517,7 @@ public class AiManager {
         return parseSelfClosingAttr(response, "<IMPERSONATE_END ", "player");
     }
 
-    /** <ZONE_UPDATE player="X" zone="Y"/> 모두 파싱 → [{player, zone}, ...] */
+    /** <ZONE_UPDATE player="X" zone="Y" spot="Z"/> 모두 파싱 → [{player, zone, spot}, ...] (spot 없으면 "") */
     public java.util.List<String[]> parseZoneUpdateTags(String response) {
         java.util.List<String[]> out = new ArrayList<>();
         final String PREFIX = "<ZONE_UPDATE ";
@@ -501,7 +530,41 @@ public class AiManager {
             String attrs  = response.substring(idx + PREFIX.length(), end);
             String player = extractAttr(attrs, "player").orElse(null);
             String zone   = extractAttr(attrs, "zone").orElse(null);
-            if (player != null && zone != null) out.add(new String[]{player, zone});
+            String spot   = extractAttr(attrs, "spot").orElse("");
+            if (player != null && zone != null) out.add(new String[]{player, zone, spot});
+            from = end + 2;
+        }
+        return out;
+    }
+
+    /** <TIME_SKIP minutes="N"/> 모두 합산 → 총 건너뛸 분 (없으면 0) */
+    public int parseTimeSkip(String response) {
+        int total = 0;
+        for (String v : parseSelfClosingAttr(response, "<TIME_SKIP ", "minutes")) {
+            try { total += Integer.parseInt(v.trim()); } catch (NumberFormatException ignore) {}
+        }
+        return total;
+    }
+
+    /** <EVENT_BLOCK id="X"/> 모두 파싱 → [id, ...] */
+    public java.util.List<String> parseEventBlockTags(String response) {
+        return parseSelfClosingAttr(response, "<EVENT_BLOCK ", "id");
+    }
+
+    /** <TIME_VISIBLE player="X" known="true/false"/> 모두 파싱 → [{player, known}, ...] */
+    public java.util.List<String[]> parseTimeVisibleTags(String response) {
+        java.util.List<String[]> out = new ArrayList<>();
+        final String PREFIX = "<TIME_VISIBLE ";
+        int from = 0;
+        while (true) {
+            int idx = response.indexOf(PREFIX, from);
+            if (idx == -1) break;
+            int end = response.indexOf("/>", idx);
+            if (end == -1) break;
+            String attrs  = response.substring(idx + PREFIX.length(), end);
+            String player = extractAttr(attrs, "player").orElse(null);
+            String known  = extractAttr(attrs, "known").orElse("true");
+            if (player != null) out.add(new String[]{player, known});
             from = end + 2;
         }
         return out;
