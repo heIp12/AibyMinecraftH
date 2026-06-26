@@ -522,6 +522,8 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     private final Map<UUID, String> pendingLinkAllyInput = new ConcurrentHashMap<>(); // UUID → traitId
     /** GM이 개설한 기기 통신 채널: A → {B, C, ...} (양방향 저장) */
     private final Map<UUID, Set<UUID>> commChannels = new ConcurrentHashMap<>();
+    /** 탈락 안내 메시지 도배 방지: UUID → 마지막 안내 시각(millis) */
+    private final Map<UUID, Long> lastDeadNotice = new ConcurrentHashMap<>();
     /** 기절 상태 회복 예약 태스크 (UUID → 스케줄러 태스크) */
     /** 캐릭터 생성 전 선제 배역 배정 결과 (UUID → 배역 JsonObject) */
     private final Map<UUID, JsonObject> preAssignedRoleData = new ConcurrentHashMap<>();
@@ -758,6 +760,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         pendingLinkAllyInput.clear();
         spawnedPlayers.clear();
         commChannels.clear();
+        lastDeadNotice.clear();
         preAssignedRoleData.clear();
         preAssignments.clear();
         gmNpcRoleIds.clear();
@@ -1464,7 +1467,8 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         }
 
         PlayerData pd = state.getPlayer(player);
-        if (pd == null || pd.isDead) return;
+        if (pd == null) return;
+        if (pd.isDead) { sendDeadStatus(player, pd); return; }
         if (pd.puppetRecoveryTurns > 0) {
             player.sendMessage("§5완전히 조종되어 스스로 행동할 수 없습니다...");
             player.sendMessage("§8(관전 중 | 상태: §5꼭두각시 완전 잠식 §8| 회복까지 약 §f" + pd.puppetRecoveryTurns + "§8턴)");
@@ -1779,7 +1783,19 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                     int before = pd.hp[0];
                     pd.hp[0] = Math.max(0, Math.min(pd.hp[1], pd.hp[0] + delta));
                     notifyVitalChange(pd, "체력", "§c", before, pd.hp[0], pd.hp[1]);
-                    if (horrorActive && pd.hp[0] <= 0) pd.isDead = true;
+                    // 체력 0 → 즉사 대신 기절(설계 문서 기준). 1HP 캐릭터가 한 대 맞고 즉시 탈락하는 것을 막는다.
+                    if (horrorActive && pd.hp[0] <= 0 && !pd.isDead) {
+                        Player target = Bukkit.getPlayer(pd.uuid);
+                        if ("faint".equals(pd.status)) {
+                            // 기절 상태에서 재차 치명상 → 완전 탈락 (단, 침묵하지 않고 안내)
+                            pd.isDead = true;
+                            if (target != null) target.sendMessage("§4쓰러진 채 다시 일격을 맞았다. 끝내 일어나지 못합니다...");
+                            ai.injectGmSystem("[탈락] " + commDisplayName(pd) + "이(가) 기절 중 치명상으로 쓰러졌다. 서술에 반영하라.");
+                        } else if (!"puppet".equals(pd.status)) {
+                            // 일반 상태 → 기절(회복 가능). 꼭두각시는 이미 조종 중이라 기절시키지 않음.
+                            applyFaint(pd);
+                        }
+                    }
                 }
                 if (update.has("san_change")) {
                     int delta = update.get("san_change").getAsInt();
@@ -3779,6 +3795,28 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         Player p = Bukkit.getPlayer(pd.uuid);
         if (p != null) p.sendMessage("§c정신을 잃었다... §7(3턴 후 의식이 돌아옵니다)");
         ai.injectGmSystem("[기절] " + commDisplayName(pd) + "이(가) 기절했다. 3턴 후 회복 예정.");
+    }
+
+    /**
+     * 탈락(사망)한 플레이어가 행동을 시도하면 침묵하지 않고 자신의 상태를 텍스트로 안내한다.
+     * (이전에는 isDead면 아무 응답 없이 무시 → "채팅이 막히고 아무것도 안 나온다"는 문제 발생)
+     */
+    private void sendDeadStatus(Player player, PlayerData pd) {
+        long now = System.currentTimeMillis();
+        Long last = lastDeadNotice.get(player.getUniqueId());
+        if (last != null && now - last < 4000) return; // 4초 도배 방지
+        lastDeadNotice.put(player.getUniqueId(), now);
+
+        player.sendMessage("§4§l[탈락] §c당신은 더 이상 스스로 행동할 수 없습니다.");
+        if (pd.impersonated) {
+            player.sendMessage("§5당신의 모습을 한 무언가가 여전히 이야기 속을 움직이고 있습니다...");
+        } else {
+            player.sendMessage("§7육체는 괴담에 사로잡혔습니다. 남은 일행의 결말을 지켜보세요.");
+        }
+        player.sendMessage("§8(관전 중 | 캐릭터 §f" + commDisplayName(pd)
+            + " §8| 위치 §f" + zoneDisplayName(pd.zone) + "§8)");
+        long alive = state.getAllPlayers().stream().filter(p -> !p.isDead).count();
+        player.sendMessage("§8(남은 일행 §f" + alive + "§8명 — 이들이 사건을 끝내면 함께 결과를 봅니다.)");
     }
 
     private void tickFaintCounters() {
