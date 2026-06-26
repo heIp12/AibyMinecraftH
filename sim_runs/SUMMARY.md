@@ -115,3 +115,11 @@
 - 신규: 프롬프트 P41(hidden_info 용도 미인지 반스포일러 강화 med)뿐. ★나머지 전부 코드: CODE-8(E_END 평가 미호출=#13 핵심 미구현 high)·CODE-4 격상(weaknessBonus 사문화 high)·CODE-7(생존 하한 순서 med).
 - 파일: iter13/seed.json(7 zones·E_END)·log.txt(636줄·캐릭터/특성/E_END 71회)·replay.json(stage2·3인 A/B/B). 플러그인 .java 미변경.
 - ※프롬프트 수렴 신호: 이번 iter 신규 프롬프트 패치 1건(med). 잔여 약점이 코드 도메인으로 이동. 다음 1회(통화/연락 축) 후 수렴 판단 + 종합 검증 예정.
+
+## iter14 — 2026-06-26 21:47 — #PW2K-9FVN (스테이지3·시티·★통화/연락 심층)
+- 괴담: "사신의 교환원" — 도시 전화망 교환 시스템에 깃들어 모든 통화를 도청·납치하고 목소리를 잘못 배달해 자아 잠식. 물리적으로 떨어진 3인이 전화로만 협력.
+- ★검증 5/5 PASS: (a)#19 번호 모르고 시도 허용 / (b)#20 everKnownContacts 리트라이 복구(onRetry line 886) / (c)NPC 통화 deliverDirectMessage 자율응답(우호형 엔지니어 동기) / (d)통화 핵심정보 전달 평가 반영(강하늘 S 하이라이트, P36) / (e)도청 P14(5회 위협+1)·P18(핵심정보 3회 모방)·P31(다음 1턴 차단 3회) 전부 발동. 서버실 B구역 대면은 도청 면제 확인.
+- 흐름: 1차 전화로 계획 전달 중 도청·목소리 흉내(IMPERSONATE)로 엇갈려 실패 → 리트라이(everKnownContacts 복구·핵심정보 대면 전환) → 진단번호 #0417로 교환원 마비 + 동시 차단·배선절단으로 Rack-07 파괴 collapse 충족 → 해결판정 진출. 강등 없음(P1).
+- 신규: 프롬프트 P42(번호 미보유 연락 실패·우회 허용 med)·P43(comms_monitored 대면 면제 자동명시 med). ★새 high 프롬프트 없음. +코드: CODE-9(원격 NPC 통화 불가 high·통화한정)·CODE-10(NPC 연락처 everKnown 미저장 med).
+- 파일: iter14/seed.json(7 zones·comms_monitored)·log.txt(483줄·통화 80회)·replay.json(stage3·3인). 플러그인 .java 미변경.
+- ※★프롬프트 수렴 확정: iter13·iter14 2회 연속 신규 high 프롬프트 패치 없음(med·코드 위주). 다음: 종합 검증(SYNTHESIS) 패스 — P1~P43 모순·중복·누락 점검 + CODE-1~10 정리.

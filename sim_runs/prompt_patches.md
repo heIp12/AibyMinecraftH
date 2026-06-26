@@ -276,3 +276,20 @@
 - ★CODE-8 (iter13 ISSUE-13-4 = #13, ★high): E_END 강제 실패 종료 경로에서 onClearEnding 미호출 → runScenarioEvaluation·실패 등급 기록이 코드상 실행되지 않음(엔딩 해설만 존재). 별도 onFailureEnding() 경로 신설 → 실패 회차도 per-player 평가(D~E)·후일담·(필요시)페널티가 정식 산출되게 연결 필요. ※#13의 핵심 미구현부 — .java 작업.
 - ★CODE-4 격상 (iter13 ISSUE-13-2, ★high로 상향): computeWeaknessBonus 기준선 ≤9가 너무 좁아 hpSanBase=10(HP3+SAN7 등) 약체도 bonus=0. '시작파워 낮을수록 강한 보상' 취지 사문화. 기준선 (10-hpSanBase)/2 → (14-hpSanBase)/2 로 확장 권고. ※.java 수정(보상 핵심 취지 직결).
 - CODE-7 (iter13 ISSUE-13-1, med): applyAiAdjustment가 ensureSurvivalFloor 이후 적용돼 AI 음수 조정이 생존 하한을 다시 무너뜨림(SAN<1 재발 가능). applyAiAdjustment 후 ensureSurvivalFloor 재호출 또는 순서 변경. ※.java 수정.
+
+## iter14 (#PW2K-9FVN, 스테이지3 시티·★통화/연락 심층·사신의 교환원) 발견 패치
+(★검증 5/5 PASS: (a)#19 번호 모르고 시도 허용 (b)#20 everKnownContacts 리트라이 복구(line 886) (c)NPC 통화 deliverDirectMessage 자율응답 (d)통화 핵심정보 전달 평가 반영(P36) (e)도청 P14/P18/P31 전부 발동. 신규 프롬프트는 P42·P43 med 2건 — ★새 high 프롬프트 없음. iter13·14 연속 무(無)high → 프롬프트 수렴)
+
+### P42. 번호 미보유 연락 시도의 '실패·우회' 결과 허용 (med, 범용)
+- [대상] buildGmPrompt 연락/통화 판정 (#19 보강)
+- [문제] #19로 '번호 몰라도 시도 가능'이 항상 '연결 성공'으로만 처리될 위험. 물리·기술적으로 닿을 수 없는 상대도 무조건 연결되면 긴장·개연성 저하.
+- [수정안] buildGmPrompt 한 줄: "번호 미보유 연락 시도는 시도 자체를 허용하되, 상황상 연결 불가 사유(인프라 마비·신호 차단·대상 도달 불가)가 있으면 '연결 실패 + 우회 단서(다른 경로 안내)'로 처리할 수 있다. 시도를 막지도, 성공을 강제하지도 마라."
+
+### P43. comms_monitored에서 같은 zone 대면 대화는 도청 비대상 자동 명시 (med, 범용, P14/P29 보강)
+- [대상] buildGmPrompt comms_monitored 주입부
+- [문제] comms_monitored=true 주입 시 '기기 통신'만 도청 대상인데 명시가 없으면 GM이 같은 zone 대면 대화까지 도청으로 오인 → 안전 채널(대면) 전술이 막힘.
+- [수정안] comms_monitored 주입에 한 줄 자동 추가: "도청 대상은 '기기를 통한 통신'(통화·무전·메시지)뿐이다. 같은 zone 안에서의 직접 대면 대화는 도청되지 않는 안전 채널이다(플레이어가 핵심정보를 대면으로 돌리는 전술을 인정하라)." (seed.notes 없이도 시스템이 대면 면제 보장)
+
+### (기록만 — 코드 도메인 추가, 사용자 보고 대상. iter14, 통화 기믹)
+- ★CODE-9 (iter14 WEAK-3, ★high·통화 한정): handleNpcDirectComm이 '같은 zone' 조건을 강제 → phone_usable=true라도 다른 구역·외부 기관 NPC에게 '전화'로 연락 불가(구조적). 원격 NPC 통화 경로(플레이어 기기 보유 + NPC phone_number 보유 시 zone 무관 통화 허용)를 추가하고, 대면 제한은 '대면 행위'에만 적용하도록 분리 필요. ※.java 수정(통화 기믹 핵심).
+- CODE-10 (iter14 WEAK-4, med·통화 한정): everKnownContacts가 PlayerData(UUID) 기반이라 NPC 연락처는 저장 못 함 → CONTACT_REVEAL로 알게 된 NPC 번호가 리트라이 시 소실(2회차에 NPC 재연락하려면 #19 재시도 강제). everKnownNpcContacts(Set<String> NPC id) 신설 + onRetry 복구 필요. ※.java 수정.
