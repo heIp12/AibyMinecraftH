@@ -339,3 +339,18 @@
 ### (기록만 — 코드 도메인. iter17)
 - ★CODE-12 (iter17 WEAK-IT17-2, ★high·INSTANT_CLEAR·스테이지3+ 한정): activateInstantClear가 room≥3에서 'resolved=false→게이트 통과 불가'를 발동 전에 경고하지 않아, 플레이어가 의도치 않게 진출 봉쇄당함. activateInstantClear/TraitButtonManager에 room≥3 시 확인 dialog("이 특성은 생존 처리(해결 아님) — 스테이지N에서 다음 진출 불가. 발동?") 삽입 필요. ※.java 수정(UX·게이트 직결).
 - ※ CODE-3 재확인(iter17): 최시엘 S 사망 시 isDead 필터로 보상 없음 재현(신규 아님, 기존 high 미해결).
+
+## iter18 (#AF7K-3QNB, 친숙 3지역 캡스톤·폰티아낙) — ★신규 약점 0건 (캡스톤 회귀 안정, 전체 충돌 0)
+
+## iter19 (#KZ9V-7QNT, 스테이지7 코즈믹 회귀·잔고자) 발견 패치
+(★코즈믹 극단 회귀: 해결경로 공략가능(P24/P32/P12)·분량기간 자연(P47)·대규모 zones/분기/NPC(P15/P46)·전체 P1~P48 상호 충돌 0건 PASS. 신규는 코즈믹/대규모 한정 2건 — 범용 충돌 아님)
+
+### P49. 가변 턴 시나리오의 시간 기반 무효/마감 조건은 실경과 분으로 계산 (med, 한정·다중앵커 타이밍)
+- [대상] GDAM_SYSTEM_PROMPT collapse_condition·main_events 타이밍 / GM 시간 판정 (P3 연계)
+- [문제] P3 가변 턴(평온 15분/급박 3분)과 '30분 후 무효' 같은 시간 기반 마감 조건이 공존하면, GM이 분↔턴 환산에서 혼동(급박 구간 3분턴×10=30분인데 턴 수로 착각).
+- [수정안] "시간 기반 무효·마감·동기화 조건(예: 'N분 후')은 항상 '실제 경과 분'으로만 계산하고 턴 수로 환산하지 마라. collapse_condition·main_events에 그런 조건이 있으면 분 단위로 명시(턴 병기 가능하나 분이 기준)." (다중 앵커 동시 타이밍 시나리오에 특히)
+
+### P50. 대규모 다구역에서 위치 의존 bypass의 이동 비용 명시 (low, 한정·대규모 zones 이동의존)
+- [대상] constraints.gated_zones 스키마 / buildGmPrompt gated 주입 (P13/P19 연계)
+- [문제] gated_zones bypass(우회) 수단이 '특정 구역 현장에서만' 가능한데 급박 1턴=수 분 구간이면, 그 구역까지 이동이 판정 기회를 소모해 '이동=실패'로 귀결(불공정).
+- [수정안] gated_zones 항목에 선택 필드 `remote_bypass`(true=원격 우회 가능/false=현장 필수). buildGmPrompt 주입: "remote_bypass=false면 우회는 해당 구역 현장에서만 가능 — 이동 비용(턴·시간)을 사전에 명시하고, 급박 구간엔 이동만으로 기회를 전부 소모시키지 마라(이동+행동 1턴 허용 등 완충)."
