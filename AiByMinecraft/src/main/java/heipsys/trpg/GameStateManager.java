@@ -179,6 +179,44 @@ public class GameStateManager {
         return false;
     }
 
+    /**
+     * 절대 시계 진행도에 맞춰 추상 단계(1~4)를 최소 보장한다.
+     * 시간이 흐르면 단계도 함께 흐르게 하여 '타임라인이 안 흐르는' 문제를 해소한다.
+     * (0~25% → 1, 25~50% → 2, 50~75% → 3, 75~100% → 4)
+     */
+    private void syncStageToClock() {
+        if (clockStart < 0 || clockEnd <= clockStart) return;
+        double progress = (double) (clockMinutes - clockStart) / (clockEnd - clockStart);
+        if (progress < 0) progress = 0;
+        if (progress > 1) progress = 1;
+        int target = 1 + (int) Math.floor(progress * 4.0);
+        if (target > 4) target = 4;
+        if (target > timelineStage) {
+            timelineStage     = target;
+            turnsSinceAdvance = 0;
+        }
+    }
+
+    /**
+     * 워치독(무행동 가속)용: 플레이어 행동 없이 시간만 진행시킨다.
+     * 시계가 있으면 1턴분 가속 + 도래 사건 발화, 없으면 추상 단계만 1 올린다.
+     * @return 단계 또는 발화 사건이 변했으면 true
+     */
+    public boolean idleAdvance() {
+        if (dailyPhase) return false;
+        int beforeStage = timelineStage;
+        int beforeFired = justFiredEvents.size();
+        if (clockMinutes >= 0) {
+            clockMinutes += minutesPerTurn;
+            fireDueEvents();
+            syncStageToClock();
+        } else {
+            timelineStage = Math.min(4, timelineStage + 1);
+            if (timelineStage != beforeStage) turnsSinceAdvance = 0;
+        }
+        return timelineStage != beforeStage || justFiredEvents.size() != beforeFired;
+    }
+
     public int getTurnsSinceAdvance() { return turnsSinceAdvance; }
 
     /** 일상 턴 소비. 0이 되면 괴담 파트 시작. true 반환 시 파트 전환 */

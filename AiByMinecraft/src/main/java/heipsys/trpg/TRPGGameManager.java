@@ -235,11 +235,12 @@ LUK 10+: 자주, 극적인 행운
 - ★ "이 특성은 ~을 대상으로 한다", "현재 상황에서는 효과가 없다" 같은
   판단 과정을 절대 출력하지 않는다. 이야기 서술만 출력한다.
 
-### 꼭두각시 상태
-정신력 0 + 괴담 직접 피해 → 꼭두각시 (즉시 게임오버 아님)
-서술로만 구현: 플레이어 행동/말을 보고 GM이 적절히 조정.
-각성: 강한 충격/오랜 시간/특수 아이템
-재발 시: 영구 게임오버
+### 꼭두각시 상태 ★ 서버 자동 적용
+정신력 0 → 서버가 자동으로 꼭두각시 상태 부여 (즉시 게임오버 아님).
+꼭두각시 상태에서 정신력이 다시 0이 되면 → 서버가 자동으로 영구 탈락 처리.
+GM 역할: 서술로 꼭두각시 상태를 묘사하고, 해당 플레이어 행동에 "꼭두각시" 영향을 반영한다.
+각성: 강한 충격/오랜 시간/특수 아이템 → san_change 양수 + status_change:"normal" 출력
+체력 0 → 서버가 자동 탈락 처리 (즉시 게임오버).
 
 ### 아이템 시스템
 아이템 지급 시 반드시 아래 태그 출력:
@@ -1751,7 +1752,17 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                     int before = pd.san[0];
                     pd.san[0] = Math.max(0, Math.min(pd.san[1], pd.san[0] + delta));
                     notifyVitalChange(pd, "정신력", "§b", before, pd.san[0], pd.san[1]);
-                    if (horrorActive && pd.san[0] <= 0 && pd.hp[0] <= 0) pd.isDead = true;
+                    if (horrorActive && pd.san[0] <= 0 && !pd.isDead) {
+                        Player target = Bukkit.getPlayer(pd.uuid);
+                        if ("puppet".equals(pd.status)) {
+                            pd.isDead = true;
+                            if (target != null) target.sendMessage("§4이성이 완전히 무너졌다. 당신은 영원히 돌아올 수 없게 되었습니다...");
+                        } else {
+                            pd.status = "puppet";
+                            if (target != null) target.sendMessage("§5이성이 무너져 내린다... 당신의 의지가 서서히 사라지는 것이 느껴진다.");
+                        }
+                    }
+                    if (horrorActive && pd.hp[0] <= 0) pd.isDead = true;
                 }
                 if (update.has("timeline_change")) {
                     state.advanceTimeline(update.get("timeline_change").getAsInt());
@@ -3355,7 +3366,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                     || senderPd.knownContacts.contains(targetPd.uuid)
                     || targetPd.knownContacts.contains(senderPd.uuid);
                 if (!contactKnown) {
-                    sender.sendMessage("§c" + targetPd.name + "의 연락처를 모릅니다. 직접 만나거나 번호를 알아내야 합니다.");
+                    sender.sendMessage("§c" + commDisplayName(targetPd) + "의 연락처를 모릅니다. 직접 만나거나 번호를 알아내야 합니다.");
                     return;
                 }
                 viaDevice = true;
@@ -3390,7 +3401,8 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
 
     private PlayerData findByName(String name) {
         return state.getAllPlayers().stream()
-            .filter(pd -> pd.name.equalsIgnoreCase(name) && (!pd.isDead || pd.impersonated))
+            .filter(pd -> (pd.name.equalsIgnoreCase(name) || pd.charName.equalsIgnoreCase(name))
+                && (!pd.isDead || pd.impersonated))
             .findFirst().orElse(null);
     }
 
@@ -3494,7 +3506,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     private void notifyContactLearned(PlayerData learner, PlayerData subject) {
         Player p = Bukkit.getPlayer(learner.uuid);
         if (p != null && p.isOnline())
-            p.sendMessage("§a[연락처 입수] §f" + subject.name + " (" + subject.contactId + ")");
+            p.sendMessage("§a[연락처 입수] §f" + commDisplayName(subject) + " (" + subject.contactId + ")");
     }
 
     private void announceKnownContacts(Player p, PlayerData pd) {
@@ -3505,7 +3517,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             PlayerData other = state.getPlayer(u);
             if (other == null) continue;
             if (!first) sb.append("§7, §f");
-            sb.append(other.name).append("(").append(other.contactId).append(")");
+            sb.append(commDisplayName(other)).append("(").append(other.contactId).append(")");
             first = false;
         }
         if (!first) p.sendMessage(sb.toString());
@@ -3613,13 +3625,13 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                                           String message, boolean viaDevice) {
         String tag = viaDevice ? "§a[통신]" : "§a[근처]";
         // 발신자는 평소처럼 보낸다 (상대가 괴담인 줄 모름)
-        sender.sendMessage(tag + " §f" + senderPd.name + " → " + victim.name + ": " + message);
-        sender.sendMessage("§7[" + victim.name + "의 응답을 기다리는 중...]");
-        state.log("comm", senderPd.name, "→ " + victim.name + "(?): " + message);
+        sender.sendMessage(tag + " §f" + commDisplayName(senderPd) + " → " + commDisplayName(victim) + ": " + message);
+        sender.sendMessage("§7[" + commDisplayName(victim) + "의 응답을 기다리는 중...]");
+        state.log("comm", commDisplayName(senderPd), "→ " + commDisplayName(victim) + "(?): " + message);
 
         String sys   = buildImpersonationPrompt(victim);
-        String input = senderPd.name + "이(가) '" + victim.name + "'에게 말한다: \"" + message + "\"\n"
-            + "'" + victim.name + "'인 척 자연스럽게 1-2문장으로 응답하라. 특성·능력 사용 금지. "
+        String input = commDisplayName(senderPd) + "이(가) '" + commDisplayName(victim) + "'에게 말한다: \"" + message + "\"\n"
+            + "'" + commDisplayName(victim) + "'인 척 자연스럽게 1-2문장으로 응답하라. 특성·능력 사용 금지. "
             + "미세한 위화감만 남기고 정체는 직접 밝히지 마라.";
 
         ai.callEntityAi(sys, input).thenAccept(resp ->
@@ -3627,7 +3639,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                 if (resp == null || resp.startsWith("§c")) return;
                 String txt = resp.trim();
                 if (txt.isEmpty() || !sender.isOnline()) return;
-                sender.sendMessage(tag + " §f" + victim.name + ": " + txt);
+                sender.sendMessage(tag + " §f" + commDisplayName(victim) + ": " + txt);
             }));
     }
 
@@ -3652,15 +3664,19 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     private void deliverDirectMessage(Player sender, PlayerData senderPd, PlayerData targetPd,
                                       String message, boolean viaDevice) {
         String tag     = viaDevice ? "§a[통신]" : "§a[근처]";
-        String outLine = tag + " §f" + senderPd.name + " → " + targetPd.name + ": " + message;
-        String inLine  = tag + " §f" + senderPd.name + ": " + message;
+        String outLine = tag + " §f" + commDisplayName(senderPd) + " → " + commDisplayName(targetPd) + ": " + message;
+        String inLine  = tag + " §f" + commDisplayName(senderPd) + ": " + message;
 
         sender.sendMessage(outLine);
         Player target = Bukkit.getPlayer(targetPd.uuid);
         if (target != null && target.isOnline()) target.sendMessage(inLine);
 
-        state.log("comm", senderPd.name,
-            "→ " + targetPd.name + " (" + (viaDevice ? "장치" : "근거리") + "): " + message);
+        state.log("comm", commDisplayName(senderPd),
+            "→ " + commDisplayName(targetPd) + " (" + (viaDevice ? "장치" : "근거리") + "): " + message);
+    }
+
+    private static String commDisplayName(PlayerData pd) {
+        return pd.charName.isEmpty() ? pd.name : pd.charName + "[" + pd.name + "]";
     }
 
     /** GM이 플레이어 위치를 zone(+세부 위치 spot)으로 업데이트. 같은 zone 진입 시 연락처 자동 교환 */
