@@ -322,11 +322,13 @@ public class GameStateManager {
     public boolean isClockActive()   { return clockMinutes >= 0; }
     public boolean isEndEventFired() { return endEventFired; }
 
-    /** 현재 인게임 시각 "HH:MM". 시계 없으면 "". */
+    /** 현재 인게임 시각. 같은 날이면 "HH:MM", 여러 날에 걸치면 "N일차 HH:MM". 시계 없으면 "". */
     public String getCurrentTimeString() {
         if (clockMinutes < 0) return "";
         int m = ((clockMinutes % 1440) + 1440) % 1440;
-        return String.format("%02d:%02d", m / 60, m % 60);
+        String hhmm = String.format("%02d:%02d", m / 60, m % 60);
+        int dayIdx = (clockStart >= 0 ? clockMinutes - clockStart : clockMinutes) / 1440;
+        return dayIdx > 0 ? (dayIdx + 1) + "일차 " + hhmm : hhmm;
     }
 
     /** 이 플레이어가 현재 시간을 알 수 있는가 (override > 방 기본값) */
