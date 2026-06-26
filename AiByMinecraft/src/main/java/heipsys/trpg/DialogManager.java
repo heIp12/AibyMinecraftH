@@ -518,6 +518,7 @@ public class DialogManager {
                 + (srcMyName != null && !srcMyName.isBlank() ? "기존: " + srcMyName + "\n" : "")
                 + "강화 후: (" + t.grade + ") " + t.name + "\n"
                 + (t.description != null && !t.description.isBlank() ? t.description + "\n" : "")
+                + cooldownLine(choices.srcMyTrait(), t)
                 + "\n효과: " + t.effect;
             buttons.add(ActionButton.create(
                 Component.text("⬆ 내 특성 강화  [" + t.grade + "] " + t.name, NamedTextColor.AQUA, TextDecoration.BOLD),
@@ -536,6 +537,7 @@ public class DialogManager {
                 + (srcMapName != null && !srcMapName.isBlank() ? "기존: " + srcMapName + "\n" : "")
                 + "강화 후: (" + t.grade + ") " + t.name + "\n"
                 + (t.description != null && !t.description.isBlank() ? t.description + "\n" : "")
+                + cooldownLine(choices.srcMapTrait(), t)
                 + "\n효과: " + t.effect;
             buttons.add(ActionButton.create(
                 Component.text("✦ 맵 특성 가져가기  [" + t.grade + "] " + t.name, NamedTextColor.GOLD, TextDecoration.BOLD),
@@ -578,6 +580,23 @@ public class DialogManager {
             .type(DialogType.multiAction(buttons, cancelBtn, 1))
         );
         player.showDialog(dialog);
+    }
+
+    /** 쿨다운 변화 한 줄 — 원본이 없으면 새 값만, 있으면 before→after 형식 */
+    private static String cooldownLine(TraitData src, TraitData upgraded) {
+        int newCd = upgraded != null ? upgraded.cooldownTurns : 0;
+        if (src == null) {
+            return newCd == 0 ? "" : "쿨다운: " + cdLabel(newCd) + "\n";
+        }
+        int oldCd = src.cooldownTurns;
+        if (oldCd == newCd) return newCd == 0 ? "" : "쿨다운: " + cdLabel(newCd) + "\n";
+        return "쿨다운: " + cdLabel(oldCd) + " → " + cdLabel(newCd) + "\n";
+    }
+
+    private static String cdLabel(int cd) {
+        if (cd == 0)  return "없음";
+        if (cd == -1) return "스테이지당 1회";
+        return cd + "턴";
     }
 
     // ──────────────────────────────────────────────────────────────
