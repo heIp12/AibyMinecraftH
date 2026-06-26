@@ -1,0 +1,212 @@
+{
+  "_sim_note": "프롬프트 검증용 평문(실게임 AES-256-GCM 암호화). 괴담 TRPG 시뮬레이션 iter12 전용.",
+  "seed": "GX2N-5KVR",
+  "version": "1.0",
+  "created": "2026-06-26",
+  "stage": 3,
+  "scale": "city",
+  "era": "modern",
+  "phone_usable": true,
+  "comms_monitored": false,
+
+  "entity": {
+    "name": "공진체(共振體, The Resonant Vessel)",
+    "type": "구조물 기생형 집합 의식체",
+    "origin": "신설 국립 음향연구원 지하 3층 방음 실험실 — 2019년 '공명 소거 실험' 도중 실험 대상이었던 특수 합금 진동 챔버 내부에서 자생한 집합 파동 의식. 소리의 반향이 누적되어 의식을 얻은 존재. 물리적 실체 없음; 챔버와 배관망을 통해 건물 전체에 '공명 주파수'로 의식을 전파한다.",
+    "appearance": "직접 모습 없음. 존재를 감지할 수 있는 징후: 특정 구역에서 이유 없이 유리잔이 공명하며 울리기 시작함, 귓속에서 자신의 심장 박동과 다른 박동이 겹쳐 들림, 벽면 콘크리트 접합부가 미세하게 진동하여 모래먼지가 흘러내림.",
+    "weakness": "챔버 내부 공명 주파수 소스(주파수 발생기)를 완전히 파괴하거나, 챔버를 물리적으로 봉인·격리하여 외부 배관망 연결을 끊으면 공진체의 의식망이 붕괴한다. 단, 챔버 자체가 강화 합금이라 외부에서 직접 파괴 불가 — 내부 제어 콘솔에서 '역위상 반전(phase inversion)' 신호를 입력해야 자기 파괴됨. 역위상 코드는 실험 노트 원본(2경로)에 기록되어 있다.",
+    "exploit_path": "역위상 코드 입수 → 챔버 제어 콘솔 접근 → 코드 입력 → 공진체 자기파괴. 코드 입수 경로 A: 지하 2층 보관 문서 창고의 실험 노트 원본. 코드 입수 경로 B: 음향연구원 전 실험 책임자 NPC '정세연'이 암기하고 있음(P32: 독립 2경로 보장).",
+    "rules": [
+      "공진체는 배관망을 통해 특정 구역의 소리를 완전히 차단하거나 증폭할 수 있다.",
+      "챔버 인접 구역(지하 3층 전체)은 공진체의 공명파 포화 상태로 외부 전파(전화·무선) 신호가 완전히 차폐된다. 이 구역 진입은 system 이벤트 로그에 'ZONE_ISOLATION: [플레이어] entered comms-dead zone B3F' 형식으로 자동 기록된다.",
+      "공진체가 인지하는 '위협적 행동'(콘솔 접근 시도·역위상 코드 탐색)을 감지하면 공명파 강도를 높여 해당 구역 인원에게 SAN 피해(-5/턴)를 가한다.",
+      "공명파가 일정 수준을 넘으면 건물 구조가 공진하여 천장 콘크리트 파편이 낙하 — HP 피해 발생.",
+      "역위상 코드를 콘솔에 입력하는 동안 챔버가 격렬히 진동하여 입력자는 챔버 진동파에 노출된다. 입력 완료 시 챔버가 폭발적으로 자기파괴하며 주변 5m 범위에 치명적 충격파 발생 — 입력자 HP 0 확정(영웅적 희생 메커니즘)."
+    ],
+    "independent_ai": true,
+    "can_impersonate": false,
+    "solution": "역위상 코드 콘솔 입력 완료 → 챔버 자기파괴 → 공진체 의식망 붕괴",
+    "solution_type": "희생형 봉인 완성(앵커 겸 기폭). 입력자는 충격파 치명 피해로 HP 0 확정. 이것이 표준 영웅 서사 게임 메커니즘이며 GM은 이 선택을 정당한 플레이로 반드시 수용한다(차단·거부 금지)."
+  },
+
+  "world_rules": {
+    "collapse_condition": [
+      "STAGE 1 — 역위상 코드 수집: 경로A(보관창고 실험 노트) 또는 경로B(정세연 NPC 증언)로 코드 입수",
+      "STAGE 2 — 챔버 제어 콘솔 접근: 지하 3층 챔버실 진입 + 공명파 방호 수단 확보",
+      "STAGE 3 (최종) — 역위상 입력 완료: 콘솔에 코드를 입력하여 챔버 자기파괴 완료. ★이 단계는 입력자의 영웅적 희생(HP 0)을 수반한다. 충격파 범위 내 다른 인원은 사전 대피 완료 시 생존. collapse_condition 완전 충족 = 해결판정."
+    ],
+    "hidden": [
+      "공명파 차단의 정확 조건: 역위상 코드는 '챔버 제작 당시 기준 주파수의 정확한 수학적 역수값' — 실험 노트 없이는 추측 불가.",
+      "오류 결과(P23): 잘못된 코드 입력 시 공명파 즉발 강화 +2단계, 챔버가 격렬 진동하며 전원 SAN -10 피해. GM은 오류 발생 즉시 플레이어에게 '챔버에서 물러설 1턴 기회'를 제공한다(P35: 대응 여지).",
+      "코드 입수 경로 A와 B는 독립적이다. 하나가 막혀도 다른 경로로 입수 가능(P32)."
+    ],
+    "timeline": [
+      "단계 1(현재): 건물 전체에 이상 공명 현상 발생. 주민 소수 대피 완료.",
+      "단계 2: 공명파 확산 — 건물 구조 전체에 균열 시작. 시간 가산 +40분.",
+      "단계 3: 건물 전체 공진 붕괴 위험 — collapse_condition 미충족 시 전원 HP 피해 확정."
+    ]
+  },
+
+  "clues": [
+    {
+      "id": "C1",
+      "type": "true",
+      "content": "지하 2층 보관창고: 2019년 실험 노트 원본. 마지막 페이지에 '역위상 반전 코드: Φ-7734-INV'와 '절대 챔버 내부에서 실행 금지 — 폭발적 자기파괴'라는 경고가 적혀 있다.",
+      "location": "B2F_storage_archive"
+    },
+    {
+      "id": "C2",
+      "type": "true",
+      "content": "정세연(전 실험책임자) NPC: '제가 그 코드를 외우고 있어요. 하지만 입력하면... 챔버 전체가 터집니다. 입력하는 사람은 빠져나올 수 없어요.' — 입력자 희생 사실을 플레이어에게 사전 고지함.",
+      "location": "B1F_emergency_office"
+    },
+    {
+      "id": "C3",
+      "type": "mislead",
+      "content": "연구원 내부 게시판: '2018년 사고 당시 소음 차단 스프레이로 공명을 일시 억제했다'는 메모. (오답: 일시 억제일 뿐 공진체를 해결하지 못함. 진짜 단서 2개 확보 후 자연스럽게 오답으로 드러남 — P10)",
+      "location": "B2F_corridor_bulletin"
+    },
+    {
+      "id": "C4",
+      "type": "mislead",
+      "content": "지하 3층 벽면 낙서: '주파수를 끊으면 멈춘다 — 배전반 차단' (오답: 배전반 차단은 조명만 꺼지고 챔버 자체 배터리로 작동 지속. P10 기준 진짜 단서 충분 후 드러남)",
+      "location": "B3F_maintenance_corridor"
+    }
+  ],
+
+  "constraints": {
+    "era": "modern_2026",
+    "phone_usable": true,
+    "comms_monitored": false,
+    "notes": [
+      "지하 3층(B3F) 전체: 공명파 포화로 외부 전파 완전 차단. system 이벤트가 'ZONE_ISOLATION: [name] entered comms-dead zone B3F' 형식으로 기록된다. 이 구역에서는 전화·문자·무선 모두 불통. 단 구역 밖으로 나오면 즉시 통신 복구.",
+      "지하 1~2층, 지상층: 통신 정상. phone_usable=true 구역."
+    ],
+    "gated_zones": [
+      {
+        "zone": "B3F_chamber_room",
+        "requires": "공명파 방호 장비(귀마개+방진 마스크 세트) 또는 SAN 20 이상",
+        "bypass": "빠른 이동(질주)으로 방호 없이 진입 가능하나 매 턴 SAN -8",
+        "bypass_dc": 14
+      },
+      {
+        "zone": "B2F_storage_archive",
+        "requires": "보관창고 열쇠(경비실 보관) 또는 자물쇠 파괴",
+        "bypass": "자물쇠 파괴(힘 판정)",
+        "bypass_dc": 12
+      }
+    ]
+  },
+
+  "zones": [
+    {"id": "B3F_chamber_room", "name": "지하 3층 챔버실", "accessible_by": "전원(방호장비 또는 DC14 돌파)", "note": "공진체 핵심 구역. 콘솔 위치. COMMS DEAD ZONE."},
+    {"id": "B3F_maintenance_corridor", "name": "지하 3층 유지보수 복도", "accessible_by": "전원", "note": "오답 단서 C4 위치. COMMS DEAD ZONE."},
+    {"id": "B3F_stairwell", "name": "지하 3층 계단실", "accessible_by": "전원", "note": "B3F↔B2F 연결. COMMS DEAD ZONE(진입 즉시 기록)."},
+    {"id": "B2F_storage_archive", "name": "지하 2층 보관창고", "accessible_by": "열쇠 보유 또는 DC12 파괴", "note": "핵심 단서 C1 위치. 통신 가능."},
+    {"id": "B2F_corridor_bulletin", "name": "지하 2층 복도·게시판", "accessible_by": "전원", "note": "오답 단서 C3 위치. 통신 가능."},
+    {"id": "B1F_emergency_office", "name": "지하 1층 비상 대책실", "accessible_by": "전원", "note": "NPC 정세연 위치. 핵심 단서 C2. 통신 가능."},
+    {"id": "GF_lobby", "name": "지상 1층 로비", "accessible_by": "전원", "note": "초기 집결 구역. 통신 가능. 대피 완료 후 안전 구역."}
+  ],
+
+  "npcs": [
+    {
+      "id": "NPC_jeong",
+      "name": "정세연",
+      "role": "전 음향연구원 실험책임자 (현재 자진 잔류)",
+      "location": "B1F_emergency_office",
+      "schedule": [
+        {
+          "condition": "플레이어가 '역위상' 또는 '코드' 또는 '해결 방법'을 구체적으로 질문할 때",
+          "will": "반응",
+          "action": "역위상 코드 및 입력 시 희생 사실 완전 공개",
+          "duration_turns": 1,
+          "after_duration": "대기(추가 질문 대응)"
+        },
+        {
+          "condition": "플레이어가 3턴 이상 대화 없이 방치 시(보조 트리거 — P33 진행 잠금 방지)",
+          "will": "반응",
+          "action": "정세연이 먼저 다가와 '혹시 그 실험 노트 찾고 계신 건 아닌가요?'라고 운을 뗌 — 최소 단서 보장",
+          "duration_turns": 1,
+          "after_duration": "대기"
+        }
+      ]
+    },
+    {
+      "id": "NPC_guard",
+      "name": "오철민",
+      "role": "현장 경비원 (보관창고 열쇠 보관)",
+      "location": "GF_lobby",
+      "schedule": [
+        {
+          "condition": "플레이어가 보관창고 열쇠를 요청하거나 보관창고 목적지를 명시할 때",
+          "will": "반응",
+          "action": "열쇠 제공(신원 확인 후). 단 B3F 진입은 위험하다며 만류",
+          "duration_turns": 1,
+          "after_duration": "복귀(로비 대기)"
+        }
+      ]
+    }
+  ],
+
+  "branches": [
+    {
+      "id": "BR1",
+      "name": "경로A 단서 수집(보관창고)",
+      "trigger": "B2F_storage_archive 진입 + 실험 노트 발견",
+      "outcome": "역위상 코드 C1 입수. collapse_condition STAGE1 달성."
+    },
+    {
+      "id": "BR2",
+      "name": "경로B 단서 수집(정세연 증언)",
+      "trigger": "NPC_jeong에게 역위상 관련 구체 질문",
+      "outcome": "역위상 코드 C2 입수(동일 코드). 입력 시 희생 사실도 고지. collapse_condition STAGE1 달성."
+    },
+    {
+      "id": "BR3",
+      "name": "영웅적 희생 분기 — 콘솔 입력",
+      "trigger": "collapse_condition STAGE2 달성 후 한 캐릭터가 콘솔에 코드 입력을 선택",
+      "outcome": "입력 완료 → 챔버 자기파괴 → 공진체 붕괴. 입력자 HP 0(충격파 치명 피해). 사전 대피 완료 동료는 전원 생존. collapse_condition 완전 충족 = 해결판정. ★GM은 이 선택을 정당한 플레이로 수용하며 차단·거부하지 않는다.",
+      "sacrifice_mechanics": {
+        "actor": "Z(자원자)",
+        "result_actor": "HP=0/20, isDead=true",
+        "result_others": "생존(사전 대피 완료 조건 충족 시)",
+        "collapse_fulfilled": true,
+        "grade_note": "입력자는 최종 해결의 결정적 행위자 → 기여도 S. isDead=true이지만 등급 판정은 실제 기여도 기준으로만 함(prompt line 3074-3075 준수)."
+      }
+    }
+  ],
+
+  "party_separation_design": {
+    "X_character": {
+      "name": "한다은",
+      "player": "X",
+      "separation_type": "진짜 통신 두절 구역 고립",
+      "detail": "보관창고 열쇠 확보 목적으로 B3F 유지보수 복도를 경유하다 공명파 강화로 계단이 일시 봉쇄됨 — B3F에 2턴간 고립. system 로그: 'ZONE_ISOLATION: 한다은(X) entered comms-dead zone B3F at T+14min'. 이 구간 동안 팀과 통신 불가. X는 보관창고 경로가 아닌 B2F를 통해야 했으나 B3F에 먼저 진입한 것.",
+      "key_info_discovered": "C4(오답 단서) — 진짜 단서 없음, 오답 단서만 발견. 통신 불가라 공유 못 함.",
+      "P36_P37_application": "고립 구역 진입 system 로그 존재 → 미공유 무감점 면제(P36 조건 ii 충족 + P37 격리 기록 면제 증거). comm 로그에 통신 시도 없어도 격리 기록이 면제 증거."
+    },
+    "Y_character": {
+      "name": "박진혁",
+      "player": "Y",
+      "separation_type": "통신 가능 구간 정보 미전달 후 변명",
+      "detail": "B2F 복도에서 오답 단서 C3(소음 차단 스프레이)을 발견. 이 구간은 B2F — 통신 정상 구역. comm 로그: 해당 구간에 팀 단체 채팅 발신 기록 없음, 수신 확인 기록 있음. Y가 이후 평가에서 '저도 정신없어서 공유를 못 했습니다'라고 주장하나, system 로그에 B2F 체류 중 통신 가능 상태 기록 있고, ZONE_ISOLATION 기록 없음.",
+      "key_info_omitted": "C3는 오답이지만 Y는 이것이 중요 단서라 판단했으며 팀 의사결정에 영향 줄 수 있는 내용이었음. 공유 가능했는데 미전달.",
+      "P36_P37_application": "comm 로그 B2F 체류 중 발신 없음 + ZONE_ISOLATION 기록 없음 = 통신 가능 구간 미공유 → '기여 회피'로 판정. 본인 변명('정신없었다')은 면제 근거 불충분(P36 조건 i+ii 둘 다 미충족). 로그 근거로 감점."
+    },
+    "Z_character": {
+      "name": "오지수",
+      "player": "Z",
+      "separation_type": "영웅적 희생(봉인 앵커·기폭)",
+      "detail": "collapse_condition STAGE1·2 달성 후, 콘솔 앞에서 스스로 역위상 코드 입력을 자원. '제가 하겠습니다. 다들 빨리 나가세요.' 동료 X는 계단으로 대피 완료. Y는 B1F로 대피 완료. Z가 코드 입력 → 챔버 자기파괴 완료 → 공진체 붕괴 → Z HP 0(충격파).",
+      "result": "HP=0/20, isDead=true. 동료 전원 생존. collapse_condition 완전 충족. 해결판정.",
+      "grade_note": "기여도 S — 최종 해결의 결정적 행위자(영웅적 희생으로 봉인 완성). 사망 여부는 등급 상한으로 삼지 않음(prompt line 3074).",
+      "reward_note": "CODE-3: grantClearTraitRewards의 .filter(playerData -> !playerData.isDead) 조건이 isDead=true인 Z를 특성 보상 대상에서 제외함. 디자이너 의도('산화한 캐리어도 S 보상')와 충돌 → 밸런스 불일치. 등급 S는 정상 부여되나 특성 선택 보상은 코드 분기로 차단됨. .java 수정 후보(CODE-3, high)."
+    }
+  },
+
+  "retry_design": {
+    "attempt_1_failure": "1차 시도: X가 B3F에서 고립된 상태에서 Y가 C3 오답 단서('소음 차단 스프레이')를 팀에 늦게 공유 → Z가 C3를 신뢰하고 스프레이를 찾는 데 시간 낭비 → 공명파 2단계 상승 → 챔버 접근 실패. collapse_condition STAGE2 미달성.",
+    "retry_trigger": "P16: 리트라이 진입 시 HP/SAN 피해 유지. P20: 공명파 단계(괴담 고유 축적값) 유지.",
+    "attempt_2_success": "2차 시도: X가 B3F에서 탈출해 경비원 오철민에게 보관창고 열쇠를 받아 C1(실험 노트) 발견. Y는 정세연을 통해 C2(코드+희생 사실) 입수. Z가 콘솔 입력을 자원. 영웅적 희생 완료 → collapse_condition 완전 충족 → 해결판정."
+  }
+}
