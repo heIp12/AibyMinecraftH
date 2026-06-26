@@ -33,7 +33,7 @@ public class TraitButtonManager {
                 || (t.cooldownTurns == -1 && t.usedThisStage > 0);
             String cdText = t.remainingCooldown > 0 ? " [" + t.remainingCooldown + "턴]"
                 : (t.cooldownTurns == -1 && t.usedThisStage > 0 ? " [스테이지 소진]" : "");
-            String rapidWarn = (t.usedThisStage >= 2) ? " ⚠연속" : "";
+            String rapidWarn = (t.usedThisStage >= 1) ? " ⚠연속" : "";
 
             if (onCooldown) {
                 Component btn = Component.text("[" + t.name + cdText + "]", NamedTextColor.GRAY)
@@ -42,14 +42,14 @@ public class TraitButtonManager {
                 player.sendMessage(btn);
             } else {
                 Component btn = Component.text("[" + t.name + rapidWarn + "]",
-                        t.usedThisStage >= 2 ? NamedTextColor.YELLOW : NamedTextColor.AQUA,
+                        t.usedThisStage >= 1 ? NamedTextColor.YELLOW : NamedTextColor.AQUA,
                         TextDecoration.BOLD)
                     .hoverEvent(HoverEvent.showText(
                         Component.text("(" + t.grade + ") " + t.description
                             + "\n효과: " + t.effect
                             + (t.cooldownTurns > 0 ? "\n쿨다운: " + t.cooldownTurns + "턴" : "")
                             + (t.cooldownTurns == -1 ? "\n쿨다운: 스테이지당 1회" : "")
-                            + (t.usedThisStage >= 2 ? "\n⚠ 이번 스테이지 " + t.usedThisStage + "회 사용 — 효과 감소" : "")
+                            + (t.usedThisStage >= 1 ? "\n⚠ 이번 스테이지 " + t.usedThisStage + "회 사용 — 효과 감소" : "")
                             + "\n§7클릭하여 발동 준비", NamedTextColor.GRAY)))
                     .clickEvent(ClickEvent.runCommand("/trpg _use_trait " + t.id));
                 player.sendMessage(btn);
@@ -66,8 +66,8 @@ public class TraitButtonManager {
             .filter(t -> t.id.equals(traitId))
             .findFirst()
             .map(t -> {
-                String rapid = t.usedThisStage >= 2
-                    ? " (이번 스테이지 " + t.usedThisStage + "번째 사용 — 효과 감소 및 역효과 가능)"
+                String rapid = t.usedThisStage >= 1
+                    ? " (반복 발동)"
                     : "";
                 return "[특성 발동] " + pd.name + "이(가) 특성 '" + t.name + "'"
                     + (t.effect != null && !t.effect.isBlank() ? "(" + t.effect + ")" : "")
