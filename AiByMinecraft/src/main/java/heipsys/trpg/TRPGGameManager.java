@@ -2891,19 +2891,11 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                 String trimmed = ai.stripTags(npcResp).trim();
                 if (trimmed.isEmpty()) return;
 
-                plugin.getServer().getScheduler().runTask(plugin, () -> {
-                    // NPC 행동을 같은 zone의 생존·등장 플레이어에게 전달
-                    for (PlayerData pd : state.getAllPlayers()) {
-                        if (pd.isDead || !spawnedPlayers.contains(pd.uuid)) continue;
-                        if (!npcZone.isEmpty() && !npcZone.equals(pd.zone)) continue;
-                        Player sp = Bukkit.getPlayer(pd.uuid);
-                        if (sp != null && sp.isOnline())
-                            narrativeDelivery.deliver(sp, trimmed);
-                    }
-                    // GM 컨텍스트 주입 — 다음 턴 GM이 NPC 행동을 일관되게 반영
-                    ai.injectGmSystem("[NPC 자율 행동] " + npcName + ": " + trimmed);
-                    gameLogger.logGmOutput("NPC(" + npcName + ")", trimmed);
-                });
+                // GM 컨텍스트에만 주입 — 플레이어에게 직접 전달하지 않음.
+                // GM이 다음 턴 서술에서 NPC 행동을 자연스럽게 녹여 낸다.
+                ai.injectGmSystem("[NPC 자율 행동 — GM만 인지] " + npcName + " (위치: "
+                    + (npcZone.isEmpty() ? "?" : npcZone) + "): " + trimmed);
+                gameLogger.logGmOutput("NPC(" + npcName + ")", trimmed);
             });
         }
     }
@@ -3363,9 +3355,11 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         // 중요 NPC (하이브리드) 섹션 — GM과 분리, 독립 AI가 조종
         List<JsonObject> critNpcs = getCriticalNpcs();
         if (!critNpcs.isEmpty()) {
-            sb.append("\n## 자율 NPC (독립 AI 조종 — GM 직접 개입 금지) ★\n");
-            sb.append("아래 NPC는 별도 AI 인스턴스가 자율 행동한다. GM은 이들의 행동을 서술하지 않는다.\n");
-            sb.append("단, '[NPC 자율 행동]' 태그로 주입된 NPC 행동은 GM의 다음 서술에 자연스럽게 반영하라.\n");
+            sb.append("\n## 자율 NPC (독립 AI 결정 → GM이 서술) ★\n");
+            sb.append("아래 NPC는 별도 AI가 행동을 결정한다.\n");
+            sb.append("결정 내용은 '[NPC 자율 행동 — GM만 인지]' 태그로 전달된다.\n");
+            sb.append("GM은 이 내용을 바탕으로 다음 서술에 해당 NPC의 행동을 자연스럽게 녹여 낸다.\n");
+            sb.append("★ NPC 행동은 GM의 서술을 통해서만 플레이어에게 전달된다 (직접 출력 금지).\n");
             for (JsonObject npc : critNpcs) {
                 String nname = npc.has("name") ? npc.get("name").getAsString() : "?";
                 String nzone = npc.has("zone") ? npc.get("zone").getAsString() : "?";
