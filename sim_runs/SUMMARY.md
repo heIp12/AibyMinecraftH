@@ -131,3 +131,11 @@
 - 최우선 프롬프트: H-1(P1+P12+P38 클리어 판정 통합)·H-2(P36+P37 평가 면제 통합)·H-3(P24 단일주체 collapse 의무).
 - 최우선 코드: CODE-3(사망캐리어 보상제외)·CODE-8(E_END 평가 미호출#13)·CODE-6(ZONE_ISOLATION 자동로그) 모두 HIGH.
 - ★프롬프트 수렴 확정. 잔여 약점 전부 코드 도메인 이동. SYNTHESIS.md에 적용 위치 매핑·우선순위·코드 TODO 착수용 정리 완비.
+
+## iter15 — 2026-06-26 22:05 — #QN7K-3TMV (스테이지6·내셔널·★복합NPC·can_impersonate·대규모 스팟체크)
+- 수렴 후 스팟체크: SYNTHESIS 미검증 3축(복합NPC·위장·대규모) 동시 공략. 괴담: "소각되지 않는 기억자" — 죽음의 기억 공간을 흡수하는 코즈믹급, can_impersonate=true로 최초 피해자(이수진) 위장해 소각 오도. zones 12(4계층)·연쇄분기 6.
+- 검증: (a)복합NPC=PARTIAL(황도연·박서준 2 critical 충돌→플레이어 중재 협력 PASS, 단 실제 critical 2명뿐·3~4 미달·GM 컨텍스트 부담 관찰) / (b)위장=PASS·★P26 공백 CONFIRMED(위장 중 corruption 연동·재활성화·해제 반응 타이밍 미정의) / (c)대규모 zones12·분기6 PASS(P15·P32) / (d)스테이지6 게이트·리트라이·해결판정 PASS(P1·P12·P16·P20·P38) / (e)평가·보상 PASS(문소연 약체→S+특성 상위, P41 취지 프롬프트 확인; CODE-4로 실제 산출은 코드 미반영).
+- 결과: 문소연 '기억 패턴'으로 위장 균열 포착→2턴 잠식 수축 창에 경로A·B 동시 확보→이수진 마지막 목소리 재생으로 기억자 소멸 해결판정. 2차 위장('소연아' 도청 호칭)도 즉시 간파.
+- 신규: ★P44(can_impersonate 위장 AI 운용 high·P26 확장)·P45(행동불가 NPC 워치독 정지 med)·P46(같은zone 다수 critical NPC 조율 med)·P47(스케일=영향범위·기간 분리 low). +CODE-11(워치독 행동불가 인지 확인).
+- 파일: iter15/seed.json(12 zones·can_impersonate·2 critical)·log.txt(546줄)·replay.json(stage6·3인). 플러그인 .java 미변경.
+- ※스팟체크 수확: 새 high(P44) 발견 → can_impersonate·복합NPC 축 미수렴 판명(스팟체크 가치 입증). 다음: 진짜 3~4 critical NPC 오케스트레이션 + P44/P46 검증 1회 후 재수렴 판단.

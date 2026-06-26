@@ -293,3 +293,29 @@
 ### (기록만 — 코드 도메인 추가, 사용자 보고 대상. iter14, 통화 기믹)
 - ★CODE-9 (iter14 WEAK-3, ★high·통화 한정): handleNpcDirectComm이 '같은 zone' 조건을 강제 → phone_usable=true라도 다른 구역·외부 기관 NPC에게 '전화'로 연락 불가(구조적). 원격 NPC 통화 경로(플레이어 기기 보유 + NPC phone_number 보유 시 zone 무관 통화 허용)를 추가하고, 대면 제한은 '대면 행위'에만 적용하도록 분리 필요. ※.java 수정(통화 기믹 핵심).
 - CODE-10 (iter14 WEAK-4, med·통화 한정): everKnownContacts가 PlayerData(UUID) 기반이라 NPC 연락처는 저장 못 함 → CONTACT_REVEAL로 알게 된 NPC 번호가 리트라이 시 소실(2회차에 NPC 재연락하려면 #19 재시도 강제). everKnownNpcContacts(Set<String> NPC id) 신설 + onRetry 복구 필요. ※.java 수정.
+
+## iter15 (#QN7K-3TMV, 스테이지6 내셔널·★복합NPC·can_impersonate 위장·대규모 스팟체크·소각되지 않는 기억자) 발견 패치
+(수렴 후 스팟체크 — SYNTHESIS 미검증 3축 공략. ★새 high 1건(P44, P26 공백 확인)으로 can_impersonate 축 미수렴 판명. (a)복합NPC PARTIAL(critical 실제 2명)·(b)위장 PASS·P26 공백 CONFIRMED·(c)대규모 zones12/연쇄분기6 PASS·(d)스테이지6 게이트 PASS·(e)평가·보상 PASS(문소연 약체→S+특성 상위, P41 취지 프롬프트 확인))
+
+### P44. can_impersonate=true 위장 단일 주체 AI 운용 지침 (★high, 범용, P26 확장)
+- [대상] GM_SYSTEM_BASE 괴담 AI 서술 원칙 (P26은 can_impersonate=false 전제 — 본 패치가 true 케이스 공백 보완)
+- [문제] entity.can_impersonate=true 위장 중 corruption 단계 진행·위장 ON/OFF와 corruption 연동·위장 재활성화 조건·위장 해제 후 반응 타이밍이 모두 미정의 → GM 자의로 시나리오마다 위장 강도·빈도·반격 타이밍 불균형.
+- [수정안] GM_SYSTEM_BASE에 단락 추가: "entity.can_impersonate=true일 때 — (1) 위장 유지 중에는 corruption 단계 진행을 1단계 늦춘다(위장은 비용이 든다). (2) 위장 해제 후 직접 반격(공격·공간 압박)은 해제된 그 턴 직후 1턴 이내(P31과 동일 타이밍). (3) 위장 재활성화는 해제 후 최소 2턴 쿨다운. (4) 플레이어가 위장을 신뢰해 핵심정보(P18 정의)를 공유하면 위장 강화로 corruption 1단계 상승 + 그 정보를 즉시 흡수·역이용. (5) 위장은 ai_context의 단계 순서를 어기지 않는다(P26과 호환)."
+
+### P45. 행동 불가 상태 NPC의 워치독 일시정지 (med, 범용)
+- [대상] GM_SYSTEM_BASE / buildNpcSystemPrompt 워치독 연계
+- [문제] 격리·기절·기억 소진 등 행동 불가 NPC가 4턴 이상 미등장 시 무행동 워치독(강제 등장)이 발동하는지 억제인지 기준이 없어, 행동 불가인데 강제 등장하는 모순 가능.
+- [수정안] 한 줄: "NPC가 격리·기절·기억 소진·구속 등 '행동 불가 상태'에 있으면 무행동 워치독(N턴 미등장 강제 등장) 카운터를 일시 정지하고, 상태 해제 후 재개한다(행동 불가 NPC를 억지로 끌어내지 마라)." ※코드측 워치독(line 1857 근방) 연계 확인은 CODE-11.
+
+### P46. 같은 zone 다수 critical NPC 간 정보 교환·충돌 조율 (med, 범용)
+- [대상] GM_SYSTEM_BASE 다수 NPC 조율 원칙
+- [문제] critical NPC 2인 이상이 같은 zone에 있을 때 서로 정보를 교환/충돌하는 기준이 없어, NPC AI 컨텍스트가 분리된 탓에 GM이 중개 안 하면 플레이어 없이는 NPC 간 정보가 전달 안 됨(또는 충돌이 표현 안 됨).
+- [수정안] 다수 NPC 조율 원칙에 한 줄: "같은 zone에 critical NPC가 2인 이상이고 motivation/knowledge가 충돌하거나 공유 필요가 있으면, GM이 두 NPC AI의 turn을 교대 서술해 자연스러운 정보 교환·충돌을 구현한다. NPC AI 컨텍스트는 분리돼 있으므로 GM이 교환된 내용을 양쪽에 명시 반영해 누락을 막는다(3인 이상이면 컨텍스트 부담↑ — 핵심 2인 상호작용에 집중하고 나머지는 배경 처리)."
+
+### P47. 스케일은 '영향 범위' 기준, 기간 span은 분리(억지 TIME_SKIP 금지) (low, 범용)
+- [대상] GDAM_SYSTEM_PROMPT 챕터 분량(lengthGuideFor) 가이드
+- [문제] 스케일 기간 가이드(내셔널=1주~1개월)가 '물리적 배경 규모'와 묶여, 단일 건물 1일 완결형 시나리오도 내셔널이면 억지 장기 TIME_SKIP 강제.
+- [수정안] 분량 가이드 단서: "스케일(로컬~코즈믹)은 '사건의 영향 범위'로 정한다(단일 건물이라도 국가 기밀·핵심 인프라 위협이면 내셔널). 단 기간 span은 영향 범위와 분리 — 현장 집중형이면 수 시간~1일로 압축 가능(스케일 크다고 무조건 1주+ 강제 금지). 큰 TIME_SKIP은 이야기상 자연스러울 때만."
+
+### (기록만 — 코드 도메인. iter15)
+- CODE-11 (iter15 W2 코드측, med): 무행동 워치독(line 1857 근방)이 NPC '행동 불가 상태'를 인지해 카운터를 멈추는지 코드 확인·보완 필요(P45의 근본 보장). ※.java 확인/수정.
