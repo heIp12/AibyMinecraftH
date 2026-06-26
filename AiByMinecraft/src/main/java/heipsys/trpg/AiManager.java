@@ -257,6 +257,9 @@ public class AiManager {
             .replaceAll("<IMPERSONATE [^/]*/?>", "")
             .replaceAll("<IMPERSONATE_END [^/]*/?>", "")
             .replaceAll("<ZONE_UPDATE [^/]*/?>", "")
+            .replaceAll("<TIME_SKIP [^/]*/?>", "")
+            .replaceAll("<EVENT_BLOCK [^/]*/?>", "")
+            .replaceAll("<TIME_VISIBLE [^/]*/?>", "")
             .trim();
     }
 
@@ -503,6 +506,39 @@ public class AiManager {
             String zone   = extractAttr(attrs, "zone").orElse(null);
             String spot   = extractAttr(attrs, "spot").orElse("");
             if (player != null && zone != null) out.add(new String[]{player, zone, spot});
+            from = end + 2;
+        }
+        return out;
+    }
+
+    /** <TIME_SKIP minutes="N"/> 모두 합산 → 총 건너뛸 분 (없으면 0) */
+    public int parseTimeSkip(String response) {
+        int total = 0;
+        for (String v : parseSelfClosingAttr(response, "<TIME_SKIP ", "minutes")) {
+            try { total += Integer.parseInt(v.trim()); } catch (NumberFormatException ignore) {}
+        }
+        return total;
+    }
+
+    /** <EVENT_BLOCK id="X"/> 모두 파싱 → [id, ...] */
+    public java.util.List<String> parseEventBlockTags(String response) {
+        return parseSelfClosingAttr(response, "<EVENT_BLOCK ", "id");
+    }
+
+    /** <TIME_VISIBLE player="X" known="true/false"/> 모두 파싱 → [{player, known}, ...] */
+    public java.util.List<String[]> parseTimeVisibleTags(String response) {
+        java.util.List<String[]> out = new ArrayList<>();
+        final String PREFIX = "<TIME_VISIBLE ";
+        int from = 0;
+        while (true) {
+            int idx = response.indexOf(PREFIX, from);
+            if (idx == -1) break;
+            int end = response.indexOf("/>", idx);
+            if (end == -1) break;
+            String attrs  = response.substring(idx + PREFIX.length(), end);
+            String player = extractAttr(attrs, "player").orElse(null);
+            String known  = extractAttr(attrs, "known").orElse("true");
+            if (player != null) out.add(new String[]{player, known});
             from = end + 2;
         }
         return out;

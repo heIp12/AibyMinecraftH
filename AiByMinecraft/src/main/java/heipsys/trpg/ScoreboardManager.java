@@ -29,7 +29,7 @@ public class ScoreboardManager {
         obj.setDisplaySlot(DisplaySlot.SIDEBAR);
 
         // 사이드바는 핵심 정보만 간략하게. 상세 정보(스탯·특성)는 '캐릭터 정보'(네더의 별) GUI에서.
-        int line = 10;
+        int line = 11;
         set(obj, "§f" + pd.name,                         line--);
         set(obj, divider(0),                             line--);
         set(obj, hpBar(pd),                               line--);
@@ -37,6 +37,10 @@ public class ScoreboardManager {
         set(obj, divider(1),                             line--);
         set(obj, "§f스테이지: §e" + roomNumber,           line--);
         set(obj, "§f위치: §a" + resolveLocationLabel(pd), line--);
+        if (state.isClockActive()) {
+            String t = state.isTimeKnown(pd) ? "§e" + state.getCurrentTimeString() : "§8불명";
+            set(obj, "§f시간: " + t,                      line--);
+        }
         set(obj, divider(2),                             line--);
         set(obj, "§7상세: §b네더의 별 우클릭",            line);
 

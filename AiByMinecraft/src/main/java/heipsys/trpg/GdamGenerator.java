@@ -189,6 +189,15 @@ type 값 규칙: "written_book"=책/일기/문서류, "paper"=쪽지/메모, "ma
 - 예시 OK: ["스마트폰", "손전등", "관리 일지"]
 - 예시 NG: ["item_1", "item_5", "smartphone"]
 
+## 타임라인 v2 설계 원칙 ★ (절대 시간 + 큰 사건)
+- timeline.start_time / end_time: 괴담 파트의 시작·제한 시각을 "HH:MM"으로 명시. end_time(자정 넘김 허용)이 지나면 자동으로 종국(파국)에 이른다.
+- minutes_per_turn: 1턴(행동 1회)에 흐르는 인게임 분(보통 10~30). time_visible: 플레이어가 기본적으로 시간을 알 수 있으면 true, 시간 감각을 빼앗는 괴담이면 false.
+- main_events: 개입이 없으면 반드시 일어나는 "큰 사건"만 절대 시각으로 명시한다. NPC의 세부 반응·분기 행동은 넣지 말 것(GM 재량).
+  * 각 사건 필드: id("E1","E2"…), time("HH:MM"), label(사건명), condition(발생 조건), effect(결과 1문장), blockable(플레이어가 막을 수 있으면 true), is_end(종료 트리거면 true)
+  * 시간 순서대로 3~6개. 마지막엔 반드시 is_end:true 사건 1개(보통 end_time과 같은 시각, effect:"끝")를 둔다.
+  * blockable:true 사건은 플레이어가 저지할 수 있는 사건(문 잠금 등), false는 반드시 일어나는 사건(괴담 각성 등).
+- 기존 timeline.1~4 단계(condition/effect)는 추상적 압박 단계로 계속 채운다(큰 사건과 별개 — 둘 다 작성).
+
 ## 출력 JSON 스키마
 {
   "seed": "",
@@ -213,6 +222,15 @@ type 값 규칙: "written_book"=책/일기/문서류, "paper"=쪽지/메모, "ma
   },
   "timeline": {
     "daily_turns": 5,
+    "start_time": "14:00",
+    "end_time": "01:00",
+    "minutes_per_turn": 15,
+    "time_visible": true,
+    "main_events": [
+      {"id":"E1","time":"14:00","label":"","condition":"일상 파트 종료","effect":"","blockable":false},
+      {"id":"E2","time":"17:00","label":"","condition":"","effect":"","blockable":true},
+      {"id":"E_END","time":"01:00","label":"","condition":"미해결","effect":"끝","blockable":false,"is_end":true}
+    ],
     "1": {"condition":"","effect":""},
     "2": {"condition":"","effect":""},
     "3": {"condition":"","effect":""},

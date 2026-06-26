@@ -1508,6 +1508,13 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             ai.parseImpersonateTags(raw).forEach(this::startImpersonation);
             ai.parseImpersonateEndTags(raw).forEach(this::endImpersonation);
 
+            // 5e. 타임라인 시계 제어 (시간 건너뛰기 / 사건 차단 / 시간 인지 토글)
+            int skipMin = ai.parseTimeSkip(raw);
+            if (skipMin > 0) state.skipTime(skipMin);
+            ai.parseEventBlockTags(raw).forEach(state::blockEvent);
+            ai.parseTimeVisibleTags(raw).forEach(tv ->
+                state.setTimeKnown(tv[0], !"false".equalsIgnoreCase(tv[1])));
+
             // 6. 일상 파트 턴 소비
             if (state.isDailyPhase()) {
                 boolean phaseChanged = state.consumeDailyTurn();
@@ -3156,6 +3163,38 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         sb.append("room(현재 스테이지 번호): ").append(room).append("\n");
         if (gdam.has("entity")) {
             sb.append("괴담 존재: ").append(gdam.getAsJsonObject("entity").get("name").getAsString()).append("\n");
+        }
+
+        // v2 타임라인 시계 + 큰 사건 (start_time 있을 때만 — 없으면 기존 추상 단계만 사용)
+        if (gdam.has("timeline")) {
+            JsonObject tl = gdam.getAsJsonObject("timeline");
+            if (tl.has("start_time")) {
+                sb.append("\n## 타임라인 시계 (절대 시간 진행) ★\n");
+                sb.append("시작 ").append(tl.get("start_time").getAsString());
+                if (tl.has("end_time")) sb.append(" → 제한 시각 ").append(tl.get("end_time").getAsString());
+                int mpt = tl.has("minutes_per_turn") ? tl.get("minutes_per_turn").getAsInt() : 15;
+                sb.append(" (1턴 ≈ ").append(mpt).append("분 경과)\n");
+                sb.append("- 매 턴 입력의 '현재 시각'을 기준으로 시간 흐름을 자연스럽게 서술에 반영하라.\n");
+                sb.append("- 휴식·장면 전환으로 시간을 크게 건너뛸 땐 <TIME_SKIP minutes=\"분\"/>을 출력하라.\n");
+                sb.append("- 플레이어가 시간을 알게/모르게 되는 상황(시계 입수·파손 등)엔 <TIME_VISIBLE player=\"이름\" known=\"true\" 또는 \"false\"/>.\n");
+            }
+            if (tl.has("main_events") && tl.get("main_events").isJsonArray()
+                    && tl.getAsJsonArray("main_events").size() > 0) {
+                sb.append("\n## 큰 사건 타임라인 (정해진 시각에 자동 발생) ★\n");
+                sb.append("아래 사건은 막지 않으면 해당 시각에 반드시 일어난다. 시스템이 시각 도달 시 '지금 발생한 사건'으로 알리니 그때 서술하라.\n");
+                sb.append("blockable 사건을 플레이어가 실제로 막아내면 <EVENT_BLOCK id=\"사건ID\"/>를 출력해 취소하라.\n");
+                for (JsonElement el : tl.getAsJsonArray("main_events")) {
+                    if (!el.isJsonObject()) continue;
+                    JsonObject ev = el.getAsJsonObject();
+                    sb.append("- [").append(ev.has("time") ? ev.get("time").getAsString() : "?").append("] ");
+                    sb.append(ev.has("id") ? ev.get("id").getAsString() : "");
+                    if (ev.has("label"))  sb.append(" ").append(ev.get("label").getAsString());
+                    if (ev.has("effect")) sb.append(" → ").append(ev.get("effect").getAsString());
+                    if (ev.has("blockable") && ev.get("blockable").getAsBoolean()) sb.append(" (막을 수 있음)");
+                    if (ev.has("is_end")    && ev.get("is_end").getAsBoolean())    sb.append(" [종료 사건]");
+                    sb.append("\n");
+                }
+            }
         }
 
         // 스테이지·회차 난이도 컨텍스트 (단서 대비 난이도 균형)
