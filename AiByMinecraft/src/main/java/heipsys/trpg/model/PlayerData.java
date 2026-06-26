@@ -39,6 +39,7 @@ public class PlayerData {
 
     public String    status       = "normal";  // normal / puppet / dead
     public String    zone         = "";
+    public String    spot         = "";        // 세부 위치 (zone 내 위치, 예: 계단앞)
     public boolean   isDead       = false;
     /** 괴담이 이 배역을 제거하고 정체를 차지한 상태 (다른 플레이어 기만) */
     public boolean   impersonated = false;
@@ -104,6 +105,7 @@ public class PlayerData {
         resetToBase();
         roleId       = "";
         zone         = "";
+        spot         = "";
         charName     = "";
         gender       = "";
         roleAssigned = false;

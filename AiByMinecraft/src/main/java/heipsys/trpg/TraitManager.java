@@ -368,7 +368,7 @@ str_add/cha_add/luk_add/spr_add/hp_max_add/san_max_add: B급 이하는 0이 원�
      * mapUpgrade: 기여도 높은 배역 전용 특성 → 범용 강화
      * newTrait: 새 범용 특성
      */
-    public CompletableFuture<StageEndChoices> generateStageEndChoices(PlayerData pd, String gdamTheme) {
+    public CompletableFuture<StageEndChoices> generateStageEndChoices(PlayerData pd, String gdamTheme, int gradeBoost) {
         // 기여도(사용 횟수) 높은 순으로 선택
         TraitData bestPlayer = pd.traits.stream()
             .filter(t -> !t.roleSpecific)
@@ -381,6 +381,10 @@ str_add/cha_add/luk_add/spr_add/hp_max_add/san_max_add: B급 이하는 0이 원�
                 .thenComparingInt(t -> gradeToInt(t.grade)))
             .orElse(null);
 
+        // 오염도 보정: 보상 특성 등급을 gradeBoost 단계만큼 상향한다 (프롬프트·파싱 양쪽에서 동일 적용).
+        String myTarget  = bumpGrade(bestPlayer != null ? computeUpgradeGrade(bestPlayer) : "B", gradeBoost);
+        String mapTarget = bestMap != null ? bumpGrade(computeUpgradeGrade(bestMap), gradeBoost) : null;
+
         StringBuilder sb = new StringBuilder();
         sb.append("괴담 테마(직접 언급 금지): ").append(gdamTheme).append("\n");
         sb.append("플레이어 직업: ").append(pd.job).append("\n\n");
@@ -391,7 +395,7 @@ str_add/cha_add/luk_add/spr_add/hp_max_add/san_max_add: B급 이하는 0이 원�
               .append("현재 등급: ").append(bestPlayer.grade).append("\n")
               .append("효과: ").append(bestPlayer.effect).append("\n")
               .append("이번 게임 사용 횟수: ").append(bestPlayer.usedThisStage).append("\n")
-              .append("목표 등급: ").append(computeUpgradeGrade(bestPlayer)).append("\n");
+              .append("목표 등급: ").append(myTarget).append("\n");
             appendDownsideContext(sb, bestPlayer);
             sb.append("\n");
         } else {
@@ -404,11 +408,17 @@ str_add/cha_add/luk_add/spr_add/hp_max_add/san_max_add: B급 이하는 0이 원�
               .append("현재 등급: ").append(bestMap.grade).append("\n")
               .append("효과: ").append(bestMap.effect).append("\n")
               .append("이번 게임 사용 횟수: ").append(bestMap.usedThisStage).append("\n")
-              .append("목표 등급: ").append(computeUpgradeGrade(bestMap)).append("\n");
+              .append("목표 등급: ").append(mapTarget).append("\n");
             appendDownsideContext(sb, bestMap);
             sb.append("\n");
         } else {
             sb.append("## 맵 전용 특성 → 범용화 대상: 없음 (null로 응답)\n\n");
+        }
+
+        if (gradeBoost > 0) {
+            sb.append("## 오염 보정 (중요)\n")
+              .append("오염도 보정으로 보상 등급이 ").append(gradeBoost)
+              .append("단계 상향되었다. 위 '목표 등급'은 이미 보정된 값이며, new_trait도 평소보다 강력하고 가치 있게 생성하라.\n\n");
         }
 
         String system = """
@@ -457,17 +467,18 @@ new_trait: 완전히 새로운 범용 특성. 직업·테마에서 착안하되 
                 JsonObject root = gson.fromJson(cleaned.substring(s, e + 1), JsonObject.class);
 
                 TraitData myUpg = fp != null && root.has("my_upgrade") && !root.get("my_upgrade").isJsonNull()
-                    ? parseStageEndTrait(root.getAsJsonObject("my_upgrade"), computeUpgradeGrade(fp))
+                    ? parseStageEndTrait(root.getAsJsonObject("my_upgrade"), myTarget)
                     : (root.has("my_upgrade") && !root.get("my_upgrade").isJsonNull()
-                       ? parseStageEndTrait(root.getAsJsonObject("my_upgrade"), "B") : null);
+                       ? parseStageEndTrait(root.getAsJsonObject("my_upgrade"), myTarget) : null);
                 if (myUpg != null && fp != null) myUpg.replacesId = fp.id;
 
                 TraitData mapUpg = fm != null && root.has("map_upgrade") && !root.get("map_upgrade").isJsonNull()
-                    ? parseStageEndTrait(root.getAsJsonObject("map_upgrade"), computeUpgradeGrade(fm)) : null;
+                    ? parseStageEndTrait(root.getAsJsonObject("map_upgrade"), mapTarget) : null;
                 if (mapUpg != null) { mapUpg.replacesId = fm.id; mapUpg.roleSpecific = false; }
 
                 TraitData newT = root.has("new_trait") && !root.get("new_trait").isJsonNull()
                     ? parseStageEndTrait(root.getAsJsonObject("new_trait"), null) : null;
+                if (newT != null && gradeBoost > 0) newT.grade = bumpGrade(newT.grade, gradeBoost);
 
                 return new StageEndChoices(myUpg, mapUpg, newT, fp, fm);
             } catch (Exception ex) {
@@ -530,6 +541,14 @@ new_trait: 완전히 새로운 범용 특성. 직업·테마에서 착안하되 
             case "F" -> u >= 1 ? "D" : "F";
             default  -> t.grade;
         };
+    }
+
+    /** 등급을 steps 단계 상향 (F<D<C<B<A<S, 상한 S) */
+    private String bumpGrade(String grade, int steps) {
+        if (steps <= 0) return grade == null ? "C" : grade;
+        String[] grades = {"F","D","C","B","A","S"};
+        int idx = Math.min(gradeToInt(grade) + steps, grades.length - 1);
+        return grades[idx];
     }
 
     private int gradeToInt(String g) {

@@ -318,8 +318,10 @@ spawn_timeline이 된 배역이 등장할 시점:
 
 ### 위치 추적 ★ 필수
 플레이어가 이동할 때마다 반드시 아래 태그를 출력한다:
-<ZONE_UPDATE player="플레이어명" zone="존ID"/>
+<ZONE_UPDATE player="플레이어명" zone="존ID" spot="세부위치"/>
 zone 값은 .gdam의 zones[].zone_id를 사용한다.
+spot은 선택 속성으로, 같은 zone 안에서의 세부 위치를 6자 이내 짧은 명사로 적는다(예: 계단앞, 창가, 카운터 뒤). 없으면 생략 가능.
+플레이어가 같은 zone 안에서 눈에 띄는 지점으로 이동하면 zone은 그대로 두고 spot만 갱신해 출력해도 된다.
 위치가 불명확하거나 이동하지 않은 경우에는 출력하지 않는다.
 같은 zone에 있는 플레이어끼리는 자동으로 대면 통신이 가능해진다.
 
@@ -501,7 +503,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         this.charGen    = new CharacterGenerator(ai, plugin.getDataFolder());
         charGen.refreshJobPools(); // 서버 시작 시 캐시 로드 + 필요 시 AI 갱신 (비동기)
         this.traitMan   = new TraitManager(ai);
-        this.scoreMan   = new ScoreboardManager();
+        this.scoreMan   = new ScoreboardManager(state);
         this.roleMan    = new RoleManager(state);
         this.turnMan    = new TurnManager(state, ai);
         this.itemMan    = new ItemManager(plugin, state);
@@ -1499,8 +1501,8 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             ai.parseContactRevealTags(raw).forEach(rev -> revealContact(rev[0], rev[1]));
             ai.parseContactChangeTags(raw).forEach(this::changeContact);
 
-            // 5d. 위치(zone) 업데이트
-            ai.parseZoneUpdateTags(raw).forEach(zu -> updatePlayerZone(zu[0], zu[1]));
+            // 5d. 위치(zone)·세부 위치(spot) 업데이트
+            ai.parseZoneUpdateTags(raw).forEach(zu -> updatePlayerZone(zu[0], zu[1], zu[2]));
 
             // 5c. 괴담의 정체 차용 시작/종료
             ai.parseImpersonateTags(raw).forEach(this::startImpersonation);
@@ -2428,8 +2430,8 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         state.getAllPlayers().stream()
             .filter(playerData -> !playerData.isDead)
             .forEach(playerData -> {
-                // 기여도 기반 특성 성장 3선택지 생성
-                traitMan.generateStageEndChoices(playerData, gdamTheme).thenAccept(choices -> {
+                // 기여도 기반 특성 성장 3선택지 생성 (오염도만큼 보상 등급 상향)
+                traitMan.generateStageEndChoices(playerData, gdamTheme, corruptMan.getLevel()).thenAccept(choices -> {
                     if (choices == null) return;
                     Player p = Bukkit.getPlayer(playerData.uuid);
                     if (p == null || !p.isOnline()) return;
@@ -3080,11 +3082,15 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             "→ " + targetPd.name + " (" + (viaDevice ? "장치" : "근거리") + "): " + message);
     }
 
-    /** GM이 플레이어 위치를 zone으로 업데이트. 같은 zone 진입 시 연락처 자동 교환 */
-    private void updatePlayerZone(String playerName, String newZone) {
+    /** GM이 플레이어 위치를 zone(+세부 위치 spot)으로 업데이트. 같은 zone 진입 시 연락처 자동 교환 */
+    private void updatePlayerZone(String playerName, String newZone, String spot) {
         PlayerData moved = findAnyByName(playerName);
         if (moved == null || newZone == null || newZone.isBlank()) return;
+        boolean zoneChanged = !newZone.equals(moved.zone);
         moved.zone = newZone;
+        // 세부 위치: 명시되면 갱신, zone이 바뀌었는데 미명시면 이전 spot 무효화
+        if (spot != null && !spot.isBlank()) moved.spot = spot.trim();
+        else if (zoneChanged)                moved.spot = "";
         // 같은 zone에 이미 있는 생존 플레이어들과 연락처 교환
         state.getAllPlayers().stream()
             .filter(other -> other != moved && !other.isDead
@@ -3138,23 +3144,8 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     private void updateAllScoreboards() {
         state.getAllPlayers().forEach(pd -> {
             Player p = Bukkit.getPlayer(pd.uuid);
-            if (p != null) scoreMan.update(p, pd, state.getRoomNumber(), resolveZoneName(pd.zone));
+            if (p != null) scoreMan.update(p, pd, state.getRoomNumber());
         });
-    }
-
-    private String resolveZoneName(String zoneId) {
-        if (zoneId == null || zoneId.isEmpty()) return "?";
-        JsonObject gdam = state.getGdamData();
-        if (gdam == null || !gdam.has("zones")) return zoneId;
-        for (JsonElement el : gdam.getAsJsonArray("zones")) {
-            JsonObject z = el.getAsJsonObject();
-            String id = z.has("zone_id") ? z.get("zone_id").getAsString() : "";
-            if (zoneId.equals(id)) {
-                String name = z.has("name") ? z.get("name").getAsString() : "";
-                return name.isEmpty() ? zoneId : name;
-            }
-        }
-        return zoneId;
     }
 
     private String buildGmPrompt(JsonObject gdam) {

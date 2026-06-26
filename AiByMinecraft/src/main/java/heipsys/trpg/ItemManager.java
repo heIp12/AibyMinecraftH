@@ -3,9 +3,11 @@ package heipsys.trpg;
 import com.google.gson.*;
 import net.kyori.adventure.text.Component;
 import org.bukkit.Material;
+import org.bukkit.NamespacedKey;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.BookMeta;
+import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.Plugin;
 
 import java.util.*;
@@ -18,12 +20,13 @@ public class ItemManager {
 
     private final Plugin           plugin;
     private final GameStateManager state;
-
-    private final Map<UUID, List<String>> chapterBound = new HashMap<>();
+    /** 챕터 종료 시 회수 대상 아이템에 붙는 보이지 않는 PDC 마커 키 */
+    private final NamespacedKey    boundKey;
 
     public ItemManager(Plugin plugin, GameStateManager state) {
-        this.plugin = plugin;
-        this.state  = state;
+        this.plugin   = plugin;
+        this.state    = state;
+        this.boundKey = new NamespacedKey(plugin, "chapter_bound");
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -70,14 +73,20 @@ public class ItemManager {
         }
 
         final String boundId = id;
+        if (chapBound) tagChapterBound(item);  // 타입(책/쪽지/지도/물건) 무관하게 회수 마커 부착
         plugin.getServer().getScheduler().runTask(plugin, () -> {
             Map<Integer, ItemStack> leftover = player.getInventory().addItem(item);
             leftover.values().forEach(i -> player.getWorld().dropItemNaturally(player.getLocation(), i));
-            if (chapBound) {
-                chapterBound.computeIfAbsent(player.getUniqueId(), k -> new ArrayList<>()).add(boundId);
-            }
             state.collectItem(boundId);
         });
+    }
+
+    /** 챕터 종료 시 회수 대상임을 아이템에 보이지 않게(PDC) 표시 — 모든 아이템 타입 공통 */
+    private void tagChapterBound(ItemStack item) {
+        var meta = item.getItemMeta();
+        if (meta == null) return;
+        meta.getPersistentDataContainer().set(boundKey, PersistentDataType.BYTE, (byte) 1);
+        item.setItemMeta(meta);
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -269,21 +278,21 @@ public class ItemManager {
 
     public void reclaimChapterItems(Collection<Player> players) {
         for (Player p : players) {
-            List<String> boundIds = chapterBound.getOrDefault(p.getUniqueId(), Collections.emptyList());
-            if (boundIds.isEmpty()) continue;
             plugin.getServer().getScheduler().runTask(plugin, () -> {
-                p.getInventory().forEach(item -> {
-                    if (item == null) return;
+                ItemStack[] contents = p.getInventory().getContents();
+                boolean removed = false;
+                for (int i = 0; i < contents.length; i++) {
+                    ItemStack item = contents[i];
+                    if (item == null) continue;
                     var meta = item.getItemMeta();
-                    if (meta == null || !meta.hasLore()) return;
-                    boolean isTrpg = meta.lore().stream()
-                        .map(c -> net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText().serialize(c))
-                        .anyMatch(s -> s.contains("[TRPG 아이템]"));
-                    if (isTrpg) p.getInventory().remove(item);
-                });
-                p.sendMessage("§7[챕터 종료] 챕터 아이템이 회수되었습니다.");
+                    if (meta != null
+                        && meta.getPersistentDataContainer().has(boundKey, PersistentDataType.BYTE)) {
+                        p.getInventory().setItem(i, null);  // 슬롯 단위 정확 제거 (책/쪽지/지도 포함)
+                        removed = true;
+                    }
+                }
+                if (removed) p.sendMessage("§7[챕터 종료] 챕터 아이템이 회수되었습니다.");
             });
         }
-        chapterBound.clear();
     }
 }

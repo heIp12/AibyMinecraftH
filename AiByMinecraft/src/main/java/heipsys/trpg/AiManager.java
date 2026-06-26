@@ -488,7 +488,7 @@ public class AiManager {
         return parseSelfClosingAttr(response, "<IMPERSONATE_END ", "player");
     }
 
-    /** <ZONE_UPDATE player="X" zone="Y"/> 모두 파싱 → [{player, zone}, ...] */
+    /** <ZONE_UPDATE player="X" zone="Y" spot="Z"/> 모두 파싱 → [{player, zone, spot}, ...] (spot 없으면 "") */
     public java.util.List<String[]> parseZoneUpdateTags(String response) {
         java.util.List<String[]> out = new ArrayList<>();
         final String PREFIX = "<ZONE_UPDATE ";
@@ -501,7 +501,8 @@ public class AiManager {
             String attrs  = response.substring(idx + PREFIX.length(), end);
             String player = extractAttr(attrs, "player").orElse(null);
             String zone   = extractAttr(attrs, "zone").orElse(null);
-            if (player != null && zone != null) out.add(new String[]{player, zone});
+            String spot   = extractAttr(attrs, "spot").orElse("");
+            if (player != null && zone != null) out.add(new String[]{player, zone, spot});
             from = end + 2;
         }
         return out;
