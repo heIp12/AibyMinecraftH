@@ -493,6 +493,8 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
 
     /** 재현(replay) 파일로 시작한 세션 — 해당 스테이지만 진행, 다음 스테이지 진행 차단 */
     private boolean replayLock = false;
+    /** 친숙한 친구들 모드 — 유명 괴담/SCP/크리피파스타를 스테이지에 맞춰 사용 */
+    private boolean familiarMode = false;
 
     /** 캐릭터 생성 완료 대기 중인 플레이어 UUID 집합 */
     private final Set<UUID> pendingCreation    = ConcurrentHashMap.newKeySet();
@@ -584,18 +586,24 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             initiator.sendMessage("§c이미 TRPG 세션이 진행 중입니다.");
             return;
         }
-        // 게임 시작 전 AI 품질(표준/고품질) 선택
-        initiator.sendMessage("§e세션을 시작합니다. AI 품질을 선택하세요...");
-        dialogMan.showQualityChoice(initiator,
-            () -> beginSession(initiator, false),
-            () -> beginSession(initiator, true));
+        // 게임 모드 선택 → AI 품질 선택 순서로 진행
+        initiator.sendMessage("§e세션을 시작합니다. 게임 모드를 선택하세요...");
+        dialogMan.showModeChoice(initiator,
+            () -> dialogMan.showQualityChoice(initiator,
+                () -> beginSession(initiator, false, false),
+                () -> beginSession(initiator, true,  false)),
+            () -> dialogMan.showQualityChoice(initiator,
+                () -> beginSession(initiator, false, true),
+                () -> beginSession(initiator, true,  true)));
     }
 
-    private void beginSession(Player initiator, boolean highQuality) {
+    private void beginSession(Player initiator, boolean highQuality, boolean familiar) {
         if (currentPhase != Phase.IDLE) return; // 다이얼로그 대기 중 상태 변경 방지
         replayLock = false; // 정상 시작 — 재현 잠금 해제
+        familiarMode = familiar;
         ai.setGmQuality(highQuality);
-        broadcast("§7[AI 품질] " + (highQuality ? "§b고품질 모드" : "§f표준 모드"));
+        broadcast("§7[AI 품질] " + (highQuality ? "§b고품질 모드" : "§f표준 모드")
+            + "  §7[모드] " + (familiar ? "§d친숙한 친구들" : "§eAI 창작"));
 
         int room = state.isSessionActive() ? state.getRoomNumber() + 1 : 1;
         broadcast("§e§l═══ TRPG 세션 시작 (스테이지 " + room + ") ═══");
@@ -604,7 +612,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         currentPhase = Phase.CHAR_CREATION;
         startLoadingBar(".gdam 생성 중...");
 
-        gdamGen.generate(room, step -> plugin.getServer().getScheduler().runTask(plugin, () -> {
+        gdamGen.generate(room, familiarMode, step -> plugin.getServer().getScheduler().runTask(plugin, () -> {
             switch (step) {
                 case "컨셉" -> stepLoadingBar("컨셉 생성 완료", 0.20f);
                 case "구조" -> stepLoadingBar("구조 생성 완료", 0.45f);
@@ -877,7 +885,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         ai.clearAll();
         startLoadingBar(".gdam 생성 중...");
 
-        gdamGen.generate(nextRoom, step -> plugin.getServer().getScheduler().runTask(plugin, () -> {
+        gdamGen.generate(nextRoom, familiarMode, step -> plugin.getServer().getScheduler().runTask(plugin, () -> {
             switch (step) {
                 case "컨셉" -> stepLoadingBar("컨셉 생성 완료", 0.20f);
                 case "구조" -> stepLoadingBar("구조 생성 완료", 0.45f);
