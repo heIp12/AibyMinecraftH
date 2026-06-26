@@ -44,16 +44,31 @@ public class TraitManager {
 너는 TRPG 특성 생성기야.
 아래 JSON 배열 형식으로만 응답해 (다른 텍스트 금지):
 [
-  {"id":"","name":"","grade":"","description":"","active":false,"effect":""},
+  {"id":"","name":"","grade":"","description":"","active":false,"effect":"",
+   "cooldown_turns":0,"str_add":0,"cha_add":0,"luk_add":0,"spr_add":0,"hp_max_add":0,"san_max_add":0},
   ...
 ]
 grade는 S/A/B/C/D/F 중 하나.
 active는 플레이어가 직접 발동해야 하면 true, 자동 발동이면 false.
 description: 아주 짧은 명사구 한 줄(최대 18자). 장황한 설명·문장 금지. 예: "어둠 속 시야 확보", "공포 내성".
 effect: 효과를 한 문장으로 간결하게.
+
+## cooldown_turns 설정 기준 (active=true 특성만 해당):
+- 강력한 능동 특성(S/A급): 3~5 또는 -1(스테이지당 1회)
+- 보통 능동 특성(B급): 1~2
+- 약한 능동 특성(C/D급): 0~1
+- 수동 특성(active=false): 반드시 0
+
+## 스탯 보정 설정 기준:
+- 모든 값은 정수. 능동 특성은 보통 0 (발동 자체가 힘임).
+- 수동 특성은 등급에 따라 소폭 보정 가능.
+- S급: str/cha/luk/spr 중 ±1~2, hp_max/san_max ±1
+- A급: str/cha/luk/spr 중 ±1
+- B급 이하: 0이 원칙 (무리한 보정 금지)
+- 강점과 약점이 교환되는 형태 가능 (예: str+2, cha-1)
+
 ★ 범용성: 이 특성은 클리어 보상으로 영구히 남아 다른 시나리오에서도 쓰인다.
   특정 괴담·장소·사건에 묶이지 않는 범용 능력으로 작성하되, 이번 테마에서 특히 빛나도록 한다.
-  (예: "거울 파괴" 같은 특정 사건 한정 ✗ → "반사체 간파"처럼 일반화 ✓)
 한국어로 작성. 창의적인 특성 3개.
 """;
 
@@ -81,6 +96,13 @@ effect: 효과를 한 문장으로 간결하게.
                     td.description = obj.has("description") ? obj.get("description").getAsString() : "";
                     td.active      = obj.has("active")      && obj.get("active").getAsBoolean();
                     td.effect      = obj.has("effect")      ? obj.get("effect").getAsString()      : "";
+                    td.cooldownTurns = obj.has("cooldown_turns") ? obj.get("cooldown_turns").getAsInt() : 0;
+                    td.str_add = obj.has("str_add") ? obj.get("str_add").getAsInt() : 0;
+                    td.cha_add = obj.has("cha_add") ? obj.get("cha_add").getAsInt() : 0;
+                    td.luk_add = obj.has("luk_add") ? obj.get("luk_add").getAsInt() : 0;
+                    td.spr_add = obj.has("spr_add") ? obj.get("spr_add").getAsInt() : 0;
+                    td.hp_max_add = obj.has("hp_max_add") ? obj.get("hp_max_add").getAsInt() : 0;
+                    td.san_max_add = obj.has("san_max_add") ? obj.get("san_max_add").getAsInt() : 0;
                     result.add(td);
                 }
                 return result;
@@ -114,7 +136,8 @@ effect: 효과를 한 문장으로 간결하게.
 너는 TRPG 특성 생성기야.
 아래 JSON 배열 형식으로만 응답해 (다른 텍스트 금지):
 [
-  {"id":"","name":"","grade":"","description":"","active":false,"effect":""},
+  {"id":"","name":"","grade":"","description":"","active":false,"effect":"",
+   "cooldown_turns":0,"str_add":0,"cha_add":0,"luk_add":0,"spr_add":0,"hp_max_add":0,"san_max_add":0},
   ...
 ]
 grade는 S/A/B/C/D/F 중 하나. 배역 초기 특성이므로 B~D 범위.
@@ -122,6 +145,8 @@ active는 직접 발동하면 true, 자동 발동이면 false.
 description과 effect에 스탯 숫자·스탯 약어(STR/HP/SAN/CHA/LUK/SPR) 절대 사용 금지.
 description: 아주 짧은 명사구 한 줄(최대 18자). 장황한 설명·문장 금지. 예: "응급 처치 솜씨", "낯선 곳 길눈".
 effect: 한 문장으로 간결하게.
+cooldown_turns: B~D급이므로 능동이면 0~2, 수동이면 반드시 0.
+str_add/cha_add/luk_add/spr_add/hp_max_add/san_max_add: B급 이하는 0이 원칙.
 한국어로 작성.
 """;
 
@@ -145,6 +170,13 @@ effect: 한 문장으로 간결하게.
                     td.description = obj.has("description") ? obj.get("description").getAsString() : "";
                     td.active      = obj.has("active")      && obj.get("active").getAsBoolean();
                     td.effect      = obj.has("effect")      ? obj.get("effect").getAsString()      : "";
+                    td.cooldownTurns = obj.has("cooldown_turns") ? obj.get("cooldown_turns").getAsInt() : 0;
+                    td.str_add = obj.has("str_add") ? obj.get("str_add").getAsInt() : 0;
+                    td.cha_add = obj.has("cha_add") ? obj.get("cha_add").getAsInt() : 0;
+                    td.luk_add = obj.has("luk_add") ? obj.get("luk_add").getAsInt() : 0;
+                    td.spr_add = obj.has("spr_add") ? obj.get("spr_add").getAsInt() : 0;
+                    td.hp_max_add = obj.has("hp_max_add") ? obj.get("hp_max_add").getAsInt() : 0;
+                    td.san_max_add = obj.has("san_max_add") ? obj.get("san_max_add").getAsInt() : 0;
                     td.roleSpecific = true;
                     result.add(td);
                 }
@@ -185,12 +217,14 @@ effect: 한 문장으로 간결하게.
 너는 TRPG 특성 강화기야.
 입력된 기존 특성들을 '한 단계 강화된 버전'으로 다시 써라.
 아래 JSON 배열로만 응답 (입력과 같은 개수·같은 순서):
-[{"name":"","description":"","active":false,"effect":""},...]
+[{"name":"","description":"","active":false,"effect":"","cooldown_turns":0,"str_add":0,"cha_add":0,"luk_add":0,"spr_add":0,"hp_max_add":0,"san_max_add":0},...]
 규칙:
 - 같은 정체성을 유지하되 효과를 더 강력·안정적으로
 - 이름은 강화된 느낌으로 바꿔도 좋음
 - description: 아주 짧은 명사구 한 줄(최대 18자). 장황 금지
 - effect: 강화된 효과를 한 문장으로
+- cooldown_turns: 원본보다 1 낮거나 같게 (최소 0). 수동이면 0 유지.
+- 스탯 보정: 강화 시 원본 대비 소폭 상향 가능 (과도한 보정 금지)
 - 범용성: 다른 시나리오에서도 통하게, 특정 사건 직접 언급 금지
 - 스탯 약어(STR/HP/SAN/CHA/LUK/SPR) 금지. 한국어.
 """;
@@ -216,6 +250,14 @@ effect: 한 문장으로 간결하게.
                     td.description = obj.has("description") ? obj.get("description").getAsString() : src.description;
                     td.active      = obj.has("active") ? obj.get("active").getAsBoolean() : src.active;
                     td.effect      = obj.has("effect") ? obj.get("effect").getAsString() : src.effect;
+                    int baseCd = obj.has("cooldown_turns") ? obj.get("cooldown_turns").getAsInt() : src.cooldownTurns;
+                    td.cooldownTurns = Math.max(0, baseCd - 1); // 강화 시 쿨다운 1 감소
+                    td.str_add = obj.has("str_add") ? obj.get("str_add").getAsInt() : src.str_add;
+                    td.cha_add = obj.has("cha_add") ? obj.get("cha_add").getAsInt() : src.cha_add;
+                    td.luk_add = obj.has("luk_add") ? obj.get("luk_add").getAsInt() : src.luk_add;
+                    td.spr_add = obj.has("spr_add") ? obj.get("spr_add").getAsInt() : src.spr_add;
+                    td.hp_max_add = obj.has("hp_max_add") ? obj.get("hp_max_add").getAsInt() : src.hp_max_add;
+                    td.san_max_add = obj.has("san_max_add") ? obj.get("san_max_add").getAsInt() : src.san_max_add;
                     td.roleSpecific = false;     // 강화 보상은 영구
                     td.replacesId   = src.id;    // 원본 대체
                     result.add(td);
@@ -244,14 +286,49 @@ effect: 한 문장으로 간결하게.
 
     public void addTrait(PlayerData pd, TraitData trait) {
         pd.traits.add(trait);
+        pd.str     += trait.str_add;
+        pd.cha     += trait.cha_add;
+        pd.luk     += trait.luk_add;
+        pd.spr     += trait.spr_add;
+        if (trait.hp_max_add != 0) {
+            pd.hp[1] = Math.max(1, pd.hp[1] + trait.hp_max_add);
+            pd.hp[0] = Math.min(pd.hp[0], pd.hp[1]);
+        }
+        if (trait.san_max_add != 0) {
+            pd.san[1] = Math.max(1, pd.san[1] + trait.san_max_add);
+            pd.san[0] = Math.min(pd.san[0], pd.san[1]);
+        }
     }
 
     public boolean removeTrait(PlayerData pd, String traitId) {
-        return pd.traits.removeIf(t -> t.id.equals(traitId));
+        Optional<TraitData> found = pd.traits.stream().filter(t -> t.id.equals(traitId)).findFirst();
+        if (found.isEmpty()) return false;
+        TraitData trait = found.get();
+        pd.str     -= trait.str_add;
+        pd.cha     -= trait.cha_add;
+        pd.luk     -= trait.luk_add;
+        pd.spr     -= trait.spr_add;
+        if (trait.hp_max_add != 0) {
+            pd.hp[1] = Math.max(1, pd.hp[1] - trait.hp_max_add);
+            pd.hp[0] = Math.min(pd.hp[0], pd.hp[1]);
+        }
+        if (trait.san_max_add != 0) {
+            pd.san[1] = Math.max(1, pd.san[1] - trait.san_max_add);
+            pd.san[0] = Math.min(pd.san[0], pd.san[1]);
+        }
+        return pd.traits.remove(trait);
     }
 
     public Optional<TraitData> getTrait(PlayerData pd, String traitId) {
         return pd.traits.stream().filter(t -> t.id.equals(traitId)).findFirst();
+    }
+
+    /** 스테이지 종료/재도전 시 스테이지당 1회 쿨다운(-1)과 usedThisStage 초기화 */
+    public void resetStageTraits(PlayerData pd) {
+        for (TraitData t : pd.traits) {
+            t.usedThisStage = 0;
+            if (t.cooldownTurns == -1) t.remainingCooldown = 0;
+        }
     }
 
     // ──────────────────────────────────────────────────────────────

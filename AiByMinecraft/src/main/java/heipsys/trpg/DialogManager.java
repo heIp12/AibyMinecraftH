@@ -49,7 +49,8 @@ public class DialogManager {
             .append(Component.text(hpDisplay(pd.hp), NamedTextColor.WHITE)
                 .hoverEvent(Component.text(
                     "현재: " + pd.hp[0] + " / 최대: " + pd.hp[1]
-                    + "  (100 기준 환산 표시)", NamedTextColor.GRAY)))
+                    + "  (100 기준 환산 표시)\n" + heipsys.trpg.model.PlayerData.statDesc("hp", pd.hp[1]),
+                    NamedTextColor.GRAY)))
             .append(Component.text("    ", NamedTextColor.WHITE))
             // 정신력 — 라벨: 설명, 값: 원본 수치
             .append(Component.text("정신력  ", NamedTextColor.AQUA)
@@ -59,25 +60,26 @@ public class DialogManager {
             .append(Component.text(hpDisplay(pd.san), NamedTextColor.WHITE)
                 .hoverEvent(Component.text(
                     "현재: " + pd.san[0] + " / 최대: " + pd.san[1]
-                    + "  (100 기준 환산 표시)", NamedTextColor.GRAY)))
+                    + "  (100 기준 환산 표시)\n" + heipsys.trpg.model.PlayerData.statDesc("san", pd.san[1]),
+                    NamedTextColor.GRAY)))
             .appendNewline()
             // 2차 스탯 — 라벨에 판정 설명
             .append(Component.text("근력 ", NamedTextColor.YELLOW)
                 .hoverEvent(Component.text("근력 (STR)\n물리 행동·격투·이동 판정에 영향", NamedTextColor.GRAY)))
             .append(Component.text(String.valueOf(pd.str), NamedTextColor.WHITE)
-                .hoverEvent(Component.text("근력: " + pd.str, NamedTextColor.YELLOW)))
+                .hoverEvent(Component.text("근력: " + pd.str + "\n" + heipsys.trpg.model.PlayerData.statDesc("str", pd.str), NamedTextColor.YELLOW)))
             .append(Component.text("   매력 ", NamedTextColor.YELLOW)
                 .hoverEvent(Component.text("매력 (CHA)\n설득·협박·사교 판정에 영향", NamedTextColor.GRAY)))
             .append(Component.text(String.valueOf(pd.cha), NamedTextColor.WHITE)
-                .hoverEvent(Component.text("매력: " + pd.cha, NamedTextColor.YELLOW)))
+                .hoverEvent(Component.text("매력: " + pd.cha + "\n" + heipsys.trpg.model.PlayerData.statDesc("cha", pd.cha), NamedTextColor.YELLOW)))
             .append(Component.text("   행운 ", NamedTextColor.YELLOW)
                 .hoverEvent(Component.text("행운 (LUK)\n위기 탈출·우연한 발견 판정에 영향", NamedTextColor.GRAY)))
             .append(Component.text(String.valueOf(pd.luk), NamedTextColor.WHITE)
-                .hoverEvent(Component.text("행운: " + pd.luk, NamedTextColor.YELLOW)))
+                .hoverEvent(Component.text("행운: " + pd.luk + "\n" + heipsys.trpg.model.PlayerData.statDesc("luk", pd.luk), NamedTextColor.YELLOW)))
             .append(Component.text("   영감 ", NamedTextColor.YELLOW)
                 .hoverEvent(Component.text("영감 (SPR)\n직감·예지·정신 방어 판정에 영향", NamedTextColor.GRAY)))
             .append(Component.text(String.valueOf(pd.spr), NamedTextColor.WHITE)
-                .hoverEvent(Component.text("영감: " + pd.spr, NamedTextColor.YELLOW)));
+                .hoverEvent(Component.text("영감: " + pd.spr + "\n" + heipsys.trpg.model.PlayerData.statDesc("spr", pd.spr), NamedTextColor.YELLOW)));
 
         // 능력 성향: 수치를 자연어로 가볍게 해설
         bodyBuilder.appendNewline().appendNewline()
@@ -305,7 +307,15 @@ public class DialogManager {
         } else if (d < 0) {
             c.append(Component.text(" (" + d + ")", NamedTextColor.RED));
         }
-        c.hoverEvent(Component.text(label + "\n기본 " + base + (d != 0 ? " → 현재 " + current + " (배역 보정)" : ""), NamedTextColor.GRAY));
+        String key = switch (label) {
+            case "근력" -> "str"; case "매력" -> "cha";
+            case "행운" -> "luk"; case "영감" -> "spr";
+            default -> "";
+        };
+        String desc = key.isEmpty() ? "" : heipsys.trpg.model.PlayerData.statDesc(key, current);
+        String hover = label + "\n기본 " + base + (d != 0 ? " → 현재 " + current + " (배역 보정)" : "")
+                       + (desc.isEmpty() ? "" : "\n" + desc);
+        c.hoverEvent(Component.text(hover, NamedTextColor.GRAY));
         return c.build();
     }
 
