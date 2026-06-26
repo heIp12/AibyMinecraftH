@@ -30,11 +30,16 @@ import java.util.List;
 /**
  * 현장 약도(지도 아이템) 관리.
  *
- * .gdam zones[].connections 그래프를 BFS 레이어 배치로 128x128 filled_map에 그린다.
+ * .gdam zones[].connections 그래프를 128x128 filled_map에 그린다.
  * - 한글 방 이름: 번들 픽셀 폰트(neodgm, OFL)를 AWT BufferedImage에 렌더 → MapCanvas.drawImage.
  *   (마인크래프트 기본 MapFont는 ASCII 전용이라 한글 불가 → AWT 우회)
  * - 현재 위치: 깃발 핀.
  * - 공개 범위(viewer별): hasFullMap=true면 전체, 아니면 visitedZones만("가 본 곳만 그릴 수 있다").
+ *
+ * 두 가지 모드:
+ * - 평면(flat): zones를 2열 그리드로. area가 1개 이하일 때.
+ * - 계층(hierarchical): zone에 area(층/구역)가 2개 이상이면 상단=대분류(구역 전체, 현재 구역 강조),
+ *   하단=소분류(현재 구역의 방들)로 한 장에 2단 배치. (칸 부족 대응)
  *
  * 입수 경로:
  *   /trpg map     — 직접 그린 약도(방문한 zone만)
@@ -48,21 +53,32 @@ public class MapManager {
     private static final Color C_BG     = new Color(0xE8, 0xDC, 0xB5); // 양피지 바탕
     private static final Color C_EDGE   = new Color(0x6B, 0x4F, 0x2A); // 통로(연결선)
     private static final Color C_BOX    = new Color(0xF6, 0xEF, 0xD2); // 방 박스
+    private static final Color C_BOX2   = new Color(0xE6, 0xC9, 0x7A); // 현재 위치 박스(강조)
     private static final Color C_BORDER = new Color(0x3A, 0x2A, 0x12); // 방 테두리
     private static final Color C_TEXT   = new Color(0x20, 0x18, 0x08); // 방 이름
     private static final Color C_FLAG   = new Color(0xCC, 0x22, 0x22); // 현위치 깃발
     private static final Color C_POLE   = new Color(0x33, 0x26, 0x12); // 깃대
+    private static final Color C_DIV    = new Color(0x9A, 0x82, 0x55); // 구분선
 
     private final Plugin           plugin;
     private final GameStateManager state;
     private final NamespacedKey    mapKey;
-    private Font                   font; // neodgm 16px (없으면 논리 폰트 폴백)
+    private Font                   font; // neodgm 13px (없으면 논리 폰트 폴백)
 
     // 현재 시나리오 그래프 (startDailyPhase에서 loadScenario로 갱신 — 메인 스레드)
-    private final Map<String, String>      zoneNames = new LinkedHashMap<>();   // id → 표시 이름
-    private final Map<String, Set<String>> adj       = new HashMap<>();         // id → 인접 id
-    private final Map<String, int[]>       layout    = new HashMap<>();         // id → {px, py}
+    private final Map<String, String>      zoneNames = new LinkedHashMap<>(); // id → 표시 이름
+    private final Map<String, String>      zoneArea  = new LinkedHashMap<>(); // id → 구역(area) 이름
+    private final Map<String, Set<String>> adj       = new HashMap<>();       // id → 인접 id
     private List<String>                   zoneOrder = new ArrayList<>();
+
+    // 계층 모드 데이터
+    private boolean                        hierarchical = false;
+    private final List<String>             areaOrder = new ArrayList<>();
+    private final Map<String, Set<String>> areaAdj   = new HashMap<>();           // area → 인접 area
+    private final Map<String, int[]>       overviewLayout = new HashMap<>();      // area → {px,py}
+    private final Map<String, Map<String, int[]>> detailLayouts = new HashMap<>(); // area → (zone → {px,py})
+    // 평면 모드 데이터
+    private final Map<String, int[]>       flatLayout = new HashMap<>();           // zone → {px,py}
 
     private MapView view; // 시나리오 공유 MapView (최초 약도 요청 시 지연 생성)
     private final Map<UUID, String> lastSig = new HashMap<>(); // viewer별 마지막 렌더 시그니처
@@ -81,19 +97,18 @@ public class MapManager {
         } catch (Exception e) {
             plugin.getLogger().warning("[map] 한글 폰트 로드 실패(약도 글자가 깨질 수 있음): " + e.getMessage());
         }
-        if (font == null) font = new Font(Font.SANS_SERIF, Font.PLAIN, 14);
+        if (font == null) font = new Font(Font.SANS_SERIF, Font.PLAIN, 12);
     }
 
     // ──────────────────────────────────────────────────────────────
     //  시나리오 로드 / 정리
     // ──────────────────────────────────────────────────────────────
 
-    /** 새 .gdam의 zones+connections를 읽어 그래프·배치를 갱신. (메인 스레드에서 호출) */
+    /** 새 .gdam의 zones+connections(+area)를 읽어 그래프·배치를 갱신. (메인 스레드에서 호출) */
     public void loadScenario(JsonObject gdam) {
-        zoneNames.clear();
-        adj.clear();
-        layout.clear();
-        zoneOrder = new ArrayList<>();
+        zoneNames.clear(); zoneArea.clear(); adj.clear(); zoneOrder = new ArrayList<>();
+        areaOrder.clear(); areaAdj.clear(); overviewLayout.clear(); detailLayouts.clear(); flatLayout.clear();
+        hierarchical = false;
         lastSig.clear(); // 보유 중인 약도를 새 그래프로 강제 재렌더
         if (gdam == null || !gdam.has("zones")) return;
 
@@ -107,73 +122,107 @@ public class MapManager {
             zoneNames.put(id, name);
             zoneOrder.add(id);
             adj.computeIfAbsent(id, k -> new LinkedHashSet<>());
+            if (z.has("area") && !z.get("area").getAsString().isBlank()) {
+                String area = z.get("area").getAsString();
+                zoneArea.put(id, area);
+                if (!areaOrder.contains(area)) areaOrder.add(area);
+            }
             if (z.has("connections") && z.get("connections").isJsonArray()) {
                 for (JsonElement c : z.getAsJsonArray("connections")) {
                     String to = c.getAsString();
-                    if (to == null || to.isBlank()) continue;
-                    adj.get(id).add(to);
+                    if (to != null && !to.isBlank()) adj.get(id).add(to);
                 }
             }
         }
         // 연결을 양방향으로 보정 (한쪽에만 적힌 경우 대비)
-        for (String a : new ArrayList<>(adj.keySet())) {
-            for (String b : new ArrayList<>(adj.get(a))) {
+        for (String a : new ArrayList<>(adj.keySet()))
+            for (String b : new ArrayList<>(adj.get(a)))
                 if (zoneNames.containsKey(b)) adj.computeIfAbsent(b, k -> new LinkedHashSet<>()).add(a);
+
+        hierarchical = areaOrder.size() >= 2;
+        if (hierarchical) buildAreaGraph();
+        computeLayouts();
+    }
+
+    /** 구역(area) 인접 관계 = 구역을 넘나드는 zone 연결에서 자동 도출 */
+    private void buildAreaGraph() {
+        for (String a : areaOrder) areaAdj.put(a, new LinkedHashSet<>());
+        for (String z : zoneOrder) {
+            String za = zoneArea.get(z);
+            if (za == null) continue;
+            for (String nb : adj.getOrDefault(z, Set.of())) {
+                String na = zoneArea.get(nb);
+                if (na != null && !na.equals(za)) { areaAdj.get(za).add(na); areaAdj.get(na).add(za); }
             }
         }
-        computeLayout();
     }
 
     /** 세션 종료 시 약도 상태 초기화 (다음 세션에서 새 MapView 생성). */
     public void clear() {
         view = null;
         lastSig.clear();
-        zoneNames.clear();
-        adj.clear();
-        layout.clear();
-        zoneOrder = new ArrayList<>();
+        zoneNames.clear(); zoneArea.clear(); adj.clear(); zoneOrder = new ArrayList<>();
+        areaOrder.clear(); areaAdj.clear(); overviewLayout.clear(); detailLayouts.clear(); flatLayout.clear();
+        hierarchical = false;
     }
 
     public boolean hasZones() { return !zoneOrder.isEmpty(); }
 
     // ──────────────────────────────────────────────────────────────
-    //  배치 (BFS 순서 2열 그리드 — 128px에 한글 방이름이 겹치지 않게)
+    //  배치 (BFS 순서 그리드 — 128px에 한글 방이름이 겹치지 않게)
     // ──────────────────────────────────────────────────────────────
 
-    /** 연결된 방이 그리드에서 서로 가깝게 오도록 BFS 순서로 zone 나열 */
-    private List<String> bfsOrder() {
+    private void computeLayouts() {
+        if (hierarchical) {
+            // 대분류: 상단 띠
+            putAll(overviewLayout, grid(bfs(areaOrder, areaAdj), 2, 3, SIZE - 4, 30, Math.min(4, areaOrder.size())));
+            // 소분류: 구역별 하단 영역
+            for (String area : areaOrder) {
+                List<String> zs = new ArrayList<>();
+                for (String z : zoneOrder) if (area.equals(zoneArea.get(z))) zs.add(z);
+                detailLayouts.put(area, grid(bfs(zs, adj), 2, 56, SIZE - 4, 70, 2));
+            }
+        } else {
+            putAll(flatLayout, grid(bfs(zoneOrder, adj), 0, 0, SIZE, SIZE, 2));
+        }
+    }
+
+    private static void putAll(Map<String, int[]> dst, Map<String, int[]> src) { dst.putAll(src); }
+
+    /** 연결된 노드가 그리드에서 가깝게 오도록 BFS 순서로 나열 */
+    private static List<String> bfs(List<String> nodes, Map<String, Set<String>> graph) {
         List<String> out = new ArrayList<>();
         Set<String> seen = new HashSet<>();
-        for (String start : zoneOrder) {
+        for (String start : nodes) {
             if (seen.contains(start)) continue;
             Deque<String> q = new ArrayDeque<>();
-            q.add(start);
-            seen.add(start);
+            q.add(start); seen.add(start);
             while (!q.isEmpty()) {
                 String cur = q.poll();
                 out.add(cur);
-                for (String nb : adj.getOrDefault(cur, Set.of())) {
-                    if (!seen.contains(nb) && zoneNames.containsKey(nb)) { seen.add(nb); q.add(nb); }
-                }
+                for (String nb : graph.getOrDefault(cur, Set.of()))
+                    if (!seen.contains(nb) && nodes.contains(nb)) { seen.add(nb); q.add(nb); }
             }
         }
         return out;
     }
 
-    private void computeLayout() {
-        layout.clear();
-        if (zoneOrder.isEmpty()) return;
-        List<String> order = bfsOrder();
-        int n    = order.size();
-        int cols = Math.min(2, n);
+    /** order를 (x0,y0,w,h) 영역에 최대 maxCols열 그리드로 배치 */
+    private static Map<String, int[]> grid(List<String> order, int x0, int y0, int w, int h, int maxCols) {
+        Map<String, int[]> m = new HashMap<>();
+        int n = order.size();
+        if (n == 0) return m;
+        int cols = Math.min(Math.max(1, maxCols), n);
         int rows = (int) Math.ceil(n / (double) cols);
-        int cellW = SIZE / cols;
-        int cellH = SIZE / rows;
+        int cw = w / cols, ch = h / rows;
         for (int i = 0; i < n; i++) {
             int c = i % cols, r = i / cols;
-            layout.put(order.get(i), new int[]{c * cellW + cellW / 2, r * cellH + cellH / 2});
+            m.put(order.get(i), new int[]{x0 + c * cw + cw / 2, y0 + r * ch + ch / 2});
         }
+        return m;
     }
+
+    private static int cols(int n, int maxCols) { return Math.min(Math.max(1, maxCols), Math.max(1, n)); }
 
     /** 화면 너비(maxW)에 맞게 자르고 넘치면 말줄임표(…) */
     private static String fit(FontMetrics fm, String s, int maxW) {
@@ -185,6 +234,8 @@ public class MapManager {
         }
         return "…";
     }
+
+    private static int clamp(int v, int lo, int hi) { return Math.max(lo, Math.min(hi, v)); }
 
     // ──────────────────────────────────────────────────────────────
     //  약도 입수
@@ -213,7 +264,7 @@ public class MapManager {
         p.sendMessage("§a약도를 손에 넣었습니다. §7인벤토리에서 펼쳐 확인하세요. (현위치는 §c깃발§7로 표시)");
     }
 
-    /** 지도 입수(전체 공개) — &lt;MAP_GRANT&gt; 또는 지도형 아이템 지급 시 호출. */
+    /** 지도 입수(전체 공개) — &lt;MAP_GRANT&gt; 처리 시 호출. */
     public void grantFullMap(Player p) {
         PlayerData pd = state.getPlayer(p);
         if (pd == null) return;
@@ -289,18 +340,15 @@ public class MapManager {
         }
     }
 
-    /** 공개된 zone과 그 사이 통로, 현위치 깃발을 128x128 이미지로 그린다. */
+    /** 공개된 zone과 통로, 현위치 깃발을 128x128 이미지로 그린다. */
     private BufferedImage draw(Set<String> revealed, String currentZone) {
         BufferedImage img = new BufferedImage(SIZE, SIZE, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = img.createGraphics();
-        g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
-                           RenderingHints.VALUE_TEXT_ANTIALIAS_OFF);
+        g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_OFF);
         g.setColor(C_BG);
         g.fillRect(0, 0, SIZE, SIZE);
         g.setFont(font);
         FontMetrics fm = g.getFontMetrics();
-        int cols     = Math.min(2, Math.max(1, layout.size()));
-        int maxBoxW  = SIZE / cols - 6; // 한 칸 너비 안에서 박스 최대 폭
 
         if (revealed.isEmpty()) {
             String msg = fit(fm, "약도 정보 없음", SIZE - 8);
@@ -310,49 +358,77 @@ public class MapManager {
             return img;
         }
 
-        // 1) 통로(연결선) — 공개된 zone끼리만
-        g.setColor(C_EDGE);
-        for (String a : revealed) {
-            int[] pa = layout.get(a);
-            if (pa == null) continue;
-            for (String b : adj.getOrDefault(a, Set.of())) {
-                if (!revealed.contains(b) || a.compareTo(b) >= 0) continue; // 중복 방지
-                int[] pb = layout.get(b);
-                if (pb == null) continue;
-                g.drawLine(pa[0], pa[1], pb[0], pb[1]);
-            }
-        }
-
-        // 2) 방 박스 + 이름
-        for (String id : revealed) {
-            int[] p = layout.get(id);
-            if (p == null) continue;
-            String label = fit(fm, zoneNames.getOrDefault(id, id), maxBoxW - 8);
-            int tw = fm.stringWidth(label);
-            int bw = tw + 8, bh = fm.getAscent() + 4;
-            int bx = clamp(p[0] - bw / 2, 0, SIZE - bw);
-            int by = clamp(p[1] - bh / 2, 0, SIZE - bh);
-            g.setColor(C_BOX);    g.fillRect(bx, by, bw, bh);
-            g.setColor(C_BORDER); g.drawRect(bx, by, bw, bh);
-            g.setColor(C_TEXT);   g.drawString(label, bx + 4, by + fm.getAscent());
-
-            // 3) 현위치 깃발 (박스 좌상단)
-            if (id.equals(currentZone)) {
-                int px = bx + 4;
-                int topY = by - 1;
-                g.setColor(C_POLE);
-                g.drawLine(px, topY, px, topY - 12);
-                g.setColor(C_FLAG);
-                int[] xs = {px, px + 8, px};
-                int[] ys = {topY - 12, topY - 9, topY - 6};
-                g.fillPolygon(xs, ys, 3);
-            }
+        if (hierarchical) drawHierarchical(g, fm, revealed, currentZone);
+        else {
+            int mbw = SIZE / cols(zoneOrder.size(), 2) - 6;
+            drawGraph(g, fm, revealed, flatLayout, adj, currentZone, zoneNames, mbw, 0, 0, SIZE, SIZE);
         }
         g.dispose();
         return img;
     }
 
-    private static int clamp(int v, int lo, int hi) {
-        return Math.max(lo, Math.min(hi, v));
+    private void drawHierarchical(Graphics2D g, FontMetrics fm, Set<String> revealed, String currentZone) {
+        String curArea = zoneArea.get(currentZone);
+        if (curArea == null && !areaOrder.isEmpty()) curArea = areaOrder.get(0);
+
+        // 1) 대분류(구역) — 상단 띠
+        Set<String> revealedAreas = new LinkedHashSet<>();
+        for (String z : revealed) { String a = zoneArea.get(z); if (a != null) revealedAreas.add(a); }
+        if (curArea != null) revealedAreas.add(curArea);
+        Map<String, String> areaNames = new LinkedHashMap<>();
+        for (String a : areaOrder) areaNames.put(a, a);
+        int ovBoxW = (SIZE - 4) / cols(areaOrder.size(), 4) - 6;
+        drawGraph(g, fm, revealedAreas, overviewLayout, areaAdj, curArea, areaNames, ovBoxW, 2, 3, SIZE - 4, 30);
+
+        // 2) 구분선 + 현재 구역 표시(브레드크럼)
+        g.setColor(C_DIV);
+        g.drawLine(0, 38, SIZE, 38);
+        g.setColor(C_TEXT);
+        g.drawString(fit(fm, "▸ " + (curArea == null ? "?" : curArea), SIZE - 8), 4, 52);
+
+        // 3) 소분류(현재 구역의 방) — 하단
+        Map<String, int[]> dPos = detailLayouts.get(curArea);
+        if (dPos == null) return;
+        Set<String> revDetail = new LinkedHashSet<>();
+        for (String z : revealed) if (Objects.equals(curArea, zoneArea.get(z))) revDetail.add(z);
+        drawGraph(g, fm, revDetail, dPos, adj, currentZone, zoneNames, SIZE / 2 - 6, 2, 56, SIZE - 4, 70);
+    }
+
+    /** 한 그래프(노드+통로+현위치 깃발)를 지정 영역(rx,ry,rw,rh) 안에 그린다 */
+    private void drawGraph(Graphics2D g, FontMetrics fm, Set<String> revealed, Map<String, int[]> pos,
+                           Map<String, Set<String>> graph, String cur, Map<String, String> names,
+                           int maxBoxW, int rx, int ry, int rw, int rh) {
+        // 통로(연결선)
+        g.setColor(C_EDGE);
+        for (String a : revealed) {
+            int[] pa = pos.get(a);
+            if (pa == null) continue;
+            for (String b : graph.getOrDefault(a, Set.of())) {
+                if (!revealed.contains(b) || a.compareTo(b) >= 0) continue; // 중복 방지
+                int[] pb = pos.get(b);
+                if (pb == null) continue;
+                g.drawLine(pa[0], pa[1], pb[0], pb[1]);
+            }
+        }
+        // 방 박스 + 이름 + 현위치 깃발
+        for (String id : revealed) {
+            int[] p = pos.get(id);
+            if (p == null) continue;
+            String label = fit(fm, names.getOrDefault(id, id), maxBoxW - 8);
+            int tw = fm.stringWidth(label);
+            int bw = tw + 8, bh = fm.getAscent() + 4;
+            int bx = clamp(p[0] - bw / 2, rx, rx + rw - bw);
+            int by = clamp(p[1] - bh / 2, ry, ry + rh - bh);
+            g.setColor(id.equals(cur) ? C_BOX2 : C_BOX); g.fillRect(bx, by, bw, bh);
+            g.setColor(C_BORDER);                          g.drawRect(bx, by, bw, bh);
+            g.setColor(C_TEXT);                            g.drawString(label, bx + 4, by + fm.getAscent());
+            if (id.equals(cur)) {
+                int px = bx + 4, topY = by - 1;
+                g.setColor(C_POLE);
+                g.drawLine(px, topY, px, topY - 11);
+                g.setColor(C_FLAG);
+                g.fillPolygon(new int[]{px, px + 8, px}, new int[]{topY - 11, topY - 8, topY - 5}, 3);
+            }
+        }
     }
 }
