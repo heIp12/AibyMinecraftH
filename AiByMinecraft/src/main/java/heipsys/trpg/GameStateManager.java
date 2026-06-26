@@ -359,6 +359,28 @@ public class GameStateManager {
         if (id != null && !id.isBlank()) blockedEvents.add(id.trim());
     }
 
+    /** GM EVENT_TRIGGER: 분기 등으로 특정 main_event를 즉시 발화한다(시각 미도달이어도). */
+    public void triggerEvent(String id) {
+        if (id == null || id.isBlank() || gdamData == null || !gdamData.has("timeline")) return;
+        String tid = id.trim();
+        if (firedEvents.contains(tid)) return;
+        JsonObject tl = gdamData.getAsJsonObject("timeline");
+        if (!tl.has("main_events") || !tl.get("main_events").isJsonArray()) return;
+        for (JsonElement el : tl.getAsJsonArray("main_events")) {
+            if (!el.isJsonObject()) continue;
+            JsonObject ev = el.getAsJsonObject();
+            String eid = ev.has("id") ? ev.get("id").getAsString() : "";
+            if (!tid.equals(eid)) continue;
+            firedEvents.add(tid);
+            blockedEvents.remove(tid); // 차단됐어도 분기로 강제 발화 가능
+            String label  = ev.has("label")  ? ev.get("label").getAsString()  : tid;
+            String effect = ev.has("effect") ? ev.get("effect").getAsString() : "";
+            justFiredEvents.add(label + (effect.isEmpty() ? "" : " — " + effect));
+            if (ev.has("is_end") && ev.get("is_end").getAsBoolean()) { endEventFired = true; timelineStage = 4; }
+            return;
+        }
+    }
+
     // ──────────────────────────────────────────────────────────────
     //  턴
     // ──────────────────────────────────────────────────────────────

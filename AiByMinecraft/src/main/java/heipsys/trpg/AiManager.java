@@ -295,6 +295,7 @@ public class AiManager {
             .replaceAll("<MAP_GRANT [^/]*/?>", "")
             .replaceAll("<TIME_SKIP [^/]*/?>", "")
             .replaceAll("<EVENT_BLOCK [^/]*/?>", "")
+            .replaceAll("<EVENT_TRIGGER [^/]*/?>", "")
             .replaceAll("<TIME_VISIBLE [^/]*/?>", "")
             .trim();
     }
@@ -597,6 +598,11 @@ public class AiManager {
     /** <EVENT_BLOCK id="X"/> 모두 파싱 → [id, ...] */
     public java.util.List<String> parseEventBlockTags(String response) {
         return parseSelfClosingAttr(response, "<EVENT_BLOCK ", "id");
+    }
+
+    /** <EVENT_TRIGGER id="X"/> 모두 파싱 → [id, ...] (분기로 특정 사건 즉시 발화) */
+    public java.util.List<String> parseEventTriggerTags(String response) {
+        return parseSelfClosingAttr(response, "<EVENT_TRIGGER ", "id");
     }
 
     /** <TIME_VISIBLE player="X" known="true/false"/> 모두 파싱 → [{player, known}, ...] */
