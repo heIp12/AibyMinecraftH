@@ -221,7 +221,7 @@ LUK 10+: 자주, 극적인 행운
 ### 상태 변화 출력
 반드시 아래 태그로 출력:
 <STATE_UPDATE>
-{"player":"","hp_change":0,"san_change":0,"timeline_change":0,"status_change":null,"new_clue":null,"item_grant":null,"item_remove":null}
+{"player":"캐릭터 이름(charName)을 우선 사용, 없으면 마인크래프트 이름","hp_change":0,"san_change":0,"timeline_change":0,"status_change":null,"new_clue":null,"item_grant":null,"item_remove":null}
 </STATE_UPDATE>
 
 ### 클리어 판정 — 두 가지 유형
@@ -891,8 +891,10 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                 PlayerData pd = state.getPlayer(entry.getKey());
                 if (pd != null) {
                     RoleManager.RoleAssignment asgn = entry.getValue();
-                    pd.roleId = asgn.roleId();
-                    pd.zone   = asgn.zone();
+                    pd.roleId   = asgn.roleId();
+                    pd.zone     = asgn.zone();
+                    pd.charName = asgn.charName();
+                    pd.gender   = asgn.gender();
                     pd.roleAssigned = true;
                 }
             }
@@ -1157,7 +1159,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             // initial_info를 GM 전달 컨텍스트에 포함 (장면 묘사에 자연스럽게 반영용)
             StringBuilder promptSb = new StringBuilder();
             promptSb.append("게임 도입부 장면이다. 배역 '").append(pd.roleId)
-                .append("' 플레이어(").append(pd.name).append(")에게만 전달된다. ");
+                .append("' 플레이어(").append(pd.charName.isEmpty() ? pd.name : pd.charName + "(" + pd.name + ")").append(")에게만 전달된다. ");
             promptSb.append("시작 위치: ").append(pd.zone.isEmpty() ? "?" : pd.zone).append(". ");
             JsonObject roleDataForPrologue = getRoleDataById(pd.roleId);
             if (roleDataForPrologue != null && roleDataForPrologue.has("initial_info")) {
@@ -1445,7 +1447,8 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         if (playerName == null) return;
 
         state.getAllPlayers().stream()
-            .filter(pd -> pd.name.equals(playerName))
+            .filter(pd -> pd.name.equals(playerName)
+                       || (!pd.charName.isEmpty() && pd.charName.equals(playerName)))
             .findFirst()
             .ifPresent(pd -> {
                 // 일상 파트에서는 스탯 변화는 허용하되 사망 전환은 불가
@@ -2641,15 +2644,17 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     }
 
     private RoleManager.RoleAssignment roleDataToAssignment(JsonObject r) {
-        String roleId   = r.has("role_id") ? r.get("role_id").getAsString() : "role_?";
-        String roleName = r.has("name")    ? r.get("name").getAsString()    : "알 수 없는 배역";
-        String zone     = r.has("zone")    ? r.get("zone").getAsString()    : "zone_A";
+        String roleId   = r.has("role_id")   ? r.get("role_id").getAsString()   : "role_?";
+        String roleName = r.has("name")      ? r.get("name").getAsString()      : "알 수 없는 배역";
+        String zone     = r.has("zone")      ? r.get("zone").getAsString()      : "zone_A";
         boolean adv     = r.has("knowledge_advantage") && r.get("knowledge_advantage").getAsBoolean();
+        String charName = r.has("char_name") ? r.get("char_name").getAsString() : "";
+        String gender   = r.has("gender")    ? r.get("gender").getAsString()    : "";
         List<String> info = new ArrayList<>();
         if (r.has("initial_info")) {
             r.getAsJsonArray("initial_info").forEach(i -> info.add(i.getAsString()));
         }
-        return new RoleManager.RoleAssignment(roleId, roleName, zone, info, adv);
+        return new RoleManager.RoleAssignment(roleId, roleName, zone, info, adv, charName, gender);
     }
 
     // ──────────────────────────────────────────────────────────────
