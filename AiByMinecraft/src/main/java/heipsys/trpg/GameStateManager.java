@@ -495,6 +495,20 @@ public class GameStateManager {
         return sb.toString();
     }
 
+    /** 시나리오 평가용 — 전체 게임 로그 (action + damage + clue + system) */
+    public String buildFullEvalLog() {
+        StringBuilder sb = new StringBuilder();
+        synchronized (eventLog) {
+            for (EventLogEntry e : eventLog) {
+                if ("action".equals(e.type) || "damage".equals(e.type)
+                        || "clue".equals(e.type) || "system".equals(e.type)) {
+                    sb.append(e.toLogString()).append("\n");
+                }
+            }
+        }
+        return sb.toString();
+    }
+
     // ──────────────────────────────────────────────────────────────
     //  접근자
     // ──────────────────────────────────────────────────────────────
