@@ -92,6 +92,7 @@ public class PlayerData {
         isDead       = false;
         impersonated = false;
         status       = "normal";
+        spot         = "";
         turnState    = TurnState.IDLE;
         // heldItemIds / contactId / knownContacts 는 회차(재도전)에도 유지
         // (마인크래프트 인벤토리와 학습한 연락처는 재도전 시 보존됨)

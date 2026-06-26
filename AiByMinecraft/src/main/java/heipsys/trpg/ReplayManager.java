@@ -72,7 +72,7 @@ public class ReplayManager {
     }
 
     public List<String> listReplays() {
-        String[] files = dir.list((d, n) -> n.startsWith("S"));
+        String[] files = dir.list((d, n) -> n.startsWith("S") && n.endsWith(".replay"));
         if (files == null) return List.of();
         List<String> out = new ArrayList<>(Arrays.asList(files));
         Collections.sort(out);
@@ -83,12 +83,12 @@ public class ReplayManager {
     //  파일명 인코딩
     // ──────────────────────────────────────────────────────────────
 
-    /** S{stage}_{seed}_{hex(YYMMDD)}T{HHMM} */
+    /** S{stage}_{seed}_{hex(YYMMDD)}T{HHMM}.replay */
     private String buildFileName(int stage, String seed, LocalDateTime now) {
         int yymmdd = (now.getYear() % 100) * 10000 + now.getMonthValue() * 100 + now.getDayOfMonth();
         String dateHex = Integer.toHexString(yymmdd).toUpperCase();          // 260626 → 3FA12
         String time    = String.format("%02d%02d", now.getHour(), now.getMinute());
-        return "S" + stage + "_" + seed + "_" + dateHex + "T" + time;
+        return "S" + stage + "_" + seed + "_" + dateHex + "T" + time + ".replay";
     }
 
     /** 경로 탈출 방지: 디렉터리 구분자·상위 참조 제거 */

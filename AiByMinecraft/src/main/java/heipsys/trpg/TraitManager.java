@@ -274,7 +274,8 @@ str_add/cha_add/luk_add/spr_add/hp_max_add/san_max_add: B급 이하는 0이 원�
                     td.active      = obj.has("active") ? obj.get("active").getAsBoolean() : src.active;
                     td.effect      = obj.has("effect") ? obj.get("effect").getAsString() : src.effect;
                     int baseCd = obj.has("cooldown_turns") ? obj.get("cooldown_turns").getAsInt() : src.cooldownTurns;
-                    td.cooldownTurns = Math.max(0, baseCd - 1); // 강화 시 쿨다운 1 감소
+                    // baseCd < 0 = 스테이지당 1회(-1); 유지. 양수면 1 감소(최소 0).
+                    td.cooldownTurns = (baseCd < 0) ? baseCd : Math.max(0, baseCd - 1);
                     td.str_add = obj.has("str_add") ? obj.get("str_add").getAsInt() : src.str_add;
                     td.cha_add = obj.has("cha_add") ? obj.get("cha_add").getAsInt() : src.cha_add;
                     td.luk_add = obj.has("luk_add") ? obj.get("luk_add").getAsInt() : src.luk_add;

@@ -2092,7 +2092,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     }
 
     private void activateSacrifice(Player player, PlayerData pd, TraitData td) {
-        int cost    = td.param("cost", 10);
+        int cost    = td.param("cost", 2);
         boolean useSan = td.param("use_san", 0) == 1;
         String resource = useSan ? "정신력" : "체력";
         if (useSan) {

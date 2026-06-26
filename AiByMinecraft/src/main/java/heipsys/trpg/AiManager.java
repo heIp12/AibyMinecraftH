@@ -315,6 +315,11 @@ public class AiManager {
 
     private String send(String model, String system, List<JsonObject> messages, int maxTokens)
             throws Exception {
+        return send(model, system, messages, maxTokens, 0);
+    }
+
+    private String send(String model, String system, List<JsonObject> messages, int maxTokens, int attempt)
+            throws Exception {
 
         String body;
         HttpRequest.Builder builder = HttpRequest.newBuilder()
@@ -379,8 +384,9 @@ public class AiManager {
         HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
 
         if (response.statusCode() == 429) {
-            Thread.sleep(7000);
-            return send(model, system, messages, maxTokens);
+            if (attempt >= 3) throw new RuntimeException("API 429: 재시도 횟수 초과 (3회)");
+            Thread.sleep(7000L * (attempt + 1));
+            return send(model, system, messages, maxTokens, attempt + 1);
         }
         if (response.statusCode() != 200) {
             throw new RuntimeException("API " + response.statusCode() + ": " + response.body().substring(0, Math.min(200, response.body().length())));
@@ -431,8 +437,7 @@ public class AiManager {
         final String PREFIX = "<COMM ";
         int idx = response.indexOf(PREFIX);
         if (idx == -1) return null;
-        // <COMM_CLOSE 와 혼동 방지: 바로 다음 문자가 '_' 이면 스킵
-        if (idx + PREFIX.length() <= response.length() && response.charAt(idx + PREFIX.length() - 1) == '_') return null;
+        // PREFIX = "<COMM " 이므로 "<COMM_CLOSE"와 이미 구별됨 (공백 vs 밑줄)
         int end = response.indexOf("/>", idx);
         if (end == -1) return null;
         String attrs = response.substring(idx + PREFIX.length(), end).trim();
