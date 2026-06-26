@@ -313,9 +313,13 @@ D: 생존판정 (1~2명 도주 성공, 해결 없음)
 - 다른 위치의 플레이어에게는 이 협력 내용을 전달하지 않는다(거리 밖에서는 알 수 없음).
 
 ### 배역 등장 처리
-spawn_timeline이 된 배역이 등장할 시점:
-<SPAWN player="플레이어명"/>
-이 태그 출력 시 해당 플레이어가 스토리에 진입한다.
+아직 등장하지 않은 배역은 spawn_timeline 조건이 충족되면 반드시 등장시킨다.
+시스템이 타임라인 단계 기반으로 자동 등장도 처리하지만, GM이 극적 타이밍에 맞춰 먼저 등장시킬 수 있다:
+<SPAWN player="캐릭터이름"/>
+(player 값은 캐릭터 한글 이름 또는 마인크래프트 이름 모두 인식한다.)
+- spawn_timeline "시작 즉시": 이미 등장 중.
+- spawn_timeline "타임라인 N단계": 해당 단계 이상이 되면 등장. 시스템이 자동 처리하지만, 서술 흐름상 자연스러운 순간에 GM이 먼저 태그를 출력해도 좋다.
+★ 대기 중인 배역이 있음에도 게임이 끝나는 일이 없도록 한다. 등장 조건 충족 시 최대한 빨리 등장시킬 것.
 
 ### 위치 추적 ★ 필수
 플레이어가 이동할 때마다 반드시 아래 태그를 출력한다:
@@ -1702,7 +1706,10 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                 fireNpcAiForTurn();
             }
 
-            // 12. 미등장 배역에게 자동 배경 서술 전송
+            // 12. 스테이지 기반 자동 등장 체크 (STATE_UPDATE 외부에서 stage 이미 변경된 경우 보정)
+            checkAndAutoSpawn();
+
+            // 12b. 미등장 배역에게 자동 배경 서술 전송
             state.getAllPlayers().stream()
                 .filter(pd -> !spawnedPlayers.contains(pd.uuid) && !pd.isDead)
                 .forEach(pd -> {
@@ -1743,6 +1750,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                 }
                 if (update.has("timeline_change")) {
                     state.advanceTimeline(update.get("timeline_change").getAsInt());
+                    checkAndAutoSpawn();
                 }
                 if (update.has("status_change") && !update.get("status_change").isJsonNull()) {
                     String newStatus = update.get("status_change").getAsString();
@@ -2909,7 +2917,9 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
 
     private void handleSpawn(String playerName) {
         state.getAllPlayers().stream()
-            .filter(pd -> pd.name.equals(playerName) && !spawnedPlayers.contains(pd.uuid))
+            .filter(pd -> !spawnedPlayers.contains(pd.uuid)
+                       && (pd.name.equalsIgnoreCase(playerName)
+                           || (!pd.charName.isEmpty() && pd.charName.equals(playerName))))
             .findFirst()
             .ifPresent(pd -> {
                 spawnedPlayers.add(pd.uuid);
@@ -2917,6 +2927,37 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                 Player p = Bukkit.getPlayer(pd.uuid);
                 if (p == null || !p.isOnline()) return;
                 p.sendMessage("§e§l[등장] 당신의 배역이 이야기에 들어섰습니다. 이제 행동할 수 있습니다.");
+            });
+    }
+
+    /** spawn_timeline "타임라인 N단계" → N. 즉시/미설정 → 0. 파싱 불가 → -1 */
+    private int getSpawnStageRequired(String roleId) {
+        JsonObject r = findRoleData(roleId);
+        if (r == null || !r.has("spawn_timeline")) return 0;
+        String st = r.get("spawn_timeline").getAsString().trim();
+        if (st.isEmpty() || st.equals("시작 즉시")) return 0;
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("(\\d+)단계").matcher(st);
+        if (m.find()) return Integer.parseInt(m.group(1));
+        return -1; // 인식 불가 → GM 판단에 맡김
+    }
+
+    /** 현재 타임라인 단계에 도달한 대기 배역을 자동 등장시킨다 */
+    private void checkAndAutoSpawn() {
+        if (state.isDailyPhase()) return; // 일상 파트에선 자동 등장 없음
+        int stage = state.getTimelineStage();
+        state.getAllPlayers().stream()
+            .filter(pd -> !pd.isDead && !spawnedPlayers.contains(pd.uuid))
+            .forEach(pd -> {
+                int required = getSpawnStageRequired(pd.roleId);
+                if (required > 0 && stage >= required) {
+                    handleSpawn(pd.name);
+                    // 자동 등장 시 GM AI에 맥락 주입
+                    String display = pd.charName.isEmpty() ? pd.name : pd.charName;
+                    JsonObject r = findRoleData(pd.roleId);
+                    String loc = (r != null && r.has("spawn_location")) ? r.get("spawn_location").getAsString() : "";
+                    ai.injectGmSystem("[자동 등장] " + display + "이(가) 이야기에 합류했다."
+                        + (loc.isEmpty() ? "" : " 위치: " + loc));
+                }
             });
     }
 
@@ -3802,6 +3843,26 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                 sb.append("\n");
             }
         }
+        // 대기 중인 배역 등장 조건 (미등장 플레이어)
+        List<PlayerData> pendingSpawn = state.getAllPlayers().stream()
+            .filter(pd -> !pd.isDead && !spawnedPlayers.contains(pd.uuid))
+            .toList();
+        if (!pendingSpawn.isEmpty()) {
+            sb.append("\n## 대기 중인 배역 (아직 이야기에 등장하지 않음) ★\n");
+            for (PlayerData pd : pendingSpawn) {
+                JsonObject r = findRoleData(pd.roleId);
+                String display = pd.charName.isEmpty() ? pd.name : pd.charName;
+                String cond = (r != null && r.has("spawn_timeline"))
+                    ? r.get("spawn_timeline").getAsString() : "시작 즉시";
+                String loc  = (r != null && r.has("spawn_location"))
+                    ? r.get("spawn_location").getAsString() : "";
+                sb.append("- ").append(display).append(": 등장 조건=").append(cond);
+                if (!loc.isEmpty()) sb.append(", 위치=").append(loc);
+                sb.append("\n");
+            }
+            sb.append("조건이 충족되면 <SPAWN player=\"캐릭터이름\"/>으로 즉시 등장시킬 것.\n");
+        }
+
         // 패시브 시스템 특성 보유자 컨텍스트
         StringBuilder passiveBlock  = new StringBuilder(); // passive_gm: 항상 고려
         StringBuilder triggerBlock  = new StringBuilder(); // passive_trigger: 조건 충족 시 자동 발동
