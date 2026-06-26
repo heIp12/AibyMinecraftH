@@ -5,8 +5,13 @@ import heipsys.trpg.model.PlayerData;
 import heipsys.trpg.model.TraitData;
 import org.bukkit.entity.Player;
 
+import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 /**
  * 캐릭터 스탯 생성.
@@ -72,9 +77,172 @@ public class CharacterGenerator {
     private static final Gson GSON = new Gson();
 
     private final AiManager aiManager;
+    private final File cacheFile;
+    private final Object cacheLock = new Object();
 
-    public CharacterGenerator(AiManager aiManager) {
+    // AI로 갱신되는 동적 직업 풀 (초기값은 정적 풀, 서버 시작 시 교체됨)
+    private final List<String> dynCommon = new ArrayList<>(Arrays.asList(COMMON_JOB_POOL));
+    private final List<String> dynStrong = new ArrayList<>(Arrays.asList(STRONG_JOB_POOL));
+    private final List<String> dynRare   = new ArrayList<>(Arrays.asList(RARE_JOB_POOL));
+
+    // 플레이어별 이미 나온 직업 추적 (재굴림 포함, 파일에 영속됨)
+    private final Map<UUID, Set<String>> usedJobs = new ConcurrentHashMap<>();
+
+    public CharacterGenerator(AiManager aiManager, File dataFolder) {
         this.aiManager = aiManager;
+        this.cacheFile = new File(dataFolder, "job_cache.json");
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  서버 시작 시 AI 직업 풀 갱신 — 캐시 우선, 50% 이상 소진 시만 AI 재호출
+    // ──────────────────────────────────────────────────────────────
+
+    public CompletableFuture<Void> refreshJobPools() {
+        loadCache(); // 캐시 파일에서 풀 + 사용 기록 복구
+
+        Set<String> globalUsed = new HashSet<>();
+        usedJobs.values().forEach(globalUsed::addAll);
+
+        String sys = "한국어 직업 이름만 JSON 문자열 배열로 응답. 설명·마크다운 없음. [\"직업1\",\"직업2\",...]";
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
+
+        if (needsRefresh(dynCommon, globalUsed, COMMON_JOB_POOL.length)) {
+            futures.add(callAndFillPool(sys,
+                "TRPG 배경의 평범한 일상 직업 150개를 JSON 배열로. " +
+                "학생·의료·교육·사무·서비스·예술·IT·기술직·농축수산업 등 최대한 다양하게. " +
+                "직업명은 한국어 2~10자, 중복 없이.", dynCommon));
+        }
+        if (needsRefresh(dynStrong, globalUsed, STRONG_JOB_POOL.length)) {
+            futures.add(callAndFillPool(sys,
+                "TRPG 배경의 해결사·전투·수사·초자연 전문가 직업 100개를 JSON 배열로. " +
+                "엑소시스트·SCP요원·용병·형사·특수부대원·봉마사 등 전문 능력자 위주. " +
+                "직업명은 한국어 2~15자, 중복 없이.", dynStrong));
+        }
+        if (needsRefresh(dynRare, globalUsed, RARE_JOB_POOL.length)) {
+            futures.add(callAndFillPool(sys,
+                "TRPG 배경의 초자연적·변수가 큰 특이 직업 50개를 JSON 배열로. " +
+                "뱀파이어·흑마법사·시간여행자·랩틸리언 등 강력하지만 대가가 큰 존재 위주. " +
+                "직업명은 한국어 2~15자, 중복 없이.", dynRare));
+        }
+
+        if (futures.isEmpty()) return CompletableFuture.completedFuture(null);
+        return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+                                .thenRun(this::saveCache);
+    }
+
+    /** 풀에서 절반 이상 직업이 이미 사용됐으면 true (AI 재호출 필요). staticSize=정적 폴백 크기 */
+    private boolean needsRefresh(List<String> pool, Set<String> globalUsed, int staticSize) {
+        if (pool.size() <= staticSize) return true; // 아직 AI 갱신 없음 → 무조건 갱신
+        synchronized (pool) {
+            long usedCount = pool.stream().filter(globalUsed::contains).count();
+            return usedCount >= pool.size() * 0.5;
+        }
+    }
+
+    private CompletableFuture<Void> callAndFillPool(String system, String prompt, List<String> target) {
+        return aiManager.callAssistant(system, prompt).thenAccept(raw -> {
+            try {
+                String cleaned = raw.replaceAll("```json", "").replaceAll("```", "").trim();
+                int s = cleaned.indexOf('['), e = cleaned.lastIndexOf(']');
+                if (s == -1 || e == -1) return;
+                JsonArray arr = GSON.fromJson(cleaned.substring(s, e + 1), JsonArray.class);
+                List<String> jobs = new ArrayList<>();
+                for (JsonElement el : arr) {
+                    String j = el.getAsString().trim();
+                    if (!j.isBlank()) jobs.add(j);
+                }
+                if (jobs.size() >= 20) {
+                    synchronized (target) { target.clear(); target.addAll(jobs); }
+                }
+            } catch (Exception ignored) {}
+        });
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  캐시 저장 / 복구
+    // ──────────────────────────────────────────────────────────────
+
+    private void loadCache() {
+        if (!cacheFile.exists()) return;
+        try {
+            String content = new String(Files.readAllBytes(cacheFile.toPath()), StandardCharsets.UTF_8);
+            JsonObject root = GSON.fromJson(content, JsonObject.class);
+            replaceIfLarger(root, "common", dynCommon, COMMON_JOB_POOL.length);
+            replaceIfLarger(root, "strong", dynStrong, STRONG_JOB_POOL.length);
+            replaceIfLarger(root, "rare",   dynRare,   RARE_JOB_POOL.length);
+            if (root.has("usedByPlayer")) {
+                root.getAsJsonObject("usedByPlayer").entrySet().forEach(entry -> {
+                    try {
+                        UUID uuid = UUID.fromString(entry.getKey());
+                        Set<String> set = new HashSet<>();
+                        entry.getValue().getAsJsonArray().forEach(el -> set.add(el.getAsString()));
+                        usedJobs.put(uuid, set);
+                    } catch (Exception ignored) {}
+                });
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private void replaceIfLarger(JsonObject root, String key, List<String> target, int staticSize) {
+        if (!root.has(key)) return;
+        List<String> loaded = new ArrayList<>();
+        root.getAsJsonArray(key).forEach(el -> loaded.add(el.getAsString()));
+        if (loaded.size() > staticSize) {
+            synchronized (target) { target.clear(); target.addAll(loaded); }
+        }
+    }
+
+    private void saveCache() {
+        CompletableFuture.runAsync(() -> {
+            synchronized (cacheLock) {
+                try {
+                    JsonObject root = new JsonObject();
+                    synchronized (dynCommon) { root.add("common", listToJsonArray(dynCommon)); }
+                    synchronized (dynStrong) { root.add("strong", listToJsonArray(dynStrong)); }
+                    synchronized (dynRare)   { root.add("rare",   listToJsonArray(dynRare));   }
+                    JsonObject byPlayer = new JsonObject();
+                    usedJobs.forEach((uuid, set) -> {
+                        JsonArray arr = new JsonArray();
+                        set.forEach(arr::add);
+                        byPlayer.add(uuid.toString(), arr);
+                    });
+                    root.add("usedByPlayer", byPlayer);
+                    if (!cacheFile.getParentFile().exists()) cacheFile.getParentFile().mkdirs();
+                    Files.write(cacheFile.toPath(),
+                        GSON.toJson(root).getBytes(StandardCharsets.UTF_8));
+                } catch (Exception ignored) {}
+            }
+        });
+    }
+
+    private JsonArray listToJsonArray(List<String> list) {
+        JsonArray arr = new JsonArray();
+        list.forEach(arr::add);
+        return arr;
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  플레이어 직업 중복 방지
+    // ──────────────────────────────────────────────────────────────
+
+    /** 캐릭터 확정 후 해당 플레이어의 직업 중복 방지 기록을 초기화 */
+    public void clearPlayerUsedJobs(UUID uuid) {
+        usedJobs.remove(uuid);
+        saveCache();
+    }
+
+    /** 해당 플레이어가 아직 뽑지 않은 직업을 선택. 전부 소진 시 전체 풀에서 재선택 */
+    private String pickUnusedJob(UUID uuid, List<String> pool) {
+        Set<String> used = usedJobs.computeIfAbsent(uuid, k -> new HashSet<>());
+        List<String> available;
+        synchronized (pool) {
+            available = pool.stream().filter(j -> !used.contains(j)).collect(Collectors.toList());
+            if (available.isEmpty()) available = new ArrayList<>(pool);
+        }
+        String job = available.get(RNG.nextInt(available.size()));
+        used.add(job);
+        saveCache();
+        return job;
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -151,16 +319,18 @@ public class CharacterGenerator {
         } else {
             // 가중치 랜덤: 70% 평범 / 20% 강한 직업 / 10% 희귀 직업
             int roll = RNG.nextInt(100);
+            List<String> pool;
             if (roll < 70) {
                 tier = JobTier.COMMON;
-                pd.job = COMMON_JOB_POOL[RNG.nextInt(COMMON_JOB_POOL.length)];
+                pool = dynCommon;
             } else if (roll < 90) {
                 tier = JobTier.STRONG;
-                pd.job = STRONG_JOB_POOL[RNG.nextInt(STRONG_JOB_POOL.length)];
+                pool = dynStrong;
             } else {
                 tier = JobTier.RARE;
-                pd.job = RARE_JOB_POOL[RNG.nextInt(RARE_JOB_POOL.length)];
+                pool = dynRare;
             }
+            pd.job = pickUnusedJob(pd.uuid, pool);
         }
 
         // 총합 25를 6개 스탯에 배분
