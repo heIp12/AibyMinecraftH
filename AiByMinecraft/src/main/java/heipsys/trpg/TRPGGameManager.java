@@ -910,13 +910,12 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
 
             doPreAssign(participants, gdam);
 
-            // 스코어보드: 기본 스탯으로 갱신
-            state.getAllPlayers().forEach(pd -> {
-                Player p = Bukkit.getPlayer(pd.uuid);
-                if (p != null) scoreMan.update(p, pd, nextRoom);
-            });
-
             plugin.getServer().getScheduler().runTask(plugin, () -> {
+                // 스코어보드 갱신은 메인 스레드에서 수행
+                state.getAllPlayers().forEach(pd -> {
+                    Player p = Bukkit.getPlayer(pd.uuid);
+                    if (p != null) scoreMan.update(p, pd, nextRoom);
+                });
                 endLoadingBar();
                 assignRolesAndStart();
             });
