@@ -327,3 +327,15 @@
 - [대상] GM_SYSTEM_BASE P44 rule_4 운용
 - [문제] "플레이어가 위장을 신뢰해 핵심정보 공유 시 흡수+corruption↑"의 '신뢰' 판단이 GM 재량.
 - [수정안] P44 rule_4를 한 줄 보강: "발동 트리거 = 플레이어가 핵심정보(P18 정의)를 '위장 대상'에게 감청 가능 채널(통화·무전 등)로 전달한 comm 로그가 실제로 존재할 때만. 단순 동행·대화로는 미발동." (대면 안전채널은 P43에 따라 흡수 제외)
+
+## iter17 (#VX9K-4GWM, 스테이지4 시티·★INSTANT_CLEAR+희생 엣지 + 전체 회귀·선고자) 발견 패치
+(★엣지 검증: (a)INSTANT_CLEAR=생존판정(resolved=false)로 처리·스테이지4 게이트 정확 봉쇄(activateInstantClear→onClearEnding("F",..,false)→nextStageUnlocked=false) 구조 정합 / (b)발동자 평가 조건부 pass(약점 P48) / (c)P38·P12·P1·P40 PASS / (d)★전체 패치 P1~P47 회귀=상호 충돌 없음 PASS. 신규는 med 1(P48)·코드 high 1(CODE-12))
+
+### P48. INSTANT_CLEAR(F 클리어) 시 발동자 외 플레이어 평가 일괄 하향 방지 (med, 범용)
+- [대상] runScenarioEvaluation 평가 프롬프트
+- [문제] INSTANT_CLEAR 발동으로 clearGrade="F"(생존·미진출) 컨텍스트가 평가에 전달되면, 발동자 외 플레이어까지 'F 클리어'를 이유로 일괄 D/F 편향될 수 있음. 발동자만 따로 처리하는 기준 부재.
+- [수정안] 평가 프롬프트에 한 줄: "INSTANT_CLEAR류 즉시 종료(clearGrade=F)로 끝난 회차에서는, 발동자 외 플레이어를 clearGrade=F 이유로 일괄 하향하지 말고 각자의 실제 행동 기록으로만 평가하라. 발동자는 기여를 반영하되 penalties에 '조기 철수(미해결 종료 유도)'를 기록한다(상황상 정당한 철수면 감점 완화)."
+
+### (기록만 — 코드 도메인. iter17)
+- ★CODE-12 (iter17 WEAK-IT17-2, ★high·INSTANT_CLEAR·스테이지3+ 한정): activateInstantClear가 room≥3에서 'resolved=false→게이트 통과 불가'를 발동 전에 경고하지 않아, 플레이어가 의도치 않게 진출 봉쇄당함. activateInstantClear/TraitButtonManager에 room≥3 시 확인 dialog("이 특성은 생존 처리(해결 아님) — 스테이지N에서 다음 진출 불가. 발동?") 삽입 필요. ※.java 수정(UX·게이트 직결).
+- ※ CODE-3 재확인(iter17): 최시엘 S 사망 시 isDead 필터로 보상 없음 재현(신규 아님, 기존 high 미해결).

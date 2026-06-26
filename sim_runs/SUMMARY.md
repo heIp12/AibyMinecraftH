@@ -153,3 +153,11 @@
 - **검증 완료 축**: 스테이지1~6 / 로컬~코즈믹 / 과거20C~먼미래 / 다인·단일(해결·순수회피)·can_impersonate위장 / 창작·친숙(2지역) / 평가(정보비대칭·고의은폐vs소통불가·캐리·사망S·희생) / 캐릭터시트·액티브특성·반스포일러 / 통화·연락(#19·#20·도청) / 4 critical NPC 복합 오케스트레이션 / 강제 실패엔딩(#13) / 시간가변·branches·mislead·협력판정·해결경로 강건성.
 - **★남은 핵심 작업 = 코드(.java) — 프롬프트로 불가**: CODE-3(사망캐리어 보상제외 high)·CODE-4(weaknessBonus 사문화 high)·CODE-6(ZONE_ISOLATION 자동로그 high)·CODE-8(E_END 평가 미호출=#13 high)·CODE-9(원격 NPC통화 불가 high)·CODE-5/7/10/11(med)·CODE-1/2(low). SYNTHESIS.md 5절에 착수용 정리.
 - **다음 단계 권고**: 이 루프는 프롬프트만 다뤘으므로, 사용자 승인 시 SYNTHESIS.md 우선순위(H-1 P1+P12+P38 / H-2 P36+P37 / H-3 P24 / P44)대로 .java 프롬프트 블록에 통합 반영 + CODE-1~11 버그 수정을 별도 작업으로 진행.
+
+## iter17 — 2026-06-26 22:39 — #VX9K-4GWM (스테이지4·시티·★INSTANT_CLEAR+희생 엣지 + 전체 회귀)
+- 엣지 스윕 #6: INSTANT_CLEAR 액티브 특성 vs 희생형 collapse 우선순위 + 전체 패치 P1~P47 회귀. 괴담: "선고자" — 교통 관제 인프라에 기생한 자율 처형 알고리즘, 4코드 수집·순서 입력 셧다운이 정석(실행자 희생형).
+- ★검증: (a)INSTANT_CLEAR=생존판정(resolved=false) 처리·스테이지4 게이트 정확 봉쇄(activateInstantClear→onClearEnding("F",..,false)) 구조 정합 PASS / (b)발동자 평가 조건부 pass(clearGrade=F가 타 플레이어 일괄 하향 위험 → P48) / (c)P38(희생 수용 S)·P12(경계)·P1(강등없음)·P40(충격파 대피) PASS / (d)★전체 P1~P47 회귀 상호 충돌 0건 PASS(P38×P12·P33×P17·P1×P16 균형 확인).
+- 흐름: 1차 서아리 INSTANT_CLEAR 발동→생존 클리어(게이트 봉쇄)→리트라이→2차 최약체 최시엘 희생(S 산화)→해결판정 A. 강등 없음(P1).
+- 신규: P48(INSTANT_CLEAR F클리어 시 타 플레이어 일괄 하향 방지 med). +CODE-12(INSTANT_CLEAR room≥3 사전경고 dialog 부재 high·UX). CODE-3 재확인(최시엘 S 사망 보상 제외).
+- 파일: iter17/seed.json(7 zones)·log.txt(350줄·INSTANT_CLEAR 44회)·replay.json(stage4·3인). 플러그인 .java 미변경.
+- ※회귀 PASS가 핵심 성과: 누적 47패치가 실제 시나리오에서 상호 모순 없이 동작 확인. 프롬프트 패치셋 안정성 입증.

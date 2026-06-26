@@ -1,0 +1,87 @@
+{
+  "version": 1,
+  "stage": 4,
+  "seed": "#VX9K-4GWM",
+  "created": "2026-06-26",
+  "title": "격자 속의 사형선고",
+  "entity": "선고자(宣告者, The Adjudicator)",
+  "scale": "city",
+  "era": "현대 2026",
+  "players": [
+    {
+      "id": "Aria",
+      "char_name": "서아리",
+      "role_id": "SURVIVOR",
+      "hp": [8, 8],
+      "san": [9, 9],
+      "start_power": "중간",
+      "traits": ["긴급 직관(passive_trigger B)", "긴급 대피 계획(instant_clear A — ★INSTANT_CLEAR 보유)"],
+      "attempt1_outcome": "INSTANT_CLEAR 발동 → 생존(F, resolved=false) → 게이트 봉쇄 → 리트라이",
+      "attempt2_outcome": "생존(B등급), 다음 스테이지 진출",
+      "final_grade": "B"
+    },
+    {
+      "id": "Bram",
+      "char_name": "박브람",
+      "role_id": "INFORMANT",
+      "hp": [6, 6],
+      "san": [7, 7],
+      "start_power": "약체(낮음)",
+      "traits": ["침착한 분석(passive_gm B)", "고통의 채널(sacrifice A)"],
+      "attempt1_outcome": "mislead 신뢰 1턴 낭비 → 생존 F 종료",
+      "attempt2_outcome": "생존(B등급), 다음 스테이지 진출",
+      "final_grade": "B"
+    },
+    {
+      "id": "Ciel",
+      "char_name": "최시엘",
+      "role_id": "ENGINEER",
+      "hp": [5, 5],
+      "san": [6, 6],
+      "start_power": "최약체(매우 낮음)",
+      "traits": ["현장 해체(area_scan A)", "결의의 손(gm_directive S)"],
+      "attempt1_outcome": "코드C 퍼즐 작업 중 INSTANT_CLEAR 발동으로 강제 종료",
+      "attempt2_outcome": "셧다운 희생 실행 → 사망, collapse resolved=true. 산화한 영웅(S등급)",
+      "final_grade": "S",
+      "note": "isDead=true → grantClearTraitRewards .filter(!isDead) 제외(CODE-3 재현)"
+    }
+  ],
+  "attempt_count": 2,
+  "attempt1": {
+    "result": "생존 클리어(F, resolved=false)",
+    "trigger": "INSTANT_CLEAR(긴급 대피 계획) 발동 — 턴7",
+    "gate_passed": false,
+    "instant_clear_verdict": "생존판정(resolved=false) — 스테이지4 게이트 봉쇄 확인"
+  },
+  "attempt2": {
+    "result": "해결 클리어(A, resolved=true)",
+    "trigger": "희생형 collapse — 최시엘 결의의 손 + 셧다운 실행",
+    "gate_passed": true,
+    "p38_applied": true,
+    "p40_applied": true,
+    "sacrifice_player": "최시엘(Ciel)",
+    "survivors": ["서아리(Aria)", "박브람(Bram)"]
+  },
+  "patch_regression": "P1~P47 전부 관찰. 상호 충돌 없음. 주요 pass: P1/P12/P16/P20/P32/P33/P38/P40/P41. N/A: P4/P7/P22/P25/P27~P31/P34/P42/P44.",
+  "new_weaknesses": [
+    {
+      "id": "WEAK-IT17-1",
+      "issue": "INSTANT_CLEAR 발동 시 clearGrade='F' 컨텍스트가 runScenarioEvaluation에 전달돼 발동자 외 플레이어도 일괄 낮은 등급으로 편향될 수 있음. 발동자만 따로 '조기 탈출 감점' 기준이 평가 프롬프트에 없음.",
+      "fix": "평가 프롬프트에 한 줄 추가: 'INSTANT_CLEAR 발동으로 인한 F 클리어 시, 발동자 외 플레이어의 기여는 실제 행동 기록으로만 평가하고 clearGrade=F를 이유로 일괄 하향하지 마라. 발동자는 발동 시점까지의 실제 기여를 반영하되 조기 철수 사실을 penalties에 기록한다.'",
+      "severity": "med",
+      "scope": "범용",
+      "code": false
+    },
+    {
+      "id": "WEAK-IT17-2",
+      "issue": "activateInstantClear 발동 전 room≥3(스테이지4+)에서 'resolved=false → 게이트 통과 불가, 재도전만 가능'을 플레이어에게 사전 안내하는 확인 dialog가 없음. 의도치 않은 발동 후 게이트 봉쇄 발생.",
+      "fix": "activateInstantClear 또는 TraitButtonManager에 room≥3일 때 경고 확인 dialog 삽입: '이 특성을 발동하면 스테이지 N을 생존 처리(해결 아님)합니다. 스테이지3+에서는 다음 스테이지로 진출할 수 없습니다. 발동하시겠습니까?'",
+      "severity": "high",
+      "scope": "한정(INSTANT_CLEAR 보유·스테이지3+)",
+      "code": true,
+      "code_id": "CODE-12"
+    }
+  ],
+  "collapse_type": "sacrifice",
+  "mechanics_used": "선고자(자율처형알고리즘·도시관제인프라기생·코드분산입력형셧다운)"
+}
