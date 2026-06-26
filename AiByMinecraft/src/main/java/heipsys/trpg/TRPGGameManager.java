@@ -1383,19 +1383,21 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             .filter(pd -> pd.name.equals(playerName))
             .findFirst()
             .ifPresent(pd -> {
+                // 일상 파트에서는 스탯 변화는 허용하되 사망 전환은 불가
+                boolean horrorActive = (currentPhase == Phase.HORROR);
                 if (update.has("hp_change")) {
                     int delta = update.get("hp_change").getAsInt();
                     int before = pd.hp[0];
                     pd.hp[0] = Math.max(0, Math.min(pd.hp[1], pd.hp[0] + delta));
                     notifyVitalChange(pd, "체력", "§c", before, pd.hp[0], pd.hp[1]);
-                    if (pd.hp[0] <= 0) pd.isDead = true;
+                    if (horrorActive && pd.hp[0] <= 0) pd.isDead = true;
                 }
                 if (update.has("san_change")) {
                     int delta = update.get("san_change").getAsInt();
                     int before = pd.san[0];
                     pd.san[0] = Math.max(0, Math.min(pd.san[1], pd.san[0] + delta));
                     notifyVitalChange(pd, "정신력", "§b", before, pd.san[0], pd.san[1]);
-                    if (pd.san[0] <= 0 && pd.hp[0] <= 0) pd.isDead = true;
+                    if (horrorActive && pd.san[0] <= 0 && pd.hp[0] <= 0) pd.isDead = true;
                 }
                 if (update.has("timeline_change")) {
                     state.advanceTimeline(update.get("timeline_change").getAsInt());
@@ -1404,8 +1406,8 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                     String newStatus = update.get("status_change").getAsString();
                     Player target = Bukkit.getPlayer(pd.uuid);
                     if ("puppet".equals(newStatus) && "puppet".equals(pd.status)) {
-                        // 꼭두각시 재발 → 영구 탈락 (본인에게만 알림)
-                        pd.isDead = true;
+                        // 꼭두각시 재발 → 영구 탈락 (본인에게만 알림, 공포 파트에서만 유효)
+                        if (horrorActive) pd.isDead = true;
                         if (target != null) target.sendMessage("§4당신은 완전히 잠식되어 영원히 돌아올 수 없게 되었습니다...");
                     } else {
                         if ("puppet".equals(newStatus) && !"puppet".equals(pd.status)) {
@@ -1529,6 +1531,8 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
     }
 
     private void checkDeaths() {
+        // 일상 파트에서는 괴담을 아직 마주치지 않은 상태이므로 배드엔딩 판정 없음
+        if (currentPhase != Phase.HORROR) return;
         if (state.getAliveCount() == 0) onBadEnding("전원 사망");
     }
 
