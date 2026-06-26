@@ -1359,7 +1359,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
             // initial_info를 GM 전달 컨텍스트에 포함 (장면 묘사에 자연스럽게 반영용)
             StringBuilder promptSb = new StringBuilder();
             promptSb.append("게임 도입부 장면이다. 배역 '").append(pd.roleId)
-                .append("' 플레이어(").append(pd.charName.isEmpty() ? pd.name : pd.charName + "(" + pd.name + ")").append(")에게만 전달된다. ");
+                .append("' 플레이어(").append(pd.charName.isEmpty() ? pd.name : pd.charName).append(")에게만 전달된다. ");
             promptSb.append("시작 위치: ").append(pd.zone.isEmpty() ? "?" : pd.zone).append(". ");
             JsonObject roleDataForPrologue = getRoleDataById(pd.roleId);
             if (roleDataForPrologue != null && roleDataForPrologue.has("initial_info")) {
@@ -1803,7 +1803,7 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
                 Player p = Bukkit.getPlayer(uuid);
                 if (p == null) return;
                 PlayerData pd = state.getPlayer(uuid);
-                String name = pd != null ? pd.name : "?";
+                String name = pd != null ? (pd.charName.isEmpty() ? pd.name : pd.charName) : "?";
                 ai.callGmAiOnce(gmSystemPrompt,
                     "분위기가 서서히 변하는 전환 시점이다. 플레이어(" + name + ")의 시점에서 "
                     + "환경 변화(소리·냄새·온도 등)로만 불길함을 암시해줘. 제목 금지, 직접 언급 금지.")
@@ -2374,7 +2374,8 @@ GM이 기기 통신 채널을 개설할 때 (예: 무전기를 건네줌):
         String prayerCtx = "\n## " + name + " 질문 처리 (정보 깊이 " + info + "/3)\n"
             + "플레이어가 시스템 특성으로 GM에게 직접 질문했다.\n규칙:\n" + depthRule;
 
-        String prompt = pd.name + "이(가) '" + name + "' 특성으로 질문한다: \"" + question + "\" "
+        String charDisplay = pd.charName.isEmpty() ? pd.name : pd.charName;
+        String prompt = charDisplay + "이(가) '" + name + "' 특성으로 질문한다: \"" + question + "\" "
             + "위 규칙에 맞춰 답해줘.";
 
         ai.callGmAiOnce(gmSystemPrompt + prayerCtx, prompt).thenAccept(response ->

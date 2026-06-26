@@ -397,12 +397,22 @@ public class GameStateManager {
         List<EventLogEntry> recent = getRecentLog(4);
         if (!recent.isEmpty()) {
             sb.append("최근:");
-            recent.forEach(e -> sb.append(" [").append(e.player).append("] ").append(e.content));
+            recent.forEach(e -> sb.append(" [").append(resolveDisplayName(e.player)).append("] ").append(e.content));
             sb.append("\n");
         }
 
-        sb.append("행동: [").append(actor.getName()).append("] ").append(action);
+        String actorDisplay = (actorData != null && !actorData.charName.isEmpty()) ? actorData.charName : actor.getName();
+        sb.append("행동: [").append(actorDisplay).append("] ").append(action);
         return sb.toString();
+    }
+
+    /** Minecraft 이름 → 캐릭터 이름. charName 없으면 원래 이름 반환 */
+    private String resolveDisplayName(String rawName) {
+        if (rawName == null) return "?";
+        PlayerData pd = players.values().stream()
+            .filter(p -> p.name.equals(rawName))
+            .findFirst().orElse(null);
+        return (pd != null && !pd.charName.isEmpty()) ? pd.charName : rawName;
     }
 
     /** 특정 플레이어의 가장 최근 action 로그 1건 (협력 맥락 제공용). 없으면 null. */

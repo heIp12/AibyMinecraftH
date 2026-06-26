@@ -270,9 +270,10 @@ public class PlayerData {
 
     /** 비행동 플레이어용 압축 요약 (HP/SAN/상태만). GM 전용 — 플레이어에게 노출 금지 */
     public String toShortLine() {
-        if (impersonated) return name + "[괴담이 정체 차용 중]";
-        if (isDead) return name + "[사망]";
+        String display = charName.isEmpty() ? name : charName;
+        if (impersonated) return display + "[괴담이 정체 차용 중]";
+        if (isDead) return display + "[사망]";
         String st = status.equals("puppet") ? "[꼭두각시]" : "";
-        return name + " HP" + hp[0] + "/" + hp[1] + " SAN" + san[0] + "/" + san[1] + st;
+        return display + " HP" + hp[0] + "/" + hp[1] + " SAN" + san[0] + "/" + san[1] + st;
     }
 }
