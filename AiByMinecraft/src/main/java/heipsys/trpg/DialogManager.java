@@ -12,6 +12,7 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickCallback;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextColor;
+import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.entity.Player;
 
 import java.util.*;
@@ -23,7 +24,7 @@ import java.util.function.Consumer;
  */
 public class DialogManager {
 
-    public enum DialogState { DICE_CONFIRM, TRAIT_SELECTION, TRAIT_REMOVE }
+    public enum DialogState { DICE_CONFIRM, TRAIT_SELECTION, TRAIT_REMOVE, TRAIT_ACTIVATION, STAGE_END_TRAIT }
 
     private final Map<UUID, DialogState>     activeDialog = new HashMap<>();
     private final Map<UUID, List<TraitData>> traitChoices = new HashMap<>();
@@ -434,6 +435,146 @@ public class DialogManager {
 
         Dialog dialog = Dialog.create(b -> b.empty()
             .base(DialogBase.builder(Component.text("제거할 특성 선택")).build())
+            .type(DialogType.multiAction(buttons, cancelBtn, 1))
+        );
+        player.showDialog(dialog);
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  능동 특성 발동 다이얼로그
+    // ──────────────────────────────────────────────────────────────
+
+    /**
+     * 능동 특성 발동 시 2-선택지 다이얼로그.
+     * onCommit: 특성에 모든걸 맡기기 (무난)
+     * onInput: 행동 직접 입력 (리스크·리턴)
+     */
+    public void showTraitActivation(Player player, TraitData trait, String zone,
+                                     Runnable onCommit, Runnable onInput) {
+        activeDialog.put(player.getUniqueId(), DialogState.TRAIT_ACTIVATION);
+
+        String situationText = (zone != null && !zone.isBlank())
+            ? zone + "에서 " + trait.name + " 특성을 발동합니다."
+            : trait.name + " 특성을 발동합니다.";
+
+        Component body = Component.text()
+            .append(Component.text(situationText + "\n\n", NamedTextColor.WHITE))
+            .append(Component.text("효과: ", NamedTextColor.GRAY))
+            .append(Component.text(trait.effect != null ? trait.effect : "", NamedTextColor.AQUA))
+            .append(Component.newline()).append(Component.newline())
+            .append(Component.text("• 특성에 맡기기", NamedTextColor.GREEN))
+            .append(Component.text(": 무난하게 효과가 발휘됩니다.\n", NamedTextColor.GRAY))
+            .append(Component.text("• 행동 직접 입력", NamedTextColor.GOLD))
+            .append(Component.text(": 행동에 따라 결과가 더 좋거나 나쁠 수 있습니다.", NamedTextColor.GRAY))
+            .build();
+
+        ActionButton commitBtn = ActionButton.create(
+            Component.text("특성에 모든걸 맡기기", NamedTextColor.GREEN, TextDecoration.BOLD),
+            Component.text("추가 행동 없이 특성 효과만으로 진행합니다.\n무난한 결과가 보장됩니다.", NamedTextColor.GRAY),
+            200,
+            DialogAction.customClick((v, a) -> {
+                activeDialog.remove(player.getUniqueId());
+                onCommit.run();
+            }, ClickCallback.Options.builder().uses(1).build())
+        );
+
+        ActionButton inputBtn = ActionButton.create(
+            Component.text("행동을 직접 입력하기", NamedTextColor.GOLD, TextDecoration.BOLD),
+            Component.text("채팅으로 행동을 입력하면 특성과 함께 처리됩니다.\n더 좋은 결과를 노릴 수 있지만 역효과 위험도 있습니다.\n[리스크·리턴]", NamedTextColor.GRAY),
+            200,
+            DialogAction.customClick((v, a) -> {
+                activeDialog.remove(player.getUniqueId());
+                onInput.run();
+            }, ClickCallback.Options.builder().uses(1).build())
+        );
+
+        Dialog dialog = Dialog.create(b -> b.empty()
+            .base(DialogBase.builder(Component.text("[" + trait.name + "] 발동"))
+                .body(List.of(DialogBody.plainMessage(body)))
+                .build())
+            .type(DialogType.multiAction(List.of(commitBtn, inputBtn), null, 1))
+        );
+        player.showDialog(dialog);
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  스테이지 종료 특성 성장 3선택지 다이얼로그
+    // ──────────────────────────────────────────────────────────────
+
+    /**
+     * 스테이지 클리어 후 특성 성장 3선택지 다이얼로그.
+     * 1: 내 특성 강화  2: 맵 특성 영구 획득  3: 신규 특성
+     */
+    public void showStageEndTraitChoice(Player player, TraitManager.StageEndChoices choices,
+                                         String srcMyName, String srcMapName,
+                                         Consumer<Integer> onSelect) {
+        activeDialog.put(player.getUniqueId(), DialogState.STAGE_END_TRAIT);
+
+        List<ActionButton> buttons = new ArrayList<>();
+
+        if (choices.myUpgrade() != null) {
+            TraitData t = choices.myUpgrade();
+            String tooltip = "내 특성 강화\n"
+                + (srcMyName != null && !srcMyName.isBlank() ? "기존: " + srcMyName + "\n" : "")
+                + "강화 후: (" + t.grade + ") " + t.name + "\n"
+                + (t.description != null && !t.description.isBlank() ? t.description + "\n" : "")
+                + "\n효과: " + t.effect;
+            buttons.add(ActionButton.create(
+                Component.text("⬆ 내 특성 강화  [" + t.grade + "] " + t.name, NamedTextColor.AQUA, TextDecoration.BOLD),
+                Component.text(tooltip, NamedTextColor.GRAY),
+                200,
+                DialogAction.customClick((v, a) -> {
+                    activeDialog.remove(player.getUniqueId());
+                    onSelect.accept(1);
+                }, ClickCallback.Options.builder().uses(1).build())
+            ));
+        }
+
+        if (choices.mapUpgrade() != null) {
+            TraitData t = choices.mapUpgrade();
+            String tooltip = "맵 특성 → 영구 획득\n"
+                + (srcMapName != null && !srcMapName.isBlank() ? "기존: " + srcMapName + "\n" : "")
+                + "강화 후: (" + t.grade + ") " + t.name + "\n"
+                + (t.description != null && !t.description.isBlank() ? t.description + "\n" : "")
+                + "\n효과: " + t.effect;
+            buttons.add(ActionButton.create(
+                Component.text("✦ 맵 특성 가져가기  [" + t.grade + "] " + t.name, NamedTextColor.GOLD, TextDecoration.BOLD),
+                Component.text(tooltip, NamedTextColor.GRAY),
+                200,
+                DialogAction.customClick((v, a) -> {
+                    activeDialog.remove(player.getUniqueId());
+                    onSelect.accept(2);
+                }, ClickCallback.Options.builder().uses(1).build())
+            ));
+        }
+
+        if (choices.newTrait() != null) {
+            TraitData t = choices.newTrait();
+            String tooltip = "새로운 특성 획득\n"
+                + "(" + t.grade + ") " + t.name + "\n"
+                + (t.description != null && !t.description.isBlank() ? t.description + "\n" : "")
+                + "\n효과: " + t.effect;
+            buttons.add(ActionButton.create(
+                Component.text("✨ 새로운 특성  [" + t.grade + "] " + t.name, NamedTextColor.GREEN, TextDecoration.BOLD),
+                Component.text(tooltip, NamedTextColor.GRAY),
+                200,
+                DialogAction.customClick((v, a) -> {
+                    activeDialog.remove(player.getUniqueId());
+                    onSelect.accept(3);
+                }, ClickCallback.Options.builder().uses(1).build())
+            ));
+        }
+
+        if (buttons.isEmpty()) return; // 선택지가 없으면 다이얼로그 표시 생략
+
+        ActionButton cancelBtn = ActionButton.create(
+            Component.text("나중에 결정", TextColor.color(0xAAAAAA)),
+            Component.text("특성을 선택하지 않습니다."),
+            80, null
+        );
+
+        Dialog dialog = Dialog.create(b -> b.empty()
+            .base(DialogBase.builder(Component.text("스테이지 클리어  —  특성 성장")).build())
             .type(DialogType.multiAction(buttons, cancelBtn, 1))
         );
         player.showDialog(dialog);
