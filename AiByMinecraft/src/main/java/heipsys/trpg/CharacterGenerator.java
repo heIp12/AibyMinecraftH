@@ -28,7 +28,6 @@ import java.util.stream.Collectors;
 public class CharacterGenerator {
 
     private static final Random RNG = new Random();
-
     private enum JobTier { COMMON, STRONG, RARE }
 
     /** 평범한 직업 (~70%) */
@@ -54,7 +53,7 @@ public class CharacterGenerator {
         "조련사","잠수부","등반가",
         "정치인","공무원","외교관","통역사"
     };
-
+    
     /** 해결사/전문 능력자 (~20%) — A/B등급 초기 특성 부여 */
     private static final String[] STRONG_JOB_POOL = {
         "엑소시스트","퇴마사","봉마사","신부(퇴마 전문)",

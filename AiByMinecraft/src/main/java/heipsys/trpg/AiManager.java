@@ -81,7 +81,7 @@ public class AiManager {
     private String highModel() {
         if (highModelOverride != null) return highModelOverride;
         return switch (apiType) {
-            case "claude" -> "claude-opus-4-1";
+            case "claude" -> "claude-opus-4-8";
             case "openai" -> "gpt-4.1";
             default       -> "gemini-2.5-pro";
         };

@@ -4,11 +4,14 @@ version: 1.0
 api-version: 1.21
 description: "heIp12 games"
 commands:
-  start:
-    description: "Main Commands"
-    usage: "<command>"
-    aliases: [start]
+  trpg:
+    description: "TRPG 시스템 커맨드"
+    usage: "/trpg <start|stop|status|retry|help>"
+    permission: op
+  join:
+    description: "진행 중인 TRPG 세션 참여"
+    usage: "/join"
   r:
-    description: "Server Reload"
-    usage: "<command>"
-    aliases: [reload]
+    description: "설정(config.yml) 리로드"
+    usage: "/r"
+    permission: op
