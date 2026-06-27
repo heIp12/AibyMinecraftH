@@ -78,6 +78,12 @@ public class ItemManager {
             Map<Integer, ItemStack> leftover = player.getInventory().addItem(item);
             leftover.values().forEach(i -> player.getWorld().dropItemNaturally(player.getLocation(), i));
             state.collectItem(boundId);
+            // Phase I: 읽을 수 있는 기록(record/content) 획득 → 그 단서를 '발견됨'으로 표식(엔딩 공개 연동)
+            String itype = finalDef.has("item_type") ? finalDef.get("item_type").getAsString() : "";
+            if (("record".equals(itype) || readBody(finalDef) != null)
+                    && finalDef.has("clue_value") && !finalDef.get("clue_value").getAsString().isBlank()) {
+                state.markFactDiscovered(finalDef.get("clue_value").getAsString());
+            }
         });
     }
 
@@ -112,6 +118,7 @@ public class ItemManager {
         }
         // 주요 정보(lore_info)를 강조색으로 추가 — 물건형 아이템의 핵심 단서
         appendLoreInfo(lore, def);
+        appendItemTypeHint(lore, def); // Phase I: 기계 효과 힌트
         // content(본문)가 있으면 lore에도 일부 노출 (쪽지·라벨류)
         appendContentToLore(lore, def);
         meta.lore(lore);
@@ -155,6 +162,7 @@ public class ItemManager {
             appendWrapped(lore, def.get("description").getAsString(), "§f");
         }
         appendLoreInfo(lore, def);
+        appendItemTypeHint(lore, def); // Phase I: 기계 효과 힌트
         meta.lore(lore);
         paper.setItemMeta(meta);
         return paper;
@@ -179,6 +187,28 @@ public class ItemManager {
             lore.add(Component.text("§6▸ 정보"));
             appendWrapped(lore, def.get("lore_info").getAsString(), "§e");
         }
+    }
+
+    /** item_type(기계 효과)이 있으면 짧은 기능 힌트를 lore에 표시 (Phase I) */
+    private void appendItemTypeHint(List<Component> lore, JsonObject def) {
+        if (def == null || !def.has("item_type")) return;
+        String t = def.get("item_type").getAsString();
+        if (t == null || t.isBlank()) return;
+        String label = switch (t) {
+            case "key"        -> "열쇠 — 잠긴 구역 해제";
+            case "tool"       -> "도구 — 특정 행위 가능";
+            case "light"      -> "조명 — 어둠 밝히기";
+            case "weapon"     -> "무기 — 파괴·타격";
+            case "consumable" -> "소모품 — 사용 시 효과";
+            case "comm"       -> "통신 — 원격 연락";
+            case "protective" -> "보호 — 위해 경감";
+            case "ritual"     -> "의례 도구";
+            case "evidence"   -> "증거 — 제시용";
+            case "record"     -> "기록 — 읽어 단서 확보";
+            case "combine"    -> "부품 — 조합 가능";
+            default           -> "";
+        };
+        if (!label.isBlank()) lore.add(Component.text("§b▸ " + label));
     }
 
     /** 물건형 아이템에 짧은 content가 있으면 lore에 미리보기로 표시 */

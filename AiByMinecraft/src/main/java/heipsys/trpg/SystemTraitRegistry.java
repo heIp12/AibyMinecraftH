@@ -171,6 +171,32 @@ public class SystemTraitRegistry {
         sb.append("  예) '악몽의 잔상' — 지난 악몽에서 단서 한 조각 → gm_directive\n");
         sb.append("★ 이 구분을 절대 무시하지 말 것. 회상·직관·내면 경험형 특성에 ai_query를 쓰면 치명적 버그 발생.\n\n");
 
+        sb.append("## ★ 발동 방식 3분류 (자동/수동/상태조건) — 능력 표현 기준 ★\n");
+        sb.append("능력의 '발동 조건'은 아래 셋 중 하나로 표현한다(소설식 '자동/수동/상태조건'과 동일):\n");
+        sb.append("  · 수동(직접 발동): active=true. 플레이어가 버튼으로 발동. 예) 질문권·즉시판정.\n");
+        sb.append("  · 자동(상시): effect_type=passive_gm, active=false. 매 턴 항상 작동. 예) 행운가호·현대지식 우위.\n");
+        sb.append("  · 상태조건(조건충족 시 자동): effect_type=passive_trigger, active=false. effect에 '언제 발동되는지' 명시.\n");
+        sb.append("    예) '위험 직전 자동 경고'(육감), '거짓을 들으면 위화감'(직감), '아군이 가까이 있으면 감지'.\n\n");
+
+        sb.append("## ★ protect 확장 — 피해뿐 아니라 '상태·변화 저항'도 포함 ★\n");
+        sb.append("protect는 물리·정신 피해 경감 외에, effect 텍스트로 '상태이상·외부 변화·간섭 저항'까지 표현한다.\n");
+        sb.append("  예) 불변(불변성): protect(power=3), effect=\"상태 변화·외부 간섭을 거의 무효화한다\"\n");
+        sb.append("  예) 용기(공포 저항): protect(power=2), effect=\"공포·정신 동요에 저항한다\"\n\n");
+
+        sb.append("## ★ 다양한 능력을 '기존 프리미티브'로 표현하는 예시 (소설풍 변주) ★\n");
+        sb.append("새 능력을 만들 때 아래처럼 기존 effect_type에 매핑해 변주한다(이름·등급·수치는 자유):\n");
+        sb.append("  · 행운의 가호(상시 운) → passive_gm, effect=\"중요한 순간 운이 따른다\"\n");
+        sb.append("  · 현대인의 지식(상식 우위) → passive_gm, effect=\"현대 지식으로 상황을 빠르게 이해한다\"\n");
+        sb.append("  · 클리셰 발현(전개 유도) → gm_directive, effect=\"호러 전개의 정석을 끌어낸다\"\n");
+        sb.append("  · 정의감(부당함에 분기) → passive_trigger, effect=\"부당한 위협 앞에서 힘이 솟는다\"\n");
+        sb.append("  · 통찰·지혜(구조 파악) → scenario_insight(depth) 또는 ai_query(info)\n");
+        sb.append("  · 끈기·인내(상태 저항) → protect(power=1~2), effect=\"고통·압박을 견뎌낸다\"\n\n");
+
+        sb.append("## ★ 개인화 발현 (origin) ★\n");
+        sb.append("각 특성 JSON에 \"origin\"을 넣어 '이 캐릭터에게 이 능력이 발현된 계기'를 한 줄로 적는다(유산·성향·과거).\n");
+        sb.append("  같은 효과라도 캐릭터마다 다르게 발현된다. 예) \"돌아가신 형이 남긴 습관\", \"오랜 길거리 생활의 직감\".\n");
+        sb.append("  ★ 스포일러 금지(괴담 소재 누설 금지). 일반·범용 특성이면 \"\"로 둔다.\n\n");
+
         sb.append("## 규칙\n");
         sb.append("- 능동 효과는 active=true, 패시브(scenario_insight/passive_gm/passive_trigger/protect)는 active=false.\n");
         sb.append("- 스테이지당 여러 번 쓰는 효과(ai_query/area_scan 등)는 cooldown_turns=0, uses 파라미터로 제한.\n");

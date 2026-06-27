@@ -10,6 +10,8 @@ public class TraitData {
     public String  description;
     public boolean active;       // true = 능동적 발동 (버튼 필요)
     public String  effect;       // GM 참고용 효과 설명
+    /** 이 특성이 '이 캐릭터'에게 발현된 계기·출처(유산·성향·과거). 개인화 서술용. 빈 문자열=일반. */
+    public String  origin = "";
     public boolean roleSpecific; // true = 해당 챕터 배역 한정 특성 (챕터 종료 시 제거)
     /** 클리어 보상에서 기존 특성을 강화하는 선택지일 때, 대체 대상 특성 id (null = 신규 특성) */
     public String  replacesId;
