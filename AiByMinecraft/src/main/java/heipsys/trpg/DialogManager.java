@@ -30,6 +30,10 @@ public class DialogManager {
     private final Map<UUID, DialogState>     activeDialog = new HashMap<>();
     private final Map<UUID, List<TraitData>> traitChoices = new HashMap<>();
 
+    /** '중요 정보'(전화번호·능력으로 밝힌 사실) 화면을 여는 콜백 — TRPGGameManager가 주입(교차 플레이어 데이터 필요). */
+    private Consumer<Player> importantInfoOpener;
+    public void setImportantInfoOpener(Consumer<Player> opener) { this.importantInfoOpener = opener; }
+
     // ──────────────────────────────────────────────────────────────
     //  캐릭터 시트 + 주사위 확인
     // ──────────────────────────────────────────────────────────────
@@ -457,8 +461,11 @@ public class DialogManager {
             if (t.active && t.effect != null && !t.effect.isBlank()) {
                 tooltip += (tooltip.isBlank() ? "" : "\n\n") + "§e[사용 효과] §f" + t.effect;
             }
+            String sd = t.statDeltaPlain();
+            if (!sd.isBlank()) tooltip += (tooltip.isBlank() ? "" : "\n\n") + "능력치 변화: " + sd;
 
-            String label = (isEnhance ? "⬆ 강화 " : "✦ ") + "(" + t.grade + ") " + t.name;
+            String label = (isEnhance ? "⬆ 강화 " : "✦ ") + "(" + t.grade + ") " + t.name
+                + (sd.isBlank() ? "" : "  [" + sd + "]");
             buttons.add(ActionButton.create(
                 Component.text(label, isEnhance ? NamedTextColor.GOLD : NamedTextColor.WHITE),
                 tooltip.isBlank() ? null : Component.text(tooltip),
@@ -604,10 +611,11 @@ public class DialogManager {
                 + (srcMyName != null && !srcMyName.isBlank() ? "기존: " + srcMyName + "\n" : "")
                 + "강화 후: (" + t.grade + ") " + t.name + "\n"
                 + (t.description != null && !t.description.isBlank() ? t.description + "\n" : "")
+                + statLine(t)
                 + cooldownLine(choices.srcMyTrait(), t)
                 + "\n효과: " + t.effect;
             buttons.add(ActionButton.create(
-                Component.text("⬆ 내 특성 강화  [" + t.grade + "] " + t.name, NamedTextColor.AQUA, TextDecoration.BOLD),
+                Component.text("⬆ 내 특성 강화  [" + t.grade + "] " + t.name + statSuffix(t), NamedTextColor.AQUA, TextDecoration.BOLD),
                 Component.text(tooltip, NamedTextColor.GRAY),
                 200,
                 DialogAction.customClick((v, a) -> {
@@ -623,10 +631,11 @@ public class DialogManager {
                 + (srcMapName != null && !srcMapName.isBlank() ? "기존: " + srcMapName + "\n" : "")
                 + "강화 후: (" + t.grade + ") " + t.name + "\n"
                 + (t.description != null && !t.description.isBlank() ? t.description + "\n" : "")
+                + statLine(t)
                 + cooldownLine(choices.srcMapTrait(), t)
                 + "\n효과: " + t.effect;
             buttons.add(ActionButton.create(
-                Component.text("✦ 맵 특성 가져가기  [" + t.grade + "] " + t.name, NamedTextColor.GOLD, TextDecoration.BOLD),
+                Component.text("✦ 맵 특성 가져가기  [" + t.grade + "] " + t.name + statSuffix(t), NamedTextColor.GOLD, TextDecoration.BOLD),
                 Component.text(tooltip, NamedTextColor.GRAY),
                 200,
                 DialogAction.customClick((v, a) -> {
@@ -641,9 +650,10 @@ public class DialogManager {
             String tooltip = "새로운 특성 획득\n"
                 + "(" + t.grade + ") " + t.name + "\n"
                 + (t.description != null && !t.description.isBlank() ? t.description + "\n" : "")
+                + statLine(t)
                 + "\n효과: " + t.effect;
             buttons.add(ActionButton.create(
-                Component.text("✨ 새로운 특성  [" + t.grade + "] " + t.name, NamedTextColor.GREEN, TextDecoration.BOLD),
+                Component.text("✨ 새로운 특성  [" + t.grade + "] " + t.name + statSuffix(t), NamedTextColor.GREEN, TextDecoration.BOLD),
                 Component.text(tooltip, NamedTextColor.GRAY),
                 200,
                 DialogAction.customClick((v, a) -> {
@@ -666,6 +676,18 @@ public class DialogManager {
             .type(DialogType.multiAction(buttons, cancelBtn, 1))
         );
         player.showDialog(dialog);
+    }
+
+    /** 툴팁용 능력치 변화 한 줄 (없으면 빈 문자열) */
+    private static String statLine(TraitData t) {
+        String sd = t.statDeltaPlain();
+        return sd.isBlank() ? "" : "능력치 변화: " + sd + "\n";
+    }
+
+    /** 버튼 라벨 접미용 능력치 변화 (없으면 빈 문자열) */
+    private static String statSuffix(TraitData t) {
+        String sd = t.statDeltaPlain();
+        return sd.isBlank() ? "" : "  [" + sd + "]";
     }
 
     /** 쿨다운 변화 한 줄 — 원본이 없으면 새 값만, 있으면 before→after 형식 */
@@ -789,6 +811,13 @@ public class DialogManager {
             Component.text("정보가 포함된 내용만 모아 봅니다."), 160,
             DialogAction.customClick((v, a) -> showRecordPages(player, pd, true, infoSnap, 0),
                 ClickCallback.Options.builder().uses(1).build())));
+        if (importantInfoOpener != null) {
+            buttons.add(ActionButton.create(
+                Component.text("⭐ 중요 정보", NamedTextColor.GOLD),
+                Component.text("전화번호 · 능력으로 밝혀낸 사실을 모아 봅니다."), 160,
+                DialogAction.customClick((v, a) -> importantInfoOpener.accept(player),
+                    ClickCallback.Options.builder().uses(1).build())));
+        }
 
         ActionButton closeBtn = ActionButton.create(Component.text("닫기", TextColor.color(0xAAAAAA)), null, 100, null);
         Dialog dialog = Dialog.create(b -> b.empty()
@@ -863,6 +892,51 @@ public class DialogManager {
             .base(DialogBase.builder(Component.text(title))
                 .body(List.of(DialogBody.plainMessage(body))).build())
             .type(DialogType.multiAction(nav, closeBtn, 3)));
+        player.showDialog(dialog);
+    }
+
+    /**
+     * 중요 정보 화면: 전화번호(내/아는 사람·NPC) + 능력으로 밝혀낸 사실(keyFacts).
+     * 내용은 TRPGGameManager가 합성해 넘긴다(교차 플레이어 데이터 필요). 뒤로가기는 기록 열람 메뉴로.
+     */
+    public void showImportantInfo(Player player, PlayerData pd, String myNumber,
+                                   List<String> phoneLines, List<String> factLines) {
+        final int FACTS_SHOWN = 18;
+        var bb = Component.text();
+        bb.append(Component.text("📞 내 연락처: ", NamedTextColor.GOLD))
+          .append(Component.text((myNumber == null || myNumber.isBlank()) ? "미발급" : myNumber, NamedTextColor.WHITE))
+          .appendNewline().appendNewline();
+
+        bb.append(Component.text("── 아는 번호 ──", NamedTextColor.YELLOW)).appendNewline();
+        if (phoneLines == null || phoneLines.isEmpty()) {
+            bb.append(Component.text("(아직 아는 번호가 없습니다)", NamedTextColor.DARK_GRAY)).appendNewline();
+        } else {
+            for (String ln : phoneLines)
+                bb.append(Component.text("• ", NamedTextColor.GRAY))
+                  .append(Component.text(ln, NamedTextColor.WHITE)).appendNewline();
+        }
+        bb.appendNewline();
+
+        bb.append(Component.text("── 능력으로 밝혀낸 사실 ──", NamedTextColor.AQUA)).appendNewline();
+        if (factLines == null || factLines.isEmpty()) {
+            bb.append(Component.text("(아직 능력으로 알아낸 정보가 없습니다)", NamedTextColor.DARK_GRAY)).appendNewline();
+        } else {
+            int from = Math.max(0, factLines.size() - FACTS_SHOWN); // 최근 것 우선
+            if (from > 0)
+                bb.append(Component.text("(이전 " + from + "건 생략, 최근 " + FACTS_SHOWN + "건)", NamedTextColor.DARK_GRAY)).appendNewline();
+            for (int i = from; i < factLines.size(); i++)
+                bb.append(Component.text("• ", NamedTextColor.GRAY))
+                  .append(Component.text(factLines.get(i), NamedTextColor.WHITE)).appendNewline();
+        }
+
+        ActionButton back = ActionButton.create(Component.text("◀ 목록", NamedTextColor.WHITE), null, 100,
+            DialogAction.customClick((v, a) -> showRecordChoice(player, pd),
+                ClickCallback.Options.builder().uses(1).build()));
+        ActionButton close = ActionButton.create(Component.text("닫기", TextColor.color(0xAAAAAA)), null, 100, null);
+        Dialog dialog = Dialog.create(b -> b.empty()
+            .base(DialogBase.builder(Component.text("⭐ 중요 정보"))
+                .body(List.of(DialogBody.plainMessage(bb.build()))).build())
+            .type(DialogType.multiAction(List.of(back), close, 1)));
         player.showDialog(dialog);
     }
 

@@ -92,6 +92,45 @@ public class TraitData {
             ? " §c[쿨다운 " + remainingCooldown + "턴]" : (cooldownTurns == -1 && usedThisStage > 0 ? " §c[이번 스테이지 사용 완료]" : "");
         String eff = effectiveGrade();
         String gradeStr = eff.equals(grade) ? grade : (grade + "§7·실효§e" + eff); // 출신보너스 발현 시 병기
-        return "▸ (§e" + gradeStr + "§r) " + name + (level > 1 ? " §7Lv." + level : "") + ": " + description + cd;
+        return "▸ (§e" + gradeStr + "§r) " + name + (level > 1 ? " §7Lv." + level : "") + ": " + description + cd
+             + statDeltaChat();
+    }
+
+    // ── 스탯 증감 표시 (특성이 주는 능력치 변화) ────────────────────────────
+    /** 스탯 증감 항목 목록 (예: ["근력 +5", "행운 -2"]). 변화 없으면 빈 리스트. */
+    public java.util.List<String> statDeltas() {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        addDelta(out, "근력",   str_add);
+        addDelta(out, "매력",   cha_add);
+        addDelta(out, "행운",   luk_add);
+        addDelta(out, "영감",   spr_add);
+        addDelta(out, "체력",   hp_max_add);
+        addDelta(out, "정신력", san_max_add);
+        return out;
+    }
+    private static void addDelta(java.util.List<String> out, String label, int v) {
+        if (v != 0) out.add(label + " " + (v > 0 ? "+" + v : String.valueOf(v)));
+    }
+
+    /** 채팅용 색 입힌 스탯 증감 (양수=초록, 음수=빨강). 없으면 빈 문자열. */
+    public String statDeltaChat() {
+        StringBuilder sb = new StringBuilder();
+        appendChatDelta(sb, "근력",   str_add);
+        appendChatDelta(sb, "매력",   cha_add);
+        appendChatDelta(sb, "행운",   luk_add);
+        appendChatDelta(sb, "영감",   spr_add);
+        appendChatDelta(sb, "체력",   hp_max_add);
+        appendChatDelta(sb, "정신력", san_max_add);
+        return sb.length() == 0 ? "" : " §8[" + sb + "§8]";
+    }
+    private static void appendChatDelta(StringBuilder sb, String label, int v) {
+        if (v == 0) return;
+        if (sb.length() > 0) sb.append("§8, ");
+        sb.append(v > 0 ? "§a" : "§c").append(label).append(' ').append(v > 0 ? "+" : "").append(v);
+    }
+
+    /** 다이얼로그 툴팁용 평문 스탯 증감 (예: "근력 +5, 행운 -2"). 없으면 빈 문자열. */
+    public String statDeltaPlain() {
+        return String.join(", ", statDeltas());
     }
 }

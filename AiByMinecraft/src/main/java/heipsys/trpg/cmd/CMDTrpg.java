@@ -82,6 +82,7 @@ public class CMDTrpg implements CommandExecutor, TabCompleter {
             case "me"     -> trpg.openCharacterInfo(player);
             case "log"    -> trpg.openRecordLog(player);
             case "info"   -> trpg.openRecordInfo(player);
+            case "keyinfo", "중요" -> trpg.openImportantInfo(player); // 전화번호·능력으로 밝힌 사실
             case "map"    -> trpg.openMap(player);
             case "trait"  -> trpg.reopenTraitDialog(player);
             case "ending" -> trpg.reopenEndingDialog(player);

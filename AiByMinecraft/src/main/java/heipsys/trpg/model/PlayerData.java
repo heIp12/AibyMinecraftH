@@ -78,6 +78,22 @@ public class PlayerData {
     public Map<String, List<String>> infoGroups = new LinkedHashMap<>();
 
     /**
+     * 중요 정보 — 능력(특성)으로 밝혀낸 사실들(원격감지·예지·탐색·엿보기 등).
+     * 일반 단서(infoGroups)와 분리해 '중요 정보' GUI에 모은다. 최근 KEY_FACTS_MAX개 유지.
+     */
+    public final List<String> keyFacts = new ArrayList<>();
+    public static final int KEY_FACTS_MAX = 60;
+    public void addKeyFact(String fact) {
+        if (fact == null || fact.isBlank()) return;
+        String f = fact.trim();
+        synchronized (keyFacts) {
+            if (keyFacts.contains(f)) return;
+            keyFacts.add(f);
+            if (keyFacts.size() > KEY_FACTS_MAX) keyFacts.remove(0);
+        }
+    }
+
+    /**
      * 단서를 대상 태그(주제)별 그룹에 기록한다. 기존 {@link #infoItems} 에도 "[subject] line" 형태로 mirror 추가(하위호환).
      * @param subject 대상 태그. null/blank면 "단서"로 분류.
      * @param line    단서 내용 한 줄. 같은 그룹에 동일 줄이 이미 있으면 중복 추가하지 않는다.
@@ -174,6 +190,7 @@ public class PlayerData {
         narrativeLog.clear();
         infoItems.clear();
         infoGroups.clear();
+        synchronized (keyFacts) { keyFacts.clear(); }
         visitedZones.clear();
         hasFullMap = false;
     }
