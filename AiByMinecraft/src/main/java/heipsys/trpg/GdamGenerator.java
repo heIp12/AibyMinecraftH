@@ -244,8 +244,18 @@ type 값 규칙: "written_book"=책/일기/문서류, "paper"=쪽지/메모, "ma
 - protective: 위해 경감(방독면·부적). item_params:{"power":1~3,"uses":N}
 - record: 읽으면 단서를 얻는 글/기록(content 필수). 핵심 단서는 clue_value에 적는다.
 - combine: 다른 부품과 조합해 새 아이템 생성. item_params:{"combines_with":"item_X","result":"item_Y"}
+- ritual: 의례 절차에서 소모돼 괴담을 약화·봉인. item_params:{"uses":1}. ★collapse_condition(파훼 조건)과 반드시 연결.
+- evidence: NPC에게 제시하면 반응이 바뀜(사진·증거물). item_params:{"uses":N}. lore_info에 '무엇을 증명하는지' 적는다.
 ★ 남용 금지: 핵심 공략 동선에 필요한 아이템에만 item_type을 준다. 분위기·소품은 item_type 생략.
 ★ key의 unlocks는 gated_zones의 zone과 일치시키고, 그 구역 requires와 모순 없게 하라.
+### item_type 심화 규칙 (런타임 상태·정합성):
+- ★잔량이 있는 타입(light=charges, weapon=ammo, consumable/ritual/evidence=uses)은 초기값을 반드시 명시한다.
+  값이 작을수록(예: charges 2~3, ammo 1~6) 자원 관리 긴장이 생긴다. 무한이 자연스러우면 생략(−1 취급).
+- ★weapon noise: 1 이상이면 사용 시 소음으로 괴담의 위협·추적이 강해진다(조용한 해결과 트레이드오프). 0=무음.
+- ★combine: combines_with·result에 쓰는 id는 가능하면 key_items에 실제로 정의된 아이템을 가리킨다.
+  result 아이템도 key_items에 정의해 두면 조합 후 그 정보(lore_info/content)가 노출된다(없어도 폴백 생성됨).
+- ★ 이 아이템들은 플레이 중 '사용'되면 GM이 <ITEM_USE> 태그로 상태(잔량·해제·소진·조합)를 갱신한다(런타임 처리됨).
+  따라서 생성 시엔 '사용하면 무슨 일이 일어나는가'가 자명하도록 description·lore_info를 충실히 적는다.
 
 ### start_item 규칙 ★ 절대 준수:
 - start_item에는 반드시 한국어 아이템 이름을 쓴다

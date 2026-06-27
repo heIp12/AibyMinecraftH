@@ -15,6 +15,9 @@ public class TraitData {
     public boolean roleSpecific; // true = 해당 챕터 배역 한정 특성 (챕터 종료 시 제거)
     /** 클리어 보상에서 기존 특성을 강화하는 선택지일 때, 대체 대상 특성 id (null = 신규 특성) */
     public String  replacesId;
+    /** 능력 레벨(강화 단계). 1=기본. 강화 보상으로 상승. (능력 Phase C) */
+    public int level    = 1;
+    public int maxLevel = 1;
 
     /**
      * 시스템 효과 종류 (빈 문자열 = 일반 특성, 효과는 GM 서술로만 처리).
@@ -67,6 +70,6 @@ public class TraitData {
     public String toDisplayLine() {
         String cd = (remainingCooldown > 0)
             ? " §c[쿨다운 " + remainingCooldown + "턴]" : (cooldownTurns == -1 && usedThisStage > 0 ? " §c[이번 스테이지 사용 완료]" : "");
-        return "▸ (" + grade + ") " + name + ": " + description + cd;
+        return "▸ (" + grade + ") " + name + (level > 1 ? " §7Lv." + level : "") + ": " + description + cd;
     }
 }

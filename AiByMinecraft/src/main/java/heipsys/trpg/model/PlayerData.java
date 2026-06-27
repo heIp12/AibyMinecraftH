@@ -53,6 +53,8 @@ public class PlayerData {
 
     public boolean statsConfirmed = false;
     public boolean roleAssigned   = false;
+    /** 기여도 — 스테이지 평가 등급 누적치 (능력 강화 게이팅·진척 표시용, 능력 Phase C). 회차·챕터 넘어 유지. */
+    public int contribution = 0;
 
     /** 현재 소지 중인 아이템 ID 집합 (통신 기기 추적 등에 사용) */
     public Set<String> heldItemIds = new HashSet<>();

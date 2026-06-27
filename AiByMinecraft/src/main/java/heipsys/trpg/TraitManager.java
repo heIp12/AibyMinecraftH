@@ -305,6 +305,8 @@ str_add/cha_add/luk_add/spr_add/hp_max_add/san_max_add: B급 이하는 0이 원�
                     SystemTraitRegistry.applyDefaults(td);
                     td.roleSpecific = false;     // 강화 보상은 영구
                     td.replacesId   = src.id;    // 원본 대체
+                    td.level    = src.level + 1; // 강화 = 레벨 상승 (능력 Phase C)
+                    td.maxLevel = Math.max(src.maxLevel, td.level);
                     result.add(td);
                 }
                 return result;
