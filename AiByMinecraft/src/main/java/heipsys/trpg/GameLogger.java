@@ -20,13 +20,35 @@ public class GameLogger {
 
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("HH:mm:ss");
 
+    private final Plugin plugin;
     private final File   logDir;
     private final Object lock = new Object();
     private File currentFile;
+    private boolean writeWarned = false;   // IOException 경고는 1회만 (콘솔 도배 방지)
 
     public GameLogger(Plugin plugin) {
+        this.plugin = plugin;
         this.logDir = new File(plugin.getDataFolder(), "logs");
-        if (!logDir.exists()) logDir.mkdirs();
+        ensureDir();
+    }
+
+    /** 로그 디렉터리 보장. 실패 시 콘솔에 절대경로와 함께 경고. */
+    private boolean ensureDir() {
+        if (logDir.exists()) return true;
+        logDir.mkdirs();
+        if (!logDir.exists()) {
+            plugin.getLogger().warning("[gamelog] 로그 폴더를 만들지 못했습니다: "
+                + logDir.getAbsolutePath() + " (서버 폴더 쓰기 권한을 확인하세요)");
+            return false;
+        }
+        return true;
+    }
+
+    /** 현재 기록 중인 로그 파일의 절대경로(없으면 null) — 진단·명령어용. */
+    public String currentLogPath() {
+        synchronized (lock) {
+            return currentFile == null ? null : currentFile.getAbsolutePath();
+        }
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -36,6 +58,8 @@ public class GameLogger {
     /** 새 세션 시작 시 호출 — 씨드 기준 실행 횟수를 매겨 새 로그 파일 생성. */
     public void startNewLog(String seed, int room) {
         synchronized (lock) {
+            ensureDir();                       // 폴더가 사라졌어도 재생성 시도
+            writeWarned = false;               // 새 세션마다 경고 1회 재허용
             String safe  = sanitize(seed);
             int    count = nextRunCount(safe);
             currentFile  = new File(logDir, safe + "#" + count + ".txt");
@@ -43,6 +67,12 @@ public class GameLogger {
             rawWrite("세션 시작  |  씨드: " + seed + "  |  스테이지: " + room
                      + "  |  실행 #" + count);
             rawWrite("========================================");
+            // 파일 생성 여부를 콘솔에 절대경로로 알려, "logs 파일이 안 보인다"를 즉시 진단 가능하게 한다.
+            if (currentFile.exists())
+                plugin.getLogger().info("[gamelog] 플레이 로그 기록 시작 → " + currentFile.getAbsolutePath());
+            else
+                plugin.getLogger().warning("[gamelog] 로그 파일을 생성하지 못했습니다 → "
+                    + currentFile.getAbsolutePath());
         }
     }
 
@@ -135,7 +165,14 @@ public class GameLogger {
         if (currentFile == null) return;
         try (PrintWriter pw = new PrintWriter(new FileWriter(currentFile, true))) {
             pw.println(line);
-        } catch (IOException ignored) {}
+        } catch (IOException ex) {
+            // 이전엔 조용히 삼켜 "로그가 안 생긴다"의 원인을 알 수 없었다 → 세션당 1회 경고.
+            if (!writeWarned) {
+                writeWarned = true;
+                plugin.getLogger().warning("[gamelog] 로그 쓰기 실패 → "
+                    + currentFile.getAbsolutePath() + " : " + ex.getMessage());
+            }
+        }
     }
 
     /** 파일명에 쓸 수 없는 문자 제거(씨드의 # 등). */
