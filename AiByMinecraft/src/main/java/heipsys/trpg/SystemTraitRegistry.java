@@ -50,6 +50,30 @@ public class SystemTraitRegistry {
         LINK_ALLY("link_ally", true,
             "발동 시 다른 플레이어의 위치·상태를 감각으로 파악하거나 소통 수단을 발견한다. depth에 따라 얻는 정보 수준이 달라진다.",
             "uses=횟수(1~2), depth=감지 깊이(1=생존·대략 위치 확인 [즉시 표시], 2=상태 파악·소통 실마리 [AI 서술], 3=소통 경로 발견 포함 [AI 서술])"),
+        GUARANTEED("guaranteed", true,
+            "발동 시 다음 행동 1회를 확정 성공으로 처리한다(주사위·실패를 무시하고 GM이 성공으로 서술). 회피가 아니라 '반드시 성공'하는 결과 보장이다.",
+            "uses=스테이지당 횟수(1~2), scope=확정 범위(1=단일 행동, 2=연관 행동 묶음, 3=상황 전체 국면)"),
+        MOBILITY("mobility", true,
+            "발동 시 이동·도주·지형 돌파에 강한 보정을 받는다(추격 회피·즉시 도달·막힌 길 우회). GM이 그 이동을 성공적으로 서술한다.",
+            "power=보정 강도(1=유리, 2=상당, 3=거의 확정), uses=스테이지당 횟수(1~3)"),
+        REMOTE_SENSE("remote_sense", true,
+            "발동 후 대상을 입력하면 ★다른 구역(원격)의 정보를 감지한다(독순술·천리안·원격 투시). 현재 구역만 보는 area_scan과 달리 떨어진 곳을 본다.",
+            "range=원격 범위(1=인접 구역, 2=같은 층, 3=전역), info=정보 깊이(0=암시, 1=부분, 2=중간, 3=핵심 근접), uses=스테이지당 횟수(1~2)"),
+        FORESIGHT("foresight", true,
+            "발동 후 의도한 다음 행동을 입력하면 그 행동의 예상 결과·분기를 미리 보여준다(예지·인생설계). 실제 판정 전에 전망만 제공한다.",
+            "depth=예측 깊이(1=직후 결과만, 2=한 단계 분기, 3=여러 갈래·연쇄), uses=스테이지당 횟수(1~2)"),
+        SOCIAL("social", true,
+            "발동 시 대상 NPC의 호감·협조를 끌어내거나 설득·강제 접촉한다(친화·소통). GM이 NPC 반응을 우호적으로 조정한다.",
+            "power=설득 강도(1=호의, 2=적극 협조, 3=강한 설득), uses=스테이지당 횟수(1~3)"),
+        DOMINATE("dominate", true,
+            "발동 시 NPC·하위 개체 1명을 짧게 제어해 1회 명령을 강제한다(지배). ★괴담 본체·핵심 존재에는 통하지 않는다.",
+            "power=지배 강도(1=설득에 가까운 유도, 2=명백한 강제), uses=스테이지당 횟수(1)"),
+        FATE("fate", true,
+            "발동 시 직전 또는 다음 판정 1회의 결과를 유리하게 뒤집는다(운명). 최상위 희소 효과.",
+            "uses=스테이지당 횟수(1)"),
+        GROUP_REWIND("group_rewind", true,
+            "발동 시 파티가 직전 국면으로 되감긴다(동반회귀). ★코드상으로는 재도전 제약을 해제한다 — 스테이지 3+에서 생존자가 없어도 재도전을 허용한다.",
+            "uses=스테이지당 횟수(1)"),
 
         // ─── 패시브 효과 (active = false) ────────────────────────────────────────────
         SCENARIO_INSIGHT("scenario_insight", false,
@@ -117,7 +141,10 @@ public class SystemTraitRegistry {
         sb.append("  · ai_query(info=3, uses>=2) — 핵심 정보 다수 반복 획득\n");
         sb.append("  · passive_gm (주인공급 — 불리한 상황에서 '반드시 돌파구'가 보장)\n");
         sb.append("  · sacrifice(scale=3) — 극적 대가로 극적 혜택\n");
-        sb.append("  · passive_trigger(intensity=3, trigger_freq=3) — 강하고 잦은 자동 발동\n\n");
+        sb.append("  · passive_trigger(intensity=3, trigger_freq=3) — 강하고 잦은 자동 발동\n");
+        sb.append("  · fate (직전/다음 판정 1회 유리하게 뒤집기 — 운명)\n");
+        sb.append("  · group_rewind (직전 국면으로 동반회귀 — 재도전 제약 해제)\n");
+        sb.append("  · dominate(power=2) — NPC·하위 개체 1회 명령 강제(지배)\n\n");
 
         sb.append("[A등급] 스테이지에 강한 영향을 미치는 핵심 효과. 표준 상한.\n");
         sb.append("  · ai_query(info=3, uses=1) — 핵심 근접 질문 1회\n");
@@ -127,7 +154,13 @@ public class SystemTraitRegistry {
         sb.append("  · link_ally(depth=3) — 소통 경로 발견 포함\n");
         sb.append("  · passive_trigger(intensity=3, trigger_freq=2) — 강하고 가끔 발동\n");
         sb.append("  · protect(power=3) — 거의 무효화 방어\n");
-        sb.append("  · sacrifice(scale=2, cost<=10) — 합리적 대가로 상당한 혜택\n\n");
+        sb.append("  · sacrifice(scale=2, cost<=10) — 합리적 대가로 상당한 혜택\n");
+        sb.append("  · guaranteed(scope=3) — 상황 전체 국면을 확정 성공으로\n");
+        sb.append("  · mobility(power=3) — 거의 확정적인 이동·도주·돌파\n");
+        sb.append("  · remote_sense(range=3, info=3) — 전역 원격 감지로 핵심 근접 정보\n");
+        sb.append("  · foresight(depth=3) — 여러 갈래·연쇄 결과 예지\n");
+        sb.append("  · social(power=3) — 강한 설득·강제 접촉\n");
+        sb.append("  · dominate(power=1) — 유도에 가까운 약한 지배\n\n");
 
         sb.append("[B등급] 유용하지만 조건·횟수 제한이 명확하다. 가장 흔한 등급.\n");
         sb.append("  · ai_query(info=1~2, uses=1~2) — 부분 정보\n");
@@ -139,7 +172,12 @@ public class SystemTraitRegistry {
         sb.append("  · protect(power=2) — 절반 경감 방어\n");
         sb.append("  · luck_roll(scale=5~9) — 중간 운 보정\n");
         sb.append("  · link_ally(depth=2) — 아군 상태 파악·소통 실마리\n");
-        sb.append("  · choice_action(choices=2~3, uses=1) — 기본 선택지\n\n");
+        sb.append("  · choice_action(choices=2~3, uses=1) — 기본 선택지\n");
+        sb.append("  · guaranteed(uses=1) — 단일 행동 1회 확정 성공\n");
+        sb.append("  · mobility(power=2) — 상당한 이동·도주 보정\n");
+        sb.append("  · remote_sense(range=1~2) — 인접·동층 원격 감지\n");
+        sb.append("  · foresight(depth=1~2) — 직후 결과·한 단계 분기 예측\n");
+        sb.append("  · social(power=1~2) — NPC 호의·협조 유도\n\n");
 
         sb.append("[C등급] 제한적 상황에서만 가치 있음, 또는 부작용 동반.\n");
         sb.append("  · ai_query(info=1, uses=1) — 모호한 암시 1회\n");
@@ -264,6 +302,45 @@ public class SystemTraitRegistry {
                 td.effectParams.putIfAbsent("depth", 1);
                 clamp(td, "uses", 1, 2); clamp(td, "depth", 1, 3);
             }
+            case GUARANTEED -> {
+                td.effectParams.putIfAbsent("uses", 1);
+                td.effectParams.putIfAbsent("scope", 1);
+                clamp(td, "uses", 1, 2); clamp(td, "scope", 1, 3);
+            }
+            case MOBILITY -> {
+                td.effectParams.putIfAbsent("power", 2);
+                td.effectParams.putIfAbsent("uses", 1);
+                clamp(td, "power", 1, 3); clamp(td, "uses", 1, 3);
+            }
+            case REMOTE_SENSE -> {
+                td.effectParams.putIfAbsent("range", 2);
+                td.effectParams.putIfAbsent("info", 1);
+                td.effectParams.putIfAbsent("uses", 1);
+                clamp(td, "range", 1, 3); clamp(td, "info", 0, 3); clamp(td, "uses", 1, 2);
+            }
+            case FORESIGHT -> {
+                td.effectParams.putIfAbsent("depth", 2);
+                td.effectParams.putIfAbsent("uses", 1);
+                clamp(td, "depth", 1, 3); clamp(td, "uses", 1, 2);
+            }
+            case SOCIAL -> {
+                td.effectParams.putIfAbsent("power", 2);
+                td.effectParams.putIfAbsent("uses", 1);
+                clamp(td, "power", 1, 3); clamp(td, "uses", 1, 3);
+            }
+            case DOMINATE -> {
+                td.effectParams.putIfAbsent("power", 1);
+                td.effectParams.putIfAbsent("uses", 1);
+                clamp(td, "power", 1, 2); clamp(td, "uses", 1, 1);
+            }
+            case FATE -> {
+                td.effectParams.putIfAbsent("uses", 1);
+                clamp(td, "uses", 1, 1);
+            }
+            case GROUP_REWIND -> {
+                td.effectParams.putIfAbsent("uses", 1);
+                clamp(td, "uses", 1, 1);
+            }
             case PASSIVE_TRIGGER -> {
                 td.effectParams.putIfAbsent("intensity", 2);
                 td.effectParams.putIfAbsent("trigger_freq", 2);
@@ -293,7 +370,9 @@ public class SystemTraitRegistry {
         if (e == null) return 0;
         return switch (e) {
             case AI_QUERY, CHOICE_ACTION, GM_DIRECTIVE, REVIVE_ALLY,
-                 INSTANT_CLEAR, AREA_SCAN, LINK_ALLY, SACRIFICE -> td.param("uses", 1);
+                 INSTANT_CLEAR, AREA_SCAN, LINK_ALLY, SACRIFICE,
+                 GUARANTEED, MOBILITY, REMOTE_SENSE, FORESIGHT,
+                 SOCIAL, DOMINATE, FATE, GROUP_REWIND -> td.param("uses", 1);
             default -> 0;
         };
     }
