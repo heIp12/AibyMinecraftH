@@ -472,5 +472,22 @@ gated_zones가 있으면 각 항목에 대해 주입: "구역 [zone]: [requires]
 
 ---
 
-*FINAL_PROMPT_PATCHES.md 작성 완료 — 2026-06-26*  
-*패치 P1~P48(+P44b) 전수 반영 | 코드 TODO CODE-1~12 전수 착수 스펙 완료*
+---
+
+## F. 연장분 추가 패치 (iter19~27, P49~P57 + CODE-13)
+
+### 프롬프트 (C·D절 외 추가)
+- **P51**(low, 과거×NPC): 대체통신은 수신자가 NPC여도 동일 도달소요·발각위험(대면 즉시와 구분). → GDAM constraints.notes.
+- **P52**(low, P23 연장): 위치 의존 loophole(이의제기·정화)은 유효 zone 명시. → world_rules.hidden/entity.solution.
+- **P53**(low, P43 보완): comms_monitored×can_impersonate — 빙의/현장 숙주 같은 zone이면 대면 발화도 직접 청취 가능(기기 도청 면제와 별개). 안전 대면=숙주 없는 zone. → GM_SYSTEM_BASE.
+- **P56**(med, 다인 분기): 분기 선택 갈림 시 (1)전원합의→(2)행동 주도자→(3)협력판정(P6), 채택 근거 명시·미채택 의도 일부 반영. → GM_SYSTEM_BASE branches.
+- **★P57**(high, 정보기록 UX): extractAndStoreInfo 태스크에 "같은 대상 단서는 '[○○에 대한 단서]' 헤더로 묶어 출력" 추가 + new_clue 스키마에 clue_subject 필드. → extractAndStoreInfo 태스크/GM_SYSTEM_BASE. ※CODE-13 동반 필요.
+- (P49·P50·P54·P55는 위 C·D절에 이미 반영)
+
+### 코드 TODO 추가
+- **★CODE-13**(high, task #26·#27 근본): PlayerData.infoItems(List<String> 평탄) → Map<String,List<String>> infoGroups(LinkedHashMap) 그룹 구조 교체 + DialogManager 렌더를 헤더+들여쓰기로 변경. P57(프롬프트)와 함께 적용해야 "단서 파란색 몰아씀" + "전화번호·능력 사실 별도 섹션" 근본 해결.
+
+---
+
+*FINAL_PROMPT_PATCHES.md — 최종 갱신 2026-06-27 (27회 시뮬·2h 연장 반영)*  
+*프롬프트 패치 P1~P57(+P44b) 전수 | 코드 TODO CODE-1~13 (HIGH 7: CODE-3·4·6·8·9·12·13) | 프롬프트 완전 수렴*
