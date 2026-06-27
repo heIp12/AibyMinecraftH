@@ -45,20 +45,26 @@ public class ChatListener implements Listener {
             trpgManager.handleChat(player, message));
     }
 
-    /** 채팅에서 '@' 입력 후 탭 → 아는 연락처(이름·번호)·@전체 자동완성 */
+    /** 채팅에서 탭 → 아는 연락처(이름·번호)·@전체 자동완성. 빈 입력에서 탭만 눌러도 전체 후보 표시. */
     @EventHandler
     public void onChatTabComplete(com.destroystokyo.paper.event.server.AsyncTabCompleteEvent event) {
         if (event.isCommand()) return; // 명령어 자동완성은 제외 (채팅만)
         TRPGGameManager trpgManager = trpg();
         if (trpgManager == null || !trpgManager.isActive()) return;
         if (!(event.getSender() instanceof Player player)) return;
-        String buffer = event.getBuffer();
-        if (buffer == null || buffer.indexOf('@') < 0) return;
+        String buffer = event.getBuffer() == null ? "" : event.getBuffer();
         int lastSpace = buffer.lastIndexOf(' ');
         String lastWord = buffer.substring(lastSpace + 1);
-        if (!lastWord.startsWith("@")) return;
+        java.util.List<String> all = trpgManager.commSuggestions(player);
+        if (all.isEmpty()) return;
         java.util.List<String> sugg = new java.util.ArrayList<>();
-        for (String s : trpgManager.commSuggestions(player)) if (s.startsWith(lastWord)) sugg.add(s);
+        if (lastWord.isEmpty()) {
+            sugg.addAll(all); // 아무것도 안 친 상태에서 탭 → 전체 후보(@전체·이름·번호)
+        } else if (lastWord.startsWith("@")) {
+            for (String s : all) if (s.startsWith(lastWord)) sugg.add(s); // '@' 입력 중 → 접두사 필터
+        } else {
+            return; // 일반 단어 입력 중엔 개입하지 않음
+        }
         if (!sugg.isEmpty()) event.setCompletions(sugg);
     }
 

@@ -36,27 +36,89 @@ public class NarrativeDelivery {
         UUID uuid = player.getUniqueId();
         ArrayDeque<String> q = queues.computeIfAbsent(uuid, k -> new ArrayDeque<>());
 
-        // 먼저 38자 단위로 모두 래핑한 뒤, 한 블록당 최대 2줄씩 묶어 큐에 넣는다.
-        // → 한 번에 2줄까지만 보이고, 3줄째부터는 다음 라인(다음 출력 틱)으로 이어진다.
-        List<String> segments = new ArrayList<>();
-        for (String line : format(raw).split("\n")) {
-            if (line.isBlank()) continue;
-            segments.addAll(hardWrap(line.trim()));
-        }
-        StringBuilder block = new StringBuilder();
-        int count = 0;
-        for (String seg : segments) {
-            if (count > 0) block.append('\n');
-            block.append(seg);
-            if (++count >= MAX_LINES_PER_BLOCK) {
-                q.add(block.toString());
-                block.setLength(0);
-                count = 0;
+        // 문단(\n) → 문장 단위로 쪼갠 뒤, 한 덩이가 2줄(한글 MAX_CHAT_CHARS자×2)을 넘지 않게
+        // ★문장 경계에서만★ 묶는다. 각 덩이는 MAX_CHAT_CHARS자 단위로 하드랩(MC 자동 인덴트 방지)해
+        // 블록으로 큐에 넣는다 → 문장 중간이 끊기지 않고, 2줄을 넘기면 다음 라인으로 이어진다.
+        final int maxChunk = MAX_CHAT_CHARS * MAX_LINES_PER_BLOCK;
+        for (String para : format(raw).split("\n")) {
+            if (para.isBlank()) continue;
+            StringBuilder chunk = new StringBuilder();
+            int vis = 0;
+            for (String sent : splitSentences(para.trim())) {
+                int sv = visualLength(sent);
+                // 이 문장을 더하면 2줄 초과 → 현재 덩이를 먼저 내보낸다
+                if (vis > 0 && vis + 1 + sv > maxChunk) {
+                    enqueueChunk(q, chunk.toString());
+                    chunk.setLength(0); vis = 0;
+                }
+                if (vis > 0) { chunk.append(' '); vis++; }
+                chunk.append(sent);
+                vis += sv;
+                // 한 문장 자체가 2줄을 넘으면 단독으로 내보낸다(하드랩으로만 분할)
+                if (vis > maxChunk) {
+                    enqueueChunk(q, chunk.toString());
+                    chunk.setLength(0); vis = 0;
+                }
             }
+            if (chunk.length() > 0) enqueueChunk(q, chunk.toString());
         }
-        if (block.length() > 0) q.add(block.toString());
 
         if (!taskIds.containsKey(uuid)) scheduleNext(player);
+    }
+
+    /** 한 덩이(문장 묶음)를 MAX_CHAT_CHARS자 단위로 하드랩해 최대 2줄짜리 블록(들)으로 큐에 넣는다. */
+    private void enqueueChunk(ArrayDeque<String> q, String chunk) {
+        StringBuilder block = new StringBuilder();
+        int count = 0;
+        for (String seg : hardWrap(chunk.trim())) {
+            if (count > 0) block.append('\n');
+            block.append(seg);
+            if (++count >= MAX_LINES_PER_BLOCK) { q.add(block.toString()); block.setLength(0); count = 0; }
+        }
+        if (block.length() > 0) q.add(block.toString());
+    }
+
+    /** 색코드(§X)를 제외한 실제 표시 문자 수. */
+    private static int visualLength(String s) {
+        int n = 0;
+        for (int i = 0; i < s.length(); i++) {
+            if (s.charAt(i) == '§' && i + 1 < s.length()) { i++; continue; }
+            n++;
+        }
+        return n;
+    }
+
+    /**
+     * 문단을 문장 단위로 분해한다. 종결 부호(. ? ! …) 뒤의 닫는 따옴표·괄호·색코드를 흡수하고,
+     * 그 뒤가 공백이거나 문단 끝일 때만 문장 경계로 본다(소수점·약어 등 오분할 방지).
+     */
+    private static List<String> splitSentences(String s) {
+        List<String> out = new ArrayList<>();
+        int start = 0, i = 0;
+        while (i < s.length()) {
+            char c = s.charAt(i);
+            if (c == '.' || c == '?' || c == '!' || c == '…') {
+                int j = i + 1;
+                while (j < s.length()) {
+                    char d = s.charAt(j);
+                    if (d == '"' || d == '\'' || d == '”' || d == '’' || d == ')' || d == ']') { j++; continue; }
+                    if (d == '§' && j + 1 < s.length()) { j += 2; continue; }
+                    break;
+                }
+                if (j >= s.length() || s.charAt(j) == ' ') {
+                    String seg = s.substring(start, j).trim();
+                    if (!seg.isEmpty()) out.add(seg);
+                    while (j < s.length() && s.charAt(j) == ' ') j++;
+                    start = j; i = j; continue;
+                }
+            }
+            i++;
+        }
+        if (start < s.length()) {
+            String seg = s.substring(start).trim();
+            if (!seg.isEmpty()) out.add(seg);
+        }
+        return out.isEmpty() ? Collections.singletonList(s.trim()) : out;
     }
 
     // 색상 구분: 기본 서술=흰색, 화자 태그[...]=주황, 연출/시스템<...>=노랑, 대사="..."=청록
