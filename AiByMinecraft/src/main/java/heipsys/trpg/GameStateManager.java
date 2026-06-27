@@ -573,9 +573,10 @@ public class GameStateManager {
     /** Entity/NPC AI용 — 행동 로그만, 스탯/특성 없음 */
     public String buildEntityLog(int limit) {
         StringBuilder sb = new StringBuilder();
+        // 후일담 등 플레이어 노출 출력에 쓰이므로 계정 이름 대신 등장인물(캐릭터) 이름으로 변환한다.
         getRecentLog(limit).stream()
             .filter(e -> "action".equals(e.type))
-            .forEach(e -> sb.append("[").append(e.player).append("] ").append(e.content).append("\n"));
+            .forEach(e -> sb.append("[").append(resolveDisplayName(e.player)).append("] ").append(e.content).append("\n"));
         return sb.toString();
     }
 

@@ -127,6 +127,13 @@ public class PlayerData {
     /** 한 번이라도 알게 된 NPC 연락처 id 누적 (다회차 이월 — 재도전 시 NPC 번호 유지. 복구는 GameStateManager/TRPGGameManager가 수행) */
     public final Set<String> everKnownNpcContacts = new HashSet<>();
 
+    /** 마지막(피날레) 스테이지 '원년 배역 복귀'용 — 1스테이지 캐릭터 정체성 스냅샷. clearRoleData로 지워지지 않는다. */
+    public boolean hasOrigChar = false;
+    public String  origCharName = "";
+    public String  origGender   = "";
+    public int     origAge      = -1;
+    public String  origJob      = "";
+
     // Base stats snapshot — used to reset on retry
     public int[] baseHp  = {6, 6};
     public int   baseStr = 5;
