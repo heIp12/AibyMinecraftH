@@ -403,9 +403,9 @@ public class SystemTraitRegistry {
      * hp_max/san_max(체력·정신력 최대치)도 다른 스텟과 동일 가중(플레이어 표시는 %지만 예산은 동일).
      */
     private static void enforceStatBudget(TraitData td) {
-        int budget = switch (td.grade == null ? "" : td.grade.trim().toUpperCase()) {
+        int budget = switch (td.effectiveGrade()) {  // 실효(파워) 등급 기준 — 낮은 출신 강화 보너스 반영
             case "S" -> 10; case "A" -> 5; case "B" -> 3; case "C" -> 1;
-            case "E" -> -1; case "F" -> -2; default -> 0; // E/F: 디버프·제약(순값 음수)
+            case "E" -> -1; case "F" -> -2; default -> 0; // D=0; E/F 음수
         };
         double pos = Math.max(0, td.str_add) + Math.max(0, td.cha_add)
                    + Math.max(0, td.luk_add) + Math.max(0, td.spr_add)
