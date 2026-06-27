@@ -495,7 +495,7 @@ gated_zones가 있으면 각 항목에 대해 주입: "구역 [zone]: [requires]
 ---
 
 *FINAL_PROMPT_PATCHES.md — 최종 갱신 2026-06-27 (27회 시뮬·2h 연장 + 사용자 교정 P58~P60 반영)*  
-*프롬프트 패치 P1~P65(+P44b) | 코드 TODO CODE-1~16 (HIGH 9: CODE-3·4·6·8·9·12·13·15·16) | 엔딩 개편(G19)·평가 형식(G20)·발동 시점(G21) 포함*
+*프롬프트 패치 P1~P67(+P44b) | 코드 TODO CODE-1~17 (HIGH 10: CODE-3·4·6·8·9·12·13·15·16·17) | 엔딩(G19)·평가형식(G20)·발동시점(G21)·단계 가변(G22)·해결 추상화(G23) 포함*
 
 ## ★ 사용자 교정 (P58~P60) — 위 G1·G2·G6 본문에 이미 반영됨
 - **P58 (해결판정=collapse 충족 여부로만, 전원 생존 불필요)**: G1 (2)에 반영. 사망자 있어도 collapse 완전충족이면 해결판정 유지, 생존자 수는 등급에만.
@@ -575,3 +575,43 @@ gated_zones가 있으면 각 항목에 대해 주입: "구역 [zone]: [requires]
 | **클리어**(해결·진출) | ✅ 출력 | ✅ 공개 |
 
 **코드 흐름:** 스테이지 종료 디스패처가 세 경로 모두에서 `runScenarioEvaluation` 호출. 괴담 reveal + 통합 엔딩 서술은 **스톱·클리어 경로에서만** 호출(리트라이 경로는 평가만, reveal·엔딩 생략). → CODE-8(실패/스톱 종료 시 평가·공개 미호출)을 이 매트릭스로 확정: **스톱=평가+공개 둘 다 / 리트라이=평가만 / 클리어=평가+공개(진출 시 전원 부활)**.
+
+---
+
+## G22. corruption·timeline 단계 수 규모 가변 (P66) — 사용자 교정 5 ★프롬프트+코드 동반 필수
+**severity:** HIGH
+**문제:** 현재 생성이 corruption_behavior=0~4(5고정)·timeline=1~4(4고정). 규모 무관 동일 → 사건 다양성 제한.
+**★중요:** 프롬프트(아래)만 고치면 무효 — 런타임이 `Math.min(4,…)`로 캡(GameStateManager:167·312, TRPGGameManager:4575, CorruptionManager:44 `>=4`). **CODE-17 동반 필수.**
+
+**대상 1 (생성·프롬프트):** `GdamGenerator.java` — `GDAM_SYSTEM_PROMPT` 스키마 템플릿(line 346 corruption_behavior·365~ timeline) + spawn 지침(line 149)
+**삽입/교체 텍스트:**
+```
+★ 단계 수는 괴담 규모(scale)에 비례 가변 (고정 금지):
+- corruption_behavior: 0부터 연속 키, 규모별 개수 — 로컬 3(0~2)·시티 4(0~3)·내셔널 5(0~4)·글로벌 6(0~5)·코즈믹 7~8(0~6/7).
+- timeline 단계: 1부터 연속, 규모별 — 로컬 2~3·시티 3~4·내셔널 4~5·글로벌 5~6·코즈믹 6~8.
+- main_events: 단계 수에 맞춰 더 많이(더 다양한 사건).
+- spawn_timeline "타임라인 N단계"의 N은 그 시나리오 timeline 단계 수 범위 내(1~최대단계).
+- lengthGuideFor(분량)와 같은 scale 축으로 동조.
+```
+
+**대상 2 (런타임·CODE-17, HIGH):** seed의 corruption_behavior 항목 수·timeline 단계 수를 읽어 `maxStage`/`maxCorruption` 동적 산출 후 모든 하드코딩 '4' 대체:
+- `GameStateManager.advanceTimeline`: `Math.min(4,…)` → `Math.min(maxStage,…)`
+- ensureStageByClock(1~4 최소보장)·E_END 브리지 `=4`(:312) → maxStage
+- `TRPGGameManager` `getTimelineStage()>=4`(:4575 등) → `>= maxStage`
+- `CorruptionManager.isSpecialReward` `level>=4` → maxCorruption 기준, level 초과 시 최고단계 클램프
+- `parseSpawnStage` "타임라인 N단계" N>4 허용
+
+---
+
+## G23. 약점·해결 서술 추상화 — 플레이어가 '구조적 구멍'을 창안하게 (P67) — 사용자 교정 6
+**severity:** HIGH
+**문제:** iter19 잔고자 등 solution/exploit_path가 "정확히 3개 결절점에 자기참조 채권 동시 삽입" 식 ★단일 고정 절차로 과상세. 이러면 플레이어가 구조적 구멍을 스스로 창안할 여지가 사라지고 '유일한 정답'을 맞히는 게임이 됨. (기존 line 93·104 '절차·횟수·도구 나열 금지' 규칙이 일관 적용 안 됨)
+**대상:** `GdamGenerator.java` — `GDAM_SYSTEM_PROMPT` weakness/solution/exploit_path/escape 설계부 (line 93·104 강화)
+**삽입 텍스트:**
+```
+★ 약점·해결 서술 = '원리·급소'만, 정확한 절차는 금지 (플레이어가 창안하도록):
+- weakness/exploit_path: 괴담이 '왜 취약한가'(구조적 원리·모순·급소)만 적는다. 정확한 수행 절차·횟수("3개에 동시")·도구·좌표를 나열하지 마라.
+- solution/collapse_condition: '충족되어야 할 조건(결과 기준)'으로 적는다 — 예 "자기 참조로 등록 회로에 모순을 일으킨다". '그것을 이루는 유일한 정확 방법'으로 적지 마라. 같은 원리를 만족하는 여러 접근이 가능해야 한다.
+- GM은 플레이어가 그 원리를 실제로 만족시키는 ★어떤 창의적 접근이든 성공으로 인정한다(예: 자기모순 유발 수단이 무엇이든 원리 충족 시 collapse). 단 '원리 충족 여부'의 경계는 GM이 판정 가능하게 명확히 둔다(모호 ≠ 추상).
+- 예외: solution이 ★의례·정확입력형(이름·재료·순서가 본질)인 경우만 P23대로 정확 조건+오류결과를 명시한다. 그 외 '공략·원리형'은 본 추상화 규칙을 따른다.
+```

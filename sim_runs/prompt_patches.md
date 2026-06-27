@@ -511,3 +511,40 @@
   | 클리어(해결·진출) | ✅ 출력 | ✅ 공개 |
 - [수정안 — 코드 흐름] 스테이지 종료 디스패처가 세 경로(리트라이/스톱/클리어) 모두에서 runScenarioEvaluation 호출. 괴담 reveal + 통합 엔딩 서술은 스톱·클리어 경로에서만 호출(리트라이 경로는 평가만, reveal 생략). ※CODE-8(실패/스톱 종료서 평가 미호출) 보강·연계 — 실패(스톱)도 평가+공개 둘 다, 리트라이는 평가만.
 - ※ 클리어 시: 평가 → (다음 스테이지 진출이면 전원 부활) ; 스톱 시: 평가 → 괴담 공개 → 통합 엔딩(-END-). 리트라이 시: 평가 → 곧바로 재시도(공개·엔딩 없음).
+
+## ★ 사용자 교정 5 (post-loop, 2026-06-27) — P66 (corruption·timeline 단계 수 규모 가변)
+
+### P66. corruption_behavior·timeline 단계 수를 괴담 규모(scale)로 가변 (★high, 범용)
+- [대상] GdamGenerator GDAM_SYSTEM_PROMPT 스키마 템플릿(line 346 corruption_behavior 0~4 고정, 365~ timeline 1~4) + 지침(149 spawn N=1~4·271·761) — ★CODE-17 동반 필수
+- [문제] 플레이 로그상 corruption_behavior가 항상 0~4(5개), timeline이 항상 1~4(4단계)로 고정 → 사건 다양성 제한. 규모 무관하게 동일.
+- [수정안 — 생성(프롬프트)] corruption_behavior 단계 수·timeline 단계 수·main_events 수를 ★괴담 규모에 비례 가변. corruption_behavior 키는 0부터 연속, timeline 단계는 1부터 연속, main_events는 단계 수에 맞춰 더 많이(더 다양한 사건). 권장 가이드:
+  | 규모 | corruption_behavior | timeline 단계 | main_events |
+  |---|---|---|---|
+  | 로컬 | 3개(0~2) | 2~3 | 적게 |
+  | 시티 | 4개(0~3) | 3~4 | 보통 |
+  | 내셔널 | 5개(0~4) | 4~5 | 많게 |
+  | 글로벌 | 6개(0~5) | 5~6 | 많게 |
+  | 코즈믹 | 7~8개(0~6/7) | 6~8 | 매우 많게 |
+  - 스키마 템플릿의 고정 `{"0":..,"4":..}`·`1~4`를 "규모에 맞는 N개(연속 키)"로 표현. spawn_timeline의 "타임라인 N단계" N 범위도 timeline 단계 수에 맞춰 가변(149 지침 수정). lengthGuideFor(분량)와 같은 scale 축으로 동조.
+- [수정안 — 런타임(CODE-17)] ★프롬프트만으론 무효 — 런타임 하드캡 제거 필수:
+  - GameStateManager.advanceTimeline `Math.min(4, ...)` → `Math.min(maxStage, ...)` (maxStage = seed timeline 단계 수).
+  - ensureStageByClock(1~4 최소보장)·E_END 브리지 `=4`(line 312) → maxStage 기준.
+  - TRPGGameManager `getTimelineStage()>=4`(line 4575 등) → `>= maxStage`.
+  - CorruptionManager.isSpecialReward `level>=4` → seed corruption_behavior 최대 키 기준. corruption level이 키 범위 초과 시 최고 단계 클램프.
+  - parseSpawnStage가 "타임라인 N단계" N>4 허용.
+  - 즉 seed의 corruption_behavior 항목 수·timeline 단계 수를 읽어 maxStage/maxCorruption을 동적으로 산출, 모든 하드코딩 '4'를 대체.
+
+### (코드 도메인 추가)
+- ★CODE-17 (P66 연계, ★high): 위 런타임 하드캡(timelineStage min(4)·E_END=4·>=4 / corruption >=4 특수보상)을 seed 단계 수 기반 동적값으로 교체. P66(프롬프트)와 ★반드시 함께 적용해야 규모별 가변 사건이 실제 발생. ※.java(GameStateManager·TRPGGameManager·CorruptionManager).
+
+## ★ 사용자 교정 6 (post-loop, 2026-06-27) — P67 (약점·해결 서술 추상화)
+
+### P67. 약점·해결은 '원리·급소'만, 정확 절차 금지 — 플레이어가 구조적 구멍을 창안 (★high, 범용)
+- [대상] GdamGenerator GDAM_SYSTEM_PROMPT weakness/solution/exploit_path/escape 설계 (기존 line 93·104 '절차·횟수·도구 나열 금지' 강화·일관화)
+- [문제] iter19 잔고자 seed의 solution이 "세 결절점에 동시에 자기참조 채권 삽입" 식 단일 고정 절차로 과상세 → 플레이어가 스스로 구조적 구멍(exploit)을 창안할 여지 박탈, '유일 정답 맞히기'로 전락. 사용자 지적: 너무 자세히 쓰면 플레이어가 구멍을 만들어내기 어려움.
+- [수정안]
+  - weakness/exploit_path: '왜 취약한가'(구조적 원리·모순·급소)만. 정확한 절차·횟수("3개 동시")·도구·좌표 나열 금지.
+  - solution/collapse_condition: '충족되어야 할 조건(결과 기준)'으로(예: "자기참조로 등록 회로 모순 유발"). '유일한 정확 수행법'으로 적지 마라 — 같은 원리를 만족하는 여러 접근 허용.
+  - GM은 플레이어가 원리를 실제 만족시키는 ★어떤 창의적 접근이든 성공 인정. 단 '원리 충족 여부' 경계는 GM이 판정 가능하게 명확(모호 ≠ 추상).
+  - 예외: 의례·정확입력형(이름·재료·순서가 본질)만 P23대로 정확 조건+오류결과 명시. 그 외 공략·원리형은 본 추상화 규칙.
+- [효과] 단일 정답 강제 해소 + P32(2경로)·재플레이 가치(P61)와 정합. 플레이어 창의적 해법 공간 확보.
