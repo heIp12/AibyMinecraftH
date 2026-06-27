@@ -262,7 +262,7 @@ public class ItemManager {
         def.addProperty("name", itemId);
         def.addProperty("title", itemId);
         def.addProperty("type", "physical:" + material);
-        plugin.getLogger().info("[ItemManager] '" + itemId + "' → " + material + " (자동 매핑)");
+        plugin.getLogger().info("[ItemManager] 미정의 아이템 자동 매핑 → " + material); // ★스포 방지 — 아이템 이름은 로그 제외
         return def;
     }
 
