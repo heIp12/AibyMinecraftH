@@ -572,7 +572,8 @@ public class AiManager {
         return parseSelfClosingAttr(response, "<IMPERSONATE_END ", "player");
     }
 
-    /** <ZONE_UPDATE player="X" zone="Y" spot="Z"/> 모두 파싱 → [{player, zone, spot}, ...] (spot 없으면 "") */
+    /** <ZONE_UPDATE player="X" zone="Y" spot="Z" forced="true"/> 파싱 → [{player, zone, spot, forced}, ...]
+     *  forced=강제 이동(납치·공격에 날아감·붕괴 등; 잠긴 게이트도 무시). 없으면 "". */
     public java.util.List<String[]> parseZoneUpdateTags(String response) {
         java.util.List<String[]> out = new ArrayList<>();
         final String PREFIX = "<ZONE_UPDATE ";
@@ -586,7 +587,8 @@ public class AiManager {
             String player = extractAttr(attrs, "player").orElse(null);
             String zone   = extractAttr(attrs, "zone").orElse(null);
             String spot   = extractAttr(attrs, "spot").orElse("");
-            if (player != null && zone != null) out.add(new String[]{player, zone, spot});
+            String forced = extractAttr(attrs, "forced").orElse("");
+            if (player != null && zone != null) out.add(new String[]{player, zone, spot, forced});
             from = end + 2;
         }
         return out;
