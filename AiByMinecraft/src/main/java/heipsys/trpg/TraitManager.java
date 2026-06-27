@@ -520,6 +520,8 @@ new_trait: 완전히 새로운 범용 특성. 직업·테마에서 착안하되 
                 if (newT != null) {
                     if (gradeBoost > 0) newT.grade = bumpGrade(newT.grade, gradeBoost);
                     newT.grade = clampGrade(newT.grade, maxGrade); // 스테이지 상한 적용(AI가 높게 잡아도 제한)
+                    newT.originGrade = newT.grade;                  // 새 특성의 출신 = 최종 등급(실효등급 왜곡 방지)
+                    SystemTraitRegistry.applyDefaults(newT);        // ★최종 등급 기준으로 능력 코스트·스텟 예산 재적용
                 }
 
                 return new StageEndChoices(myUpg, mapUpg, newT, fp, fm);
@@ -534,7 +536,7 @@ new_trait: 완전히 새로운 범용 특성. 직업·테마에서 착안하되 
         td.id = "se_" + UUID.randomUUID().toString().substring(0, 6);
         td.name        = obj.has("name")        ? obj.get("name").getAsString()        : "강화 특성";
         td.grade       = gradeOverride != null   ? gradeOverride
-                       : (obj.has("grade")       ? obj.get("grade").getAsString()       : "C");
+                       : normalizeGrade(obj.has("grade") ? obj.get("grade").getAsString() : "C", "C");
         td.description = obj.has("description") ? obj.get("description").getAsString() : "";
         td.active      = obj.has("active")      && obj.get("active").getAsBoolean();
         td.effect      = obj.has("effect")      ? obj.get("effect").getAsString()      : "";
@@ -584,6 +586,15 @@ new_trait: 완전히 새로운 범용 특성. 직업·테마에서 착안하되 
             case "E" -> u >= 1 ? "D" : "E";
             case "F" -> u >= 1 ? "E" : "F";
             default  -> t.grade;
+        };
+    }
+
+    /** 비표준 등급 문자열(예: "최강"·빈칸)을 표준(F~S)으로 정규화. 표준이 아니면 fallback. */
+    private String normalizeGrade(String g, String fallback) {
+        if (g == null) return fallback;
+        return switch (g.trim().toUpperCase()) {
+            case "S","A","B","C","D","E","F" -> g.trim().toUpperCase();
+            default -> (fallback == null || fallback.isEmpty()) ? "C" : fallback;
         };
     }
 

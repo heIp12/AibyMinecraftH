@@ -150,6 +150,18 @@ public class SystemTraitRegistry {
         sb.append("   예) 혼합 A급: 중간 발동형(area_scan scope=2) + stat +1.\n");
         sb.append("아래 effect_type 등급표는 '그 기계효과 단독(스텟 0) 기준'이다. 스텟을 더하면 그만큼 기계효과를 낮춰 합을 맞춘다.\n\n");
 
+        sb.append("## ★★ 능력 코스트 & 예산 (반드시 이 안에서 설계) ★★\n");
+        sb.append("등급 예산(점): S=10 A=5 B=3 C=1 D=0 E=-1 F=-2.  규칙: ★(능력 코스트 + 양의 스텟 합) ≤ 등급 예산★.\n");
+        sb.append("능력 기본 코스트(제약 없을 때, 등급 예산과 같은 점수):\n");
+        sb.append("  · 10점: instant_clear · revive_ally · fate · group_rewind · dominate(power2) · choice_action(choices4) · ai_query(info3·uses2+) · sacrifice(scale3) · passive_trigger(intensity3·freq3)\n");
+        sb.append("  · 5점 : gm_directive · ai_query(info3·uses1) · luck_roll(scale10+) · area_scan(scope3) · link_ally(depth3) · protect(power3) · guaranteed(scope3) · mobility(power3) · remote_sense(range3&info3) · foresight(depth3) · social(power3) · dominate(power1) · sacrifice(scale2)\n");
+        sb.append("  · 3점 : passive_gm · show_progress · scenario_insight(depth2~3) · area_scan(scope2) · passive_trigger(intensity2) · protect(power2) · luck_roll(scale5~9) · link_ally(depth2) · choice_action(choices2~3) · guaranteed · mobility(power2) · remote_sense · foresight · social(power1~2) · ai_query(info1~2)\n");
+        sb.append("  · 1점 : ai_query(info1·uses1) · scenario_insight(depth1) · protect(power1) · area_scan(scope1) · luck_roll(scale≤4) · link_ally(depth1) · passive_trigger(intensity1)\n");
+        sb.append("★ 제약을 걸수록 코스트가 싸진다(할인): 스테이지당 1회(cooldown_turns=-1) −3 · 쿨다운 5턴+ −2 · 쿨다운 2턴+ −1 · 최소 횟수(uses=1) −1. (능력은 최소 1점)\n");
+        sb.append("★ 단점(음의 스텟)을 주면 그만큼 예산이 늘어난다(상쇄). 예: B(3) 특성에 매력 −2 → 예산 5로 늘어 A급 능력 1개 탑재 가능.\n");
+        sb.append("→ 강한 능력을 낮은 등급에 넣고 싶으면 쿨다운·1회성·횟수제한·단점스텟으로 코스트를 예산 안에 맞춰라. ");
+        sb.append("못 맞추면 시스템이 자동으로 제약을 추가하고, 그래도 넘치면 능력을 약화·제거한다(설계가 헛수고가 됨).\n\n");
+
         sb.append("[S등급] 스테이지 전체를 뒤바꿀 수 있는 결정적 효과. 아주 희소하게 배정.\n");
         sb.append("  · instant_clear (스테이지 즉시 생존 클리어)\n");
         sb.append("  · revive_ally (완전 부활·전회복)\n");
@@ -292,9 +304,8 @@ public class SystemTraitRegistry {
     /** effectType에 맞춰 능/수동을 강제하고 누락된 파라미터에 기본값을 채운다 */
     public static void applyDefaults(TraitData td) {
         if (td == null) return;
-        enforceStatBudget(td); // B4: 등급별 스텟 예산 적용(순수 스텟 특성은 아래 early-return하므로 여기서 먼저)
         Effect e = Effect.byKey(td.effectType);
-        if (e == null) { td.effectType = ""; return; }
+        if (e == null) { td.effectType = ""; enforcePowerBudget(td); return; } // 순수 스텟도 예산 적용
         td.active = e.active;
         if (td.effectParams == null) td.effectParams = new HashMap<>();
         switch (e) {
@@ -391,6 +402,7 @@ public class SystemTraitRegistry {
             }
             default -> {}
         }
+        enforcePowerBudget(td); // 파라미터 확정 후: 능력 코스트 + 스텟 합을 등급 예산에 맞춰 강제
     }
 
     private static void clamp(TraitData td, String key, int lo, int hi) {
@@ -398,30 +410,101 @@ public class SystemTraitRegistry {
         td.effectParams.put(key, Math.max(lo, Math.min(hi, v)));
     }
 
-    /**
-     * B4 백스톱: 양의 스텟 보정 총합이 등급 예산(D=0/C=1/B=3/A=5/S=10)+음수 헤드룸을 넘으면 비례 축소.
-     * hp_max/san_max(체력·정신력 최대치)도 다른 스텟과 동일 가중(플레이어 표시는 %지만 예산은 동일).
-     */
-    private static void enforceStatBudget(TraitData td) {
-        int budget = switch (td.effectiveGrade()) {  // 실효(파워) 등급 기준 — 낮은 출신 강화 보너스 반영
+    /** 등급별 총 파워 예산(점). '능력 코스트 + 양의 스텟 합'이 이 예산을 넘지 못한다. */
+    private static int gradeBudget(String grade) {
+        return switch (grade == null ? "" : grade) {
             case "S" -> 10; case "A" -> 5; case "B" -> 3; case "C" -> 1;
             case "E" -> -1; case "F" -> -2; default -> 0; // D=0; E/F 음수
         };
-        double pos = Math.max(0, td.str_add) + Math.max(0, td.cha_add)
-                   + Math.max(0, td.luk_add) + Math.max(0, td.spr_add)
-                   + Math.max(0, td.hp_max_add) + Math.max(0, td.san_max_add);
-        double neg = Math.max(0, -td.str_add) + Math.max(0, -td.cha_add)
-                   + Math.max(0, -td.luk_add) + Math.max(0, -td.spr_add)
-                   + Math.max(0, -td.hp_max_add) + Math.max(0, -td.san_max_add);
-        double cap = budget + neg;            // 음수 보정만큼 양의 예산 추가(상쇄 규칙)
-        if (pos <= cap || pos <= 0) return;   // 예산 내 → 그대로
-        double s = cap / pos;
-        td.str_add     = scaleP(td.str_add, s);
-        td.cha_add     = scaleP(td.cha_add, s);
-        td.luk_add     = scaleP(td.luk_add, s);
-        td.spr_add     = scaleP(td.spr_add, s);
-        td.hp_max_add  = scaleP(td.hp_max_add, s);
-        td.san_max_add = scaleP(td.san_max_add, s);
+    }
+
+    /**
+     * 능력(effect_type) 코스트 — 등급 예산과 같은 점수 단위.
+     * 파라미터(범위·강도·횟수·정보깊이)가 클수록 비싸고, 제약(쿨다운·1회성·소수 횟수)을 걸수록 싸진다.
+     * effect_type이 없으면(순수 스텟) 0. 능력이 있으면 최소 1.
+     */
+    private static int abilityCost(TraitData td) {
+        Effect e = Effect.byKey(td.effectType);
+        if (e == null) return 0;
+        int uses = td.param("uses", 1);
+        int base = switch (e) {
+            case INSTANT_CLEAR, REVIVE_ALLY, FATE, GROUP_REWIND -> 10;
+            case DOMINATE         -> td.param("power", 1) >= 2 ? 10 : 5;
+            case CHOICE_ACTION    -> td.param("choices", 3) >= 4 ? 10 : 3;
+            case AI_QUERY         -> td.param("info", 1) >= 3 ? (uses >= 2 ? 10 : 5) : 3;
+            case SACRIFICE        -> { int sc = td.param("scale", 2); yield sc >= 3 ? 10 : sc == 2 ? 5 : 1; }
+            case PASSIVE_TRIGGER  -> { int it = td.param("intensity", 2), fq = td.param("trigger_freq", 2);
+                                       yield it >= 3 ? (fq >= 3 ? 10 : 5) : it >= 2 ? 3 : 1; }
+            case GM_DIRECTIVE     -> 5;
+            case LUCK_ROLL        -> { int sc = td.param("scale", 10); yield sc >= 10 ? 5 : sc >= 5 ? 3 : 1; }
+            case AREA_SCAN        -> { int sp = td.param("scope", 1); yield sp >= 3 ? 5 : sp >= 2 ? 3 : 1; }
+            case LINK_ALLY        -> { int d = td.param("depth", 1); yield d >= 3 ? 5 : d >= 2 ? 3 : 1; }
+            case PROTECT          -> { int p = td.param("power", 2); yield p >= 3 ? 5 : p >= 2 ? 3 : 1; }
+            case GUARANTEED       -> td.param("scope", 1) >= 3 ? 5 : 3;
+            case MOBILITY         -> { int p = td.param("power", 2); yield p >= 3 ? 5 : p >= 2 ? 3 : 1; }
+            case REMOTE_SENSE     -> (td.param("range", 2) >= 3 && td.param("info", 1) >= 3) ? 5 : 3;
+            case FORESIGHT        -> td.param("depth", 2) >= 3 ? 5 : 3;
+            case SOCIAL           -> td.param("power", 2) >= 3 ? 5 : 3;
+            case SCENARIO_INSIGHT -> td.param("depth", 1) >= 2 ? 3 : 1;
+            default               -> 3; // passive_gm·show_progress 등 텍스트 의존 = 기본 B
+        };
+        int discount = 0;
+        if (td.cooldownTurns == -1)     discount += 3; // 스테이지당 1회 = 가장 큰 제약
+        else if (td.cooldownTurns >= 5) discount += 2;
+        else if (td.cooldownTurns >= 2) discount += 1;
+        if (uses <= 1)                  discount += 1; // 최소 횟수 제한
+        return Math.max(1, base - discount);
+    }
+
+    /** 코스트가 예산을 넘을 때 가장 강한 파라미터를 1 낮춘다. 더 낮출 게 없으면 false. */
+    private static boolean reduceOneParam(TraitData td) {
+        if (td.effectParams == null || td.effectParams.isEmpty()) return false;
+        String[] order = {"choices","scale","power","scope","depth","intensity","range","trigger_freq","info","uses"};
+        for (String k : order) {
+            Integer v = td.effectParams.get(k);
+            int min = switch (k) { case "choices", "scale" -> 2; case "info" -> 0; default -> 1; };
+            if (v != null && v > min) { td.effectParams.put(k, v - 1); return true; }
+        }
+        return false;
+    }
+
+    private static double posSum(TraitData td) {
+        return Math.max(0, td.str_add) + Math.max(0, td.cha_add) + Math.max(0, td.luk_add)
+             + Math.max(0, td.spr_add) + Math.max(0, td.hp_max_add) + Math.max(0, td.san_max_add);
+    }
+    private static double negSum(TraitData td) {
+        return Math.max(0, -td.str_add) + Math.max(0, -td.cha_add) + Math.max(0, -td.luk_add)
+             + Math.max(0, -td.spr_add) + Math.max(0, -td.hp_max_add) + Math.max(0, -td.san_max_add);
+    }
+
+    /**
+     * 등급 예산 = 능력 코스트 + 양의 스텟 합 (음의 스텟 단점만큼 예산 추가).
+     * 능력이 예산을 초과하면 ⓐ제약(쿨다운 -1) → ⓑ파라미터 축소 → ⓒ최후 효과 제거 순으로 맞추고,
+     * 남은 예산으로 양의 스텟을 비례 축소한다. (멍청한 AI가 등급을 넘겨도 시스템이 강제 정렬)
+     */
+    private static void enforcePowerBudget(TraitData td) {
+        int budget = gradeBudget(td.effectiveGrade()); // 실효(파워) 등급 기준 — 낮은 출신 강화 보너스 반영
+        int neg = (int) negSum(td);
+        int ec = abilityCost(td);
+        if (ec > budget + neg && Effect.byKey(td.effectType) != null) {
+            if (td.cooldownTurns != -1) { td.cooldownTurns = -1; ec = abilityCost(td); } // 제약 추가로 할인
+            int guard = 0;
+            while (ec > budget + neg && reduceOneParam(td) && guard++ < 24) ec = abilityCost(td);
+            if (ec > budget + neg) { // 최소 형태로도 초과 → 등급에 안 맞는 강효과 제거
+                td.effectType = ""; td.effectParams = null; td.active = false; ec = 0;
+            }
+        }
+        double statCap = Math.max(0, budget + neg - ec); // 능력이 쓴 만큼 빼고 남은 예산을 스텟에
+        double pos = posSum(td);
+        if (pos > statCap && pos > 0) {
+            double s = statCap / pos;
+            td.str_add     = scaleP(td.str_add, s);
+            td.cha_add     = scaleP(td.cha_add, s);
+            td.luk_add     = scaleP(td.luk_add, s);
+            td.spr_add     = scaleP(td.spr_add, s);
+            td.hp_max_add  = scaleP(td.hp_max_add, s);
+            td.san_max_add = scaleP(td.san_max_add, s);
+        }
     }
     /** 양수만 비례 축소(내림), 음수·0은 유지. */
     private static int scaleP(int v, double s) { return v > 0 ? (int) Math.floor(v * s) : v; }
