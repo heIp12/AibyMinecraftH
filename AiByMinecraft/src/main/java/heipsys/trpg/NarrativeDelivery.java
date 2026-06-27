@@ -135,12 +135,12 @@ public class NarrativeDelivery {
     public static String format(String raw) {
         if (raw == null) return "";
         String s = raw;
-        s = s.replace('”', '”').replace('”', '”');
-        s = s.replaceAll("“(?m)^\\s*#{1,6}\\s*”", "“”");
+        s = s.replace('“', '"').replace('”', '"'); // 굽은 따옴표 → 곧은 따옴표(아래 대사 색칠이 곡선 따옴표도 잡도록)
+        s = s.replaceAll("(?m)^\\s*#{1,6}\\s*", ""); // 마크다운 헤더(#, ##…) 제거
         // 독백·내면의 소리 <-..-> → 회색 (연출 규칙보다 먼저 적용)
-        s = s.replaceAll("“<-([^<>\n]+)->”", "“§7<-$1->”" + BASE_COLOR);
+        s = s.replaceAll("<-([^<>\n]+)->", "§7<-$1->" + BASE_COLOR);
         // 연출·시스템 효과 <...> → 노란색 (독백 <-..-> 와 구분: - 로 시작하지 않는 것만 매칭)
-        s = s.replaceAll("“<(?!-)([^<>\n]+)>”", "“§e<$1>”" + BASE_COLOR);
+        s = s.replaceAll("<(?!-)([^<>\n]+)>", "§e<$1>" + BASE_COLOR);
         // 화자 태그 [이름] → 주황색 (괄호 포함)
         s = s.replaceAll("\\[([^\\[\\]\n]+)\\]", "§6[$1]" + BASE_COLOR);
         // 마크다운 강조: **굵게**=노랑 강조, *주석/지문*=회색(연출 보조 설명)
