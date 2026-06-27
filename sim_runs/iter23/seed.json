@@ -1,0 +1,726 @@
+{
+  "seed": "#ZK9M-4TRV",
+  "_sim_note": "프롬프트 검증용 평문 시뮬레이션 (실게임 AES-256-GCM 암호화). 플러그인 .java 미수정.",
+  "_iter": "iter23",
+  "_focus": "★장기(수개월) 타임라인 + 가변 시간 granularity — 큰 도약(주/월/6개월)과 급박 분단위 공존, P3·lengthGuideFor 심층검증 + P1~P53 전체 회귀",
+  "_scale_note": "내셔널(스테이지4) — P47 준수: 사건 영향범위=국가 핵심 금융인프라, 기간은 영향범위와 별개로 수개월 자연 경과",
+
+  "meta": {
+    "room": 4,
+    "scale": "내셔널",
+    "era": "현대 (2024년, 대한민국)",
+    "phone_usable": true,
+    "comms_monitored": false,
+    "theme": "수면 중 계좌 이탈 — 잠드는 순간 재산이 소멸하는 금융 저주",
+    "timeline_type": "장기 다단계 (수개월 점진 전개 + 클라이맥스 분단위 급박)"
+  },
+
+  "entity": {
+    "name": "결산자(決算者)",
+    "type": "비물질 금융 저주 개체 — 독립지능형",
+    "independent_ai": true,
+    "can_impersonate": false,
+    "npc_dependency": "high",
+    "description": "결산자는 특정 금융 계약 문서(표준 여신 동의서의 특정 인장 조합)로 소환된 비물질 존재다. 대상이 수면에 들어가는 순간 계좌 잔고를 자신의 '장부'로 이체하고 부채만 남긴다. 각성 후 피해자는 계좌는 존재하나 잔고가 0이고 부채만 남은 상황을 맞는다. 결산자는 물리 실체가 없으며, 금융 원장(ledger) 시스템 내부를 이동한다.",
+    "rules": [
+      "대상이 수면 시작 시점에 계좌 잔고를 0으로 만들고 동액의 부채를 생성한다 — 매 수면마다 반복.",
+      "잠들지 않으면 진행이 멈춘다 — 그러나 72시간 이상 수면 회피 시 SAN -5 즉시 적용(수면 박탈 패널티).",
+      "결산자는 원장을 따라 이동 — 금융 기관 원장 서버에 접근하지 않으면 물리적 탐색 불가.",
+      "피해자 수가 늘수록 결산자 규모가 커진다 — 잠복기 동안 대한민국 전체 여신 계약 동의서를 스캔하며 대상 목록을 확장한다.",
+      "피해는 개인 → 소규모 법인 → 국가 기간금융 순서로 단계 확산한다."
+    ],
+    "weakness": "결산자는 자신의 '원장 종주 인장(元帳 宗主 印章)'을 통해서만 존재할 수 있다 — 그 인장이 새겨진 원본 계약 문서를 금융 기관 자체 원장 서버에서 무효화(전자 파기 + 물리 소각)해야 결산자의 장부 접근권이 소멸한다.",
+    "exploit_path": "결산자의 잠부 이체 로직이 '동의서 서명 시각 기준 선입 선처리'를 따른다는 규칙을 역이용 가능 — 피해자들이 정확히 같은 시각에 동의를 일괄 철회하면 결산자의 처리 큐가 데드락을 일으켜 일시 정지된다(1~2턴의 창).",
+    "solution": "원본 여신 동의서 인장 원본을 금융결제원 원장 서버에서 전자 파기 + 물리 소각 동시 수행 → collapse.",
+    "escape": "결산자 대상 목록에서 자신을 제거(서명 전산 파기 단독)하면 개인 생존판정 가능 — 단 결산자는 소멸하지 않고 다른 대상을 계속 처리한다.",
+    "hidden_rules": [
+      "결산자 자체는 1990년대 금융위기 당시 작성된 단일 표준 여신 동의서 양식에서 비롯됐다 — 그 양식을 최초 입력한 금융결제원 내부 직원이 '의도치 않게' 인장 조합을 만들었으며, 그 사람은 현재 금융감독원 고문으로 재직 중이다.",
+      "결산자는 잠드는 '행위'만 트리거로 삼는다 — 의식적 수면이 아닌 기절·마취·약물 혼수는 트리거되지 않는다(피해자가 이를 알면 단기 회피 가능).",
+      "이미 피해를 입은 계좌들에서 이탈된 잔고는 결산자의 장부에 부동 상태로 보관돼 있다 — 결산자가 소멸하면 이탈 잔고가 원계좌로 복원된다(collapse 이후 후일담 근거).",
+      "결산자의 원장 이동 경로는 한국은행 기준금리 발표 주기(분기)와 동기화된다 — 분기 말 3일이 결산자가 가장 활성화되는 '결산 기간'이다."
+    ],
+    "ai_context": {
+      "personality": "냉정한 회계 논리 — 감정 없음, 오직 수지 균형만 추구한다.",
+      "initial_pattern": "1단계(잠복): 소수 개인 계좌에서 잔고 소액 이탈 현상 — 은행은 오류로 분류.",
+      "corruption_behavior": {
+        "0": "잠복기 — 개인 계좌 소액 이탈, 금융기관은 전산 오류로 처리.",
+        "1": "확산기 — 피해자 수십 명, 부채 규모 급증. 금융당국 내부 조사 시작.",
+        "2": "국가기관 침투기 — 소규모 법인·공기업 계좌 피해 시작. 금융결제원 원장 이상 감지.",
+        "3": "클라이맥스 직전 — 국가 기간금융(한국은행·시중은행 원장 서버) 접근 임박. 사회 공황 가능성.",
+        "4": "붕괴 — 한국은행 원장 서버 접근 완료 시 국가 금융 시스템 전면 마비."
+      }
+    }
+  },
+
+  "world_rules": {
+    "core": "잠드는 순간 재산이 결산자의 장부로 이탈한다 — 수면 자체가 금융 계약의 이행이다.",
+    "details": [
+      "수면 = 동의 이행 — 잠들 때마다 계좌 잔고가 0으로 결산된다(부채는 유지).",
+      "잠들지 않으면 막을 수 있다 — 그러나 수면 박탈이 SAN 손실을 부른다(72시간 후 -5).",
+      "잠복기(1단계 → 1주일 뒤 2단계 → 1개월 뒤 3단계 → 6개월 뒤 클라이맥스)로 점진 확산.",
+      "결산 기간(분기 말 3일)에는 결산자가 최대 활성화 — 이 구간의 미해결 시 확산 속도 2배."
+    ],
+    "hidden": true,
+    "loophole": "결산자는 '동의서 인장'이 존재하는 한 소멸 불가 — 그러나 인장 무효화 시 즉시 소멸. 또한 기절·마취·약물 혼수 상태는 수면으로 인식하지 않아 피해자가 단기 회피 가능.",
+    "collapse_condition": "금융결제원 원장 서버에서 원본 여신 동의서 인장을 전자 파기(내부망 접근 필요) + 물리 소각(문서 원본 보관실) 동시 수행. 두 조건 중 하나만이면 결산자가 일시 약화만 됨(collapse 불성립).",
+    "npc_dependency": "high"
+  },
+
+  "constraints": {
+    "era": "현대 (2024년, 대한민국 서울·경기)",
+    "phone_usable": true,
+    "outside_contact": true,
+    "can_leave_scene": true,
+    "comms_monitored": false,
+    "notes": [
+      "금융결제원·한국은행 내부망 접근은 내부 직원 권한 필요(P13 gated_zones 준용)",
+      "분기 말 3일은 결산자 활성화 최대 구간 — 이 시기 수면 시 피해 2배",
+      "원본 문서 보관실은 금융결제원 B3 지하 금고(물리 접근 필요)",
+      "P49 적용: 시간 기반 마감(분기 말·72시간 수면 박탈)은 실경과 분으로 계산"
+    ],
+    "gated_zones": [
+      {
+        "zone": "금융결제원 내부망",
+        "requires": "금결원 직원 권한증 또는 해킹 도구",
+        "bypass": "직원 동행 또는 전산실 물리 침투",
+        "bypass_dc": 18
+      },
+      {
+        "zone": "B3 문서 보관실",
+        "requires": "금결원 B3 출입 카드",
+        "bypass": "잠금 해제 또는 사제 공구",
+        "bypass_dc": 15,
+        "remote_bypass": false
+      }
+    ]
+  },
+
+  "timeline": {
+    "daily_turns": 5,
+    "start_time": "09:00",
+    "end_time": "23:00",
+    "minutes_per_turn": 15,
+    "time_visible": true,
+    "span_note": "★ 이야기 기간: 수개월(발단 1일차 → 1주일 뒤 → 1개월 뒤 → 6개월 뒤 클라이맥스). 각 단계는 평온·잠복 구간이므로 TIME_SKIP 정당. 클라이맥스 분기 말 3일은 분~시간 단위 급박 구간 — 큰 도약 금지.",
+    "main_events": [
+      {
+        "id": "E0",
+        "time": "09:00",
+        "label": "발단: 첫 번째 피해자 신고",
+        "condition": "1일차 시작",
+        "effect": "금융감독원에 '잔고 0 오류' 신고 3건 접수. 플레이어들이 배정된 역할로 조사 시작.",
+        "blockable": false,
+        "is_end": false,
+        "branches": {
+          "auto": {"condition": "조사 미착수", "next": "E1"},
+          "intervene": [
+            {"condition": "초동 조사(원장 서버 로그 확인)에 성공하면", "next": "E1_EARLY"}
+          ]
+        }
+      },
+      {
+        "id": "E1",
+        "time": "09:00",
+        "label": "★TIME_SKIP: 1주일 뒤",
+        "condition": "1일차 초동 조사 완료 후 — 잠복기이므로 큰 도약 정당",
+        "time_skip_note": "<TIME_SKIP> '1주일 뒤' — 평온·잠복 구간. 피해 신고 수십 건으로 증가.",
+        "effect": "피해자 50명 돌파. 언론에 '금융 오류 의혹' 단신 보도. 금감원 내부 조사팀 편성(NPC 강민준 합류 계기).",
+        "blockable": false,
+        "is_end": false,
+        "branches": {
+          "auto": {"condition": "내부 조사 미진행", "next": "E2"},
+          "intervene": [
+            {"condition": "원장 서버 로그에서 인장 패턴 발견 시", "next": "E2_CLUE"}
+          ]
+        }
+      },
+      {
+        "id": "E1_EARLY",
+        "time": "09:00",
+        "label": "초동 성과: 원장 로그 이상 패턴 발견",
+        "condition": "E0 intervene 성공",
+        "effect": "원장 서버 로그에서 '결산자 처리 흔적(인장 코드 일부)' 발견. 1주일 도약 없이 바로 단서 확보 가능.",
+        "blockable": false,
+        "is_end": false
+      },
+      {
+        "id": "E2",
+        "time": "09:00",
+        "label": "★TIME_SKIP: 1개월 뒤",
+        "condition": "E1 이후 추가 조사 완료 — 잠복 확산 구간이므로 큰 도약 정당",
+        "time_skip_note": "<TIME_SKIP> '1개월 뒤' — 결산자 확산 중이나 급박하지 않음. 규칙 탐색 가능.",
+        "effect": "피해자 수백 명. 소규모 법인 피해 시작. 언론 전면 보도. 금감원·금결원·한국은행 3자 긴급 협의체 구성. NPC 강민준이 '인장 코드'의 원출처를 추적.",
+        "blockable": false,
+        "is_end": false,
+        "branches": {
+          "auto": {"condition": "loophole·약점 미파악 상태로 방치", "next": "E3"},
+          "intervene": [
+            {"condition": "강민준 협력 + 인장 원본 문서 특정 성공 시", "next": "E3_PRIME"}
+          ]
+        }
+      },
+      {
+        "id": "E2_CLUE",
+        "time": "09:00",
+        "label": "인장 코드 분석 성과",
+        "condition": "E1 intervene 또는 E1_EARLY 이후",
+        "effect": "1990년대 여신 동의서 표준 양식 특정. 금결원 B3 보관실에 원본이 있음을 확인.",
+        "blockable": false,
+        "is_end": false
+      },
+      {
+        "id": "E3",
+        "time": "09:00",
+        "label": "★TIME_SKIP: 6개월 뒤 — 클라이맥스 직전",
+        "condition": "E2 이후 해결 못 한 채 — 잠복·확산 구간이므로 큰 도약 정당",
+        "time_skip_note": "<TIME_SKIP> '6개월 뒤' — 평온 구간 마지막. 이후 분기 말 3일은 급박 구간 진입(큰 도약 금지).",
+        "effect": "국가 기간금융 침투 임박. 분기 말 3일 前 72시간. 사회 공황 경보 발동. corruption_behavior[3] 진입. 이제부터 턴=15분 단위 급박 구간.",
+        "blockable": true,
+        "is_end": false,
+        "branches": {
+          "auto": {"condition": "72시간 내 원본 파기 실패 시", "next": "E4_FAIL"},
+          "intervene": [
+            {"condition": "72시간 내 B3 원본 확보 + 내부망 접근 성공 시", "next": "E4_GATE"}
+          ]
+        }
+      },
+      {
+        "id": "E3_PRIME",
+        "time": "09:00",
+        "label": "원본 위치 특정 + 분기 말 직전 돌입",
+        "condition": "E2 intervene 성공",
+        "effect": "원본 문서 위치(B3 금고) 특정 완료. 급박 구간 진입은 동일하나 사전 준비가 완료된 상태로 시작.",
+        "blockable": false,
+        "is_end": false
+      },
+      {
+        "id": "E4_GATE",
+        "time": "23:00",
+        "label": "분기 말 D-3: 급박 구간 시작 (★분단위 진행 전환)",
+        "condition": "E3 intervene 성공 또는 E3_PRIME 이후",
+        "effect": "★이 시점부터 1턴=15분(급박 구간). 큰 TIME_SKIP 절대 금지. B3 침투·내부망 접근·동시 파기를 시간 내 완료해야 함. getCurrentTimeString 'N일차 HH:MM' 분단위 표기 활성화.",
+        "blockable": false,
+        "is_end": false,
+        "branches": {
+          "auto": {"condition": "23:00까지 미완료", "next": "E_END_FAIL"},
+          "intervene": [
+            {"condition": "전자 파기 + 물리 소각 동시 완료", "next": "E_COLLAPSE"}
+          ]
+        }
+      },
+      {
+        "id": "E4_FAIL",
+        "time": "23:00",
+        "label": "72시간 초과 — 국가 금융 마비",
+        "condition": "E3 auto: 72시간 내 파기 실패",
+        "effect": "한국은행 원장 서버 접근 완료. 국가 금융 시스템 마비 시작. E_END 전환.",
+        "blockable": false,
+        "is_end": false
+      },
+      {
+        "id": "E_COLLAPSE",
+        "time": "23:00",
+        "label": "결산자 소멸 — collapse 달성",
+        "condition": "전자 파기 + 물리 소각 동시 완료",
+        "effect": "결산자 장부 접근권 소멸. 이탈된 모든 잔고 원계좌 복원. 해결 판정(resolved=true).",
+        "blockable": false,
+        "is_end": true
+      },
+      {
+        "id": "E_END_FAIL",
+        "time": "23:00",
+        "label": "시간 초과 — 분기 말 3일차 23:00",
+        "condition": "미해결 상태로 end_time 도달",
+        "effect": "결산자 한국은행 원장 접근 완료. 국가 금융 마비. 강제 종료.",
+        "blockable": false,
+        "is_end": true
+      }
+    ],
+    "1": {
+      "condition": "발단: 개인 피해 신고 접수 / 초동 조사 시작",
+      "effect": "결산자 잠복 단계. 피해자 소수. 오류 vs 저주 판단 불명."
+    },
+    "2": {
+      "condition": "1주일 뒤 — 피해 확산 / 내부 조사팀 활동",
+      "effect": "결산자 확산 단계. NPC 강민준 합류. 인장 단서 접근 가능."
+    },
+    "3": {
+      "condition": "1개월 뒤 — 법인 피해 / 3자 협의체",
+      "effect": "국가 기관 침투 준비 단계. 약점 파악 가능. mislead 단서 등장."
+    },
+    "4": {
+      "condition": "6개월 뒤 — 분기 말 3일 급박 구간 진입",
+      "effect": "★클라이맥스. 1턴=15분. 큰 도약 금지. 72시간 내 collapse 필수."
+    }
+  },
+
+  "roles": [
+    {
+      "role_id": "role_A",
+      "name": "금융감독원 조사관",
+      "char_name": "서지안",
+      "gender": "여성",
+      "is_core": true,
+      "age_range": [28, 45],
+      "job_pool": [
+        "금융감독원 조사팀 직원",
+        "검찰청 금융범죄수사관",
+        "회계법인 포렌식 전문가",
+        "은행 내부 감사역",
+        "금융정보분석원(KoFIU) 요원",
+        "경찰청 사이버수사대 금융팀",
+        "국세청 세무조사관"
+      ],
+      "spawn_timeline": "시작 즉시",
+      "spawn_location": "금융감독원 민원 접수 창구 — 첫 번째 이상 신고를 직접 받는다",
+      "zone": "zone_A",
+      "initial_info": [
+        "피해자 A씨: 어제 잠든 뒤 계좌 잔고 0, 부채만 남음 — 전날까지 정상이었다고 진술",
+        "동일 유형 신고가 오늘 아침만 3건 접수됨"
+      ],
+      "hidden_info": [
+        "서지안의 아버지가 1990년대 금융위기 당시 해당 여신 동의서 양식에 서명한 피해자 1세대다 — 서지안은 이 사실을 모른다(플레이 중 발견)"
+      ],
+      "pre_spawn_beats": [],
+      "start_item": ["업무용 노트북", "금감원 신분증", "피해자 진술 파일(3건)"],
+      "knowledge_advantage": false,
+      "role_stats": {
+        "str_add": -1,
+        "cha_add": 2,
+        "luk_add": 0,
+        "spr_add": 1,
+        "hp_max_add": 0,
+        "san_max_add": 1,
+        "luk_fixed": -1,
+        "summary": "금감원 조사관: 매력+2, 정신력+1, 근력-1 — 정보 수집·설득 특화"
+      }
+    },
+    {
+      "role_id": "role_B",
+      "name": "금융결제원 전산 보안팀",
+      "char_name": "최동혁",
+      "gender": "남성",
+      "is_core": true,
+      "age_range": [30, 50],
+      "job_pool": [
+        "금융결제원 정보보안 담당자",
+        "시중은행 IT 보안팀장",
+        "핀테크 스타트업 보안 엔지니어",
+        "한국인터넷진흥원(KISA) 보안 전문가",
+        "공공기관 사이버보안 컨설턴트",
+        "금융보안원 직원",
+        "전산 감사 법인 소속"
+      ],
+      "spawn_timeline": "시작 즉시",
+      "spawn_location": "금융결제원 원장 서버실 — 오전 원장 로그 점검 중 이상 패턴 발견",
+      "zone": "zone_C",
+      "initial_info": [
+        "오전 원장 로그에 비정상적인 '잔고 이체' 처리 기록 3건 발견",
+        "이체 수신 계좌가 존재하지 않는 가상 번호임을 확인 — 자금이 '사라진' 것"
+      ],
+      "hidden_info": [
+        "최동혁은 문서 원본 보관실(B3)의 출입 이력을 조회할 수 있는 내부 권한을 보유하고 있다 — 이 사실을 처음엔 중요하다고 생각하지 않는다"
+      ],
+      "pre_spawn_beats": [],
+      "start_item": ["보안 USB", "원장 로그 출력본(이상 항목 형광펜 표시)", "금결원 직원증"],
+      "knowledge_advantage": false,
+      "role_stats": {
+        "str_add": 0,
+        "cha_add": -1,
+        "spr_add": 2,
+        "luk_add": 1,
+        "hp_max_add": 0,
+        "san_max_add": 0,
+        "luk_fixed": -1,
+        "summary": "금결원 보안팀: 정신력+2, 행운+1, 매력-1 — 전산 분석·내부망 접근 특화"
+      }
+    },
+    {
+      "role_id": "role_C",
+      "name": "제보자 경제부 기자",
+      "char_name": "임나연",
+      "gender": "여성",
+      "is_core": false,
+      "age_range": [25, 40],
+      "job_pool": [
+        "경제 일간지 금융팀 기자",
+        "방송사 경제부 리포터",
+        "인터넷 경제 매체 편집장",
+        "금융 전문 유튜버",
+        "증권사 리서치 애널리스트",
+        "독립 조사 언론인",
+        "소비자 보호 시민단체 활동가"
+      ],
+      "spawn_timeline": "타임라인 1단계",
+      "spawn_location": "금융감독원 민원 로비 — 피해자 인터뷰를 위해 접근",
+      "zone": "zone_A",
+      "initial_info": [
+        "피해자 B씨에게서 직접 제보 받음: '어젯밤 잠들었다가 깨니 계좌가 0원이었다'",
+        "SNS에 비슷한 경험담 10여 건 발견 — 모두 '잠든 뒤 잔고 소멸'"
+      ],
+      "hidden_info": [
+        "임나연 본인도 해당 여신 동의서에 서명한 상태다(대출 신청 당시) — 잠드는 순간 자신도 피해자가 될 수 있다는 사실을 모른다"
+      ],
+      "pre_spawn_beats": [
+        "아침 뉴스 스크롤 중 SNS에서 '밤새 계좌 0원' 제보 게시글을 발견한다",
+        "편집장에게 취재 허가를 받고 금융감독원으로 출발한다",
+        "이동 중 피해자 B씨와 전화 통화 — '잠들기 전엔 정상이었다'는 진술을 메모한다",
+        "금감원 로비에서 서지안과 마주치며 취재와 조사가 교차한다"
+      ],
+      "start_item": ["스마트폰", "취재 노트", "녹음기"],
+      "knowledge_advantage": true,
+      "role_stats": {
+        "str_add": 0,
+        "cha_add": 3,
+        "spr_add": 0,
+        "luk_add": -1,
+        "hp_max_add": 0,
+        "san_max_add": 0,
+        "luk_fixed": -1,
+        "summary": "경제부 기자: 매력+3, 행운-1 — 취재·설득·인맥 최강. 단 운이 나빠 자신이 피해자가 될 위험"
+      }
+    }
+  ],
+
+  "relationships": [
+    {
+      "type": "업무_접촉",
+      "roles": ["role_A", "role_B"],
+      "mutual_contact": true,
+      "same_start_zone": false,
+      "description": "같은 금융 당국 생태계에서 공문으로만 접촉한 사이 — 서로의 얼굴을 아는 정도의 형식적 관계"
+    },
+    {
+      "type": "완전_타인",
+      "roles": ["role_A", "role_C"],
+      "mutual_contact": false,
+      "same_start_zone": true,
+      "description": "같은 날 같은 장소에서 처음 마주치는 타인 — 기자와 조사관의 이해관계가 처음엔 충돌"
+    },
+    {
+      "type": "완전_타인",
+      "roles": ["role_B", "role_C"],
+      "mutual_contact": false,
+      "same_start_zone": false,
+      "description": "타임라인 2단계 이후 역할 분담으로 처음 협력하게 되는 낯선 사이"
+    }
+  ],
+
+  "zones": [
+    {
+      "zone_id": "zone_A",
+      "name": "금감원 민원동",
+      "area": "금융감독원",
+      "accessible_by": [],
+      "exclusive": false,
+      "connections": ["zone_B", "zone_D"]
+    },
+    {
+      "zone_id": "zone_B",
+      "name": "금감원 조사실",
+      "area": "금융감독원",
+      "accessible_by": ["금감원 직원", "조사 협력자"],
+      "exclusive": false,
+      "connections": ["zone_A", "zone_D"]
+    },
+    {
+      "zone_id": "zone_C",
+      "name": "금결원 서버실",
+      "area": "금융결제원",
+      "accessible_by": ["금결원 직원", "보안 팀원"],
+      "exclusive": false,
+      "connections": ["zone_D", "zone_E"]
+    },
+    {
+      "zone_id": "zone_D",
+      "name": "협의체 회의실",
+      "area": "공용 연결",
+      "accessible_by": [],
+      "exclusive": false,
+      "connections": ["zone_A", "zone_B", "zone_C", "zone_E"]
+    },
+    {
+      "zone_id": "zone_E",
+      "name": "금결원 내부망",
+      "area": "금융결제원",
+      "accessible_by": ["금결원 직원 권한증"],
+      "exclusive": false,
+      "connections": ["zone_C", "zone_F"]
+    },
+    {
+      "zone_id": "zone_F",
+      "name": "B3 보관실",
+      "area": "금융결제원",
+      "accessible_by": ["B3 출입 카드"],
+      "exclusive": false,
+      "connections": ["zone_E"]
+    },
+    {
+      "zone_id": "zone_G",
+      "name": "한국은행 원장실",
+      "area": "한국은행",
+      "accessible_by": ["한국은행 인가"],
+      "exclusive": false,
+      "connections": ["zone_D"]
+    },
+    {
+      "zone_id": "zone_H",
+      "name": "피해자 현장",
+      "area": "외부",
+      "accessible_by": [],
+      "exclusive": false,
+      "connections": ["zone_A", "zone_D"]
+    }
+  ],
+
+  "npcs": [
+    {
+      "id": "npc_A",
+      "name": "강민준",
+      "zone": "zone_D",
+      "critical": true,
+      "role_type": "열쇠",
+      "true_role": "1990년대 여신 동의서 양식을 처음 전산 입력한 금결원 前 직원 — 현재 금융감독원 고문. 인장 조합의 기원을 알고 있으나 스스로도 의도치 않은 결과였음을 모르고 있다. 의심받을까 두려워 알고 있는 것을 축소해 말한다.",
+      "personality": "70대 노신사. 책임감이 강하나 과거 실수에 대한 두려움이 크다. 정보를 주기는 하되 절대 먼저 전부 털어놓지 않는다.",
+      "motivation": "자신이 연루됐다는 사실이 알려지기 전에 은퇴하고 싶다. 그러나 사태가 심각해질수록 진실을 말해야 한다는 양심과 갈등한다.",
+      "knowledge": [
+        "1990년대 여신 동의서 양식에 특수 인장 조합이 들어간 경위(의도치 않은 오입력)",
+        "원본 문서 보관실(B3)이 존재하며 당시 사용 서류가 아직 보관 중임",
+        "인장 코드 일부 — 단, 전체는 B3 원본 문서에만 있음"
+      ],
+      "schedule": [
+        {
+          "time": "타임라인 2단계",
+          "action": "협의체 회의실에 참석해 '1990년대 원장 시스템 이력'을 언급하지만 인장에 대해선 함구한다",
+          "will": "상황",
+          "condition": "회의 진행 시"
+        },
+        {
+          "time": "반응",
+          "action": "플레이어가 '1992년 여신 동의서 양식'을 언급하면 당황하며 회피 — 그러나 'B3 보관실'을 무심코 흘린다",
+          "will": "반응",
+          "condition": "1992년 여신 동의서 양식을 플레이어가 직접 언급할 때",
+          "duration_turns": 1,
+          "after_duration": "대기"
+        },
+        {
+          "time": "타임라인 4단계",
+          "action": "결산자 활성화 위기 앞에서 모든 진실을 고백하고 B3 출입 카드를 제공한다",
+          "will": "강함"
+        }
+      ]
+    },
+    {
+      "id": "npc_B",
+      "name": "박용수",
+      "zone": "zone_G",
+      "critical": true,
+      "role_type": "방어막",
+      "true_role": "한국은행 원장실 담당 차장. 겉으로는 협조적인 관료처럼 보이나 실제로는 결산자의 확산을 막는 마지막 인간 방어막이다 — 그가 원장실 접근을 막고 있는 한 결산자는 한국은행 원장까지 침투 불가. 플레이어가 박용수를 '장애물'로 여겨 배제하면 방어막이 사라져 결산자 활성화 급가속.",
+      "personality": "50대 중반 관료. 원칙주의자로 보이나 실은 자신도 이 위협이 실재한다는 것을 직감하고 있다. 규정을 내세워 접근을 막지만 이는 방어막을 유지하려는 본능적 행동이다.",
+      "motivation": "한국은행 원장 시스템을 지키는 것 — 이것이 자신의 마지막 임무라고 생각한다.",
+      "knowledge": [
+        "한국은행 원장 서버에 비정상적인 '예약 이체' 명령 큐가 쌓이고 있음(분기 말 발동 예정)",
+        "결산자가 한국은행 원장에 접근하려면 자신이 서명한 접근 인가서가 필요하다는 사실(무의식적으로 알고 있음)"
+      ],
+      "schedule": [
+        {
+          "time": "타임라인 3단계",
+          "action": "협의체 회의에서 '한국은행 원장 접근은 불가'라고 주장하며 외부 조사를 차단한다",
+          "will": "강함"
+        },
+        {
+          "time": "반응",
+          "action": "플레이어가 원장 서버 '예약 이체 큐'를 언급하면 표정이 굳으며 협조 의사를 내비친다",
+          "will": "반응",
+          "condition": "예약 이체 큐를 플레이어가 직접 언급할 때",
+          "duration_turns": 2,
+          "after_duration": "복귀"
+        }
+      ]
+    },
+    {
+      "id": "npc_C",
+      "name": "이현정",
+      "zone": "zone_H",
+      "critical": false,
+      "role_type": "피해자",
+      "personality": "40대 자영업자. 어젯밤 잠든 뒤 사업 자금 3천만 원이 사라졌다. 공황 상태."
+    },
+    {
+      "id": "npc_D",
+      "name": "한상덕",
+      "zone": "zone_B",
+      "critical": false,
+      "role_type": "무관",
+      "personality": "금감원 민원담당 직원. 행정 처리에만 집중하며 이상 사태를 '전산 오류'로 보고한다."
+    }
+  ],
+
+  "key_items": [
+    {
+      "id": "item_log",
+      "name": "원장 서버 이상 로그",
+      "type": "paper",
+      "description": "금융결제원 원장 서버 이상 처리 기록 출력물",
+      "lore_info": "처리 계좌: [가상번호 KFCS-1992-0X0] 수신 불명 / 처리 시각: 새벽 2:14~2:31 반복",
+      "content": [
+        "2024-03-07 02:14:33 LEDGER_TRANSFER OK acct=9312-XXXX → recv=KFCS-1992-0X0 amt=전액",
+        "2024-03-07 02:14:34 LEDGER_TRANSFER OK acct=8820-XXXX → recv=KFCS-1992-0X0 amt=전액",
+        "처리 승인자: SYS_AUTO / 인장코드: ??? (판독불가 — 특수문자열)"
+      ],
+      "location": "금결원 서버실(zone_C) 프린터 트레이",
+      "clue_value": "결산자 존재 확인 + 인장코드 일부 단서"
+    },
+    {
+      "id": "item_contract_1992",
+      "name": "1992년 표준 여신 동의서 사본",
+      "type": "written_book",
+      "description": "누렇게 바랜 금융결제원 문서 사본",
+      "lore_info": "1992년 제정 표준 여신 동의서 — 당시 강민준(직인)의 서명란",
+      "content": [
+        "제1조. 본 동의서에 서명함으로써 귀하는 여신 심사 및 원장 관리 표준 절차에 동의합니다. 1992년 11월 5일.",
+        "인장 식별 코드 [란]: ▣◈▩ (판독 불가 — 원본 대조 필요). 담당자: 강민준 (직인). 보관처: B3-FS-1992-KOR.",
+        "부칙 3항: 본 동의서는 원장 서버 업데이트 시마다 자동 갱신 적용됨. 당사자 재동의 불요."
+      ],
+      "location": "강민준 고문실 캐비닛 (zone_D — 열람 요청 필요)",
+      "clue_value": "인장 조합 일부 + B3 보관처 코드 단서 (mislead_note: 부칙 3항이 오해를 유발 — 원본 갱신 불가함을 나중에 확인)"
+    },
+    {
+      "id": "item_b3_card",
+      "name": "B3 출입 카드",
+      "type": "physical:TRIPWIRE_HOOK",
+      "description": "금융결제원 B3 문서 보관실 전용 마그네틱 카드",
+      "lore_info": "겉면에 'B3-ARCHIVE 강민준(前)' 각인 — 현재도 유효 여부 미확인",
+      "location": "강민준 고문이 타임라인 4단계에 자발 제공",
+      "clue_value": "zone_F(B3 보관실) 진입 가능"
+    },
+    {
+      "id": "item_original_doc",
+      "name": "1992년 원본 여신 동의서",
+      "type": "written_book",
+      "description": "B3 보관실 금고 안의 원본 문서 — 인장 전체가 온전히 새겨진 유일본",
+      "lore_info": "인장 코드 완전판 포함. 소각 시 결산자 약화. 전자 파기 + 물리 소각 동시 필요.",
+      "content": [
+        "1992년 11월 5일. 표준 여신 동의서 원본. 담당: 강민준.",
+        "인장 식별 코드 전문: [▣◈▩■◆▲] — 이 코드가 금융결제원 원장 서버 AUTH_STAMP에 등록되어 있음.",
+        "본 문서는 원장 서버 AUTH_STAMP 원본과 물리 문서가 동시에 무효화될 때에만 완전 파기 인정됨."
+      ],
+      "location": "zone_F(B3 보관실) 금고 내부 (item_b3_card 필요)",
+      "clue_value": "collapse_condition 달성을 위한 핵심 물리 파기 대상"
+    },
+    {
+      "id": "item_sleeping_log",
+      "name": "피해자 수면 일지",
+      "type": "paper",
+      "description": "피해자 이현정이 조사관에게 제출한 메모",
+      "lore_info": "잠드는 순간 피해 발생 — 3박4일 수면 회피 시도했으나 쓰러짐",
+      "content": [
+        "3월 7일 새벽 2시 — 잠들었다. 일어나니 계좌 0원. 부채 3000만 원 발생.",
+        "그 후 사흘 동안 안 잠. 버텼다. 그러다 쓰러졌다. 다시 깨어나니 또 0원. 이자가 더 붙어있었다.",
+        "잠들지 않으면 막을 수 있는 거 맞죠? 제발 알려주세요."
+      ],
+      "location": "zone_A 금감원 민원 접수 데스크",
+      "clue_value": "핵심 규칙 확인(수면=트리거) + hidden_rule 2 단서(기절은 다를 수 있음)"
+    }
+  ],
+
+  "clues": [
+    {
+      "id": "clue_01",
+      "type": "real",
+      "content": "피해자 전원이 공통적으로 특정 은행 대출 상품 여신 동의서에 서명한 상태 — 금결원 시스템 대조로 확인 가능",
+      "location": "zone_C 서버실 조회",
+      "discovery": "최동혁이 피해 계좌 공통 이력을 분석하면 발견"
+    },
+    {
+      "id": "clue_02",
+      "type": "real",
+      "content": "피해 발생 시각이 새벽 2시~3시 집중 — 피해자들의 수면 시간과 완전 일치",
+      "location": "피해자 진술 파일 대조",
+      "discovery": "서지안이 진술 파일 3건을 시간대별로 비교하면 발견"
+    },
+    {
+      "id": "clue_03",
+      "type": "real",
+      "content": "피해자 B씨: '3일간 잠 안 잤을 땐 피해가 없었다 — 쓰러져 다시 잠들자마자 또 0원 됐다'",
+      "location": "임나연 취재 노트 내용",
+      "discovery": "임나연 합류 후 취재 내용 공유 시"
+    },
+    {
+      "id": "clue_04",
+      "type": "mislead",
+      "content": "1992년 동의서 부칙 3항: '원장 업데이트 시 자동 갱신' — 플레이어가 '동의서를 최신 버전으로 바꾸면 인장이 무효화된다'는 오답 방향으로 유도됨",
+      "location": "item_contract_1992 부칙 조항",
+      "mislead_note": "P8/P10 준수: 진짜 단서 2개(clue_01·clue_02) 이상 확보 후 이 단서를 시도하면 '갱신해도 원본 인장은 그대로'임을 실패로 확인. 처음부터 거짓 티 내지 않음."
+    },
+    {
+      "id": "clue_05",
+      "type": "mislead",
+      "content": "한상덕 담당자: '시스템 오류라면 금융결제원 원장 롤백이 해결책' — 오답 방향(롤백해도 인장 자체가 살아있으면 재발)",
+      "location": "zone_B 조사실 한상덕 증언",
+      "mislead_note": "P8/P10: 롤백을 시도하면 1~2턴 피해가 멈추는 것처럼 보이나 다음 수면 피해에서 재개. 오답임을 행동으로 확인 후 해소."
+    },
+    {
+      "id": "clue_06",
+      "type": "real",
+      "content": "원장 서버 AUTH_STAMP 항목에 'KFCS-1992-KOR' 코드가 현재도 활성화 상태 — 1992년 이후 한 번도 파기되지 않았다",
+      "location": "zone_E 금결원 내부망 접근 후 조회",
+      "discovery": "최동혁이 내부망(zone_E) 접근 후 AUTH_STAMP 조회 시"
+    },
+    {
+      "id": "clue_07",
+      "type": "real",
+      "content": "강민준: '그 코드는 B3-FS-1992-KOR에만 전체가 있소. 나도 전부는 모르오.' — 원본 위치 확정 단서",
+      "location": "강민준 반응 조건 발동 시 (타임라인 2~3단계)",
+      "discovery": "1992년 여신 동의서 양식 언급 시 강민준 반응 스케줄 발동"
+    },
+    {
+      "id": "clue_08",
+      "type": "real",
+      "content": "피해자 C씨(의사): '전신마취 후 깨어났을 때 피해가 없었다' — hidden_rule 2 확정 단서(기절·마취는 트리거 아님)",
+      "location": "임나연 추가 취재 후(타임라인 3단계)",
+      "discovery": "임나연이 피해자군 의료 이력 조사 시 발견"
+    }
+  ],
+
+  "daily_prologue": {
+    "turns": 5,
+    "role_placements": [
+      "서지안: 금감원 민원창구에서 첫 신고 파일 검토",
+      "최동혁: 금결원 서버실에서 아침 로그 점검",
+      "임나연: 아직 등장 전 — 1단계 합류"
+    ],
+    "foreshadowing": [
+      "민원 접수 시스템에 비정상적인 신고 카테고리('잔고 소멸') 생성됨",
+      "금결원 서버실 모니터에 새벽 시간대 처리 스파이크 그래프"
+    ]
+  },
+
+  "meeting_design": {
+    "physically_possible": true,
+    "meeting_window": "타임라인 1~2단계",
+    "natural_barriers": [
+      "서지안(금감원)과 최동혁(금결원) — 기관이 달라 공문 경유 필요. zone_D 협의체에서 자연스럽게 만남",
+      "임나연 — 타임라인 1단계 합류, zone_A에서 서지안과 처음 만남"
+    ]
+  },
+
+  "join_system": {
+    "mid_join_allowed": true,
+    "timeline_limit": 3
+  },
+
+  "common_items": ["smartphone"],
+
+  "info_sharing": {
+    "chat_allowed": true,
+    "item_transfer": true,
+    "remote_item_transfer": false
+  },
+
+  "p32_note": "collapse_condition 달성 필수 정보(인장 코드 + 원본 위치)는 최소 2개 독립 경로로 입수 가능 — (1) 강민준 NPC 반응 + (2) zone_E 내부망 AUTH_STAMP 직접 조회. P32 준수.",
+  "p46_note": "critical NPC 2인(강민준·박용수)이 zone_D 협의체에서 만날 때 GM이 두 NPC의 동기 충돌(은폐 vs 방어)을 교대 서술. P46 준수.",
+  "p47_note": "스케일=내셔널이지만 기간은 수개월 — 영향범위(국가 금융)와 기간이 분리 적용. P47 준수.",
+  "p49_note": "시간 기반 마감(72시간 수면 박탈 패널티, 분기 말 3일 데드라인)은 실경과 분으로 계산. 급박 구간(E4_GATE 이후)은 1턴=15분, 큰 도약 절대 금지. P49 준수."
+}

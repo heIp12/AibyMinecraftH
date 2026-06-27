@@ -1,0 +1,107 @@
+{
+  "version": 1,
+  "stage": 4,
+  "seed": "#ZK9M-4TRV",
+  "created": "2026-06-27",
+  "sim_iter": "iter23",
+  "scale": "내셔널",
+  "theme": "결산자(決算者) — 수개월 잠복·확산 금융 저주, 분기 말 분단위 클라이맥스",
+  "timeline_type": "장기 다단계 (발단→1주→1개월→6개월 도약 + 급박 분단위)",
+  "players": [
+    {
+      "role_id": "role_A",
+      "char_name": "서지안",
+      "gender": "여성",
+      "job": "금융감독원 조사관",
+      "spawn_timeline": "시작 즉시",
+      "start_zone": "zone_A",
+      "start_power": {
+        "str_add": -1,
+        "cha_add": 2,
+        "spr_add": 1,
+        "san_max_add": 1,
+        "summary": "매력+2, 정신력+1, 근력-1 — 평균~약간 강"
+      },
+      "active_traits_used": ["관료 설득 (2회 이상)"],
+      "final_grade": "S",
+      "highlight": "강민준 정확 트리거 + 박용수 설득 + 협력 주도",
+      "penalties": []
+    },
+    {
+      "role_id": "role_B",
+      "char_name": "최동혁",
+      "gender": "남성",
+      "job": "금융결제원 전산 보안팀",
+      "spawn_timeline": "시작 즉시",
+      "start_zone": "zone_C",
+      "start_power": {
+        "spr_add": 2,
+        "luk_add": 1,
+        "cha_add": -1,
+        "summary": "정신력+2, 행운+1, 매력-1 — 평균"
+      },
+      "active_traits_used": ["전산 분석 (2회 이상)"],
+      "final_grade": "S",
+      "highlight": "clue_01·clue_06 발견, AUTH_STAMP 전자 파기 — collapse의 절반 담당",
+      "penalties": []
+    },
+    {
+      "role_id": "role_C",
+      "char_name": "임나연",
+      "gender": "여성",
+      "job": "경제부 기자",
+      "spawn_timeline": "타임라인 1단계",
+      "start_zone": "zone_A",
+      "start_power": {
+        "cha_add": 3,
+        "luk_add": -1,
+        "summary": "매력+3, 행운-1 — 취재 강, 운 약체"
+      },
+      "active_traits_used": ["현장 취재 (2회 이상)"],
+      "final_grade": "A",
+      "highlight": "clue_03·clue_08 핵심 단서 확보, 피해자 네트워크 구축",
+      "penalties": ["타임라인 1단계 합류 — 초동 조사 참여 불가(경미)", "본인 피해 대상 인지 지연(경미)"]
+    }
+  ],
+  "overall_grade": "S",
+  "gate_result": "PASS",
+  "resolved": true,
+  "collapse_achieved": true,
+  "retry_simulated": true,
+  "retry_note": "1차 실패(72시간 초과) → 리트라이(피해 유지·P16/P20) → 2차 해결(마취 역이용·clue_08 exploit)",
+  "time_skip_log": [
+    {"skip": "1주일 뒤", "event": "E1", "day": "8일차", "justification": "잠복·평온 구간 — P3 정당"},
+    {"skip": "1개월 뒤", "event": "E2", "day": "38일차", "justification": "잠복·확산 구간 — P3 정당"},
+    {"skip": "6개월 뒤", "event": "E3", "day": "189일차", "justification": "클라이맥스 직전 마지막 평온 구간 — P3 정당"}
+  ],
+  "urgent_phase": {
+    "start": "189일차 09:00",
+    "end": "189일차 10:15",
+    "duration_minutes": 75,
+    "turns": 5,
+    "time_skip_in_urgent": false,
+    "note": "★급박 구간에서 큰 도약 0회 — P3 완전 준수"
+  },
+  "p3_verification": "PASS — 큰 도약(주/월/6개월)이 평온·잠복 구간에서만 발생, 급박 구간에서 절대 미발생",
+  "p47_verification": "PASS — 스케일(내셔널=국가 금융 영향범위)과 기간(수개월) 자연 분리",
+  "p49_verification": "PASS — 72시간 마감·분기 말 3일 데드라인 모두 실경과 분으로 계산",
+  "new_issues_found": 2,
+  "new_issues": [
+    {
+      "id": "ISSUE-iter23-1",
+      "issue": "TIME_SKIP 착지 시점과 '분기 말' 고정 마감의 정합성 미명시",
+      "fix": "buildGmPrompt에 TIME_SKIP 후 '착지 시점 상황(분기 말 여부, 결산자 활성화 상태)'을 seed의 timeline 스케줄과 자동 대조하는 주입 문 추가. 생성 지침에 '큰 도약 후 착지 시점의 결산자 상태를 명시하라'는 한 줄 추가.",
+      "severity": "med",
+      "scope": "buildGmPrompt TIME_SKIP 착지 / 시나리오 설계 — 장기 도약 특유 (프롬프트)"
+    },
+    {
+      "id": "ISSUE-iter23-2",
+      "issue": "장기 도약(수개월) 중 플레이어 상태(SAN 손실·피해 누적) 자동 계산 기준 부재",
+      "fix": "GDAM_SYSTEM_PROMPT 또는 buildGmPrompt에 한 줄 추가: '수개월 TIME_SKIP 도약 시 그 기간 동안 플레이어들이 게임 내에서 어떤 상태 변화를 겪었는지(반복 피해 누적·SAN 변화)를 seed의 결산 기간·피해 규칙에 기반해 GM이 명시적으로 서술·적용하라. 도약 중 상태가 없는 것처럼 취급하면 안 된다.'",
+      "severity": "high",
+      "scope": "GM_SYSTEM_BASE TIME_SKIP 장기 도약 / GDAM 설계 — 장기 타임라인 특유 (프롬프트)",
+      "note": "★장기(수개월) 타임라인 특유 약점 — iter23 이전 회귀에서 단기 도약(며칠)에는 미발현됐던 문제"
+    }
+  ],
+  "p1_to_p53_collision": "없음 — 전체 P1~P53 상호 충돌 0건 PASS"
+}
