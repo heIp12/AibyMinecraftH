@@ -16,8 +16,9 @@ public class NarrativeDelivery {
 
     // 한 줄과 다음 줄 사이 대기 시간 (3초)
     private static final long LINE_DELAY_TICKS = 60L;
-    // 한 라인 최대 표시 길이 (한글 기준 40자) — 이를 넘으면 다음 라인으로 래핑
-    private static final int MAX_CHAT_CHARS = 40;
+    // 한 라인(MC 채팅 한 줄) 최대 표시 길이 — 한글 기준 약 20자(40자 = 2줄).
+    // 이를 넘으면 다음 라인으로 래핑하며, MAX_LINES_PER_BLOCK과 곱해 한 덩이(2줄=40자)를 만든다.
+    private static final int MAX_CHAT_CHARS = 20;
 
     private final Plugin plugin;
     private final Map<UUID, ArrayDeque<String>> queues  = new ConcurrentHashMap<>();
