@@ -45,6 +45,23 @@ public class ChatListener implements Listener {
             trpgManager.handleChat(player, message));
     }
 
+    /** 채팅에서 '@' 입력 후 탭 → 아는 연락처(이름·번호)·@전체 자동완성 */
+    @EventHandler
+    public void onChatTabComplete(com.destroystokyo.paper.event.server.AsyncTabCompleteEvent event) {
+        if (event.isCommand()) return; // 명령어 자동완성은 제외 (채팅만)
+        TRPGGameManager trpgManager = trpg();
+        if (trpgManager == null || !trpgManager.isActive()) return;
+        if (!(event.getSender() instanceof Player player)) return;
+        String buffer = event.getBuffer();
+        if (buffer == null || buffer.indexOf('@') < 0) return;
+        int lastSpace = buffer.lastIndexOf(' ');
+        String lastWord = buffer.substring(lastSpace + 1);
+        if (!lastWord.startsWith("@")) return;
+        java.util.List<String> sugg = new java.util.ArrayList<>();
+        for (String s : trpgManager.commSuggestions(player)) if (s.startsWith(lastWord)) sugg.add(s);
+        if (!sugg.isEmpty()) event.setCompletions(sugg);
+    }
+
     @EventHandler
     public void onPlayerDeath(PlayerDeathEvent event) {
         Player player = event.getPlayer();
