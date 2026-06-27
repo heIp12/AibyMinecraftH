@@ -231,6 +231,9 @@ public class ItemManager {
     //  아이템 검색 및 폴백
     // ──────────────────────────────────────────────────────────────
 
+    /** key_items에서 아이템 정의를 찾는다 (런타임 ItemInstance 생성용). 없으면 null. */
+    public JsonObject findDef(String itemId) { return findItemDef(itemId); }
+
     private JsonObject findItemDef(String itemId) {
         JsonObject gdam = state.getGdamData();
         if (gdam == null || !gdam.has("key_items")) return null;

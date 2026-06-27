@@ -276,12 +276,18 @@ public class AiManager {
         return parseTag(response, "<ITEM_GRANT>", "</ITEM_GRANT>");
     }
 
+    /** &lt;ITEM_USE&gt; — 기계 효과 아이템 사용 시 상태 갱신 (아이템 Phase II) */
+    public JsonObject parseItemUse(String response) {
+        return parseTag(response, "<ITEM_USE>", "</ITEM_USE>");
+    }
+
     /** 태그를 제거한 순수 서술 텍스트 반환 */
     public String stripTags(String response) {
         return response
             .replaceAll("<THOUGHT>[\\s\\S]*?</THOUGHT>", "")
             .replaceAll("<STATE_UPDATE>[\\s\\S]*?</STATE_UPDATE>", "")
             .replaceAll("<ITEM_GRANT>[\\s\\S]*?</ITEM_GRANT>", "")
+            .replaceAll("<ITEM_USE>[\\s\\S]*?</ITEM_USE>", "")
             .replaceAll("<CLEAR>[\\s\\S]*?</CLEAR>", "")
             .replaceAll("<WITNESS[^>]*>[\\s\\S]*?</WITNESS>", "")
             .replaceAll("<SPAWN[^/]*/?>", "")

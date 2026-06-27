@@ -56,6 +56,8 @@ public class PlayerData {
 
     /** 현재 소지 중인 아이템 ID 집합 (통신 기기 추적 등에 사용) */
     public Set<String> heldItemIds = new HashSet<>();
+    /** 기계 효과(item_type) 아이템의 런타임 상태 (아이템 Phase II). 키=아이템 id. heldItemIds와 병행. */
+    public Map<String, ItemInstance> itemStates = new LinkedHashMap<>();
 
     /** GM 서술 + 행동 기록 (Log GUI용) */
     public List<String> narrativeLog = new ArrayList<>();
@@ -164,6 +166,7 @@ public class PlayerData {
         gender       = "";
         roleAssigned = false;
         heldItemIds.clear();
+        itemStates.clear();
         knownContacts.clear();
         contactId    = "";
         narrativeLog.clear();

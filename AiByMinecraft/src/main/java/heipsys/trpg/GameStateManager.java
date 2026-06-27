@@ -87,6 +87,8 @@ public class GameStateManager {
     private final List<String>                   foundItems = new ArrayList<>();
     /** 엔딩 공개용: 플레이 중 실제로 알아낸 정식 사실 키 (예: "identity", "weakness:<항목>", "solution", "name") */
     private final java.util.Set<String> discoveredFacts = new java.util.HashSet<>();
+    /** 아이템 Phase II: 열쇠·도구 등으로 해제된 구역 zone_id 집합 (재도전·다음 방에서 초기화) */
+    private final java.util.Set<String> unlockedZones = new java.util.HashSet<>();
     private final List<EventLogEntry>            eventLog   = Collections.synchronizedList(new ArrayList<>());
 
     // ──────────────────────────────────────────────────────────────
@@ -107,6 +109,7 @@ public class GameStateManager {
         discoveredClues.clear();
         foundItems.clear();
         discoveredFacts.clear();
+        unlockedZones.clear();
         eventLog.clear();
         loadTimelineConfig(gdam);
     }
@@ -128,6 +131,7 @@ public class GameStateManager {
         discoveredClues.clear();
         foundItems.clear();
         discoveredFacts.clear();
+        unlockedZones.clear();
         eventLog.clear();
         loadTimelineConfig(gdam);
     }
@@ -142,6 +146,7 @@ public class GameStateManager {
         discoveredClues.clear();
         foundItems.clear();
         discoveredFacts.clear();
+        unlockedZones.clear();
         eventLog.clear();
         loadTimelineConfig(gdamData);
         players.values().forEach(PlayerData::resetToBase);
@@ -464,6 +469,16 @@ public class GameStateManager {
     public boolean isFactDiscovered(String key) { return discoveredFacts.contains(key); }
     /** 발견된 정식 사실 집합 (읽기용) */
     public java.util.Set<String> getDiscoveredFacts() { return discoveredFacts; }
+
+    // --- 아이템 Phase II: 열쇠·도구로 해제된 구역 추적 ---
+    /** 구역을 해제 처리 (null/blank 무시) */
+    public void markZoneUnlocked(String zone) {
+        if (zone != null && !zone.isBlank()) unlockedZones.add(zone);
+    }
+    /** 해당 구역이 해제되었는지 여부 */
+    public boolean isZoneUnlocked(String zone) { return unlockedZones.contains(zone); }
+    /** 해제된 구역 집합 (읽기용) */
+    public java.util.Set<String> getUnlockedZones() { return unlockedZones; }
 
     // ──────────────────────────────────────────────────────────────
     //  GM AI 입력 포맷 빌더
