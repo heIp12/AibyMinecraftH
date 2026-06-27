@@ -134,6 +134,20 @@ public class SystemTraitRegistry {
         sb.append("\n## ★ 등급 밸런스 가이드 (반드시 준수) ★\n");
         sb.append("effect_type과 파라미터 조합에 따른 등급 기준. 이 기준을 벗어나지 않는다.\n\n");
 
+        sb.append("## ★ 등급 = '스텟 + 패시브 + 발동형' 3요소 파워의 총합 ★\n");
+        sb.append("한 특성의 등급은 아래 세 종류 파워의 '합계'다. 한 종류에 몰아도, 섞어도 된다.\n");
+        sb.append(" ① 스텟 파워 — 능력치 상승. 양의 보정 총합 예산: D=0  C=1  B=3  A=5  S=10.\n");
+        sb.append("     · 다른 스탯에 -를 주면 그만큼 +를 더(순합 기준). 순수 -결점형도 가능(약체·개성).\n");
+        sb.append("     · hp_max/san_max는 100점 척도라 한 점 영향이 작아 더 큰 수치 허용.\n");
+        sb.append(" ② 패시브 파워 — 상시/조건부 자동 효과. active=false. effect_type: passive_gm·passive_trigger·protect·scenario_insight.\n");
+        sb.append(" ③ 발동형 파워 — 플레이어가 직접 발동(버튼). active=true. effect_type: ai_query·area_scan·instant_clear·guaranteed·mobility 등.\n");
+        sb.append("★ 등급 = ①+②+③ 합산. ★ 기계효과(②/③)는 한 특성에 '하나만'(패시브 또는 발동형 택1) + 거기에 스텟을 더하는 식.\n");
+        sb.append("   예) 순수 스텟 A급: stat 합 5, 기계효과 없음.\n");
+        sb.append("   예) 순수 발동형 S급: instant_clear 하나, stat 0.\n");
+        sb.append("   예) 혼합 B급: 약한 패시브(육감) + stat +1 → 합쳐서 B.\n");
+        sb.append("   예) 혼합 A급: 중간 발동형(area_scan scope=2) + stat +1.\n");
+        sb.append("아래 effect_type 등급표는 '그 기계효과 단독(스텟 0) 기준'이다. 스텟을 더하면 그만큼 기계효과를 낮춰 합을 맞춘다.\n\n");
+
         sb.append("[S등급] 스테이지 전체를 뒤바꿀 수 있는 결정적 효과. 아주 희소하게 배정.\n");
         sb.append("  · instant_clear (스테이지 즉시 생존 클리어)\n");
         sb.append("  · revive_ally (완전 부활·전회복)\n");
