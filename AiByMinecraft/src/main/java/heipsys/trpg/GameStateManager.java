@@ -543,26 +543,55 @@ public class GameStateManager {
             sb.append("다른 위치 동료: ").append(others).append("\n");
         }
 
-        // 최근 이벤트 (동시 행동 반영을 위해 4개)
-        List<EventLogEntry> recent = getRecentLog(4);
+        // 최근 이벤트 — ★현재 행동자가 지각할 수 있는(같은 위치 zone, 또는 본인) 일만 반영한다.
+        // 다른 장면(다른 zone)의 플레이어 행동이 현재 플레이어 서술에 끼어드는 '장면 혼선'을 막는다.
+        List<EventLogEntry> recentAll = getRecentLog(8);
+        List<EventLogEntry> recent = new ArrayList<>();
+        for (EventLogEntry e : recentAll) {
+            if (isPerceivableEvent(e, actorZone, actor.getUniqueId())) recent.add(e);
+        }
+        if (recent.size() > 4) recent = recent.subList(recent.size() - 4, recent.size());
         if (!recent.isEmpty()) {
-            sb.append("최근:");
+            sb.append("최근(같은 장면):");
             recent.forEach(e -> sb.append(" [").append(resolveDisplayName(e.player)).append("] ").append(e.content));
             sb.append("\n");
         }
 
-        String actorDisplay = (actorData != null && !actorData.charName.isEmpty()) ? actorData.charName : actor.getName();
+        String actorDisplay = (actorData != null) ? actorData.gmDisplayName() : actor.getName();
         sb.append("행동: [").append(actorDisplay).append("] ").append(action);
         return sb.toString();
     }
 
-    /** Minecraft 이름 → 캐릭터 이름. charName 없으면 원래 이름 반환 */
+    /** 로그 player 필드(계정명 또는 캐릭터명)로 PlayerData를 찾는다. 없으면 null(NPC·괴담·시스템 등). */
+    private PlayerData playerOf(String who) {
+        if (who == null) return null;
+        return players.values().stream()
+            .filter(p -> p.name.equals(who)
+                || (p.charName != null && !p.charName.isEmpty() && p.charName.equals(who)))
+            .findFirst().orElse(null);
+    }
+
+    /**
+     * 이벤트를 현재 행동자가 지각할 수 있는가 — 본인 이벤트이거나 같은 위치(zone)의 플레이어 행동만 true.
+     * 비플레이어(NPC·괴담·시스템) 이벤트와 다른 zone의 플레이어 이벤트는 장면 밖으로 간주해 제외한다.
+     */
+    private boolean isPerceivableEvent(EventLogEntry e, String actorZone, UUID actorUuid) {
+        PlayerData pd = playerOf(e.player);
+        if (pd == null) return false;
+        if (pd.uuid.equals(actorUuid)) return true;
+        if (actorZone == null || actorZone.isEmpty()) return false;
+        return actorZone.equals(pd.zone);
+    }
+
+    /**
+     * Minecraft 계정 이름 → GM·서술용 표시 이름.
+     * 로그의 player 필드가 계정명이면 그 플레이어의 gmDisplayName(계정명 절대 미노출)으로 변환한다.
+     * 매칭되는 플레이어가 없으면(이미 캐릭터명이거나 NPC명) 그대로 통과시킨다.
+     */
     private String resolveDisplayName(String rawName) {
         if (rawName == null) return "?";
-        PlayerData pd = players.values().stream()
-            .filter(p -> p.name.equals(rawName))
-            .findFirst().orElse(null);
-        return (pd != null && !pd.charName.isEmpty()) ? pd.charName : rawName;
+        PlayerData pd = playerOf(rawName);
+        return pd != null ? pd.gmDisplayName() : rawName;
     }
 
     /** 특정 플레이어의 가장 최근 action 로그 1건 (협력 맥락 제공용). 없으면 null. */
@@ -586,6 +615,26 @@ public class GameStateManager {
         getRecentLog(limit).stream()
             .filter(e -> "action".equals(e.type))
             .forEach(e -> sb.append("[").append(resolveDisplayName(e.player)).append("] ").append(e.content).append("\n"));
+        return sb.toString();
+    }
+
+    /**
+     * Entity/NPC AI용 — ★특정 위치(zone)에서 일어난 플레이어 행동만 반영한다.
+     * 다른 장면(다른 zone)의 플레이어 행동이 현재 장면 서술에 섞이는 '장면 혼선'을 막는다.
+     * zoneFilter가 비어 있으면 위치 구분 없이 전체를 반환한다(하위호환).
+     */
+    public String buildEntityLog(int limit, String zoneFilter) {
+        if (zoneFilter == null || zoneFilter.isEmpty()) return buildEntityLog(limit);
+        List<String> lines = new ArrayList<>();
+        for (EventLogEntry e : getRecentLog(Math.max(limit * 4, 12))) {
+            if (!"action".equals(e.type)) continue;
+            PlayerData pd = playerOf(e.player);
+            if (pd == null || !zoneFilter.equals(pd.zone)) continue;
+            lines.add("[" + resolveDisplayName(e.player) + "] " + e.content);
+        }
+        int from = Math.max(0, lines.size() - limit);
+        StringBuilder sb = new StringBuilder();
+        for (String l : lines.subList(from, lines.size())) sb.append(l).append("\n");
         return sb.toString();
     }
 

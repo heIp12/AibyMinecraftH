@@ -329,10 +329,22 @@ public class PlayerData {
         return sb.toString().trim();
     }
 
+    /**
+     * GM·서술 컨텍스트 전용 표시 이름. ★플레이어 계정(닉네임)을 절대 노출하지 않는다.★
+     * char_name이 누락된 배역(.gdam에 char_name 없음)이라도 계정명 대신 인게임 호칭으로 폴백한다.
+     * 우선순위: 캐릭터명 → 배역 직업(일반인 제외) → 일반 호칭.
+     * (계정명은 시나리오 서술·후일담에 새어 들어가면 몰입을 깨므로 이 메서드로만 GM에 전달한다)
+     */
+    public String gmDisplayName() {
+        if (charName != null && !charName.isEmpty()) return charName;
+        if (job != null && !job.isBlank() && !job.equals("일반인")) return job;
+        return "이름 모를 인물";
+    }
+
     /** GM AI turn input용 플레이어 상세 줄 (행동자에게만 사용) */
     public String toTurnLine() {
         StringBuilder sb = new StringBuilder();
-        sb.append(charName.isEmpty() ? name : charName)
+        sb.append(gmDisplayName())
           .append("[").append(roleId.isEmpty() ? "?" : roleId)
           .append(" ").append(age).append("세 ").append(job).append("]")
           .append(" HP").append(hp[0]).append("/").append(hp[1])
@@ -361,7 +373,7 @@ public class PlayerData {
 
     /** 비행동 플레이어용 압축 요약 (HP/SAN/상태만). GM 전용 — 플레이어에게 노출 금지 */
     public String toShortLine() {
-        String display = charName.isEmpty() ? name : charName;
+        String display = gmDisplayName();
         if (impersonated) return display + "[괴담이 정체 차용 중]";
         if (isDead) return display + "[사망]";
         String st = status.equals("puppet") ? "[꼭두각시]"
