@@ -1198,7 +1198,9 @@ public class DialogManager {
         int colon = t.indexOf(':');
         if (colon > 0 && colon <= 6)
             return Component.text(line, NamedTextColor.YELLOW);                          // 짧은 라벨: 값
-        return Component.text(line, NamedTextColor.WHITE);                               // 본문 = 흰색
+        // 본문(후일담 등 서사 줄): 인게임 스토리와 동일한 서식 적용
+        // (화자[이름]=주황, "대사"=청록, <연출>=노랑, *주석*=회색) → 단색 벽글 가독성 개선
+        return LEGACY.deserialize(NarrativeDelivery.format(line));
     }
 
     public void showEndingDialog(Player player, List<EndingSection> sections, int page) {

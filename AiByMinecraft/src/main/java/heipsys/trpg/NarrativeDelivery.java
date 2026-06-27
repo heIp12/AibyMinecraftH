@@ -27,15 +27,35 @@ public class NarrativeDelivery {
         this.plugin = plugin;
     }
 
+    /** 한 번에 출력할 최대 줄 수 (이를 넘으면 다음 블록/틱으로 이어 표시) */
+    private static final int MAX_LINES_PER_BLOCK = 2;
+
     /** GM 서술 텍스트를 줄 단위로 큐에 넣고 순차 출력 시작 */
     public void deliver(Player player, String raw) {
         if (raw == null || raw.isBlank()) return;
         UUID uuid = player.getUniqueId();
         ArrayDeque<String> q = queues.computeIfAbsent(uuid, k -> new ArrayDeque<>());
 
+        // 먼저 38자 단위로 모두 래핑한 뒤, 한 블록당 최대 2줄씩 묶어 큐에 넣는다.
+        // → 한 번에 2줄까지만 보이고, 3줄째부터는 다음 라인(다음 출력 틱)으로 이어진다.
+        List<String> segments = new ArrayList<>();
         for (String line : format(raw).split("\n")) {
-            if (!line.isBlank()) q.add(line.trim());
+            if (line.isBlank()) continue;
+            segments.addAll(hardWrap(line.trim()));
         }
+        StringBuilder block = new StringBuilder();
+        int count = 0;
+        for (String seg : segments) {
+            if (count > 0) block.append('\n');
+            block.append(seg);
+            if (++count >= MAX_LINES_PER_BLOCK) {
+                q.add(block.toString());
+                block.setLength(0);
+                count = 0;
+            }
+        }
+        if (block.length() > 0) q.add(block.toString());
+
         if (!taskIds.containsKey(uuid)) scheduleNext(player);
     }
 
@@ -60,9 +80,9 @@ public class NarrativeDelivery {
         s = s.replaceAll("“<(?!-)([^<>\n]+)>”", "“§e<$1>”" + BASE_COLOR);
         // 화자 태그 [이름] → 주황색 (괄호 포함)
         s = s.replaceAll("\\[([^\\[\\]\n]+)\\]", "§6[$1]" + BASE_COLOR);
-        // 마크다운 강조 → 노란 강조 후 기본색 복귀
+        // 마크다운 강조: **굵게**=노랑 강조, *주석/지문*=회색(연출 보조 설명)
         s = s.replaceAll("\\*\\*(.+?)\\*\\*", "§e$1" + BASE_COLOR);
-        s = s.replaceAll("\\*(.+?)\\*",       "§e$1" + BASE_COLOR);
+        s = s.replaceAll("\\*(.+?)\\*",       "§7$1" + BASE_COLOR); // *주석*은 회색
         s = s.replaceAll("`(.+?)`",           "§e$1" + BASE_COLOR);
         s = s.replaceAll("(?m)^\\s*[-•]\\s+", "");
         // 인물 대사("...") → 청록색
@@ -104,13 +124,14 @@ public class NarrativeDelivery {
     }
 
     /**
-     * 한 줄을 MAX_CHAT_CHARS 이하로 분할해 전송하고, 뒤에 빈 줄로 여백을 둔다.
+     * 한 블록(이미 래핑된 최대 2줄)을 줄 단위로 전송하고, 뒤에 빈 줄로 여백을 둔다.
+     * (블록은 deliver에서 38자 단위로 미리 분할되어 있으므로 재래핑하지 않는다)
      */
-    private void sendLine(Player player, String line) {
-        for (String segment : hardWrap(line)) {
+    private void sendLine(Player player, String block) {
+        for (String segment : block.split("\n")) {
             player.sendMessage(BASE_COLOR + segment);
         }
-        player.sendMessage(""); // 줄 사이 여백
+        player.sendMessage(""); // 블록 사이 여백
     }
 
     /**
