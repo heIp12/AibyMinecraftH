@@ -40,8 +40,8 @@ public class CorruptionManager {
         return grades[idx];
     }
 
-    /** 4단계 오염 전용 특수 특성 보상 여부 */
-    public boolean isSpecialReward() { return state.getCorruption().level >= 4; }
+    /** 최고 오염 단계 도달 시 특수 특성 보상 여부 (CODE-17: 단계 수 규모 가변) */
+    public boolean isSpecialReward() { return state.getCorruption().level >= state.getMaxCorruptionLevel(); }
 
     // ──────────────────────────────────────────────────────────────
     //  GM AI 컨텍스트 주입

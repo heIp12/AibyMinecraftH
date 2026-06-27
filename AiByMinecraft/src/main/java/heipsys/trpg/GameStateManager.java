@@ -164,15 +164,44 @@ public class GameStateManager {
     public void advanceTimeline(int stages) {
         if (dailyPhase) return;
         if (stages > 0) turnsSinceAdvance = 0;
-        timelineStage = Math.max(0, Math.min(4, timelineStage + stages));
+        timelineStage = Math.max(0, Math.min(getMaxStage(), timelineStage + stages));
+    }
+
+    /** CODE-17: seed timeline의 단계 수(연속 숫자 키 1..N). 규모별 가변. 없으면 기본 4. */
+    public int getMaxStage() {
+        if (gdamData != null && gdamData.has("timeline") && gdamData.get("timeline").isJsonObject()) {
+            JsonObject tl = gdamData.getAsJsonObject("timeline");
+            int n = 0;
+            while (tl.has(String.valueOf(n + 1))) n++;
+            if (n >= 1) return n;
+        }
+        return 4;
+    }
+
+    /** CODE-17: corruption_behavior의 최고 단계(키 0..N-1 중 최대값). 규모별 가변. 없으면 기본 4. */
+    public int getMaxCorruptionLevel() {
+        if (gdamData != null && gdamData.has("entity") && gdamData.get("entity").isJsonObject()) {
+            JsonObject ent = gdamData.getAsJsonObject("entity");
+            if (ent.has("ai_context") && ent.get("ai_context").isJsonObject()) {
+                JsonObject ai = ent.getAsJsonObject("ai_context");
+                if (ai.has("corruption_behavior") && ai.get("corruption_behavior").isJsonObject()) {
+                    int max = -1;
+                    for (String k : ai.getAsJsonObject("corruption_behavior").keySet()) {
+                        try { max = Math.max(max, Integer.parseInt(k.trim())); } catch (Exception ignore) {}
+                    }
+                    if (max >= 1) return max;
+                }
+            }
+        }
+        return 4;
     }
 
     /** 타임라인이 진행되지 않은 턴을 누적한다. 3회 초과 시 자동 1단계 진행. */
     public boolean tickStagnation() {
-        if (dailyPhase || timelineStage >= 4) return false;
+        if (dailyPhase || timelineStage >= getMaxStage()) return false;
         turnsSinceAdvance++;
         if (turnsSinceAdvance >= 3) {
-            timelineStage = Math.min(4, timelineStage + 1);
+            timelineStage = Math.min(getMaxStage(), timelineStage + 1);
             turnsSinceAdvance = 0;
             return true; // 자동 진행 발생
         }
@@ -189,8 +218,9 @@ public class GameStateManager {
         double progress = (double) (clockMinutes - clockStart) / (clockEnd - clockStart);
         if (progress < 0) progress = 0;
         if (progress > 1) progress = 1;
-        int target = 1 + (int) Math.floor(progress * 4.0);
-        if (target > 4) target = 4;
+        int max = getMaxStage();                                 // CODE-17: 단계 수 가변
+        int target = 1 + (int) Math.floor(progress * max);
+        if (target > max) target = max;
         if (target > timelineStage) {
             timelineStage     = target;
             turnsSinceAdvance = 0;
@@ -211,7 +241,7 @@ public class GameStateManager {
             fireDueEvents();
             syncStageToClock();
         } else {
-            timelineStage = Math.min(4, timelineStage + 1);
+            timelineStage = Math.min(getMaxStage(), timelineStage + 1);
             if (timelineStage != beforeStage) turnsSinceAdvance = 0;
         }
         return timelineStage != beforeStage || justFiredEvents.size() != beforeFired;
@@ -309,12 +339,12 @@ public class GameStateManager {
             justFiredEvents.add(label + (effect.isEmpty() ? "" : " — " + effect));
             if (ev.has("is_end") && ev.get("is_end").getAsBoolean()) {
                 endEventFired = true;
-                timelineStage = 4; // 종료 사건 → 극한 압박(기존 4단계 로직과 브리지)
+                timelineStage = getMaxStage(); // CODE-17: 종료 사건 → 최고 단계(가변)
             }
         }
         if (clockEnd >= 0 && clockMinutes >= clockEnd && !endEventFired) {
             endEventFired = true;
-            timelineStage = 4;
+            timelineStage = getMaxStage();
             justFiredEvents.add("제한 시각 도달 — 상황이 종국으로 치닫는다");
         }
     }
@@ -376,7 +406,7 @@ public class GameStateManager {
             String label  = ev.has("label")  ? ev.get("label").getAsString()  : tid;
             String effect = ev.has("effect") ? ev.get("effect").getAsString() : "";
             justFiredEvents.add(label + (effect.isEmpty() ? "" : " — " + effect));
-            if (ev.has("is_end") && ev.get("is_end").getAsBoolean()) { endEventFired = true; timelineStage = 4; }
+            if (ev.has("is_end") && ev.get("is_end").getAsBoolean()) { endEventFired = true; timelineStage = getMaxStage(); }
             return;
         }
     }
