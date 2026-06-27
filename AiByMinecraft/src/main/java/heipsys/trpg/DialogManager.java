@@ -688,11 +688,47 @@ public class DialogManager {
 
     private record RecordPage(String header, List<String> lines) {}
 
+    /** 들여쓰기된 단서 줄을 식별하기 위한 접두사 (그룹 렌더 전용 내부 마커) */
+    private static final String INFO_BULLET = "  • ";
+
+    /**
+     * 수집 정보 스냅샷을 '대상별 그룹' 형태의 평탄 줄 목록으로 만든다.
+     * - infoGroups가 비어있지 않으면: 각 대상마다 헤더 줄 "[<대상>에 대한 단서]" + 그 아래 "  • <단서>".
+     *   대상 순서는 LinkedHashMap 삽입순(스냅샷 복사).
+     * - infoGroups가 비어있으면(구버전 데이터 폴백): 기존 infoItems 평탄 목록.
+     */
+    private static List<String> buildInfoLines(PlayerData pd) {
+        // 그룹 스냅샷 (삽입순 보존). infoGroups는 PlayerData.addInfo에서 자기 자신을 락으로 보호하므로
+        // 동일 모니터(pd.infoGroups)로 스냅샷을 떠 맵·내부 리스트의 동시 변경으로부터 보호한다.
+        Map<String, List<String>> groupSnap = new LinkedHashMap<>();
+        synchronized (pd.infoGroups) {
+            for (Map.Entry<String, List<String>> e : pd.infoGroups.entrySet()) {
+                List<String> v = e.getValue();
+                groupSnap.put(e.getKey(), v == null ? new ArrayList<>() : new ArrayList<>(v));
+            }
+        }
+        if (groupSnap.isEmpty()) {
+            // 폴백: 구버전 평탄 데이터
+            synchronized (pd.infoItems) { return new ArrayList<>(pd.infoItems); }
+        }
+        List<String> out = new ArrayList<>();
+        for (Map.Entry<String, List<String>> e : groupSnap.entrySet()) {
+            out.add("[" + e.getKey() + "에 대한 단서]");
+            for (String clue : e.getValue()) {
+                out.add(INFO_BULLET + clue);
+            }
+        }
+        return out;
+    }
+
     /** 전체 대화 / 정보만 보기 선택 화면 */
     public void showRecordChoice(Player player, PlayerData pd) {
         List<String> logSnap, infoSnap;
         synchronized (pd.narrativeLog) { logSnap  = new ArrayList<>(pd.narrativeLog); }
-        synchronized (pd.infoItems)    { infoSnap = new ArrayList<>(pd.infoItems); }
+        infoSnap = buildInfoLines(pd);
+        // 헤더 줄([...에 대한 단서])을 제외한 실제 단서 건수
+        long infoCount = infoSnap.stream().filter(l -> l.startsWith(INFO_BULLET)).count();
+        if (infoCount == 0) infoCount = infoSnap.size(); // 폴백(평탄 목록)일 때는 전체 줄 수
         long logCount = logSnap.stream().filter(l -> !l.startsWith(PlayerData.MOVE_TAG)).count();
 
         Component body = Component.text()
@@ -700,7 +736,7 @@ public class DialogManager {
             .append(Component.text("전체 대화  ", NamedTextColor.YELLOW))
             .append(Component.text("지나간 모든 서술·행동 (" + logCount + "줄)", NamedTextColor.GRAY)).appendNewline()
             .append(Component.text("수집 정보  ", NamedTextColor.AQUA))
-            .append(Component.text("정보가 담긴 내용만 추린 목록 (" + infoSnap.size() + "건)", NamedTextColor.GRAY))
+            .append(Component.text("정보가 담긴 내용만 추린 목록 (" + infoCount + "건)", NamedTextColor.GRAY))
             .build();
 
         List<ActionButton> buttons = new ArrayList<>();
@@ -731,7 +767,7 @@ public class DialogManager {
 
     /** 수집 정보 바로 열기 */
     public void showRecordInfo(Player player, PlayerData pd) {
-        List<String> snap; synchronized (pd.infoItems) { snap = new ArrayList<>(pd.infoItems); }
+        List<String> snap = buildInfoLines(pd);
         showRecordPages(player, pd, true, snap, 0);
     }
 
@@ -809,19 +845,41 @@ public class DialogManager {
         return pages;
     }
 
-    /** 정보 목록을 줄 수 한도로 단순 페이지 분할 */
+    /**
+     * 정보 목록을 줄 수 한도로 페이지 분할.
+     * 그룹 헤더 줄("[...에 대한 단서]")이 페이지 맨 끝에 홀로 남지 않도록,
+     * 한도 도달 시점의 줄이 헤더이면 다음 페이지로 넘긴다.
+     */
     private static List<RecordPage> paginateInfo(List<String> items) {
         List<RecordPage> pages = new ArrayList<>();
-        for (int i = 0; i < items.size(); i += INFO_LINES_PER_PAGE) {
-            pages.add(new RecordPage("",
-                new ArrayList<>(items.subList(i, Math.min(items.size(), i + INFO_LINES_PER_PAGE)))));
+        List<String> cur = new ArrayList<>();
+        for (String line : items) {
+            // 한도에 도달했는데 다음 줄이 헤더(들여쓰기 아님 = 그룹 시작)면 여기서 페이지를 끊는다.
+            if (cur.size() >= INFO_LINES_PER_PAGE && !line.startsWith(INFO_BULLET)) {
+                pages.add(new RecordPage("", cur));
+                cur = new ArrayList<>();
+            }
+            cur.add(line);
+            // 들여쓰기 단서로 한도를 넘긴 경우엔 그대로 끊는다(헤더가 끝줄이 되지 않음).
+            if (cur.size() >= INFO_LINES_PER_PAGE && line.startsWith(INFO_BULLET)) {
+                pages.add(new RecordPage("", cur));
+                cur = new ArrayList<>();
+            }
         }
+        if (!cur.isEmpty()) pages.add(new RecordPage("", cur));
         return pages;
     }
 
     private static Component colorRecordLine(String line) {
-        if (line.startsWith("[행동")) return Component.text(line, NamedTextColor.YELLOW);
-        if (line.startsWith("•"))     return Component.text(line, NamedTextColor.AQUA);
+        String t = line.strip();
+        // CODE-18: '*'로 시작하는 주석 줄은 회색
+        if (t.startsWith("*"))            return Component.text(line, NamedTextColor.GRAY);
+        // CODE-13: 대상별 그룹 헤더 / 들여쓴 단서
+        if (line.startsWith(INFO_BULLET)) return Component.text(line, NamedTextColor.WHITE);
+        if (t.startsWith("[") && t.endsWith("에 대한 단서]"))
+            return Component.text(line, NamedTextColor.GOLD, TextDecoration.BOLD);
+        if (line.startsWith("[행동"))      return Component.text(line, NamedTextColor.YELLOW);
+        if (line.startsWith("•"))          return Component.text(line, NamedTextColor.AQUA);
         return Component.text(line, NamedTextColor.WHITE);
     }
 
@@ -1014,6 +1072,8 @@ public class DialogManager {
         if (line == null || line.isEmpty()) return Component.empty();
         if (line.indexOf('§') >= 0) return LEGACY.deserialize(line); // § 코드 우선
         String t = line.strip();
+        if (t.startsWith("*"))                                                           // CODE-18: '*' 주석 줄 = 회색
+            return Component.text(line, NamedTextColor.GRAY);
         if (t.startsWith("──") || t.endsWith("──"))
             return Component.text(line, TextColor.color(0xFFCC66), TextDecoration.BOLD); // 구분선 = 금색
         if (t.startsWith("▸") || t.startsWith("•"))

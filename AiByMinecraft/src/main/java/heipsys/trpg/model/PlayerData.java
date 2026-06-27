@@ -2,7 +2,9 @@ package heipsys.trpg.model;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -64,6 +66,33 @@ public class PlayerData {
     /** narrativeLog 안의 '위치 이동' 구분 마커 접두사 (페이지 분할 지점). PUA 문자라 trim/일반 텍스트와 충돌 없음 */
     public static final String MOVE_TAG = "##MOVE##";
 
+    /**
+     * 정보 자동기록을 대상 태그(주제)별로 묶은 그룹 구조 (Info GUI 헤더 렌더용).
+     * key = 대상 태그(예: "괴담의 정체", "전화번호", NPC 이름 등), value = 그 대상의 단서 줄들.
+     * 기존 평탄한 {@link #infoItems} 와 함께 유지되며(하위호환 mirror), 그룹 출력은 이쪽을 사용한다.
+     */
+    public Map<String, List<String>> infoGroups = new LinkedHashMap<>();
+
+    /**
+     * 단서를 대상 태그(주제)별 그룹에 기록한다. 기존 {@link #infoItems} 에도 "[subject] line" 형태로 mirror 추가(하위호환).
+     * @param subject 대상 태그. null/blank면 "단서"로 분류.
+     * @param line    단서 내용 한 줄. 같은 그룹에 동일 줄이 이미 있으면 중복 추가하지 않는다.
+     */
+    public void addInfo(String subject, String line) {
+        if (line == null) return;
+        String subj = (subject == null || subject.isBlank()) ? "단서" : subject;
+        synchronized (infoGroups) {
+            List<String> group = infoGroups.computeIfAbsent(subj, k -> new ArrayList<>());
+            if (!group.contains(line)) group.add(line);
+        }
+        // 하위호환: 다른 파일이 읽는 평탄 목록에도 mirror 추가
+        String mirror = "[" + subj + "] " + line;
+        synchronized (infoItems) {
+            infoItems.add(mirror);
+            if (infoItems.size() > INFO_ITEMS_MAX) infoItems.remove(0);
+        }
+    }
+
     /** 방문해 본 zone 집합 (직접 그린 약도에 드러나는 범위) */
     public Set<String> visitedZones = new HashSet<>();
     /** 전체 지도를 입수했는지 (true면 약도에 모든 zone 표시) */
@@ -75,6 +104,8 @@ public class PlayerData {
     public final Set<UUID> knownContacts = new HashSet<>();
     /** 한 번이라도 알게 된 연락처 (다회차 보정 — 재도전 시 재적용해 이전에 안 번호를 유지) */
     public final Set<UUID> everKnownContacts = new HashSet<>();
+    /** 한 번이라도 알게 된 NPC 연락처 id 누적 (다회차 이월 — 재도전 시 NPC 번호 유지. 복구는 GameStateManager/TRPGGameManager가 수행) */
+    public final Set<String> everKnownNpcContacts = new HashSet<>();
 
     // Base stats snapshot — used to reset on retry
     public int[] baseHp  = {6, 6};
@@ -137,6 +168,7 @@ public class PlayerData {
         contactId    = "";
         narrativeLog.clear();
         infoItems.clear();
+        infoGroups.clear();
         visitedZones.clear();
         hasFullMap = false;
     }

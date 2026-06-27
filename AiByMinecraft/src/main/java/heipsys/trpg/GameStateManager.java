@@ -85,6 +85,8 @@ public class GameStateManager {
     private final List<String>                   activeNpcs = new ArrayList<>();
     private final List<String>                   discoveredClues = new ArrayList<>();
     private final List<String>                   foundItems = new ArrayList<>();
+    /** 엔딩 공개용: 플레이 중 실제로 알아낸 정식 사실 키 (예: "identity", "weakness:<항목>", "solution", "name") */
+    private final java.util.Set<String> discoveredFacts = new java.util.HashSet<>();
     private final List<EventLogEntry>            eventLog   = Collections.synchronizedList(new ArrayList<>());
 
     // ──────────────────────────────────────────────────────────────
@@ -104,6 +106,7 @@ public class GameStateManager {
         activeNpcs.clear();
         discoveredClues.clear();
         foundItems.clear();
+        discoveredFacts.clear();
         eventLog.clear();
         loadTimelineConfig(gdam);
     }
@@ -124,6 +127,7 @@ public class GameStateManager {
         dailyPhase        = true;
         discoveredClues.clear();
         foundItems.clear();
+        discoveredFacts.clear();
         eventLog.clear();
         loadTimelineConfig(gdam);
     }
@@ -137,6 +141,7 @@ public class GameStateManager {
         dailyPhase        = true;
         discoveredClues.clear();
         foundItems.clear();
+        discoveredFacts.clear();
         eventLog.clear();
         loadTimelineConfig(gdamData);
         players.values().forEach(PlayerData::resetToBase);
@@ -449,6 +454,16 @@ public class GameStateManager {
     public void discoverClue(String id) { if (!discoveredClues.contains(id)) discoveredClues.add(id); }
     public void collectItem(String id)  { if (!foundItems.contains(id)) foundItems.add(id); }
     public List<String> getDiscoveredClues() { return discoveredClues; }
+
+    // --- CODE-15: 발견 사실(엔딩 공개용) 추적 ---
+    /** 정식 사실 키를 발견 처리 (null/blank 무시) */
+    public void markFactDiscovered(String key) {
+        if (key != null && !key.isBlank()) discoveredFacts.add(key);
+    }
+    /** 해당 사실이 발견되었는지 여부 */
+    public boolean isFactDiscovered(String key) { return discoveredFacts.contains(key); }
+    /** 발견된 정식 사실 집합 (읽기용) */
+    public java.util.Set<String> getDiscoveredFacts() { return discoveredFacts; }
 
     // ──────────────────────────────────────────────────────────────
     //  GM AI 입력 포맷 빌더
