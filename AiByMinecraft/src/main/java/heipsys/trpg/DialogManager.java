@@ -168,28 +168,38 @@ public class DialogManager {
     // ──────────────────────────────────────────────────────────────
 
     /** 게임 시작 전 GM AI 품질(표준/고품질)을 선택하는 다이얼로그 */
-    public void showQualityChoice(Player player, Runnable onStandard, Runnable onHigh) {
+    public void showQualityChoice(Player player, Runnable onLow, Runnable onMedium, Runnable onHigh) {
         Component body = Component.text()
             .append(Component.text("GM AI 품질을 선택하세요.", NamedTextColor.WHITE))
             .appendNewline().appendNewline()
-            .append(Component.text("표준  ", NamedTextColor.YELLOW))
-            .append(Component.text("빠르고 저렴 · 일반 플레이용", NamedTextColor.GRAY))
+            .append(Component.text("저품질  ", NamedTextColor.GRAY))
+            .append(Component.text("가장 빠르고 저렴 · 서술 단순 (Haiku)", NamedTextColor.DARK_GRAY))
+            .appendNewline()
+            .append(Component.text("중품질  ", NamedTextColor.YELLOW))
+            .append(Component.text("균형 잡힌 기본값 · 권장 (Sonnet)", NamedTextColor.GRAY))
             .appendNewline()
             .append(Component.text("고품질  ", NamedTextColor.AQUA))
-            .append(Component.text("더 풍부하고 일관된 서술 · 응답이 느리고 비쌈", NamedTextColor.GRAY))
+            .append(Component.text("가장 풍부·일관 · 느리고 비쌈 (Opus)", NamedTextColor.GRAY))
             .build();
 
         List<ActionButton> buttons = new ArrayList<>();
         buttons.add(ActionButton.create(
-            Component.text("표준 모드", NamedTextColor.YELLOW),
-            Component.text("빠르고 저렴한 기본 모델로 진행합니다."),
+            Component.text("저품질 모드", NamedTextColor.GRAY),
+            Component.text("가장 빠르고 저렴한 모델(Haiku)로 진행합니다.\n서술이 단순할 수 있습니다."),
             150,
-            DialogAction.customClick((v, a) -> onStandard.run(),
+            DialogAction.customClick((v, a) -> onLow.run(),
+                ClickCallback.Options.builder().uses(1).build())
+        ));
+        buttons.add(ActionButton.create(
+            Component.text("중품질 모드 (권장)", NamedTextColor.YELLOW),
+            Component.text("균형 잡힌 기본 모델(Sonnet)로 진행합니다.\n품질과 비용의 절충."),
+            150,
+            DialogAction.customClick((v, a) -> onMedium.run(),
                 ClickCallback.Options.builder().uses(1).build())
         ));
         buttons.add(ActionButton.create(
             Component.text("고품질 모드", NamedTextColor.AQUA),
-            Component.text("더 똑똑한 모델로 진행합니다.\n응답이 느리고 토큰 비용이 큽니다."),
+            Component.text("가장 똑똑한 모델(Opus)로 진행합니다.\n응답이 느리고 토큰 비용이 큽니다."),
             150,
             DialogAction.customClick((v, a) -> onHigh.run(),
                 ClickCallback.Options.builder().uses(1).build())
@@ -205,7 +215,7 @@ public class DialogManager {
             .base(DialogBase.builder(Component.text("세션 시작  —  AI 품질 선택"))
                 .body(List.of(DialogBody.plainMessage(body)))
                 .build())
-            .type(DialogType.multiAction(buttons, cancel, 2))
+            .type(DialogType.multiAction(buttons, cancel, 1))
         );
         player.showDialog(dialog);
     }

@@ -56,13 +56,17 @@ public class AiManager {
     //  모델 선택
     // ======================================================
 
-    /** 게임 시작 시 선택되는 GM AI 고품질 모드 */
-    private volatile boolean gmHighQuality = false;
+    /** GM AI 품질 등급. 저품질=Haiku / 중품질=Sonnet / 고품질=Opus. */
+    public enum Quality { LOW, MEDIUM, HIGH }
+
+    /** 게임 시작 시 선택되는 GM AI 품질 (기본: 중품질). */
+    private volatile Quality gmQuality = Quality.MEDIUM;
     /** config.yml에서 지정한 고품질 모델 ID (없으면 기본값 사용) */
     private String highModelOverride = null;
 
-    public void setGmQuality(boolean high) { this.gmHighQuality = high; }
-    public boolean isGmHighQuality()       { return gmHighQuality; }
+    public void setGmQuality(Quality q)    { if (q != null) this.gmQuality = q; }
+    public Quality getGmQuality()          { return gmQuality; }
+    public boolean isGmHighQuality()       { return gmQuality == Quality.HIGH; }
     public void setHighModelOverride(String m) {
         if (m != null && !m.isBlank()) this.highModelOverride = m.trim();
     }
@@ -93,9 +97,18 @@ public class AiManager {
         };
     }
 
-    /** GM AI 호출에 사용할 모델 (고품질 모드면 highModel, 아니면 sonnet) */
+    /** GM AI 호출 모델 — 저품질=Haiku / 중품질=Sonnet / 고품질=Opus. */
     private String gmModel() {
-        return gmHighQuality ? highModel() : sonnetModel();
+        return switch (gmQuality) {
+            case HIGH   -> highModel();
+            case LOW    -> haikuModel();
+            default     -> sonnetModel();   // MEDIUM
+        };
+    }
+
+    /** .gdam 생성 모델 — 구조화 JSON이라 최소 Sonnet 보장(저품질이라도 Haiku로 생성하지 않음). 고품질만 Opus. */
+    private String gdamModel() {
+        return gmQuality == Quality.HIGH ? highModel() : sonnetModel();
     }
 
     // ======================================================
@@ -141,7 +154,7 @@ public class AiManager {
         return CompletableFuture.supplyAsync(() -> {
             try {
                 List<JsonObject> single = List.of(msg("user", userMessage));
-                return send(gmModel(), systemPrompt, single, GDAM_MAX_TOKENS);
+                return send(gdamModel(), systemPrompt, single, GDAM_MAX_TOKENS);
             } catch (Exception e) {
                 return "§c[GM AI 오류] " + e.getMessage();
             }
