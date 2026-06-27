@@ -535,7 +535,16 @@
   - 즉 seed의 corruption_behavior 항목 수·timeline 단계 수를 읽어 maxStage/maxCorruption을 동적으로 산출, 모든 하드코딩 '4'를 대체.
 
 ### (코드 도메인 추가)
-- ★CODE-17 (P66 연계, ★high): 위 런타임 하드캡(timelineStage min(4)·E_END=4·>=4 / corruption >=4 특수보상)을 seed 단계 수 기반 동적값으로 교체. P66(프롬프트)와 ★반드시 함께 적용해야 규모별 가변 사건이 실제 발생. ※.java(GameStateManager·TRPGGameManager·CorruptionManager).
+- ★CODE-17 (P66 연계, ★high): 런타임 하드캡을 seed 단계 수 기반 동적값(maxStage/maxCorruption)으로 교체. ★전수 확인된 '4 가정' 지점:
+  · GameStateManager.advanceTimeline `Math.min(4,…)`(:167) → `min(maxStage,…)`
+  · ensureStageByClock '1~4 최소보장'(:183~) → 1~maxStage 비례
+  · E_END 브리지 `timelineStage=4`(:312) → maxStage
+  · TRPGGameManager `getTimelineStage()>=4`(:4575) → `>=maxStage`
+  · 등급표 `S: …타임라인 2단계 이하`(:340) → "전체 단계의 절반(올림) 이하"로 스케일 (D-2 결정 필요)
+  · `타임라인 4단계: 강제 배드엔딩…`(:1816) → maxStage 기준
+  · parseSpawnStage "타임라인 N단계" 1~4(:3463~3475) → 1~maxStage 허용
+  · CorruptionManager.isSpecialReward `level>=4`(:44) → `>=maxCorruption`, level 초과 시 최고단계 클램프
+  P66(프롬프트)와 ★반드시 함께 적용. ※.java(GameStateManager·TRPGGameManager·CorruptionManager).
 
 ## ★ 사용자 교정 6 (post-loop, 2026-06-27) — P67 (약점·해결 서술 추상화)
 
