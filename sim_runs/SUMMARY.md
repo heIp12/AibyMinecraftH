@@ -203,3 +203,11 @@
 - 신규: P51(NPC 수신 대체통신도 동일 지연 low·P27보강)·P52(위치의존 loophole 유효 zone 명시 low·P23보완). 둘 다 niche·프롬프트만·코드 없음.
 - 파일: iter21/seed.json(8 zones·바이킹·대체통신 notes)·log.txt(470줄)·replay.json(stage3·3인). 플러그인 .java 미변경.
 - ※먼과거×다인 조합도 안정. 누적 P1~P52. (연장 시간 능동 회귀)
+
+## iter22 — 2026-06-27 03:07 — #ADZ-7KQN (스테이지5·★친숙 5지역 아프리카·Adze)
+- 친숙 5번째 지역(아프리카) → 세계 주요 지역 커버리지 완성(라틴·슬라브·동남아·중동·아프리카). 괴담: Adze(아제) — 서아프리카 에웨족, 반딧불에 섞여 아이 피를 빠는 흡혈 정령·낮엔 이웃에 빙의.
+- ★검증 PASS: (a)P22(CL04 Fiawoo1967·CL05 Agyekum1989 실제 이형 mislead)·P23(의식 3단계 정확조건+오류결과 wrong_ingredient/name/incomplete+P35)·P34(실제 출처) (b)P46 2 critical NPC(사제·장로) 교대 (c)P32 씨족이름 2경로·재료 2경로·게이트·리트라이(유지) (d)전체 P1~P52 충돌 0건.
+- 결과: 1차 영문 오역본(CL05 mislead) 신뢰 실패(반격 SAN-3)→리트라이→2차 제단 결박+에웨어 호명+음용 안정화 3인 협력 아제데체 의식 collapse 충족 해결판정. 강등 없음(P1).
+- 신규: P53(빙의/현장 숙주의 대면 청취 vs 기기 도청 구분 low·P43보완·comms×can_impersonate 교차). 프롬프트만·코드 없음.
+- 파일: iter22/seed.json(친숙·아프리카·실제 이형)·log.txt(239줄)·replay.json(stage5·3인). 플러그인 .java 미변경.
+- ※친숙 5지역 전부 안정. 누적 P1~P53.
