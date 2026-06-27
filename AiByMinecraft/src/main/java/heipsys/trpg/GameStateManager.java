@@ -90,6 +90,9 @@ public class GameStateManager {
     /** 아이템 Phase II: 열쇠·도구 등으로 해제된 구역 zone_id 집합 (재도전·다음 방에서 초기화) */
     private final java.util.Set<String> unlockedZones = new java.util.HashSet<>();
     private final List<EventLogEntry>            eventLog   = Collections.synchronizedList(new ArrayList<>());
+    /** 등장(spawn) 여부 판별 — TRPGGameManager의 spawnedPlayers를 단일 출처로 주입. 미설정이면 전원 등장으로 간주. */
+    private java.util.function.Predicate<UUID> spawnedCheck = u -> true;
+    public void setSpawnedCheck(java.util.function.Predicate<UUID> c) { if (c != null) spawnedCheck = c; }
 
     // ──────────────────────────────────────────────────────────────
     //  세션 라이프사이클
@@ -510,14 +513,20 @@ public class GameStateManager {
         // 동료를 같은 위치(zone)와 다른 위치로 분리한다.
         // 같은 위치 동료는 협력·상호작용이 가능하므로 직전 행동까지 함께 제공한다.
         // (사망자는 제외. 정체 차용된 플레이어는 toShortLine이 GM에게 표시하므로 포함)
+        // ★아직 등장하지 않은(spawn 전) 배역은 '장면에 없는 것'으로 분리한다 — GM이 미등장 인물을 서술에 끌어들이지 않도록.
         List<PlayerData> sameZone  = new ArrayList<>();
         List<PlayerData> otherZone = new ArrayList<>();
-        players.values().stream()
-            .filter(p -> !p.uuid.equals(actor.getUniqueId()) && !p.isDead)
-            .forEach(p -> {
-                if (!actorZone.isEmpty() && actorZone.equals(p.zone)) sameZone.add(p);
-                else otherZone.add(p);
-            });
+        int notSpawnedCount = 0;
+        for (PlayerData p : players.values()) {
+            if (p.uuid.equals(actor.getUniqueId()) || p.isDead) continue;
+            if (!spawnedCheck.test(p.uuid)) { notSpawnedCount++; continue; }
+            if (!actorZone.isEmpty() && actorZone.equals(p.zone)) sameZone.add(p);
+            else otherZone.add(p);
+        }
+        if (notSpawnedCount > 0) {
+            sb.append("아직 등장하지 않은 배역 ").append(notSpawnedCount)
+              .append("명 — ★이 인물들은 아직 이야기에 등장하지 않았다. 서술에 등장·언급시키지 마라(때가 되면 시스템이 등장시킨다).\n");
+        }
 
         if (!sameZone.isEmpty()) {
             sb.append("같은 위치(협력·상호작용 가능):\n");
