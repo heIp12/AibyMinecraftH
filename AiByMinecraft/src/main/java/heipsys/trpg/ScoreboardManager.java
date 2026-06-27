@@ -30,7 +30,8 @@ public class ScoreboardManager {
 
         // 사이드바는 핵심 정보만 간략하게. 상세 정보(스탯·특성)는 '캐릭터 정보'(네더의 별) GUI에서.
         int line = 11;
-        set(obj, "§f" + pd.name,                         line--);
+        // 등장인물(캐릭터) 이름 우선 표시. 배역 미배정(생성 전)일 때만 계정 이름으로 폴백.
+        set(obj, "§f" + (pd.charName.isEmpty() ? pd.name : pd.charName), line--);
         set(obj, divider(0),                             line--);
         set(obj, hpBar(pd),                               line--);
         set(obj, sanBar(pd),                              line--);
