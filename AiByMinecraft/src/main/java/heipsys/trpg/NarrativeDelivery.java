@@ -16,8 +16,8 @@ public class NarrativeDelivery {
 
     // 한 줄과 다음 줄 사이 대기 시간 (3초)
     private static final long LINE_DELAY_TICKS = 60L;
-    // 마인크래프트 채팅 자동 줄바꿈 한계 (한글 기준 38자)
-    private static final int MAX_CHAT_CHARS = 38;
+    // 한 라인 최대 표시 길이 (한글 기준 40자) — 이를 넘으면 다음 라인으로 래핑
+    private static final int MAX_CHAT_CHARS = 40;
 
     private final Plugin plugin;
     private final Map<UUID, ArrayDeque<String>> queues  = new ConcurrentHashMap<>();
