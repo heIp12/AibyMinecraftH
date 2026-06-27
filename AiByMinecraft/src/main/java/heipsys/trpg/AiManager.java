@@ -34,8 +34,14 @@ public class AiManager {
     private final List<JsonObject>              gmContext     = new ArrayList<>();
     private final List<JsonObject>              entityContext = new ArrayList<>();
     private final Map<String, List<JsonObject>> npcContexts   = new ConcurrentHashMap<>();
-    private final Object gmLock     = new Object();
-    private final Object entityLock = new Object();
+    private final Map<String, Object>           npcCallLocks  = new ConcurrentHashMap<>(); // NPC별 호출 직렬화 락
+    private final Object gmLock     = new Object();   // gmContext 자료구조 보호 (빠른 변경 전용)
+    private final Object entityLock = new Object();   // entityContext 자료구조 보호 (빠른 변경 전용)
+    // 네트워크 호출 직렬화용 락 — 컨텍스트 락과 분리해, send()(블로킹 I/O) 중에 컨텍스트 락을
+    // 잡지 않도록 한다. 메인 스레드(injectGmSystem/clearAll 등)는 이 락을 절대 잡지 않으므로
+    // GM 호출이 네트워크에서 멈춰도 메인 스레드가 블로킹되지 않는다(서버 프리즈 방지).
+    private final Object gmCallLock     = new Object();
+    private final Object entityCallLock = new Object();
 
     private static final int GM_MAX_TOKENS   = 2048;  // 실제 응답은 200-600 수준
     private static final int ASST_MAX_TOKENS = 1024;
@@ -98,13 +104,18 @@ public class AiManager {
 
     public CompletableFuture<String> callGmAi(String systemPrompt, String userMessage) {
         return CompletableFuture.supplyAsync(() -> {
-            // 동시 행동 시 GM 컨텍스트를 직렬화 (한 번에 하나의 GM 호출만 처리)
-            synchronized (gmLock) {
-                try {
+            // 한 번에 하나의 GM 호출만 처리(직렬화)하되, 네트워크 send()는 컨텍스트 락 밖에서 수행한다.
+            // → in-flight GM 호출이 네트워크에서 멈춰도 메인 스레드의 injectGmSystem/clearAll이 막히지 않는다.
+            synchronized (gmCallLock) {
+                List<JsonObject> snapshot;
+                synchronized (gmLock) {                       // 빠른 변경만 (락 보유 시간 최소화)
                     gmContext.add(msg("user", userMessage));
-                    String result = send(gmModel(), systemPrompt, gmContext, GM_MAX_TOKENS);
+                    snapshot = new ArrayList<>(gmContext);     // 네트워크엔 스냅샷 전달(전송 중 동시 변경 안전)
+                }
+                try {
+                    String result = send(gmModel(), systemPrompt, snapshot, GM_MAX_TOKENS); // 락 미보유 — 블로킹 I/O
                     // 히스토리에는 태그 제거 버전 저장 → 다음 턴에 STATE_UPDATE JSON 재전송 방지
-                    gmContext.add(msg("assistant", stripTags(result)));
+                    synchronized (gmLock) { gmContext.add(msg("assistant", stripTags(result))); }
                     return result;
                 } catch (Exception e) {
                     return "§c[GM AI 오류] " + e.getMessage();
@@ -143,11 +154,16 @@ public class AiManager {
 
     public CompletableFuture<String> callEntityAi(String systemPrompt, String actionLog) {
         return CompletableFuture.supplyAsync(() -> {
-            synchronized (entityLock) {
-                try {
+            // GM과 동일 패턴: 네트워크 send()는 entityLock 밖에서 — 메인 스레드 clearAll/clearEntity 블로킹 방지.
+            synchronized (entityCallLock) {
+                List<JsonObject> snapshot;
+                synchronized (entityLock) {
                     entityContext.add(msg("user", "플레이어 행동 로그:\n" + actionLog));
-                    String result = send(haikuModel(), systemPrompt, entityContext, ASST_MAX_TOKENS);
-                    entityContext.add(msg("assistant", result));
+                    snapshot = new ArrayList<>(entityContext);
+                }
+                try {
+                    String result = send(haikuModel(), systemPrompt, snapshot, ASST_MAX_TOKENS);
+                    synchronized (entityLock) { entityContext.add(msg("assistant", result)); }
                     return result;
                 } catch (Exception e) {
                     return "§c[Entity AI 오류] " + e.getMessage();
@@ -162,18 +178,23 @@ public class AiManager {
 
     public CompletableFuture<String> callNpcAi(String npcId, String systemPrompt, String actionLog) {
         return CompletableFuture.supplyAsync(() -> {
-            try {
-                List<JsonObject> ctx = npcContexts.computeIfAbsent(npcId,
-                    k -> Collections.synchronizedList(new ArrayList<>()));
-                // 같은 NPC에 대한 동시 호출을 직렬화 (리스트 + send를 원자적으로)
+            List<JsonObject> ctx = npcContexts.computeIfAbsent(npcId,
+                k -> Collections.synchronizedList(new ArrayList<>()));
+            Object callLock = npcCallLocks.computeIfAbsent(npcId, k -> new Object());
+            // 같은 NPC 호출은 직렬화하되, 네트워크 send()는 ctx 락 밖에서 — 메인 스레드 snapshotNpcMemories 블로킹 방지.
+            synchronized (callLock) {
+                List<JsonObject> snapshot;
                 synchronized (ctx) {
                     ctx.add(msg("user", "플레이어 행동 로그:\n" + actionLog));
-                    String result = send(haikuModel(), systemPrompt, ctx, ASST_MAX_TOKENS);
-                    ctx.add(msg("assistant", result));
-                    return result;
+                    snapshot = new ArrayList<>(ctx);
                 }
-            } catch (Exception e) {
-                return "§c[NPC AI 오류] " + e.getMessage();
+                try {
+                    String result = send(haikuModel(), systemPrompt, snapshot, ASST_MAX_TOKENS);
+                    synchronized (ctx) { ctx.add(msg("assistant", result)); }
+                    return result;
+                } catch (Exception e) {
+                    return "§c[NPC AI 오류] " + e.getMessage();
+                }
             }
         });
     }
@@ -209,10 +230,11 @@ public class AiManager {
         synchronized (gmLock)     { gmContext.clear(); }
         synchronized (entityLock) { entityContext.clear(); }
         npcContexts.clear(); // ConcurrentHashMap — 자체 thread-safe
+        npcCallLocks.clear();
     }
 
     public void clearEntity() { synchronized (entityLock) { entityContext.clear(); } }
-    public void clearNpc(String npcId) { npcContexts.remove(npcId); }
+    public void clearNpc(String npcId) { npcContexts.remove(npcId); npcCallLocks.remove(npcId); }
 
     public int getGmContextSize() { synchronized (gmLock) { return gmContext.size(); } }
 
