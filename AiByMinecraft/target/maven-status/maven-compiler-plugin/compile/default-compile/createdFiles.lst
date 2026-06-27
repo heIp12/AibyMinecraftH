@@ -17,6 +17,7 @@ heipsys\trpg\model\EventLogEntry.class
 heipsys\trpg\model\PlayerData$TurnState.class
 heipsys\trpg\MapManager$AreaRenderer.class
 heipsys\trpg\ReplayManager$2.class
+heipsys\trpg\DialogManager$EndingSection.class
 heipsys\trpg\DialogManager.class
 heipsys\trpg\RoleManager.class
 heipsys\trpg\ReplayManager$1.class
@@ -30,6 +31,7 @@ heipsys\trpg\CharacterGenerator$JobTier.class
 heipsys\trpg\model\TraitData.class
 heipsys\trpg\TraitManager$StageEndChoices.class
 heipsys\trpg\MapManager$OverviewRenderer.class
+heipsys\trpg\GdamGenerator$FamiliarEntity.class
 heipsys\trpg\cmd\CMDTrpg.class
 heipsys\trpg\SystemTraitRegistry$Preset.class
 heipsys\trpg\ReplayManager.class
