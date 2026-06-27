@@ -286,6 +286,7 @@ public class SystemTraitRegistry {
     /** effectType에 맞춰 능/수동을 강제하고 누락된 파라미터에 기본값을 채운다 */
     public static void applyDefaults(TraitData td) {
         if (td == null) return;
+        enforceStatBudget(td); // B4: 등급별 스텟 예산 적용(순수 스텟 특성은 아래 early-return하므로 여기서 먼저)
         Effect e = Effect.byKey(td.effectType);
         if (e == null) { td.effectType = ""; return; }
         td.active = e.active;
@@ -390,6 +391,33 @@ public class SystemTraitRegistry {
         int v = td.param(key, lo);
         td.effectParams.put(key, Math.max(lo, Math.min(hi, v)));
     }
+
+    /**
+     * B4 백스톱: 양의 스텟 보정 총합이 등급 예산(D=0/C=1/B=3/A=5/S=10)+음수 헤드룸을 넘으면 비례 축소.
+     * hp_max/san_max는 100점 척도라 0.5 가중. (기계효과와의 합산까지 강제하진 않는 '스텟 상한' 안전장치.)
+     */
+    private static void enforceStatBudget(TraitData td) {
+        int budget = switch (td.grade == null ? "" : td.grade.trim().toUpperCase()) {
+            case "S" -> 10; case "A" -> 5; case "B" -> 3; case "C" -> 1; default -> 0;
+        };
+        double pos = Math.max(0, td.str_add) + Math.max(0, td.cha_add)
+                   + Math.max(0, td.luk_add) + Math.max(0, td.spr_add)
+                   + Math.max(0, td.hp_max_add) * 0.5 + Math.max(0, td.san_max_add) * 0.5;
+        double neg = Math.max(0, -td.str_add) + Math.max(0, -td.cha_add)
+                   + Math.max(0, -td.luk_add) + Math.max(0, -td.spr_add)
+                   + Math.max(0, -td.hp_max_add) * 0.5 + Math.max(0, -td.san_max_add) * 0.5;
+        double cap = budget + neg;            // 음수 보정만큼 양의 예산 추가(상쇄 규칙)
+        if (pos <= cap || pos <= 0) return;   // 예산 내 → 그대로
+        double s = cap / pos;
+        td.str_add     = scaleP(td.str_add, s);
+        td.cha_add     = scaleP(td.cha_add, s);
+        td.luk_add     = scaleP(td.luk_add, s);
+        td.spr_add     = scaleP(td.spr_add, s);
+        td.hp_max_add  = scaleP(td.hp_max_add, s);
+        td.san_max_add = scaleP(td.san_max_add, s);
+    }
+    /** 양수만 비례 축소(내림), 음수·0은 유지. */
+    private static int scaleP(int v, double s) { return v > 0 ? (int) Math.floor(v * s) : v; }
 
     public static boolean isSystemEffect(TraitData td) {
         return td != null && td.hasSystemEffect() && Effect.byKey(td.effectType) != null;

@@ -128,6 +128,8 @@ public class ReplayManager {
         o.addProperty("baseLuk", pd.baseLuk); o.addProperty("baseSpr", pd.baseSpr);
         o.add("traits",      gson.toJsonTree(pd.traits));
         o.add("heldItemIds", gson.toJsonTree(pd.heldItemIds));
+        o.add("itemStates",  gson.toJsonTree(pd.itemStates));  // 아이템 Phase II 상태(재생 충실도)
+        o.addProperty("contribution", pd.contribution);         // 기여도(능력 Phase C)
         return o;
     }
 
