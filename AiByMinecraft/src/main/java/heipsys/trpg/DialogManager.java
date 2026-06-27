@@ -248,6 +248,45 @@ public class DialogManager {
         player.showDialog(dialog);
     }
 
+    /** 친숙한 친구들 모드 — 괴담 범위(필터) 8종 선택. onPick에 필터 키 전달. */
+    public void showFamiliarFilter(Player player, java.util.function.Consumer<String> onPick) {
+        String[][] opts = {
+            {"common", "흔한 괴담",     "누구나 아는 가장 유명한 괴담"},
+            {"heard",  "들어는 본 괴담", "한 번쯤 들어봤을 중간 인지도"},
+            {"minor",  "마이너한 괴담",  "잘 안 알려진 숨은 괴담"},
+            {"urban",  "도시 전설만",    "실제 도시전설·민간전승만 (SCP 제외)"},
+            {"scp",    "SCP만",         "SCP 재단 항목만"},
+            {"korean", "한국 괴담만",    "한국 전설·괴담만"},
+            {"rule",   "규칙 괴담만",    "규칙을 어기면 화를 입는 류"},
+            {"random", "모두 무작위",    "위 전부를 섞어 무작위"}
+        };
+        List<ActionButton> buttons = new ArrayList<>();
+        for (String[] o : opts) {
+            final String key = o[0];
+            buttons.add(ActionButton.create(
+                Component.text(o[1], NamedTextColor.LIGHT_PURPLE),
+                Component.text(o[2]),
+                150,
+                DialogAction.customClick((v, a) -> onPick.accept(key),
+                    ClickCallback.Options.builder().uses(1).build())));
+        }
+        ActionButton cancel = ActionButton.create(
+            Component.text("취소", TextColor.color(0xAAAAAA)),
+            Component.text("세션을 시작하지 않습니다."), 100, null);
+        Component body = Component.text()
+            .append(Component.text("친숙한 친구들 — 어떤 괴담을 부를까요?", NamedTextColor.WHITE))
+            .appendNewline()
+            .append(Component.text("선택한 범위 안에서 괴담이 생성됩니다.", NamedTextColor.GRAY))
+            .build();
+        Dialog dialog = Dialog.create(b -> b.empty()
+            .base(DialogBase.builder(Component.text("친숙한 친구들  —  괴담 범위 선택"))
+                .body(List.of(DialogBody.plainMessage(body)))
+                .build())
+            .type(DialogType.multiAction(buttons, cancel, 2))
+        );
+        player.showDialog(dialog);
+    }
+
     // ──────────────────────────────────────────────────────────────
     //  캐릭터 정보 GUI (게임 중 열람 — 기본/배역 분리, 능동 특성 사용)
     // ──────────────────────────────────────────────────────────────
