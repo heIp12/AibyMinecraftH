@@ -136,9 +136,10 @@ public class SystemTraitRegistry {
 
         sb.append("## ★ 등급 = '스텟 + 패시브 + 발동형' 3요소 파워의 총합 ★\n");
         sb.append("한 특성의 등급은 아래 세 종류 파워의 '합계'다. 한 종류에 몰아도, 섞어도 된다.\n");
-        sb.append(" ① 스텟 파워 — 능력치 상승. 양의 보정 총합 예산: D=0  C=1  B=3  A=5  S=10.\n");
+        sb.append(" ① 스텟 파워 — 능력치 상승. 양의 보정 총합 예산: F=-2  E=-1  D=0  C=1  B=3  A=5  S=10.\n");
         sb.append("     · 다른 스탯에 -를 주면 그만큼 +를 더(순합 기준). 순수 -결점형도 가능(약체·개성).\n");
-        sb.append("     · hp_max/san_max는 100점 척도라 한 점 영향이 작아 더 큰 수치 허용.\n");
+        sb.append("     · hp_max/san_max(체력·정신력 최대치)도 다른 스텟과 ★동일하게 1점=1로 계산(플레이어 표시는 %지만 예산은 동일).\n");
+        sb.append("     · E/F등급(순값 -1/-2): 단점·제약이 많은 고위험 특성. 단 큰 단점으로 상쇄해 '좋은 효과 1개'를 달 수 있다.\n");
         sb.append(" ② 패시브 파워 — 상시/조건부 자동 효과. active=false. effect_type: passive_gm·passive_trigger·protect·scenario_insight.\n");
         sb.append(" ③ 발동형 파워 — 플레이어가 직접 발동(버튼). active=true. effect_type: ai_query·area_scan·instant_clear·guaranteed·mobility 등.\n");
         sb.append("★ 등급 = ①+②+③ 합산. ★ 기계효과(②/③)는 한 특성에 '하나만'(패시브 또는 발동형 택1) + 거기에 스텟을 더하는 식.\n");
@@ -204,9 +205,12 @@ public class SystemTraitRegistry {
         sb.append("  · luck_roll(scale<=4) — 약한 운 보정\n");
         sb.append("  · link_ally(depth=1) — 생존 여부만 확인\n\n");
 
-        sb.append("[D~F등급] 효과보다 제약·대가가 크거나 극히 상황 한정. 개성 위주.\n");
+        sb.append("[D등급] 효과보다 제약·대가가 크거나 극히 상황 한정. 개성 위주.\n");
         sb.append("  · sacrifice(scale=1, cost>=15) — 높은 대가, 작은 혜택\n");
-        sb.append("  · effect_type=\"\" (일반 특성) 에 약한 버프 서술\n\n");
+        sb.append("  · effect_type=\"\" (일반 특성) 에 약한 버프 서술\n");
+        sb.append("[E·F등급] 디버프·고제약 (순값 E≈-1, F≈-2). 단점·제약이 핵심이되 그 대가로 '쓸 만한 효과 1개'를 달 수 있다(고위험 트레이드오프).\n");
+        sb.append("  · 예) F '저주받은 눈'(area_scan은 강하나 발동마다 san 크게 감소) / E '폭주'(힘 크게 + 매·영 크게 감소)\n");
+        sb.append("  · 디버프만 있는 순수 결점형(예: 만성 부상 = hp_max 큰 -)도 가능. ★좋은 효과를 달면 반드시 그보다 큰 단점·제약으로 상쇄.\n\n");
 
         sb.append("★ 통찰 계열 등급 예시 (같은 개념, 다른 effect_type과 등급):\n");
         sb.append("  C: passive_gm, effect=\"주변의 눈에 띄는 사소한 변화를 자연스럽게 알아챈다\" → '관찰안'\n");
@@ -264,8 +268,9 @@ public class SystemTraitRegistry {
         sb.append("  ① 메인 분류를 무작위로: 스텟 / 패시브 / 발동형 중 하나.\n");
         sb.append("  ② 단일/복합: 단일=메인 한 종류만. 복합=메인+보조(예: 패시브+스텟).\n");
         sb.append("  ③ 만능/특화: 만능=넓고 두루(여러 대상·여러 스탯). 특화=한 곳에 집중(좁고 강함).\n");
-        sb.append("  ④ 최종 스텟 설계: 등급 예산(D=0·C=1·B=3·A=5·S=10) 안에서 ①~③ 선택에 맞게 배분.\n");
-        sb.append("  같은 A급 예시: [스텟 특화형]'강력한 힘' 힘+5  /  [패시브·스텟 복합 만능형]'농구선수' 힘+2 & (패시브)던지기를 더 잘한다  /  [스텟 단일 만능형]'다재무능' 모든 스탯 +1\n\n");
+        sb.append("  ④ 최종 스텟 설계: 등급 예산(F=-2·E=-1·D=0·C=1·B=3·A=5·S=10) 안에서 ①~③ 선택에 맞게 배분.\n");
+        sb.append("  같은 A급 예시: [스텟 특화형]'강력한 힘' 힘+5  /  [패시브·스텟 복합 만능형]'농구선수' 힘+2 & (패시브)던지기를 더 잘한다  /  [스텟 단일 만능형]'다재무능' 모든 스탯 +1\n");
+        sb.append("  ★ ①~③ 분류·단일복합·만능특화·등급은 모두 '설계용 내부 개념'이다 — 특성 이름·설명·effect에 이 분류 용어를 ★절대 노출하지 마라(플레이어는 모른다). 이름은 '강철 주먹'처럼 자연스럽게 짓는다.\n\n");
 
         sb.append("## 규칙\n");
         sb.append("- 능동 효과는 active=true, 패시브(scenario_insight/passive_gm/passive_trigger/protect)는 active=false.\n");
@@ -395,18 +400,19 @@ public class SystemTraitRegistry {
 
     /**
      * B4 백스톱: 양의 스텟 보정 총합이 등급 예산(D=0/C=1/B=3/A=5/S=10)+음수 헤드룸을 넘으면 비례 축소.
-     * hp_max/san_max는 100점 척도라 0.5 가중. (기계효과와의 합산까지 강제하진 않는 '스텟 상한' 안전장치.)
+     * hp_max/san_max(체력·정신력 최대치)도 다른 스텟과 동일 가중(플레이어 표시는 %지만 예산은 동일).
      */
     private static void enforceStatBudget(TraitData td) {
         int budget = switch (td.grade == null ? "" : td.grade.trim().toUpperCase()) {
-            case "S" -> 10; case "A" -> 5; case "B" -> 3; case "C" -> 1; default -> 0;
+            case "S" -> 10; case "A" -> 5; case "B" -> 3; case "C" -> 1;
+            case "E" -> -1; case "F" -> -2; default -> 0; // E/F: 디버프·제약(순값 음수)
         };
         double pos = Math.max(0, td.str_add) + Math.max(0, td.cha_add)
                    + Math.max(0, td.luk_add) + Math.max(0, td.spr_add)
-                   + Math.max(0, td.hp_max_add) * 0.5 + Math.max(0, td.san_max_add) * 0.5;
+                   + Math.max(0, td.hp_max_add) + Math.max(0, td.san_max_add);
         double neg = Math.max(0, -td.str_add) + Math.max(0, -td.cha_add)
                    + Math.max(0, -td.luk_add) + Math.max(0, -td.spr_add)
-                   + Math.max(0, -td.hp_max_add) * 0.5 + Math.max(0, -td.san_max_add) * 0.5;
+                   + Math.max(0, -td.hp_max_add) + Math.max(0, -td.san_max_add);
         double cap = budget + neg;            // 음수 보정만큼 양의 예산 추가(상쇄 규칙)
         if (pos <= cap || pos <= 0) return;   // 예산 내 → 그대로
         double s = cap / pos;

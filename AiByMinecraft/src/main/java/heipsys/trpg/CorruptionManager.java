@@ -34,7 +34,7 @@ public class CorruptionManager {
     /** 클리어 등급에 오염도 보정 적용 후 최종 보상 등급 반환 */
     public String getRewardGrade(String clearGrade) {
         int boost = state.getCorruption().level;
-        String[] grades = {"F","D","C","B","A","S"};
+        String[] grades = {"F","E","D","C","B","A","S"};
         int idx = gradeIdx(clearGrade) + boost;
         idx = Math.min(idx, grades.length - 1);
         return grades[idx];
@@ -107,11 +107,12 @@ public class CorruptionManager {
 
     private int gradeIdx(String grade) {
         return switch (grade) {
-            case "S" -> 5;
-            case "A" -> 4;
-            case "B" -> 3;
-            case "C" -> 2;
-            case "D" -> 1;
+            case "S" -> 6;
+            case "A" -> 5;
+            case "B" -> 4;
+            case "C" -> 3;
+            case "D" -> 2;
+            case "E" -> 1;
             default  -> 0;
         };
     }

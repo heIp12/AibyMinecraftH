@@ -6,7 +6,7 @@ import java.util.Map;
 public class TraitData {
     public String  id;
     public String  name;
-    public String  grade;        // S / A / B / C / D / F
+    public String  grade;        // S / A / B / C / D / E / F  (E·F=디버프·고제약 등급)
     public String  description;
     public boolean active;       // true = 능동적 발동 (버튼 필요)
     public String  effect;       // GM 참고용 효과 설명
