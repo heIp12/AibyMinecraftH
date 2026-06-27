@@ -142,6 +142,7 @@ public class SystemTraitRegistry {
         sb.append(" ② 패시브 파워 — 상시/조건부 자동 효과. active=false. effect_type: passive_gm·passive_trigger·protect·scenario_insight.\n");
         sb.append(" ③ 발동형 파워 — 플레이어가 직접 발동(버튼). active=true. effect_type: ai_query·area_scan·instant_clear·guaranteed·mobility 등.\n");
         sb.append("★ 등급 = ①+②+③ 합산. ★ 기계효과(②/③)는 한 특성에 '하나만'(패시브 또는 발동형 택1) + 거기에 스텟을 더하는 식.\n");
+        sb.append("★ 그 등급을 '단독으로 꽉 채우는' 강한 기계효과(예: instant_clear·revive_ally·fate·group_rewind·choice_action(4)·주인공급 passive_gm)를 쓰면 스텟은 0~1만 준다(합이 등급을 넘지 않게). 스텟을 크게 주려면 기계효과를 그만큼 약하게.\n");
         sb.append("   예) 순수 스텟 A급: stat 합 5, 기계효과 없음.\n");
         sb.append("   예) 순수 발동형 S급: instant_clear 하나, stat 0.\n");
         sb.append("   예) 혼합 B급: 약한 패시브(육감) + stat +1 → 합쳐서 B.\n");
