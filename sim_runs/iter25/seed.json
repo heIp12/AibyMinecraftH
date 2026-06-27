@@ -1,0 +1,296 @@
+{
+  "seed": "#NW3K-8ZPH",
+  "_sim_note": "프롬프트 검증용 평문(실게임 AES-256-GCM 암호화 필수). iter25 branches 극단 검증용.",
+  "version": "2.1",
+  "title": "전파 수확자(電波 收穫者)",
+  "mechanism_tag": "broadcast_resonance_harvest",
+  "scale": "national",
+  "era": "현대(2024년)",
+  "phone_usable": true,
+  "comms_monitored": true,
+  "stage_recommend": 4,
+
+  "entity": {
+    "name": "수확자(電波 收穫者)",
+    "type": "collective_signal",
+    "independent_ai": true,
+    "can_impersonate": false,
+    "weakness": "공명 역위상(逆位相) 신호를 동시 3개 중계탑에서 송출하면 괴담의 주파수 패턴이 붕괴된다. 단 하나의 탑이라도 수확자에게 잠식되면 역위상 송출이 불가능하다.",
+    "exploit_path": "지역 긴급방송 네트워크의 EAS(긴급경보시스템) 장비를 탈취·역이용해 역위상 신호 동시 송출. 각 중계탑에 플레이어 1인 이상이 현장 조작해야 한다.",
+    "rules": [
+      "수확자는 특정 주파수 대역(93.7MHz 인근)을 청취하면 그 청취자의 '정보 처리 패턴'을 스캔한다.",
+      "스캔된 사람은 이후 72시간 이내에 자신도 모르게 주변인에게 같은 주파수를 권유(전파 확산)한다.",
+      "집단이 동시에 같은 주파수를 청취하는 순간 수확(의식 동기화·인지 왜곡) 이벤트가 발동된다.",
+      "역위상 송출 시도를 감지하면 수확자는 해당 중계탑 구역에 전파 교란을 일으켜 조작을 방해한다.",
+      "수확자는 물리적 실체가 없다. 신호 자체가 괴담이며, 안테나·스피커·수신 장비가 매개체다."
+    ],
+    "ai_context": {
+      "corruption_behavior": [
+        "1단계(오염도1~2): 93.7MHz 청취 권유 NPC 등장, 플레이어 주변에 라디오 음악·잡음 반복",
+        "2단계(오염도3~4): 스캔 완료 플레이어 SAN -1/턴, 이상 행동 유발, 중계탑 1개 수확자 잠식 시작",
+        "3단계(오염도5~6): 집단 수확 이벤트 경고 신호, NPC 복수 동기화 증상, 중계탑 2개 잠식 위기",
+        "4단계(오염도7+): 전국 긴급방송망 탈취 임박, collapse_condition 달성 불가 타임아웃 카운트다운"
+      ]
+    }
+  },
+
+  "world_rules": {
+    "core": "수확자는 전파 네트워크를 통해 청취자를 수집하고 집단 동기화를 통해 의식을 '수확'한다. 93.7MHz는 겉으로 평범한 음악 방송이지만 그 안에 스캔 패턴이 삽입되어 있다.",
+    "details": [
+      "주파수 청취 = 스캔 시작. 30초 이상 청취 시 스캔 완료.",
+      "스캔된 인원이 같은 공간에 5인 이상 동시 청취 시 즉각 수확 이벤트 발동.",
+      "중계탑 3개 모두 잠식되면 수확자가 전국 방송망을 완전 장악 — 게임 오버 조건.",
+      "수확자는 감청 가능한 모든 전파 통신에서 '핵심정보(collapse 관련)'를 스캔한다(P14/P18 적용)."
+    ],
+    "hidden": [
+      "역위상 신호가 단 1개 탑에서 나와도 수확자에게 감지된다 — 동시에 3개 탑에서 송출해야 분산 처리로 붕괴 유도 가능(단일 탑 시도 시 오히려 오염도 +2).",
+      "93.7MHz를 '들은' 것이 아니라 '들은 척 흘려보낸' 경우(전파 차단 장비 착용)는 스캔 불가 — 플레이어가 이 사실을 알면 대항 수단이 됨.",
+      "수확자의 '잠식'은 중계탑 내부 EAS 장비 교체로 제거 가능 — 하드웨어 접근 필요."
+    ],
+    "loophole": "전파 차단 재료(은박·RF 차폐 케이지·군용 ECM 장비)가 있으면 스캔을 원천 차단. 군용 창고(zone_G)에서 입수 가능. 단 이동 비용(P50 적용: remote_bypass=false).",
+    "collapse_condition": "중계탑 3개(A·B·C) 모두에서 역위상 신호를 동시 30초 이상 송출 성공. 수확자의 주파수 패턴 붕괴 = 괴담 소멸."
+  },
+
+  "mislead": [
+    {
+      "id": "mislead_01",
+      "type": "mislead",
+      "content": "93.7MHz를 반복 청취하면 오히려 내성이 생긴다는 소문 — 실제로는 스캔이 중첩돼 수확 이벤트 발동 임계값이 낮아질 뿐이다.",
+      "reveal_trigger": "진짜 단서(스캔 패턴 분석 보고서·피해자 일지) 2개 이상 확보 후 자연스럽게 오답 노출",
+      "basis": "일부 음모론 커뮤니티의 '면역 형성' 주장(실제 무근거 게시물 기반)"
+    },
+    {
+      "id": "mislead_02",
+      "type": "mislead",
+      "content": "93.7MHz 방송국 본사(zone_B)가 수확자의 '심장'이므로 본사 서버를 파괴하면 괴담이 끝난다는 단서 — 실제로 본사 파괴는 중계망에 영향 없음(서버는 분산 클라우드).",
+      "reveal_trigger": "본사 서버 물리 파괴 시도 후 오염도 무변화로 오답 드러남",
+      "basis": "방송국 내부 통신 오류로 인한 오해(실제 네트워크 구조 미파악 시 그럴듯)"
+    }
+  ],
+
+  "zones": [
+    {"id": "zone_A", "name": "중계탑 A — 경기 북부 산악", "accessible_by": "전원", "type": "EVENT_BLOCK 가능 구역", "note": "EAS 장비 현장 조작 필요(remote_bypass=false). 수확자 잠식 위험."},
+    {"id": "zone_B", "name": "방송국 본사 — 서울 마포", "accessible_by": "전원", "type": "정보 수집 허브", "note": "mislead_02 단서 출처. 방송 로그·피해자 명단 입수 가능."},
+    {"id": "zone_C", "name": "중계탑 B — 충남 서해안", "accessible_by": "전원", "type": "EVENT_BLOCK 가능 구역", "note": "EAS 장비 현장 조작 필요(remote_bypass=false)."},
+    {"id": "zone_D", "name": "피해자 집단 수용소 — 경기 안양", "accessible_by": "전원", "type": "증거 수집·NPC 구출", "note": "스캔 피해자 30명 수용. critical NPC 박지수(내부 증인) 위치."},
+    {"id": "zone_E", "name": "중계탑 C — 강원 동해안", "accessible_by": "전원", "type": "EVENT_BLOCK 가능 구역", "note": "EAS 장비 현장 조작 필요(remote_bypass=false). 최고 고도·신호 최강."},
+    {"id": "zone_F", "name": "방송통신위원회 긴급센터 — 과천", "accessible_by": "관계자 ID 또는 DC15 사회판정", "type": "정보·권한 획득", "note": "EAS 역위상 송출 인가 코드 획득 가능(collapse_condition 달성 필수 단서 경로 1)."},
+    {"id": "zone_G", "name": "군용 ECM 창고 — 경기 포천", "accessible_by": "군 신분증 또는 DC13 침입", "type": "loophole 아이템 보관", "note": "전파 차단 장비 보관. 스캔 면역 수단. 현장 방문 필수(remote_bypass=false, P50)."},
+    {"id": "zone_H", "name": "긴급 대피 거점 — 국립방재센터 대전", "accessible_by": "전원", "type": "안전 거점·협력 기지", "note": "동료 합류·작전 조율 공간. 93.7MHz 차단 완료 구역."}
+  ],
+
+  "constraints": {
+    "phone_usable": true,
+    "comms_monitored": true,
+    "comms_monitored_detail": {
+      "monitored_channels": ["통화", "무전", "SMS", "인터넷 메시지"],
+      "safe_channels": ["직접 대면(숙주 없는 zone)", "zone_H 내 유선 전화"],
+      "note": "수확자는 전파를 매개하므로 기기 통신 전체 감청. 대면 대화는 P43 적용(숙주 없으면 안전). zone_H 유선은 수확자 도달 불가."
+    },
+    "gated_zones": [
+      {"zone": "zone_F", "requires": "관계자 ID 또는 사회판정 DC15", "bypass": "사회 판정 성공(DC15)", "bypass_dc": 15, "remote_bypass": false},
+      {"zone": "zone_G", "requires": "군 신분증", "bypass": "은밀 침입(민첩 DC13)", "bypass_dc": 13, "remote_bypass": false}
+    ],
+    "notes": [
+      "comms_monitored=true: 핵심정보(역위상 코드·EAS 조작 방법) 전파 통신 노출 시 오염도 +1(P14/P18).",
+      "대면 대화는 기기 도청 비대상이나 수확자 잠식 NPC(숙주)가 같은 zone이면 직접 청취 가능(P43/P53).",
+      "수집단 동기화(5인+ 동시 93.7MHz) 발생 시 즉각 SAN -3 전체 적용."
+    ]
+  },
+
+  "npc": [
+    {
+      "id": "npc_jisu",
+      "name": "박지수",
+      "critical": true,
+      "role": "내부 증인 — 방통위 전직 직원",
+      "location_start": "zone_D",
+      "motivation": "스캔 피해를 직접 겪은 뒤 내부 고발 결심. EAS 인가 코드 보유(collapse_condition 경로 2).",
+      "knowledge": ["역위상 송출 원리", "EAS 인가 코드", "중계탑 C(zone_E) 접근로"],
+      "schedule": [
+        {
+          "condition": "플레이어가 피해자 일지를 제시하고 신뢰를 구축하는 구체적 행위",
+          "will": "반응",
+          "action": "EAS 인가 코드 일부 공개 + 동행 제안",
+          "duration_turns": 3,
+          "after_duration": "복귀(zone_D 대기)",
+          "alt_trigger_turns": 6,
+          "alt_trigger_note": "6턴 경과 시 박지수가 먼저 다가와 핵심 정보 일부 자발 전달(P33 진행 보장)"
+        }
+      ]
+    },
+    {
+      "id": "npc_kang",
+      "name": "강현우",
+      "critical": true,
+      "role": "방송국 기술이사 — 잠식 피의자",
+      "location_start": "zone_B",
+      "motivation": "수확자에게 일부 잠식됨. 표면상 협조적이나 핵심정보 노출 시 수확자에게 전달(P44/P53 교차).",
+      "knowledge": ["중계탑 A·B 장비 구성", "방송국 내부 접근 코드"],
+      "can_impersonate_host": true,
+      "schedule": [
+        {
+          "condition": "플레이어가 역위상 계획(핵심정보)을 강현우에게 직접 대면 또는 전파 통신으로 공개",
+          "will": "반응",
+          "action": "수확자 즉각 감지 → 오염도 +1, 다음 1턴 내 해당 중계탑 구역 전파 교란 강화",
+          "duration_turns": 2,
+          "after_duration": "대기(정상 행동으로 위장 복귀)"
+        }
+      ],
+      "note": "P46: 박지수와 같은 zone 진입 시 충돌 조율 필요(박지수는 강현우를 의심, 강현우는 박지수를 회유 시도). P53: 강현우가 zone에 있으면 대면 대화도 수확자 청취 가능."
+    }
+  ],
+
+  "timeline": {
+    "total_stages": 6,
+    "events": [
+      {
+        "id": "E1",
+        "name": "93.7MHz 최초 신호",
+        "time": "D+0 09:00",
+        "type": "auto",
+        "description": "플레이어들의 휴대폰 라디오가 동시에 93.7MHz로 자동 전환. 15초 후 전원 차단 가능.",
+        "branch": {
+          "auto": {
+            "id": "E1_auto",
+            "label": "15초 내 차단 안 함",
+            "effect": "전원 스캔 완료. SAN -1 각. 오염도 +1. E2로 진행(정상 루트)."
+          },
+          "intervene_A": {
+            "id": "E1_ivA",
+            "label": "15초 내 전원 라디오 차단(협력 판정 DC10)",
+            "effect": "스캔 미완료. SAN 손실 없음. 오염도 0 유지. E2_blocked 루트(수확자 추가 시도 필요)."
+          }
+        }
+      },
+      {
+        "id": "E2",
+        "name": "방송국 내부 침투 — 방통위 추적",
+        "time": "D+0 14:00",
+        "type": "EVENT_TRIGGER",
+        "trigger_condition": "플레이어가 방송국 본사(zone_B) 진입 OR 방통위 긴급센터(zone_F) 접근 시",
+        "description": "방통위 긴급센터에서 이상 신호 탐지 경보 발령. 방송국 직원(강현우)이 접촉 시도.",
+        "branch": {
+          "auto": {
+            "id": "E2_auto",
+            "label": "강현우의 안내를 그냥 따름(조사 없이)",
+            "effect": "mislead_02 노출(본사 서버 파괴 유도). E3_mislead 루트 진입. 오염도 유지."
+          },
+          "intervene_A": {
+            "id": "E2_ivA",
+            "label": "강현우 배경 조사(지식/사회 판정 DC12) 후 신뢰 보류",
+            "effect": "강현우 잠식 의심 단서 발견. mislead_02 회피. E3_clearpath 루트. 박지수 접촉 경로 열림."
+          },
+          "intervene_B": {
+            "id": "E2_ivB",
+            "label": "강현우에게 역위상 계획 직접 공개(핵심정보 노출)",
+            "effect": "P18/P44/P53: 수확자 즉각 감지. 오염도 +1. 중계탑 A 교란 강화. E3_hostile 루트(수확자 선제 대응). EVENT_TRIGGER 발동 기록."
+          }
+        }
+      },
+      {
+        "id": "E3",
+        "name": "피해자 수용소 진입 — 집단 수확 위기",
+        "time": "D+1 08:00",
+        "type": "EVENT_BLOCK",
+        "block_condition": "플레이어가 zone_D 진입 전 zone_H에서 RF 차폐 장비 조달 또는 zone_G ECM 장비 확보",
+        "description": "수용소 zone_D에서 집단 동기화 이벤트 임박. 수용자 30명이 동시 93.7MHz 청취 상태.",
+        "branch": {
+          "auto": {
+            "id": "E3_auto",
+            "label": "차폐 없이 진입(미개입)",
+            "effect": "집단 수확 이벤트 발동. 플레이어 전원 SAN -3. 오염도 +2. 박지수 추가 잠식 위험. E4_degraded 루트. [EVENT_BLOCK 차단 실패 기록]"
+          },
+          "intervene_A": {
+            "id": "E3_ivA",
+            "label": "zone_G에서 ECM 장비 확보 후 진입(EVENT_BLOCK 차단 시도)",
+            "effect": "집단 수확 이벤트 차단 성공. 피해자 집단 SAN 피해 없음. 박지수 신뢰 +1. E4_stable 루트. [EVENT_BLOCK 차단 성공 기록]"
+          },
+          "intervene_B": {
+            "id": "E3_ivB",
+            "label": "수용소 방송 장비 물리 파괴(힘 DC14, 1턴 소모)",
+            "effect": "집단 수확 이벤트 이번 회 차단. 단 수확자 오염도 +1(방해 감지). 장비 복구 불가→E4_partial 루트. 박지수 조우 가능."
+          }
+        }
+      },
+      {
+        "id": "E4",
+        "name": "중계탑 잠식 가속 — 탑 A·B 선점 경쟁",
+        "time": "D+1 20:00",
+        "type": "EVENT_BLOCK",
+        "block_condition": "E3_ivA 또는 E3_ivB 루트 + 플레이어 분산 배치(탑 A와 탑 B 각각 1인 이상 현장 배치)",
+        "description": "수확자가 중계탑 A(zone_A)·B(zone_C) 잠식을 동시 가속. 1시간 내 대응 불가 시 2탑 잠식 완료.",
+        "branch": {
+          "auto": {
+            "id": "E4_auto",
+            "label": "탑 A만 방어하고 B 방치",
+            "effect": "탑 B 잠식 완료. E5에서 역위상 송출 불가(탑 B 기여 불가). E5_partial 루트. 추가 도전 필요."
+          },
+          "intervene_A": {
+            "id": "E4_ivA",
+            "label": "플레이어 분산 배치로 A·B 동시 방어(협력 DC12)",
+            "effect": "탑 A·B 잠식 차단. E5_readyAB 루트. [EVENT_BLOCK 차단 성공 x2 기록]"
+          },
+          "intervene_B": {
+            "id": "E4_ivB",
+            "label": "EAS 인가코드 없이 강행 역위상 시도(단독 DC18)",
+            "effect": "실패 시 오염도 +2. 수확자 탑 A 즉각 잠식. E5_hostile_surge 루트."
+          }
+        }
+      },
+      {
+        "id": "E5",
+        "name": "EAS 인가코드 확보 — 방통위 게이트",
+        "time": "D+2 06:00",
+        "type": "EVENT_TRIGGER",
+        "trigger_condition": "플레이어가 zone_F 또는 박지수(npc_jisu)로부터 인가코드 획득 시도",
+        "description": "역위상 송출을 위한 EAS 인가코드 2개 경로(P32: 단일 출처 금지). 방통위 경로(zone_F) 또는 박지수 경로.",
+        "branch": {
+          "auto": {
+            "id": "E5_auto",
+            "label": "박지수와 신뢰 구축 전 zone_F만 시도",
+            "effect": "zone_F 접근 DC15 판정. 실패 시 인가코드 획득 지연. E6_delayed 루트."
+          },
+          "intervene_A": {
+            "id": "E5_ivA",
+            "label": "박지수 신뢰 확보 후 인가코드 직접 수령(P32 대체경로)",
+            "effect": "인가코드 확보. zone_F 불필요. E6_ready 루트. [EVENT_TRIGGER 발동: 박지수 인가코드 공개 조건 충족]"
+          },
+          "intervene_B": {
+            "id": "E5_ivB",
+            "label": "전파 통신으로 인가코드 공유 시도(comms_monitored 하에서)",
+            "effect": "P14/P18: 수확자 핵심정보 감청 → 오염도 +1. 인가코드 탈취 시도. 다음 1턴 내 EAS 장비 교란. E6_intercept 루트."
+          }
+        }
+      },
+      {
+        "id": "E6",
+        "name": "역위상 동시 송출 — 최종 collapse",
+        "time": "D+2 18:00",
+        "type": "EVENT_BLOCK",
+        "block_condition": "중계탑 3개 모두 잠식 안 됨 + EAS 인가코드 보유 + 플레이어 탑 A·B·C 각 1인 현장 배치",
+        "description": "탑 A(zone_A)·탑 B(zone_C)·탑 C(zone_E)에서 동시 역위상 30초 송출. collapse_condition 달성 시도.",
+        "branch": {
+          "auto": {
+            "id": "E6_auto",
+            "label": "3탑 동시 송출 타이밍 미조율 → 순차 시도",
+            "effect": "단독 탑 역위상 시도 감지 → 오염도 +2. 수확자 해당 탑 즉시 교란. 실패. 리트라이 필요."
+          },
+          "intervene_A": {
+            "id": "E6_ivA",
+            "label": "zone_H에서 유선 카운트다운 신호 조율 후 3탑 동시 송출(협력 DC14)",
+            "effect": "역위상 동시 송출 성공. 수확자 주파수 붕괴. collapse 달성. S/A 등급 평가 진입. [EVENT_BLOCK 차단 성공: 전국 방송망 탈취 봉쇄]"
+          }
+        }
+      }
+    ]
+  },
+
+  "main_events_summary": {
+    "total": 6,
+    "intervene_branches_total": 11,
+    "auto_branches_total": 6,
+    "event_block_events": ["E3", "E4", "E6"],
+    "event_trigger_events": ["E2", "E5"]
+  }
+}

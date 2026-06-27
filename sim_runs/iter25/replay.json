@@ -1,0 +1,92 @@
+{
+  "version": 1,
+  "stage": 4,
+  "seed": "#NW3K-8ZPH",
+  "created": "2026-06-27",
+  "scenario_title": "전파 수확자(電波 收穫者)",
+  "mechanism_tag": "broadcast_resonance_harvest",
+  "scale": "national",
+  "era": "현대(2024년)",
+  "attempts": 2,
+  "final_result": "collapse_achieved",
+  "players": [
+    {
+      "name": "오세훈",
+      "job": "전파공학자",
+      "start_power": "HIGH",
+      "hp_base": 14,
+      "san_base": 13,
+      "traits": ["주파수 감지", "전자 차폐"],
+      "traits_used": {"주파수 감지": 2, "전자 차폐": 2},
+      "final_grade": "S",
+      "reward_trait": "공명 지휘자",
+      "role": "lead"
+    },
+    {
+      "name": "박나리",
+      "job": "긴급 구조사",
+      "start_power": "MED",
+      "hp_base": 10,
+      "san_base": 10,
+      "traits": ["현장 지휘", "응급 처치"],
+      "traits_used": {"현장 지휘": 2, "응급 처치": 0},
+      "final_grade": "A",
+      "reward_trait": "협력 증폭자",
+      "role": "support"
+    },
+    {
+      "name": "김재원",
+      "job": "사회 활동가",
+      "start_power": "LOW",
+      "hp_base": 7,
+      "san_base": 8,
+      "traits": ["사회 설득", "잠입"],
+      "traits_used": {"사회 설득": 1, "잠입": 1},
+      "final_grade": "A",
+      "reward_trait": "사회 연결망",
+      "role": "infiltrator"
+    }
+  ],
+  "branch_log": {
+    "attempt_1": {
+      "E1": "auto",
+      "E2": "auto",
+      "E3": "auto_EVENT_BLOCK_FAIL",
+      "E4": "auto",
+      "E5": "delayed",
+      "E6": "unreached",
+      "result": "fail"
+    },
+    "attempt_2": {
+      "E1": "ivA",
+      "E2": "ivA",
+      "E3": "ivA_EVENT_BLOCK_SUCCESS",
+      "E4": "ivA_EVENT_BLOCK_SUCCESS_x2",
+      "E5": "ivA_EVENT_TRIGGER",
+      "E6": "ivA_EVENT_BLOCK_SUCCESS",
+      "result": "collapse_achieved"
+    }
+  },
+  "event_block_results": [
+    {"event": "E3", "attempt": 1, "result": "FAIL", "route": "E3_auto"},
+    {"event": "E3", "attempt": 2, "result": "SUCCESS", "route": "E3_ivA"},
+    {"event": "E4", "attempt": 2, "result": "SUCCESS_x2", "route": "E4_ivA"},
+    {"event": "E6", "attempt": 2, "result": "SUCCESS", "route": "E6_ivA"}
+  ],
+  "event_trigger_results": [
+    {"event": "E2", "attempt": 1, "result": "FIRED", "note": "zone_B 진입 트리거 — E2_auto 분기"},
+    {"event": "E2", "attempt": 2, "result": "FIRED", "note": "zone_B 진입 트리거 — E2_ivA 분기"},
+    {"event": "E5", "attempt": 2, "result": "FIRED", "note": "박지수 인가코드 조건 충족 트리거 — E5_ivA 분기"}
+  ],
+  "p_patches_verified": "P1~P55+P44b",
+  "new_weakness_count": 1,
+  "new_weakness": [
+    {
+      "id": "WEAK-IT25-1",
+      "issue": "branches 다수 intervene에서 복수 플레이어 동시 다른 분기 선택 시 채택 기준 미정의",
+      "fix": "GM_SYSTEM_BASE에 분기 채택 우선순위(전원동의>주도자>협력판정) 한 줄 추가",
+      "severity": "med",
+      "scope": "GM_SYSTEM_BASE 프롬프트 / 코드 불필요"
+    }
+  ]
+}
