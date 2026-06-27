@@ -171,12 +171,34 @@ public class PlayerData {
         // (마인크래프트 인벤토리와 학습한 연락처는 재도전 시 보존됨)
     }
 
+    /**
+     * resetToBase()로 현재 스탯을 base로 되돌린 뒤, 보유 중인 (영구) 특성의 스탯 보정을 다시 누적한다.
+     * 특성은 스테이지를 넘어 유지되므로, 이 재적용이 없으면 클리어 보상 특성의 스탯이 다음 스테이지에서 사라진다.
+     */
+    public void reapplyTraitStats() {
+        for (TraitData t : traits) {
+            str += t.str_add;
+            cha += t.cha_add;
+            luk += t.luk_add;
+            spr += t.spr_add;
+            if (t.hp_max_add != 0) {
+                hp[1] = Math.max(1, hp[1] + t.hp_max_add);
+                hp[0] = Math.min(hp[0], hp[1]);
+            }
+            if (t.san_max_add != 0) {
+                san[1] = Math.max(1, san[1] + t.san_max_add);
+                san[0] = Math.min(san[0], san[1]);
+            }
+        }
+    }
+
     /** 챕터 종료 후 다음 스테이지 진행 시: roleSpecific 특성 제거, 기본 스탯 복구, 역할 초기화 */
     public void clearRoleData() {
         traits.removeIf(t -> t.roleSpecific);
         roleAge = -1;          // 배역 해제 → 다음 배역 전까지 고유 나이로
         job = baseJob;         // 배역 해제 → 고유 직업으로 복귀
         resetToBase();
+        reapplyTraitStats();   // 영구(비배역) 특성 스탯 보정 복원 — 다음 스테이지에서도 유지
         roleId       = "";
         zone         = "";
         spot         = "";
