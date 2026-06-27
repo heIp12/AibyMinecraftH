@@ -346,6 +346,15 @@ gated_zones가 있으면 각 항목에 대해 주입: "구역 [zone]: [requires]
 | P44·P44b (G3) | can_impersonate=true | GM_SYSTEM_BASE 괴담 AI 운용 | 위장 4규칙·정보흡수 comm 로그 기준 (G3에 포함) |
 | P49 | 가변 턴 + 시간기반 마감/무효 조건 공존 | GDAM_SYSTEM_PROMPT collapse_condition·main_events + GM 시간 판정 | 시간 마감은 '실제 경과 분'으로만 계산·턴 환산 금지(분 단위 명시). iter20 검증 PASS |
 | P50 | 대규모 다구역 + 위치 의존 bypass | constraints.gated_zones + buildGmPrompt | remote_bypass(true/false) 필드·현장 필수 시 이동 비용 명시·급박 구간 이동만으로 기회 전소 금지. iter20 검증 PASS |
+| P51 | 과거 대체통신 + NPC 수신 | GDAM constraints.notes (P27 보강) | NPC 수신 대체통신도 동일 도달소요·발각위험(대면 즉시와 구분). iter21 |
+| P52 | 위치 의존 loophole(이의제기·정화) | world_rules.hidden/entity.solution (P23 연장) | loophole 유효 zone 명시(어디서나 가능 해석 방지). iter21 |
+| P53 | comms_monitored × can_impersonate | GM_SYSTEM_BASE (P43 보완) | 빙의/현장 숙주 같은 zone이면 대면 발화도 직접 청취 가능(기기 도청 면제와 별개). 안전 대면=숙주 없는 zone. iter22 |
+| P54 | 장기 도약 + 고정 마감/주기 | buildGmPrompt TIME_SKIP 착지 | 착지 시점을 seed 고정 마감(결산일·만월·기일)과 대조·잔여 명시. iter23, iter24 검증 PASS |
+
+### ★ P55 (HIGH·범용·장기 타임라인) — 본 절 상단 G(클리어/상태) 그룹과 함께 우선 반영
+- **대상**: GM_SYSTEM_BASE / buildGmPrompt 시간 흐름 + GDAM 생성(timeline 단계 effect)
+- **삽입 텍스트(복붙)**: "장기 TIME_SKIP(일·주·월·년 단위) 도약 시, 그 기간 동안 괴담 규칙·환경에 따른 누적 변화(반복 피해·SAN 손실·오염도 확산·자원 소모·NPC 상황 악화)가 '실제로 진행됐음'을 전제하고, 도약 직후 상태를 seed 규칙 기반으로 수치와 함께 명시 반영하라. 도약 기간을 무피해·무변화로 리셋 처리하지 마라(단, seed에 명시된 안전지대 휴식은 예외)." + 생성 시 장기 timeline 각 단계 effect에 '경과 중 누적 변화' 요약 포함.
+- iter23 도출 → iter24(9개월 절기 확산형)에서 2회 도약 누적 반영 검증 PASS.
 
 ---
 
