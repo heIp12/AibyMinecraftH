@@ -506,7 +506,7 @@ new_trait: 완전히 새로운 범용 특성. 직업·테마에서 착안하되 
                 if (s == -1 || e == -1) return null;
                 JsonObject root = gson.fromJson(cleaned.substring(s, e + 1), JsonObject.class);
 
-                // my_upgrade: 표시는 명목(myNominal), 실효 파워는 출신 보너스(myTarget)로 — enforceStatBudget가 실효 기준 적용
+                // my_upgrade: 표시는 명목(myNominal), 실효 파워는 출신 보너스(myTarget)로 — enforcePowerBudget가 실효 기준 적용
                 TraitData myUpg = root.has("my_upgrade") && !root.get("my_upgrade").isJsonNull()
                     ? parseStageEndTrait(root.getAsJsonObject("my_upgrade"), myNominal, myOrigin) : null;
                 if (myUpg != null && fp != null) myUpg.replacesId = fp.id;

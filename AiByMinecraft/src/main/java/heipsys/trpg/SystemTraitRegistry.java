@@ -491,7 +491,7 @@ public class SystemTraitRegistry {
             int guard = 0;
             while (ec > budget + neg && reduceOneParam(td) && guard++ < 24) ec = abilityCost(td);
             if (ec > budget + neg) { // 최소 형태로도 초과 → 등급에 안 맞는 강효과 제거
-                td.effectType = ""; td.effectParams = null; td.active = false; ec = 0;
+                td.effectType = ""; td.effectParams = new HashMap<>(); td.active = false; ec = 0;
             }
         }
         double statCap = Math.max(0, budget + neg - ec); // 능력이 쓴 만큼 빼고 남은 예산을 스텟에
