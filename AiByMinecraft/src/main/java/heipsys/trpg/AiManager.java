@@ -588,7 +588,8 @@ public class AiManager {
             String zone   = extractAttr(attrs, "zone").orElse(null);
             String spot   = extractAttr(attrs, "spot").orElse("");
             String forced = extractAttr(attrs, "forced").orElse("");
-            if (player != null && zone != null) out.add(new String[]{player, zone, spot, forced});
+            String bypass = extractAttr(attrs, "bypass").orElse("");
+            if (player != null && zone != null) out.add(new String[]{player, zone, spot, forced, bypass});
             from = end + 2;
         }
         return out;
