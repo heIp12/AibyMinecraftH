@@ -1,0 +1,128 @@
+{
+  "seed": "#ECHO-9F2K",
+  "room": 2,
+  "scale": "소~중",
+  "entity": {
+    "name": "메아리 간호사",
+    "type": "통신 유인형·청각 추적",
+    "rules": [
+      "호출벨·전화·무전·큰 소리(이름 부름 포함)를 내면 그 소리를 좇아 그쪽으로 다가온다.",
+      "필담·수신호 등 소리 없는 소통에는 반응하지 않는다.",
+      "누군가의 이름을 직접 소리 내어 부르면 그 사람이 다음 표적이 된다.",
+      "그녀의 호출('환자분, 계세요?')에 소리로 응답하면 위치가 발각된다."
+    ],
+    "weakness": "그녀가 좇는 것은 '응답을 기다리는 호출' 그 자체다. 호출 회로가 성립하지 않으면(아무도 소리로 응답하지 않거나, 그녀가 찾는 옛 환자가 이미 죽었음을 직면시키면) 흩어진다.",
+    "exploit_path": "옛 환자 한도경의 사망 기록을 찾아, 그녀의 호출에 '그 환자는 없다'는 진실로 되받으면 강박 회로가 무너진다. 단 소리로 전하면 위치가 발각되므로 모두 한자리에 모였을 때여야 안전하다.",
+    "solution": "셋이 같은 곳에 조용히 모여, 한도경의 사망 진실을 직면시켜 호출 회로를 끊는다.",
+    "escape": "소리를 내지 않고 그녀의 청각 범위(같은 zone) 밖으로 이동하면 추격당하지 않는다.",
+    "perception": ["청각"],
+    "npc_dependency": "mid",
+    "ai_context": {
+      "personality": "환자를 찾아 헤매는 옛 간호사. 호출에 집착하며, 응답이 오면 반긴다.",
+      "corruption_behavior": {
+        "0": "먼 복도에서 호출벨 소리·발소리가 간헐적으로 들린다.",
+        "1": "소리를 낸 zone으로 한 단계 접근한다.",
+        "2": "호출에 응답한 대상에게 직접 다가가 '환자분?' 하고 묻는다.",
+        "3": "이름이 불린 표적을 집요하게 추격한다."
+      }
+    }
+  },
+  "world_rules": {
+    "core": "소리(호출·전화·이름 부름)를 내면 그녀가 그 소리를 좇는다. 소리 없는 소통만이 안전하다.",
+    "details": [
+      "기기 통신(@전화·무전)·이름 부름은 그녀를 그 zone으로 유인한다.",
+      "같은 zone 대면에서 '필담·수신호'로 전하면 안전하다.",
+      "그녀가 찾는 옛 환자(한도경)의 사망 진실을 직면시키면 호출 회로가 무너진다."
+    ],
+    "hidden": true,
+    "loophole": "그녀의 호출에 '한도경은 이미 죽었다'고 되받으면 강박이 깨진다. 단 소리는 위치를 발각시키므로 전원이 모였을 때만 안전.",
+    "collapse_condition": "셋이 한자리에 모여 한도경의 사망 진실을 직면시켜 호출-응답 회로를 무효화한다.",
+    "npc_dependency": "mid"
+  },
+  "constraints": {
+    "era": "현대",
+    "phone_usable": true,
+    "outside_contact": false,
+    "can_leave_scene": false,
+    "comms_monitored": true,
+    "comms_dangerous": true,
+    "notes": [
+      "폐병원 봉쇄(정문 잠김)로 현장 이탈 불가.",
+      "감청 대상 = 소리/통신 전부. 안전 채널 = 같은 zone 필담·수신호(무음)."
+    ],
+    "gated_zones": [
+      {"zone": "zone_C", "requires": "격리병실 열쇠", "bypass": "환기구 기어들기", "bypass_dc": 13, "remote_bypass": false}
+    ]
+  },
+  "timeline": {
+    "daily_turns": 3,
+    "start_time": "23:00",
+    "end_time": "03:00",
+    "minutes_per_turn": 20,
+    "time_visible": true,
+    "main_events": [
+      {"id": "E1", "time": "23:00", "label": "정전·봉쇄", "effect": "본관 정전, 정문 잠김. 먼 복도에서 호출벨 소리.", "blockable": false},
+      {"id": "E2", "time": "00:20", "label": "첫 호출", "condition": "누군가 소리를 내면", "effect": "메아리 간호사가 그 zone으로 접근.", "blockable": true},
+      {"id": "E_END", "time": "03:00", "label": "동트기 전", "effect": "끝", "blockable": false, "is_end": true}
+    ],
+    "1": {"condition": "정전 직후", "effect": "호출벨·발소리가 멀리서 들린다."},
+    "2": {"condition": "소리가 났을 때", "effect": "발소리가 가까워진다."},
+    "3": {"condition": "이름이 불렸을 때", "effect": "표적을 추격한다."},
+    "4": {"condition": "동트기 직전", "effect": "회로가 끊기거나, 표적이 사라진다."}
+  },
+  "zones": [
+    {"zone_id": "zone_A", "name": "1층 로비", "area": "1층", "accessible_by": ["role_A","role_B","role_C"], "connections": ["zone_B","zone_F"]},
+    {"zone_id": "zone_B", "name": "2층 병동 복도", "area": "2층", "accessible_by": ["role_A","role_B","role_C"], "connections": ["zone_A","zone_C","zone_D"]},
+    {"zone_id": "zone_C", "name": "2층 격리병실", "area": "2층", "accessible_by": ["role_A","role_B","role_C"], "connections": ["zone_B"]},
+    {"zone_id": "zone_D", "name": "옥상", "area": "옥상", "accessible_by": ["role_A","role_B","role_C"], "connections": ["zone_B"]},
+    {"zone_id": "zone_F", "name": "지하 기록보관소", "area": "지하", "accessible_by": ["role_A","role_B","role_C"], "connections": ["zone_A"]}
+  ],
+  "relationships": [
+    {"type": "직장_동료", "roles": ["role_A","role_B"], "mutual_contact": true, "same_start_zone": false, "description": "야간 근무를 함께 서 온 동료"},
+    {"type": "완전_타인", "roles": ["role_A","role_C"], "mutual_contact": false, "same_start_zone": false, "description": "이 밤 처음 마주치는 사이"}
+  ],
+  "npcs": [
+    {"id": "npc_A", "name": "수간호사 박정애", "zone": "zone_B", "critical": true, "role_type": "열쇠",
+     "true_role": "한도경의 죽음을 은폐한 당사자. 진실(사망 기록 위치)을 알지만 입을 닫는다.",
+     "personality": "냉정하고 말을 아끼며, 죄책감을 누른다",
+     "knowledge": ["격리병실 열쇠의 행방", "한도경은 이미 죽었다", "소리를 내면 위험하다"]},
+    {"id": "npc_B", "name": "길 잃은 입원 환자", "zone": "zone_C", "critical": false, "role_type": "무관"}
+  ],
+  "clues": [
+    {"id": "clue_sound", "type": "real", "clue_subject": "괴담", "location": "2층 병동 복도", "content": "그녀의 접근은 항상 '소리'가 난 직후다. 조용하면 다가오지 않는다."},
+    {"id": "clue_chart", "type": "real", "clue_subject": "괴담", "location": "지하 기록보관소", "content": "옛 입원 대장에 '한도경, 502호, 사망(은폐)'이 먹으로 지워져 있다."},
+    {"id": "clue_dark", "type": "mislead", "clue_subject": "괴담", "location": "1층 로비", "content": "불을 끄면 안 보여서 안전하다는 낙서(거짓 — 그녀는 청각 추적)."},
+    {"id": "clue_run", "type": "mislead", "clue_subject": "괴담", "location": "옥상", "content": "옥상으로 도망치면 구조된다는 메모(정문·옥상 모두 봉쇄, 거짓)."}
+  ],
+  "key_items": [
+    {"id": "item_radio", "name": "병동 무전기", "type": "comm", "item_type": "comm", "item_params": {"battery": 3, "monitored": 1}, "charges": 3,
+     "lore_info": "호출용 무전. 쓰면 소리가 나 그녀를 부른다."},
+    {"id": "item_flashlight", "name": "손전등", "type": "physical:LANTERN", "item_type": "tool", "item_params": {"action": "inspect", "uses": -1}},
+    {"id": "item_iso_key", "name": "격리병실 열쇠", "type": "physical:TRIPWIRE_HOOK", "item_type": "key", "item_params": {"unlocks": "zone_C", "consumed": 0}, "unlocks": "zone_C"},
+    {"id": "item_chart", "name": "옛 입원 대장", "type": "written_book", "item_type": "record",
+     "content": ["3월 9일 입원: 한도경(502호).", "비고: 본 환자 관련 기록 일체 반출 금지 — 수간호사 지시.", "(먹으로 지운 줄) ……한도경 …사망 …"],
+     "location": "지하 기록보관소", "clue_value": "한도경 사망 은폐의 핵심"}
+  ],
+  "roles": [
+    {"role_id": "role_A", "name": "야간 당직 경비", "char_name": "오민재", "gender": "남성", "is_core": true,
+     "age_range": [30,55], "job_pool": ["야간 경비","시설 관리원","당직 주임","보안 요원","청소 용역"],
+     "spawn_timeline": "시작 즉시", "spawn_location": "1층 로비 — 정전과 함께 정문이 잠긴다", "zone": "zone_A",
+     "initial_info": ["오늘 야간은 자신과 동료 간호조무사 둘뿐", "무전기를 소지"],
+     "start_item": ["손전등","병동 무전기","열쇠 꾸러미"], "knowledge_advantage": false,
+     "role_stats": {"str_add": 1, "cha_add": 0, "luk_add": 0, "spr_add": 1, "hp_max_add": 1, "san_max_add": 0, "summary": "경비: 근력+1, 영감+1, 체력+1"}},
+    {"role_id": "role_B", "name": "교환학생(길 잃은 방문객)", "char_name": "히카루 사토", "gender": "남성", "is_core": true,
+     "age_range": [19,26], "job_pool": ["교환학생","배낭여행객","사진 동호회원","유튜브 탐험가","야간 실습생"],
+     "spawn_timeline": "시작 즉시", "spawn_location": "옥상 — 야경을 찍다 정전으로 갇힌다", "zone": "zone_D",
+     "initial_info": ["한국어가 서툴러 짧게 말한다", "당직 경비와 연락처를 안다"],
+     "start_item": ["스마트폰","휴대용 손전등"], "knowledge_advantage": false,
+     "role_stats": {"str_add": 0, "cha_add": 1, "luk_add": 2, "spr_add": 0, "hp_max_add": 0, "san_max_add": -1, "luk_fixed": -1, "summary": "교환학생: 매력+1, 행운+2, 정신력 최대치-1"}},
+    {"role_id": "role_C", "name": "옛 환자의 유족", "char_name": "정우식", "gender": "남성", "is_core": true,
+     "age_range": [40,65], "job_pool": ["유족","사설 조사원","former 간병인","기자","장의사"],
+     "spawn_timeline": "시작 즉시", "spawn_location": "지하 기록보관소 — 형의 사망 기록을 찾으러 잠입", "zone": "zone_F",
+     "initial_info": ["형(한도경)이 이 병원에서 사라졌다는 제보를 받음","건물 구조를 모른다"],
+     "hidden_info": ["형의 사망이 은폐됐을 수 있다는 것을 어렴풋이 안다"],
+     "start_item": ["스마트폰","형의 옛 사진"], "knowledge_advantage": true,
+     "role_stats": {"str_add": 0, "cha_add": 2, "luk_add": 0, "spr_add": 1, "hp_max_add": 0, "san_max_add": -1, "luk_fixed": -1, "summary": "유족: 매력+2, 영감+1, 정신력 최대치-1"}}
+  ],
+  "common_items": ["smartphone"]
+}
