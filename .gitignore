@@ -1,0 +1,5 @@
+
+# 빌드 산출물·번들 jar (재유입 방지)
+AiByMinecraft/target/
+target/
+AiByMinecraft/src/main/resources/*.jar
