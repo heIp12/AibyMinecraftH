@@ -354,3 +354,16 @@
 - [대상] constraints.gated_zones 스키마 / buildGmPrompt gated 주입 (P13/P19 연계)
 - [문제] gated_zones bypass(우회) 수단이 '특정 구역 현장에서만' 가능한데 급박 1턴=수 분 구간이면, 그 구역까지 이동이 판정 기회를 소모해 '이동=실패'로 귀결(불공정).
 - [수정안] gated_zones 항목에 선택 필드 `remote_bypass`(true=원격 우회 가능/false=현장 필수). buildGmPrompt 주입: "remote_bypass=false면 우회는 해당 구역 현장에서만 가능 — 이동 비용(턴·시간)을 사전에 명시하고, 급박 구간엔 이동만으로 기회를 전부 소모시키지 마라(이동+행동 1턴 허용 등 완충)."
+
+## iter21 (#BF3K-9VWR, 스테이지3 로컬·★먼과거 다인앙상블·바이킹 900·맹세의 저울) 발견 패치
+(★미검증 조합 회귀: P27(대체통신 도달소요·발각위험)·P46(3 critical NPC 조율)·branches 9사건 다중분기·P32/P12 해결경로·전체 P1~P50 충돌 0건 전부 PASS. 신규 low·niche 2건뿐)
+
+### P51. NPC 수신 대체통신도 동일 지연 적용 (low, 한정·P27×P46 교차)
+- [대상] GDAM_SYSTEM_PROMPT constraints.notes / GM 통신 판정 (P27 보강)
+- [문제] 과거 시대 대체통신(전령·목판 등)이 플레이어↔플레이어엔 지연 적용되나, 플레이어→NPC 메시지 전달 시 지연 기준이 불명(대면 즉시와 혼동 가능).
+- [수정안] P27 notes에 한 줄: "대체통신은 수신자가 NPC여도 동일한 도달소요·발각위험을 적용한다(대면 즉시 전달과 명확히 구분). NPC가 다른 구역/마을에 있으면 그 지연만큼 반응이 늦는다."
+
+### P52. 위치 의존 loophole(이의제기·정화 등)은 유효 zone 명시 (low, 한정·P23 보완)
+- [대상] GDAM_SYSTEM_PROMPT world_rules.hidden/loophole·entity.solution 설계 (P23 연장)
+- [문제] loophole 발동(예: 강압 서약 이의제기·정화 의식)이 '특정 장소에서만 유효'인데 위치 조건이 빠지면 GM이 '어디서나 가능'으로 해석 → 난이도 붕괴.
+- [수정안] loophole·해제 행위가 위치 의존이면 world_rules.hidden 또는 entity.solution에 '유효 zone(예: 저울이 있는 구역 내)'을 반드시 명시하도록 생성 지침 보강. 위치 무관이면 그렇다고 명시(모호 금지).

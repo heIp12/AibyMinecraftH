@@ -1,0 +1,119 @@
+{
+  "version": 1,
+  "stage": 3,
+  "seed": "#BF3K-9VWR",
+  "created": "2026-06-27",
+  "scenario": "맹세의 저울 (誓秤, Eiðskál)",
+  "era": "900년경 노르웨이 바이킹 시대 피오르드 어촌 흐베트나달르",
+  "mechanism": "맹세 채무 집행 — 증인 있는 서약 위반을 기계적 순서로 집행하는 추상 규칙체. 면제 선언(맹세 대상자/혈족)으로만 채무 소멸.",
+  "players": [
+    {
+      "role_id": "role_A",
+      "char_name": "울프 에이리크손",
+      "player_type": "sim_agent",
+      "role": "떠돌이 스칼드(음유시인)",
+      "start_power": "중간 (CHA+3·SPR+2 강점, STR-1 약점)",
+      "start_zone": "zone_A",
+      "final_grade": "S",
+      "highlight": "제의 터 룬기록 독자 탐색(P32 1경로), 에이나르 고백 유도, 그리므르 설득 완성",
+      "active_traits_used": 3,
+      "p27_alt_comm_used": "전령 선택 가능성 인지 후 직접 해결 선택 — 평가 +0.3",
+      "reward_trait": "설득의 혀 (CHA 설득 +3, 1스테이지 1회 자유)"
+    },
+    {
+      "role_id": "role_B",
+      "char_name": "시그리드 뵤른스도티르",
+      "player_type": "sim_agent",
+      "role": "마을 대장장이의 딸 (각인 보유자)",
+      "start_power": "낮음 (STR+2·HP+1, 특화 없음)",
+      "start_zone": "zone_D",
+      "final_grade": "A",
+      "highlight": "각인으로 벡라 창고 진입 촉진, 대장간 목판(P32 2경로) 확보, 그리므르 이동 협력",
+      "active_traits_used": 2,
+      "p27_alt_comm_used": "N/A — 대면 협력 위주",
+      "penalty_note": "본인 각인 미해소 (에이나르 저택에서 1턴 추가 투자 필요했음)",
+      "reward_trait": "대장장이의 인내 (HP 피해 시 SAN 손실 1회 면제, 각인 판정 +2)"
+    },
+    {
+      "role_id": "role_C",
+      "char_name": "코르마크 외를뤼그손",
+      "player_type": "sim_agent",
+      "role": "해전 생존자·목격자 (부상 회복 중)",
+      "start_power": "중간 (STR+2·SPR+1, HP-1 부상 페널티)",
+      "start_zone": "zone_C",
+      "spawn_timeline": "타임라인 1단계",
+      "final_grade": "A",
+      "highlight": "벡라 설득 협력(E3-B 분기 달성), 에이나르 목격 증언으로 고백 유도",
+      "active_traits_used": 2,
+      "p27_alt_comm_used": "N/A — 직접 이동 위주",
+      "penalty_note": "본인 소채무(전투 동료 맹세 위반) 인지 미완 (-0.5등급 요인, 최종 A 유지)",
+      "reward_trait": "전장의 증인 (목격 관련 설득 +4, 부상 이동 판정 자동 성공)"
+    }
+  ],
+  "npc_ensemble": {
+    "critical_npcs": 3,
+    "names": ["에이나르 울프헤딘손(복합: 방어막+발생원)", "벡라 스벤손(피해자)", "운나 에이릭스도티르(복합: 제물+피해자)"],
+    "p46_coordination_events": [
+      "에이나르×운나 동시 zone_G 충돌 — GM 교대 서술(에이나르 가두기/운나 목판 탈출 시도)",
+      "벡라×라그나 대면 — 벡라 자수 후 라그나 면제 선언 (E3-B)",
+      "에이나르×코르마크×운나 zone_G 3자 대면 — 고백 유도 핵심 장면"
+    ]
+  },
+  "branches_used": [
+    "E2 → E3-B (벡라 면제 성공 분기)",
+    "E3-B → E4-B (운나 강압 서약 이의제기 성공)",
+    "E4-B → E_COLLAPSE (에이나르 자수+그리므르 면제 선언)"
+  ],
+  "alt_comm_log": [
+    {
+      "turn": "18:00 탐색 중",
+      "player": "울프",
+      "attempt": "전령 파견 문의",
+      "gm_response": "전령 편도 2시간+ 야간 4시간, 반일 이상 소요 명시. 봉화는 즉시이나 발각 극고. 룬 목판 수일 소요.",
+      "result": "내부 직접 해결 선택 (P27 판정 정상 — 즉시 취급 없음)",
+      "p27_pass": true
+    }
+  ],
+  "stage3_gate": {
+    "required": "resolved=true (해결판정)",
+    "achieved": true,
+    "next_stage_unlock": true
+  },
+  "retry_simulation": {
+    "triggered": true,
+    "cause": "E2 벡라 설득 실패 가정",
+    "p16_maintained": ["코르마크 부상 HP-1 유지", "시그리드 각인 악화 유지"],
+    "p20_maintained": ["채무 집행 진행도 유지", "에이나르 은폐 행동 지속"],
+    "second_path": "제의 터 룬기록으로 혈족 대리 면제 방법 파악 → 라그나 직접 면제",
+    "final_grade_after_retry": "A (강등 없음, P1 PASS)"
+  },
+  "p_check_summary": {
+    "p27": "PASS — 대체통신 3종(전령·룬목판·봉화) 도달소요+발각위험 명시, 즉시 취급 없음",
+    "p32": "PASS — 2경로(제의터 룬기록/에이나르저택 목판) 독립 확인",
+    "p46": "PASS — 3 critical NPC 교대 서술·동기 충돌 구현",
+    "p12": "PASS — collapse 완전 충족+전원생존=해결판정",
+    "p1": "PASS — 재도전 등급 강등 없음",
+    "p16_p20": "PASS — 리트라이 시 부분 피해+고유 축적값 유지",
+    "p41": "PASS — hidden_info 용도 미인지 반스포일러",
+    "p3": "PASS — 일상 파트 20분/턴, E2 이후 10분/턴 전환",
+    "p8_p10": "PASS — mislead 2개, 진짜 단서 2개 이상 후 오답 해소",
+    "p6": "PASS — 협력 판정 d20+2 공식 사용",
+    "total_conflicts": 0
+  },
+  "new_weaknesses": [
+    {
+      "id": "WEAK-21-1",
+      "issue": "P27×P46 교차 — NPC에게 대체통신(룬 목판)으로 메시지 전달 시 지연 판정 기준 미명시",
+      "fix": "P27 notes에 'NPC 수신 대체통신의 경우도 동일 지연 적용, 단 대면 즉시 전달과 명확히 구분' 한 줄 추가",
+      "severity": "low",
+      "scope": "P27×P46 교차 / 프롬프트 보강"
+    },
+    {
+      "id": "WEAK-21-2",
+      "issue": "강압 서약 이의제기 위치 조건 미명시 — world_rules.loophole에 '저울이 있는 zone 내' 조건 누락",
+      "fix": "강압 서약·형식 맹점 이의제기를 사용하는 시나리오에서 world_rules.hidden 또는 entity.solution에 이의제기 유효 zone 조건을 명시(P23 연장선)",
+      "severity": "low",
+      "scope": "P23 보완 / 생성 지침 / 코드 없음"
+    }
+  ]
+}
