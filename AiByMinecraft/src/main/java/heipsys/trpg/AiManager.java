@@ -45,7 +45,7 @@ public class AiManager {
 
     private static final int GM_MAX_TOKENS   = 2048;  // 실제 응답은 200-600 수준
     private static final int ASST_MAX_TOKENS = 1024;
-    private static final int GDAM_MAX_TOKENS = 8192;  // .gdam 전체 JSON 생성용 (대용량)
+    private static final int GDAM_MAX_TOKENS = 12000; // .gdam 청크 JSON 생성용 (8192는 코어 청크가 잘려 파싱 실패 → 상향)
 
     public AiManager(String apiKey, String apiType) {
         this.apiKey  = apiKey.trim();
