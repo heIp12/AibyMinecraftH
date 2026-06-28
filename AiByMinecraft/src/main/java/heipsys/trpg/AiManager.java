@@ -85,6 +85,7 @@ public class AiManager {
     private volatile UsageStat persistedBase = new UsageStat(0, 0, 0, 0.0);
     private volatile java.io.File usageFile  = null;
     private final Object usageSaveLock = new Object();
+    private volatile long lastSavedCalls = -1L; // 마지막 저장 시점의 호출 수(변경 없으면 재저장 생략)
 
     /** AI 사용량 스냅샷(호출 수·입력/출력 토큰·USD 비용). */
     public record UsageStat(long calls, long inTok, long outTok, double costUsd) {
@@ -307,6 +308,7 @@ public class AiManager {
         synchronized (usageSaveLock) {
             try {
                 UsageStat all = allTimeUsage();
+                if (all.calls() == lastSavedCalls) return; // 직전 저장 이후 새 호출 없음 → 불필요한 쓰기 생략
                 JsonObject o = new JsonObject();
                 o.addProperty("calls", all.calls());
                 o.addProperty("inTok", all.inTok());
@@ -315,6 +317,7 @@ public class AiManager {
                 if (file.getParentFile() != null) file.getParentFile().mkdirs();
                 java.nio.file.Files.write(file.toPath(),
                     gson.toJson(o).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                lastSavedCalls = all.calls();
             } catch (Exception ignored) { /* 저장 실패는 게임 진행에 영향 없음 */ }
         }
     }

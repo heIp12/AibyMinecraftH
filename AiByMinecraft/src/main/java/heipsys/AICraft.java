@@ -27,6 +27,13 @@ public class AICraft extends JavaPlugin {
 
         if (getCommand("r") != null) getCommand("r").setExecutor(new CMDReload(this));
 
+        // 누적 비용 주기적 자동 저장(서버 비정상 종료 대비). 5분마다, 변경이 있을 때만 기록.
+        // onEnable에서 1회만 등록 — trpgManager 필드는 리로드 시 갱신되므로 항상 현재 매니저를 가리킨다.
+        long usageSavePeriod = 20L * 60L * 5L;
+        getServer().getScheduler().runTaskTimer(this, () -> {
+            if (trpgManager != null) trpgManager.saveUsagePeriodic();
+        }, usageSavePeriod, usageSavePeriod);
+
         getServer().getScheduler().scheduleSyncDelayedTask(instance, () -> {
             Bukkit.broadcastMessage("§f===========================");
             Bukkit.broadcastMessage("§e[AIByMinecraft] TRPG 준비 완료");
