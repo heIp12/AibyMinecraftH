@@ -391,15 +391,15 @@ public class DialogManager {
                     ClickCallback.Options.builder().uses(1).build())
             ));
         }
-        // 능동 특성이 없으면 비활성 안내 버튼 (multiAction이 빈 목록을 받지 않도록)
-        if (buttons.isEmpty()) {
-            buttons.add(ActionButton.create(
-                Component.text("발동 가능한 능동 특성 없음", NamedTextColor.DARK_GRAY),
-                Component.text("능동(⚡) 특성을 보유하면 여기서 발동할 수 있습니다."),
-                200,
-                null
-            ));
-        }
+        // 능력치 안내 버튼 — 각 스탯이 무엇을 하는지 플레이어가 직접 확인
+        buttons.add(ActionButton.create(
+            Component.text("📖 능력치 안내", NamedTextColor.GREEN),
+            Component.text("각 능력치가 무엇을 하는지 봅니다."),
+            200,
+            DialogAction.customClick((v, a) -> showStatGuide(player, pd),
+                ClickCallback.Options.builder().uses(1).build())
+        ));
+        // (능동 특성이 없어도 위 안내 버튼이 있으므로 multiAction 빈 목록 문제 없음)
 
         ActionButton closeBtn = ActionButton.create(
             Component.text("닫기", TextColor.color(0xAAAAAA)),
@@ -422,6 +422,32 @@ public class DialogManager {
             .type(DialogType.multiAction(buttons, closeBtn, 1))
         );
         player.showDialog(dialog);
+    }
+
+    /** 능력치 안내 — 각 스탯이 무엇을 하는지 + 내 현재 수준 (플레이어 공개용; 내부 수치·확률·스포일러 없음). */
+    public void showStatGuide(Player player, PlayerData pd) {
+        var gb = Component.text()
+            .append(Component.text("각 능력치가 무엇을 하는지 — 높을수록 그 분야에 강합니다.\n\n", NamedTextColor.GRAY))
+            .append(statGuideLine("체력", "버티는 힘. 다치면 줄고 0이 되면 쓰러진다(쓰러진 채 또 맞으면 사망).", "hp", pd.hp[1]))
+            .append(statGuideLine("정신력", "공포를 버티는 힘. 0이 되면 정신을 잠식당해 홀린다.", "san", pd.san[1]))
+            .append(statGuideLine("근력", "물리적 힘 — 부수기·제압·버티기 등 힘쓰는 행동에 유리.", "str", pd.str))
+            .append(statGuideLine("매력", "대인 영향력 — 높을수록 NPC가 더 쉽게 협조하고 설득이 잘 통한다.", "cha", pd.cha))
+            .append(statGuideLine("행운", "운 — 결정적 위기에서 가까스로 살아남거나 유리한 우연이 따른다.", "luk", pd.luk))
+            .append(statGuideLine("영감", "직감 — 위험·함정·거짓을 남보다 먼저 알아챈다.", "spr", pd.spr))
+            .build();
+        ActionButton closeBtn = ActionButton.create(Component.text("닫기", TextColor.color(0xAAAAAA)), null, 100, null);
+        Dialog dialog = Dialog.create(d -> d.empty()
+            .base(DialogBase.builder(Component.text("능력치 안내")).body(List.of(DialogBody.plainMessage(gb))).build())
+            .type(DialogType.multiAction(List.of(closeBtn), null, 1)));
+        player.showDialog(dialog);
+    }
+
+    private static Component statGuideLine(String name, String what, String key, int v) {
+        return Component.text()
+            .append(Component.text("● " + name + "  ", NamedTextColor.YELLOW))
+            .append(Component.text(what + "\n", NamedTextColor.WHITE))
+            .append(Component.text("   나의 수준: " + heipsys.trpg.model.PlayerData.statDesc(key, v) + "\n\n", NamedTextColor.GRAY))
+            .build();
     }
 
     /** 기본값 대비 배역 보정을 표기한 스탯 컴포넌트 ("근력 4 §c(-1)") */
