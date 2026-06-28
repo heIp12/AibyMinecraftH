@@ -92,6 +92,9 @@ public class SystemTraitRegistry {
         POSSESS_NPC("possess_npc", true,
             "발동 시 대상 NPC(적대 NPC 가능, 괴담 본체 불가)에 빙의한다 — 본체는 무방비로 남고(본체 사망 시 본인도 사망), NPC 몸으로 진행하며 그 NPC가 아는 정보를 모두 알게 된다(기록에 추가). 큰 피해·해제 선언 시 복귀.",
             "uses=스테이지당 횟수(1)"),
+        MIMIC("mimic", true,
+            "발동 시 지정한 아군의 대표 특성 1개를 이번 스테이지 동안 빌려 쓴다(복제본 획득). 스탯 보정은 빌리지 않고 능력만 모방.",
+            "uses=스테이지당 횟수(1~2)"),
         GUARANTEED("guaranteed", true,
             "발동 시 다음 행동 1회를 확정 성공으로 처리한다(주사위·실패를 무시하고 GM이 성공으로 서술). 회피가 아니라 '반드시 성공'하는 결과 보장이다.",
             "uses=스테이지당 횟수(1~2), scope=확정 범위(1=단일 행동, 2=연관 행동 묶음, 3=상황 전체 국면)"),
@@ -434,7 +437,7 @@ public class SystemTraitRegistry {
                 td.effectParams.putIfAbsent("uses", 1);
                 clamp(td, "count", 1, 3); clamp(td, "uses", 1, 2);
             }
-            case FORCE_ENCOUNTER, DECOY, TELEPORT, RALLY -> {
+            case FORCE_ENCOUNTER, DECOY, TELEPORT, RALLY, MIMIC -> {
                 td.effectParams.putIfAbsent("uses", 1);
                 clamp(td, "uses", 1, 2);
             }
@@ -549,7 +552,8 @@ public class SystemTraitRegistry {
             case RALLY            -> 3;
             case EVADE_SENSE      -> td.param("turns", 2) >= 3 ? 5 : 3;
             case DEATH_RELAY      -> 2;
-            case FATAL_GUARD      -> 5;
+            case FATAL_GUARD      -> 3; // 5→3: B등급부터 생성돼도 예산 초과로 무력화되지 않게
+            case MIMIC            -> 5;
             case PROTECT          -> { int p = td.param("power", 2); yield p >= 3 ? 5 : p >= 2 ? 3 : 1; }
             case GUARANTEED       -> td.param("scope", 1) >= 3 ? 5 : 3;
             case MOBILITY         -> { int p = td.param("power", 2); yield p >= 3 ? 5 : p >= 2 ? 3 : 1; }
@@ -562,7 +566,7 @@ public class SystemTraitRegistry {
             case PAST_EDIT        -> 5;
             case GDAM_MORPH       -> 5;
             case PHASE_OUT        -> td.param("turns", 2) >= 3 ? 10 : 5;
-            case REVIVE_AS_ANIMAL -> 5;
+            case REVIVE_AS_ANIMAL -> 3; // 5→3: B등급부터 생성돼도 무력화되지 않게
             case POSSESS_NPC      -> 10;
             default               -> 3; // passive_gm·show_progress 등 텍스트 의존 = 기본 B
         };
@@ -642,7 +646,7 @@ public class SystemTraitRegistry {
                  SOCIAL, DOMINATE, FATE, GROUP_REWIND,
                  GET_CONTACTS, FORCE_ENCOUNTER, DECOY, DELAY, ONE_WAY_CALL,
                  TELEPORT, RALLY, EVADE_SENSE,
-                 OBSERVER_SIGHT, PACT, PAST_EDIT, GDAM_MORPH, PHASE_OUT, POSSESS_NPC -> td.param("uses", 1);
+                 OBSERVER_SIGHT, PACT, PAST_EDIT, GDAM_MORPH, PHASE_OUT, POSSESS_NPC, MIMIC -> td.param("uses", 1);
             default -> 0;
         };
     }
