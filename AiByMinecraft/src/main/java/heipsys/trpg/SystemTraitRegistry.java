@@ -570,14 +570,14 @@ public class SystemTraitRegistry {
         if (td.cooldownTurns == -1)     discount += 3; // 스테이지당 1회 = 가장 큰 제약
         else if (td.cooldownTurns >= 5) discount += 2;
         else if (td.cooldownTurns >= 2) discount += 1;
-        if (uses <= 1)                  discount += 1; // 최소 횟수 제한
+        if (uses == 1)                  discount += 1; // 최소 횟수 제한(1회). uses=0(무제한 패시브)은 할인 제외.
         return Math.max(1, base - discount);
     }
 
     /** 코스트가 예산을 넘을 때 가장 강한 파라미터를 1 낮춘다. 더 낮출 게 없으면 false. */
     private static boolean reduceOneParam(TraitData td) {
         if (td.effectParams == null || td.effectParams.isEmpty()) return false;
-        String[] order = {"choices","scale","power","scope","depth","intensity","range","trigger_freq","info","uses"};
+        String[] order = {"choices","scale","power","scope","depth","intensity","range","trigger_freq","turns","count","info","uses"};
         for (String k : order) {
             Integer v = td.effectParams.get(k);
             int min = switch (k) { case "choices", "scale" -> 2; case "info" -> 0; default -> 1; };
