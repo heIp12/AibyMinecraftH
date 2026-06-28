@@ -116,8 +116,8 @@ public class AiManager {
 
     // ── provider별 등급 기본 모델 (네트워크 없음) ──
     private String defHigh()   { return switch (apiType) { case "claude" -> "claude-opus-4-8";          case "openai" -> "gpt-5.5";      default -> "gemini-2.5-pro"; }; }
-    private String defMedium() { return switch (apiType) { case "claude" -> "claude-sonnet-4-6";        case "openai" -> "gpt-5.4";      default -> "gemini-2.0-flash"; }; }
-    private String defLow()    { return switch (apiType) { case "claude" -> "claude-haiku-4-5-20251001"; case "openai" -> "gpt-5.4-nano"; default -> "gemini-2.0-flash-lite"; }; }
+    private String defMedium() { return switch (apiType) { case "claude" -> "claude-sonnet-4-6";        case "openai" -> "gpt-5.4";      default -> "gemini-2.5-flash"; }; }
+    private String defLow()    { return switch (apiType) { case "claude" -> "claude-haiku-4-5-20251001"; case "openai" -> "gpt-5.4-nano"; default -> "gemini-2.5-flash-lite"; }; }
 
     /** 백그라운드 워밍업 — 시작 시 호출하면 최신 모델 탐지가 메인 스레드를 막지 않는다. */
     public void warmUpModels() { CompletableFuture.runAsync(this::ensureModelsDiscovered); }
@@ -147,11 +147,11 @@ public class AiManager {
                         autoLow = latestVer(ids, new String[]{"nano"}, OAI_SPECIAL);          // 최신 *-nano(최저가)
                         if (autoLow == null) autoLow = latestVer(ids, new String[]{"mini"}, OAI_SPECIAL);
                     }
-                    default -> { // gemini
-                        autoHigh   = firstMatch(ids, "pro", "vision");
-                        autoMedium = firstMatch(ids, "flash", "lite");
-                        autoLow    = firstMatch(ids, "flash-lite", null);
-                        if (autoLow == null) autoLow = firstMatch(ids, "flash", null);
+                    default -> { // gemini — 버전 최신 우선(gemini-2.5 < 3 < 3.1 < 3.5 …), 특수형 제외
+                        autoHigh   = latestVer(ids, new String[]{"pro"}, GEMINI_NONCHAT);
+                        autoMedium = latestVer(ids, new String[]{"flash"}, GEMINI_FLASH_EXCL); // flash(라이트 제외)
+                        autoLow    = latestVer(ids, new String[]{"flash-lite"}, GEMINI_NONCHAT);
+                        if (autoLow == null) autoLow = latestVer(ids, new String[]{"flash"}, GEMINI_FLASH_EXCL);
                     }
                 }
             } catch (Exception ignored) { /* 실패 → 하드코딩 폴백 */ }
@@ -205,6 +205,12 @@ public class AiManager {
     //  SPECIAL: 소형/중형 선택 시에도 대화형이 아닌 특수 변형은 제외(mini·nano는 허용).
     private static final String[] OAI_SPECIAL = {
         "pro","codex","audio","realtime","search","image","tts","transcribe","embedding","instruct","moderation"};
+
+    // Gemini 모델 선별용 제외 목록 — 대화형이 아닌 특수 모델(이미지·임베딩·음성·오픈웨이트 등).
+    private static final String[] GEMINI_NONCHAT = {
+        "vision","embedding","imagen","veo","aqa","image","tts","audio","live","learnlm","gemma"};
+    private static final String[] GEMINI_FLASH_EXCL = {
+        "vision","embedding","imagen","veo","aqa","image","tts","audio","live","learnlm","gemma","lite"};
 
     /** require 키워드를 ★모두★ 포함하고 exclude를 ★하나도★ 포함하지 않는 id 중 버전 번호가 가장 높은 것.
      *  OpenAI 모델 목록은 최신순 정렬이 보장되지 않으므로, 버전으로 '최신'을 직접 고른다(gpt-5.4 < gpt-5.5 < gpt-6 …). */
@@ -271,10 +277,13 @@ public class AiManager {
         if (m.contains("gpt-4.1")) return new double[]{2, 8};
         if (m.contains("gpt-4o"))  return new double[]{2.5, 10};
         if (m.startsWith("gpt"))   return new double[]{2.5, 15};
-        // Gemini
-        if (m.contains("flash-lite")) return new double[]{0.10, 0.40};
-        if (m.contains("flash"))      return new double[]{0.30, 2.50};
-        if (m.contains("pro"))        return new double[]{1.25, 10};
+        // Gemini (2026 기준; 버전으로 세대 구분 — 날짜 접미사 오판 방지 위해 parseVer 사용)
+        if (m.contains("gemini") || m.contains("flash") || m.contains("pro")) {
+            boolean gen3 = parseVer(m) >= 3;
+            if (m.contains("flash-lite")) return gen3 ? new double[]{0.25, 1.5} : new double[]{0.10, 0.40};
+            if (m.contains("flash"))      return gen3 ? new double[]{1.5, 9}    : new double[]{0.30, 2.50};
+            if (m.contains("pro"))        return gen3 ? new double[]{2, 12}     : new double[]{1.25, 10};
+        }
         return new double[]{1, 5}; // 알 수 없음 — 보수적 기본
     }
 
