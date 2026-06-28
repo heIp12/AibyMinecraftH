@@ -168,38 +168,41 @@ public class DialogManager {
     // ──────────────────────────────────────────────────────────────
 
     /** 게임 시작 전 GM AI 품질(표준/고품질)을 선택하는 다이얼로그 */
-    public void showQualityChoice(Player player, Runnable onLow, Runnable onMedium, Runnable onHigh) {
+    public void showQualityChoice(Player player, String provider, String lowCost, String medCost, String highCost,
+                                  Runnable onLow, Runnable onMedium, Runnable onHigh) {
         Component body = Component.text()
             .append(Component.text("GM AI 품질을 선택하세요.", NamedTextColor.WHITE))
+            .appendNewline()
+            .append(Component.text("(" + provider + " · 아래 시간당 비용은 거친 추정치입니다)", NamedTextColor.DARK_GRAY))
             .appendNewline().appendNewline()
             .append(Component.text("저품질  ", NamedTextColor.GRAY))
-            .append(Component.text("가장 빠르고 저렴 · 서술 단순 (Haiku)", NamedTextColor.DARK_GRAY))
+            .append(Component.text("빠르고 저렴 · " + lowCost, NamedTextColor.DARK_GRAY))
             .appendNewline()
             .append(Component.text("중품질  ", NamedTextColor.YELLOW))
-            .append(Component.text("균형 잡힌 기본값 · 권장 (Sonnet)", NamedTextColor.GRAY))
+            .append(Component.text("균형·권장 · " + medCost, NamedTextColor.GRAY))
             .appendNewline()
             .append(Component.text("고품질  ", NamedTextColor.AQUA))
-            .append(Component.text("가장 풍부·일관 · 느리고 비쌈 (Opus)", NamedTextColor.GRAY))
+            .append(Component.text("가장 풍부·일관 · " + highCost, NamedTextColor.GRAY))
             .build();
 
         List<ActionButton> buttons = new ArrayList<>();
         buttons.add(ActionButton.create(
-            Component.text("저품질 모드", NamedTextColor.GRAY),
-            Component.text("가장 빠르고 저렴한 모델(Haiku)로 진행합니다.\n서술이 단순할 수 있습니다."),
+            Component.text("저품질 모드  " + lowCost, NamedTextColor.GRAY),
+            Component.text("가장 빠르고 저렴한 모델로 진행합니다.\n서술이 단순할 수 있습니다.\n" + lowCost),
             150,
             DialogAction.customClick((v, a) -> onLow.run(),
                 ClickCallback.Options.builder().uses(1).build())
         ));
         buttons.add(ActionButton.create(
-            Component.text("중품질 모드 (권장)", NamedTextColor.YELLOW),
-            Component.text("균형 잡힌 기본 모델(Sonnet)로 진행합니다.\n품질과 비용의 절충."),
+            Component.text("중품질 모드 (권장)  " + medCost, NamedTextColor.YELLOW),
+            Component.text("균형 잡힌 기본 모델로 진행합니다.\n품질과 비용의 절충.\n" + medCost),
             150,
             DialogAction.customClick((v, a) -> onMedium.run(),
                 ClickCallback.Options.builder().uses(1).build())
         ));
         buttons.add(ActionButton.create(
-            Component.text("고품질 모드", NamedTextColor.AQUA),
-            Component.text("가장 똑똑한 모델(Opus)로 진행합니다.\n응답이 느리고 토큰 비용이 큽니다."),
+            Component.text("고품질 모드  " + highCost, NamedTextColor.AQUA),
+            Component.text("가장 똑똑한 모델로 진행합니다.\n응답이 느리고 토큰 비용이 큽니다.\n" + highCost),
             150,
             DialogAction.customClick((v, a) -> onHigh.run(),
                 ClickCallback.Options.builder().uses(1).build())

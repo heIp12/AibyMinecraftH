@@ -63,16 +63,14 @@ public class AiManager {
     private volatile Quality gmQuality = Quality.MEDIUM;
 
     // 등급별 모델 오버라이드 (config; 비우면 자동 탐지 → 하드코딩 폴백)
-    private String highModelOverride = null;   // 고품질(Opus)
-    private String mediumModelOverride = null; // 중품질(Sonnet)
-    private String lowModelOverride = null;    // 저품질(Haiku)
+    private String highModelOverride = null, mediumModelOverride = null, lowModelOverride = null;
     // 역할별 모델 오버라이드 (config; 비우면 등급 기본)
     private String gmOverride = null, entityOverride = null, npcOverride = null,
                    assistantOverride = null, gdamOverride = null;
-    // 최신 모델 자동 탐지 (claude 전용; API에서 각 family 최신 모델을 1회 조회)
+    // 최신 모델 자동 탐지 (claude/openai/gemini 모두 지원). 고·중품질만 자동 탐지(저품질은 비용 최소로 고정).
     private boolean autoLatest = true;
     private volatile boolean modelsDiscovered = false;
-    private volatile String autoOpus = null, autoSonnet = null, autoHaiku = null;
+    private volatile String autoHigh = null, autoMedium = null;
 
     public void setGmQuality(Quality q)    { if (q != null) this.gmQuality = q; }
     public Quality getGmQuality()          { return gmQuality; }
@@ -82,75 +80,157 @@ public class AiManager {
     public void setMediumModelOverride(String m) { this.mediumModelOverride = norm(m); }
     public void setLowModelOverride(String m)    { this.lowModelOverride    = norm(m); }
     public void setAutoLatest(boolean b)         { this.autoLatest = b; }
+    public String providerLabel() {
+        return switch (apiType) { case "claude" -> "Claude"; case "openai" -> "OpenAI"; default -> "Gemini"; };
+    }
     /** 역할별 모델 지정(비우면 등급 기본). config 'models' 섹션에서 호출. */
     public void setRoleModels(String gm, String entity, String npc, String assistant, String gdam) {
         this.gmOverride = norm(gm); this.entityOverride = norm(entity); this.npcOverride = norm(npc);
         this.assistantOverride = norm(assistant); this.gdamOverride = norm(gdam);
     }
 
-    /** claude + autoLatest일 때, API에서 각 등급(opus/sonnet/haiku)의 최신 모델을 1회 조회. 실패 시 폴백 사용. */
+    // ── provider별 등급 기본 모델 (네트워크 없음) ──
+    private String defHigh()   { return switch (apiType) { case "claude" -> "claude-opus-4-8";          case "openai" -> "gpt-4.1";     default -> "gemini-2.5-pro"; }; }
+    private String defMedium() { return switch (apiType) { case "claude" -> "claude-sonnet-4-6";        case "openai" -> "gpt-4o";      default -> "gemini-2.0-flash"; }; }
+    private String defLow()    { return switch (apiType) { case "claude" -> "claude-3-5-haiku-20241022"; case "openai" -> "gpt-4o-mini"; default -> "gemini-2.0-flash-lite"; }; }
+
+    /** 백그라운드 워밍업 — 시작 시 호출하면 최신 모델 탐지가 메인 스레드를 막지 않는다. */
+    public void warmUpModels() { CompletableFuture.runAsync(this::ensureModelsDiscovered); }
+
+    /** autoLatest일 때 provider API에서 고·중품질 최신 모델을 1회 조회. 미지원/실패 시 하드코딩 폴백. */
     private void ensureModelsDiscovered() {
-        if (modelsDiscovered || !autoLatest || !"claude".equals(apiType) || apiKey.isEmpty()) return;
+        if (modelsDiscovered || !autoLatest || apiKey.isEmpty()) return;
         synchronized (this) {
             if (modelsDiscovered) return;
             modelsDiscovered = true; // 1회만 시도(실패해도 재시도 안 함 — 게임 지연 방지)
             try {
-                HttpRequest req = HttpRequest.newBuilder()
-                    .uri(URI.create("https://api.anthropic.com/v1/models?limit=100"))
-                    .header("x-api-key", apiKey)
-                    .header("anthropic-version", "2023-06-01")
-                    .timeout(Duration.ofSeconds(15))
-                    .GET().build();
-                HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
-                if (resp.statusCode() == 200) {
-                    JsonObject root = JsonParser.parseString(resp.body()).getAsJsonObject();
-                    if (root.has("data") && root.get("data").isJsonArray()) {
-                        // data는 최신순(created_at desc) — 각 family 첫 매치가 최신.
-                        for (JsonElement el : root.getAsJsonArray("data")) {
-                            if (!el.isJsonObject() || !el.getAsJsonObject().has("id")) continue;
-                            String id = el.getAsJsonObject().get("id").getAsString();
-                            if (autoOpus   == null && id.contains("opus"))   autoOpus   = id;
-                            if (autoSonnet == null && id.contains("sonnet")) autoSonnet = id;
-                            if (autoHaiku  == null && id.contains("haiku"))  autoHaiku  = id;
-                        }
+                List<String> ids = fetchModelIds();
+                if (ids.isEmpty()) return;
+                switch (apiType) {
+                    case "claude" -> { // anthropic 목록은 최신순 → 첫 매치가 최신
+                        autoHigh   = firstMatch(ids, "opus", null);
+                        autoMedium = firstMatch(ids, "sonnet", null);
+                    }
+                    case "openai" -> { // 유능 순: gpt-4.1 > gpt-4o (mini 제외)
+                        autoHigh   = firstMatch(ids, "gpt-4.1", "mini");
+                        if (autoHigh == null) autoHigh = firstMatch(ids, "gpt-4o", "mini");
+                        autoMedium = firstMatch(ids, "gpt-4o", "mini");
+                    }
+                    default -> { // gemini
+                        autoHigh   = firstMatch(ids, "pro", "vision");
+                        autoMedium = firstMatch(ids, "flash", "lite");
                     }
                 }
             } catch (Exception ignored) { /* 실패 → 하드코딩 폴백 */ }
         }
     }
 
-    private String sonnetModel() {
-        if (mediumModelOverride != null) return mediumModelOverride;
-        ensureModelsDiscovered();
-        if (autoSonnet != null) return autoSonnet;
-        return switch (apiType) {
-            case "claude" -> "claude-sonnet-4-6";
-            case "openai" -> "gpt-4o";
-            default       -> "gemini-2.0-flash";
-        };
+    /** provider별 모델 목록 조회 → id 리스트. (claude/openai: data[].id, gemini: models[].name) */
+    private List<String> fetchModelIds() throws Exception {
+        HttpRequest req;
+        switch (apiType) {
+            case "claude" -> req = HttpRequest.newBuilder(URI.create("https://api.anthropic.com/v1/models?limit=100"))
+                    .header("x-api-key", apiKey).header("anthropic-version", "2023-06-01")
+                    .timeout(Duration.ofSeconds(15)).GET().build();
+            case "openai" -> req = HttpRequest.newBuilder(URI.create("https://api.openai.com/v1/models"))
+                    .header("Authorization", "Bearer " + apiKey)
+                    .timeout(Duration.ofSeconds(15)).GET().build();
+            default -> req = HttpRequest.newBuilder(URI.create(
+                    "https://generativelanguage.googleapis.com/v1beta/models?key=" + apiKey + "&pageSize=200"))
+                    .timeout(Duration.ofSeconds(15)).GET().build();
+        }
+        HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
+        List<String> ids = new ArrayList<>();
+        if (resp.statusCode() != 200) return ids;
+        JsonObject root = JsonParser.parseString(resp.body()).getAsJsonObject();
+        String arrKey = root.has("data") ? "data" : (root.has("models") ? "models" : null);
+        if (arrKey == null || !root.get(arrKey).isJsonArray()) return ids;
+        for (JsonElement el : root.getAsJsonArray(arrKey)) {
+            if (!el.isJsonObject()) continue;
+            JsonObject o = el.getAsJsonObject();
+            String id = o.has("id") ? o.get("id").getAsString() : (o.has("name") ? o.get("name").getAsString() : null);
+            if (id == null) continue;
+            if (id.startsWith("models/")) id = id.substring("models/".length()); // gemini "models/xxx"
+            ids.add(id);
+        }
+        return ids;
     }
 
-    private String haikuModel() {
-        if (lowModelOverride != null) return lowModelOverride;
+    /** ids에서 kw를 포함하고 excl(있으면)을 포함하지 않는 첫 항목. */
+    private static String firstMatch(List<String> ids, String kw, String excl) {
+        for (String id : ids) {
+            String l = id.toLowerCase();
+            if (l.contains(kw) && (excl == null || !l.contains(excl))) return id;
+        }
+        return null;
+    }
+
+    private String sonnetModel() { // 중품질
+        if (mediumModelOverride != null) return mediumModelOverride;
         ensureModelsDiscovered();
-        if (autoHaiku != null) return autoHaiku;
-        return switch (apiType) {
-            case "claude" -> "claude-haiku-4-5-20251001";
-            case "openai" -> "gpt-4o-mini";
-            default       -> "gemini-2.0-flash-lite";
-        };
+        return autoMedium != null ? autoMedium : defMedium();
+    }
+
+    private String haikuModel() { // 저품질 — ★비용 최소★ 우선(자동 탐지 안 함). 더 싸게: config models.low 지정.
+        if (lowModelOverride != null) return lowModelOverride;
+        return defLow();
     }
 
     /** 고품질 모델 (config 우선 → 자동 최신 → provider 기본값) */
     private String highModel() {
         if (highModelOverride != null) return highModelOverride;
         ensureModelsDiscovered();
-        if (autoOpus != null) return autoOpus;
-        return switch (apiType) {
-            case "claude" -> "claude-opus-4-8";
-            case "openai" -> "gpt-4.1";
-            default       -> "gemini-2.5-pro";
+        return autoHigh != null ? autoHigh : defHigh();
+    }
+
+    // ── 비용 추정 (시간당) ──
+    /** 모델 가격 (USD per 1M 토큰) [입력, 출력]. 모르는 모델은 보수적 추정. */
+    private static double[] modelPriceUsd(String model) {
+        String m = model == null ? "" : model.toLowerCase();
+        // Claude
+        if (m.contains("opus"))   return new double[]{5, 25};
+        if (m.contains("sonnet")) return new double[]{3, 15};
+        if (m.contains("haiku"))  return m.contains("3-haiku")   ? new double[]{0.25, 1.25}
+                                       : m.contains("3-5-haiku") ? new double[]{0.8, 4}
+                                       : new double[]{1, 5};
+        // OpenAI
+        if (m.contains("4o-mini") || m.contains("4.1-mini") || m.contains("o4-mini")) return new double[]{0.15, 0.6};
+        if (m.contains("o3") || m.contains("o1"))  return new double[]{15, 60};
+        if (m.contains("gpt-4.1")) return new double[]{2, 8};
+        if (m.contains("gpt-4o"))  return new double[]{2.5, 10};
+        if (m.startsWith("gpt"))   return new double[]{2.5, 10};
+        // Gemini
+        if (m.contains("flash-lite")) return new double[]{0.10, 0.40};
+        if (m.contains("flash"))      return new double[]{0.30, 2.50};
+        if (m.contains("pro"))        return new double[]{1.25, 10};
+        return new double[]{1, 5}; // 알 수 없음 — 보수적 기본
+    }
+
+    /** 디스커버리(네트워크) 없이 등급의 대표 모델 — 비용 추정용. */
+    private String nominalModel(Quality q) {
+        return switch (q) {
+            case HIGH   -> highModelOverride   != null ? highModelOverride   : (autoHigh   != null ? autoHigh   : defHigh());
+            case LOW    -> lowModelOverride    != null ? lowModelOverride    : defLow();
+            default     -> mediumModelOverride != null ? mediumModelOverride : (autoMedium != null ? autoMedium : defMedium());
         };
+    }
+
+    /** 시간당 예상 비용(USD) — 거친 추정(턴/시간·토큰 가정). */
+    private double estimateHourlyUsd(Quality q) {
+        double[] gmP  = modelPriceUsd(nominalModel(q));
+        double[] auxP = modelPriceUsd(nominalModel(Quality.LOW)); // 괴담/NPC/보조 = 저품질 모델
+        final int TURNS = 50;                  // 시간당 GM 턴(3~4인 가정)
+        final int GM_IN = 8000, GM_OUT = 800;  // 턴당 GM 토큰(컨텍스트 성장·시나리오 생성 포함 평균)
+        final int AUX_CALLS = 2, AUX_IN = 2500, AUX_OUT = 400; // 괴담/NPC 등 보조 호출
+        double gm  = TURNS * (GM_IN * gmP[0] + GM_OUT * gmP[1]) / 1_000_000.0;
+        double aux = TURNS * AUX_CALLS * (AUX_IN * auxP[0] + AUX_OUT * auxP[1]) / 1_000_000.0;
+        return gm + aux;
+    }
+
+    /** 품질별 시간당 예상 비용 라벨(원화 추정). 선택 화면·시작 로그용. */
+    public String hourlyCostLabel(Quality q) {
+        long krw = Math.round(estimateHourlyUsd(q) * 1400.0); // 환율 ~₩1,400/$
+        return "약 ₩" + String.format("%,d", krw) + "/시간(추정)";
     }
 
     /** GM AI 호출 모델 — 역할 오버라이드 우선, 없으면 품질 등급(저=Haiku/중=Sonnet/고=Opus). */

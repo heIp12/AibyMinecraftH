@@ -105,6 +105,11 @@ public class AICraft extends JavaPlugin {
             getConfig().getString("models.npc", ""),
             getConfig().getString("models.assistant", ""),
             getConfig().getString("models.gdam", ""));
+        trpgAi.warmUpModels(); // 백그라운드로 최신 모델 탐지 — 메인 스레드 비차단
+        getLogger().info("[AI] provider=" + trpgAi.providerLabel()
+            + " | 시간당 예상비용(추정) 저=" + trpgAi.hourlyCostLabel(AiManager.Quality.LOW)
+            + " 중=" + trpgAi.hourlyCostLabel(AiManager.Quality.MEDIUM)
+            + " 고=" + trpgAi.hourlyCostLabel(AiManager.Quality.HIGH));
         trpgManager = new TRPGGameManager(this, trpgAi);
 
         if (getCommand("trpg") != null) {
