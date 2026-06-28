@@ -1264,10 +1264,11 @@ public class DialogManager {
         }
         Component body = bodyB.build();
         ActionButton closeBtn = ActionButton.create(Component.text("닫기", TextColor.color(0xAAAAAA)), null, 100, null);
+        // multiAction은 actions가 비면 예외 → 닫기 버튼을 actions에 넣고 exit는 null(클릭 시 기본 동작으로 닫힘).
         Dialog dialog = Dialog.create(b -> b.empty()
             .base(DialogBase.builder(Component.text(title))
                 .body(List.of(DialogBody.plainMessage(body))).build())
-            .type(DialogType.multiAction(List.of(), closeBtn, 1)));
+            .type(DialogType.multiAction(List.of(closeBtn), null, 1)));
         player.showDialog(dialog);
     }
 
