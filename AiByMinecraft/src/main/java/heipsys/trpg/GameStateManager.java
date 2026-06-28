@@ -487,6 +487,42 @@ public class GameStateManager {
     //  GM AI 입력 포맷 빌더
     // ──────────────────────────────────────────────────────────────
 
+    /** zoneId → 표시용 구역명(gdam zones[].name). 없으면 zoneId 그대로. */
+    public String zoneNameOf(String zoneId) {
+        if (zoneId == null || zoneId.isEmpty()) return "?";
+        if (gdamData != null && gdamData.has("zones") && gdamData.get("zones").isJsonArray()) {
+            for (JsonElement el : gdamData.getAsJsonArray("zones")) {
+                if (!el.isJsonObject()) continue;
+                JsonObject z = el.getAsJsonObject();
+                if (z.has("zone_id") && zoneId.equals(z.get("zone_id").getAsString()))
+                    return z.has("name") ? z.get("name").getAsString() : zoneId;
+            }
+        }
+        return zoneId;
+    }
+
+    /** 두 구역의 거리 등급: 0=같은 구역, 1=인접(연결됨), 2=멀리. gdam zones[].connections 기준. */
+    private int zoneDistance(String a, String b) {
+        if (a == null || b == null || a.isEmpty() || b.isEmpty()) return 2;
+        if (a.equals(b)) return 0;
+        if (gdamData != null && gdamData.has("zones") && gdamData.get("zones").isJsonArray()) {
+            for (JsonElement el : gdamData.getAsJsonArray("zones")) {
+                if (!el.isJsonObject()) continue;
+                JsonObject z = el.getAsJsonObject();
+                if (z.has("zone_id") && a.equals(z.get("zone_id").getAsString())
+                        && z.has("connections") && z.get("connections").isJsonArray()) {
+                    for (JsonElement c : z.getAsJsonArray("connections"))
+                        if (b.equals(c.getAsString())) return 1; // 직접 연결 = 인접
+                }
+            }
+        }
+        return 2; // 그 외 = 멀리
+    }
+
+    private static String distanceLabel(int d) {
+        return d == 0 ? "같은 구역" : d == 1 ? "인접" : "멀리";
+    }
+
     public String buildTurnInput(Player actor, String action) {
         StringBuilder sb = new StringBuilder();
         // 헤더: 필수 메타만 압축
@@ -539,8 +575,9 @@ public class GameStateManager {
         }
         if (!otherZone.isEmpty()) {
             StringJoiner others = new StringJoiner("  ");
-            otherZone.forEach(p -> others.add(p.toShortLine()));
-            sb.append("다른 위치 동료: ").append(others).append("\n");
+            otherZone.forEach(p -> others.add(
+                p.toShortLine() + "(" + zoneNameOf(p.zone) + "·" + distanceLabel(zoneDistance(actorZone, p.zone)) + ")"));
+            sb.append("다른 위치 동료(거리): ").append(others).append("\n");
         }
 
         // 최근 이벤트 — ★현재 행동자가 지각할 수 있는(같은 위치 zone, 또는 본인) 일만 반영한다.
