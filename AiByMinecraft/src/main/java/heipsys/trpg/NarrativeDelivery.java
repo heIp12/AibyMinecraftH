@@ -14,74 +14,72 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class NarrativeDelivery {
 
-    // 한 줄과 다음 줄 사이 대기 시간 (3초)
-    private static final long LINE_DELAY_TICKS = 60L;
-    // 한 라인(MC 채팅 한 줄) 최대 표시 길이 — 한글 기준 약 20자(40자 = 2줄).
-    // 이를 넘으면 다음 라인으로 래핑하며, MAX_LINES_PER_BLOCK과 곱해 한 덩이(2줄=40자)를 만든다.
+    // 블록(세그먼트) 사이 대기 — 방금 보여준 블록의 글자 수에 비례해 2~5초(읽는 시간만큼).
+    private static final long MIN_DELAY_TICKS   = 40L;  // 2초
+    private static final long MAX_DELAY_TICKS   = 100L; // 5초
+    private static final long FIRST_DELAY_TICKS = 12L;  // 첫 블록은 빠르게(0.6초)
+    // 세그먼트(문장 묶음) 목표 글자 — 이 근처에서 ★문장 경계로만★ 끊는다(문장 도중 분할 금지).
+    private static final int SEGMENT_TARGET = 40;
+    // 한 라인(MC 채팅 한 줄) 최대 표시 길이 — 한글 기준 약 20자.
     private static final int MAX_CHAT_CHARS = 20;
 
     private final Plugin plugin;
-    private final Map<UUID, ArrayDeque<String>> queues  = new ConcurrentHashMap<>();
+    private final Map<UUID, ArrayDeque<Block>>  queues  = new ConcurrentHashMap<>();
     private final Map<UUID, Integer>            taskIds = new ConcurrentHashMap<>();
 
     public NarrativeDelivery(Plugin plugin) {
         this.plugin = plugin;
     }
 
-    /** 한 번에 출력할 최대 줄 수 (이를 넘으면 다음 블록/틱으로 이어 표시) */
-    private static final int MAX_LINES_PER_BLOCK = 2;
+    /** 출력 한 단위(세그먼트). trailingBlank=true면 출력 뒤에 빈 줄(여백)을 둔다(= 문단 마지막 세그먼트). */
+    private record Block(String text, boolean trailingBlank) {}
 
-    /** GM 서술 텍스트를 줄 단위로 큐에 넣고 순차 출력 시작 */
+    /** GM 서술 텍스트를 문단→문장 세그먼트로 쪼개 큐에 넣고 순차 출력 시작 */
     public void deliver(Player player, String raw) {
         if (raw == null || raw.isBlank()) return;
         UUID uuid = player.getUniqueId();
-        ArrayDeque<String> q = queues.computeIfAbsent(uuid, k -> new ArrayDeque<>());
+        ArrayDeque<Block> q = queues.computeIfAbsent(uuid, k -> new ArrayDeque<>());
 
-        // 문단(\n) → 문장 단위로 쪼갠 뒤, 한 덩이가 2줄(한글 MAX_CHAT_CHARS자×2)을 넘지 않게
-        // ★문장 경계에서만★ 묶는다. 각 덩이는 MAX_CHAT_CHARS자 단위로 하드랩(MC 자동 인덴트 방지)해
-        // 블록으로 큐에 넣는다 → 문장 중간이 끊기지 않고, 2줄을 넘기면 다음 라인으로 이어진다.
-        // 단어 단위 줄바꿈은 단어를 보존하느라 줄 끝에 여백이 남으므로, 2줄 한도(40자)에서 살짝 줄여
-        // 한 덩이가 2줄을 넘겨 3줄째로 흘러가지 않게 한다(타자기 한 블록 = 2줄 유지).
-        final int maxChunk = MAX_CHAT_CHARS * MAX_LINES_PER_BLOCK - 4;
+        // 문단(\n) → 문장 경계로 세그먼트(≤SEGMENT_TARGET자)로 묶는다. ★문장 도중에는 절대 끊지 않는다.★
+        // 각 세그먼트는 한 블록으로 출력하고(내부 빈 줄 없음), 빈 줄(여백)은 ★문단과 문단 사이에만★ 둔다.
         for (String para : format(raw).split("\n")) {
             if (para.isBlank()) continue;
-            StringBuilder chunk = new StringBuilder();
+            List<String> segments = new ArrayList<>();
+            StringBuilder seg = new StringBuilder();
             int vis = 0;
             for (String sent : splitSentences(para.trim())) {
                 int sv = visualLength(sent);
-                // 이 문장을 더하면 2줄 초과 → 현재 덩이를 먼저 내보낸다
-                if (vis > 0 && vis + 1 + sv > maxChunk) {
-                    enqueueChunk(q, chunk.toString());
-                    chunk.setLength(0); vis = 0;
+                // 이 문장을 더하면 목표 초과 → 현재 세그먼트를 끊는다(★문장 경계에서만★)
+                if (vis > 0 && vis + 1 + sv > SEGMENT_TARGET) {
+                    segments.add(seg.toString()); seg.setLength(0); vis = 0;
                 }
-                if (vis > 0) { chunk.append(' '); vis++; }
-                chunk.append(sent);
-                vis += sv;
-                // 한 문장 자체가 2줄을 넘으면 단독으로 내보낸다(하드랩으로만 분할)
-                if (vis > maxChunk) {
-                    enqueueChunk(q, chunk.toString());
-                    chunk.setLength(0); vis = 0;
-                }
+                if (vis > 0) { seg.append(' '); vis++; }
+                seg.append(sent); vis += sv; // 한 문장이 목표보다 길어도 통째로 둔다(도중 분할 금지)
             }
-            if (chunk.length() > 0) enqueueChunk(q, chunk.toString());
+            if (seg.length() > 0) segments.add(seg.toString());
+
+            // 세그먼트들을 블록으로 큐에 — 문단 ★마지막★ 세그먼트만 뒤에 빈 줄(여백)
+            for (int i = 0; i < segments.size(); i++) {
+                String block = wrapToBlock(segments.get(i));
+                if (block.isEmpty()) continue;
+                q.add(new Block(block, i == segments.size() - 1));
+            }
         }
 
-        if (!taskIds.containsKey(uuid)) scheduleNext(player);
+        if (!taskIds.containsKey(uuid)) scheduleNext(player, FIRST_DELAY_TICKS);
     }
 
     /**
-     * 한 덩이(문장 묶음)를 MAX_CHAT_CHARS자 단위로 하드랩해 ★하나의 블록★으로 큐에 넣는다.
-     * 한 덩이는 항상 '완결된 문장(들)'이므로 통째로 한 블록에 담는다 → 빈 줄(블록 사이 여백)은
-     * 문장과 문장 사이에만 들어가고, 한 문장이 3줄로 늘어나도 도중에 빈 줄이 끼지 않는다
-     * ("구분이 안" / (빈 줄) / "된다." 처럼 끊겨 보이던 문제 해결).
+     * 한 세그먼트(문장 묶음)를 MAX_CHAT_CHARS자 단위로 하드랩해 ★하나의 블록★(여러 줄, 내부 빈 줄 없음)
+     * 문자열로 만든다. 줄 사이 여백(빈 줄)은 출력 단계(sendLine)에서 문단 마지막에만 붙인다.
      */
-    private void enqueueChunk(ArrayDeque<String> q, String chunk) {
+    private static String wrapToBlock(String text) {
         StringBuilder block = new StringBuilder();
-        for (String seg : hardWrap(chunk.trim())) {
+        for (String seg : hardWrap(text.trim())) {
             if (block.length() > 0) block.append('\n');
             block.append(seg);
         }
-        if (block.length() > 0) q.add(block.toString());
+        return block.toString();
     }
 
     /** 색코드(§X)를 제외한 실제 표시 문자 수. */
@@ -183,12 +181,12 @@ public class NarrativeDelivery {
         if (tid == null) return;
         plugin.getServer().getScheduler().cancelTask(tid);
 
-        ArrayDeque<String> q = queues.get(uuid);
+        ArrayDeque<Block> q = queues.get(uuid);
         if (q == null || q.isEmpty()) { queues.remove(uuid); return; }
 
-        String line = q.poll();
-        if (player.isOnline()) sendLine(player, line);
-        if (!q.isEmpty()) scheduleNext(player);
+        Block b = q.poll();
+        if (player.isOnline()) sendLine(player, b);
+        if (!q.isEmpty()) scheduleNext(player, delayFor(b));
         else queues.remove(uuid);
     }
 
@@ -217,7 +215,7 @@ public class NarrativeDelivery {
         for (UUID uuid : new ArrayList<>(queues.keySet())) {
             Integer tid = taskIds.remove(uuid);
             if (tid != null) plugin.getServer().getScheduler().cancelTask(tid);
-            ArrayDeque<String> q = queues.remove(uuid);
+            ArrayDeque<Block> q = queues.remove(uuid);
             if (q == null) continue;
             Player p = plugin.getServer().getPlayer(uuid);
             if (p != null && p.isOnline()) while (!q.isEmpty()) sendLine(p, q.poll());
@@ -225,14 +223,14 @@ public class NarrativeDelivery {
     }
 
     /**
-     * 한 블록(이미 래핑된 최대 2줄)을 줄 단위로 전송하고, 뒤에 빈 줄로 여백을 둔다.
-     * (블록은 deliver에서 38자 단위로 미리 분할되어 있으므로 재래핑하지 않는다)
+     * 한 블록을 줄 단위로 전송한다. 블록은 deliver에서 미리 하드랩되어 있으므로 재래핑하지 않는다.
+     * trailingBlank일 때만(문단 마지막 세그먼트) 뒤에 빈 줄(여백)을 둔다 → 문단 도중엔 빈 줄이 끼지 않는다.
      */
-    private void sendLine(Player player, String block) {
-        for (String segment : block.split("\n")) {
+    private void sendLine(Player player, Block block) {
+        for (String segment : block.text().split("\n")) {
             player.sendMessage(BASE_COLOR + segment);
         }
-        player.sendMessage(""); // 블록 사이 여백
+        if (block.trailingBlank()) player.sendMessage(""); // 문단 사이에만 여백
     }
 
     /**
@@ -286,18 +284,26 @@ public class NarrativeDelivery {
         return code;
     }
 
-    private void scheduleNext(Player player) {
+    private void scheduleNext(Player player, long delayTicks) {
         UUID uuid = player.getUniqueId();
         int tid = plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
             taskIds.remove(uuid);
             if (!player.isOnline()) { queues.remove(uuid); return; }
-            ArrayDeque<String> q = queues.get(uuid);
+            ArrayDeque<Block> q = queues.get(uuid);
             if (q == null || q.isEmpty()) { queues.remove(uuid); return; }
-            String line = q.poll();
-            sendLine(player, line);
-            if (!q.isEmpty()) scheduleNext(player);
+            Block b = q.poll();
+            sendLine(player, b);
+            if (!q.isEmpty()) scheduleNext(player, delayFor(b)); // 방금 블록 읽는 시간만큼 뒤 다음
             else queues.remove(uuid);
-        }, LINE_DELAY_TICKS).getTaskId();
+        }, delayTicks).getTaskId();
         taskIds.put(uuid, tid);
+    }
+
+    /** 방금 보여준 블록을 읽는 데 걸릴 시간 → 다음 블록까지의 지연(2~5초, 글자 수 비례). */
+    private static long delayFor(Block block) {
+        int len = visualLength(block.text().replace("\n", "")); // 색코드·줄바꿈 제외 실제 글자 수
+        long span = MAX_DELAY_TICKS - MIN_DELAY_TICKS;
+        long ticks = MIN_DELAY_TICKS + Math.round(Math.min(len, 40) / 40.0 * span);
+        return Math.max(MIN_DELAY_TICKS, Math.min(MAX_DELAY_TICKS, ticks));
     }
 }

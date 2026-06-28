@@ -217,7 +217,7 @@ public class MapManager {
         String label = useOverview ? "전체" : area;
         lastSig.remove(player.getUniqueId());
         replaceOrGive(player, target, label);
-        player.sendMessage("§7약도를 §e[" + label + "] §7구역으로 전환했습니다.");
+        // 약도 전환 안내 메시지는 채팅에 출력하지 않는다(요청) — 전환은 지도 아이템·제목으로만 표시.
     }
 
     private MapView defaultView(World w) {
