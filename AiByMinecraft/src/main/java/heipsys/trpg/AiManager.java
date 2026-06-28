@@ -709,8 +709,11 @@ public class AiManager {
             throws Exception {
 
         String body;
+        // 출력이 길수록 더 오래 걸린다 → maxTokens에 비례해 타임아웃을 늘린다(.gdam 단일 생성 12000토큰은 120초로 부족).
+        // 일반 GM/보조 호출(≤2048)은 120초, 대용량 생성은 최대 300초까지.
+        long timeoutSec = Math.max(120, Math.min(300, 60 + maxTokens / 50));
         HttpRequest.Builder builder = HttpRequest.newBuilder()
-            .timeout(Duration.ofSeconds(120)) // 응답 무한 대기 방지 (직렬화된 GM 락이 영구 점유되는 것 차단)
+            .timeout(Duration.ofSeconds(timeoutSec)) // 응답 무한 대기 방지 (직렬화된 GM 락이 영구 점유되는 것 차단)
             .header("Content-Type", "application/json");
 
         switch (apiType) {
