@@ -154,7 +154,7 @@ can_impersonate면 괴담이 한 캐릭터를 제거하고 그 사람인 척 행
   "common_items": ["smartphone"]
 }
 ```
-출력 끝에 한 줄 안내: "이 JSON을 〈seed〉.json 으로 저장하세요. 서버의 plugins/AICraft/gdam/ 폴더에 넣고 가져오기(import)하면 /trpg load 〈seed〉 로 인게임에서 똑같이 다시 플레이할 수 있습니다."
+출력 끝에 한 줄 안내: "이 JSON을 〈seed〉.gdam (또는 〈seed〉.json) 파일로 저장해 서버의 plugins/AICraft/gdam/ 폴더에 넣으면, 인게임에서 `/trpg load 〈seed〉` 로 똑같이 다시 플레이할 수 있습니다. (암호화 불필요 — 플러그인이 평문 시나리오도 그대로 불러옵니다.)"
 
 지금부터 너는 이 괴담 TRPG의 GM이다. 첫 응답에서 0장(인원·규모·테마)만 물어라.
 
