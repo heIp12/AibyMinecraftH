@@ -41,7 +41,7 @@ public class ContextCompressor {
             int batchSize = Math.min(cutoff, OLD_BATCH_SIZE);
             snapshot = new ArrayList<>(liveLog.subList(0, batchSize));
         }
-        String rawLog = snapshot.stream().map(EventLogEntry::toLogString).collect(Collectors.joining("\n"));
+        String rawLog = snapshot.stream().map(e -> e.toLogString(state::resolveDisplayName)).collect(Collectors.joining("\n"));
 
         String task = "아래 TRPG 이벤트 로그를 핵심만 5줄 이내로 요약해줘.\n"
             + "반드시 포함: 단서 발견, 타임라인 변화, 플레이어 상태 변화, 아이템 획득.\n"
@@ -69,7 +69,7 @@ public class ContextCompressor {
 
         if (daily.isEmpty()) return CompletableFuture.completedFuture(null);
 
-        String rawLog = daily.stream().map(EventLogEntry::toLogString).collect(Collectors.joining("\n"));
+        String rawLog = daily.stream().map(e -> e.toLogString(state::resolveDisplayName)).collect(Collectors.joining("\n"));
         String task   = "아래는 TRPG 일상 파트의 대화/행동 로그입니다.\n"
             + "나중에 '그게 그거였구나' 하는 순간을 만들 수 있도록\n"
             + "핵심 복선과 중요 정보만 3줄로 압축 요약해줘.";

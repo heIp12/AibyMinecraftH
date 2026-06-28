@@ -588,7 +588,7 @@ public class GameStateManager {
      * 로그의 player 필드가 계정명이면 그 플레이어의 gmDisplayName(계정명 절대 미노출)으로 변환한다.
      * 매칭되는 플레이어가 없으면(이미 캐릭터명이거나 NPC명) 그대로 통과시킨다.
      */
-    private String resolveDisplayName(String rawName) {
+    public String resolveDisplayName(String rawName) {
         if (rawName == null) return "?";
         PlayerData pd = playerOf(rawName);
         return pd != null ? pd.gmDisplayName() : rawName;
@@ -648,7 +648,7 @@ public class GameStateManager {
                         || "clue".equals(e.type) || "system".equals(e.type)
                         || "comm".equals(e.type)) {
                     String tag = "comm".equals(e.type) ? "[통신] " : "";
-                    sb.append(tag).append(e.toLogString()).append("\n");
+                    sb.append(tag).append(e.toLogString(this::resolveDisplayName)).append("\n");
                 }
             }
         }
