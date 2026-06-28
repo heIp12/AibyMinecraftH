@@ -187,6 +187,21 @@ public class NarrativeDelivery {
     }
 
     /**
+     * 대기 중인 모든 줄을 즉시(타자기 딜레이 없이) 한꺼번에 내보내고 큐를 비운다.
+     * 결말·결과 표시 직전에 호출해, 천천히 흐르던 서술이 결과와 겹쳐 보이는 것을 막는다(텍스트는 보존).
+     */
+    public void flushAll() {
+        for (UUID uuid : new ArrayList<>(queues.keySet())) {
+            Integer tid = taskIds.remove(uuid);
+            if (tid != null) plugin.getServer().getScheduler().cancelTask(tid);
+            ArrayDeque<String> q = queues.remove(uuid);
+            if (q == null) continue;
+            Player p = plugin.getServer().getPlayer(uuid);
+            if (p != null && p.isOnline()) while (!q.isEmpty()) sendLine(p, q.poll());
+        }
+    }
+
+    /**
      * 한 블록(이미 래핑된 최대 2줄)을 줄 단위로 전송하고, 뒤에 빈 줄로 여백을 둔다.
      * (블록은 deliver에서 38자 단위로 미리 분할되어 있으므로 재래핑하지 않는다)
      */
