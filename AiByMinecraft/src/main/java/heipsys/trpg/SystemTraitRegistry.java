@@ -76,9 +76,20 @@ public class SystemTraitRegistry {
             "uses=스테이지당 횟수(1)"),
 
         // ─── 패시브 효과 (active = false) ────────────────────────────────────────────
+        // 정보 계열 패시브 — 시작 시 '직감'으로 특정 영역의 정보를 안다. AI가 자연스럽게 가공해 전달.
+        //   공통 규칙: 정답·해결법은 절대 노출 금지. 약점은 등급이 매우 높을 때(S)만 '방향'까지. depth가 클수록 양·선명도↑.
         SCENARIO_INSIGHT("scenario_insight", false,
-            "패시브. 시작 시 핵심 정보를 제외한 시나리오의 전체 구조를 파악한 채 시작한다.",
+            "패시브(정보-시나리오 이해). 시작 시 사건의 '대략적 윤곽'(어떤 상황이고 무엇이 벌어지는지·분위기)을 직감으로 안다. 정체·정답·해결법은 제외.",
             "depth=파악 깊이(1=개략, 2=중간, 3=상세)"),
+        ENTITY_SENSE("entity_sense", false,
+            "패시브(정보-적대자 감지). 시작 시 적대 존재의 '유형·본질'을 직감으로 안다(예: 어떤 종류의 존재인지). 정확한 정체·이름은 제외. 등급이 매우 높으면 약점의 방향까지.",
+            "depth=감지 깊이(1=유형 암시, 2=유형·성향, 3=상세 본질)"),
+        ALLY_SENSE("ally_sense", false,
+            "패시브(정보-구원자 탐지). 시작 시 도움이 될 만한 아군/조력 성향 NPC의 '이름과 현재 위치'를 직감으로 안다. 적대·위장 가능성 있는 인물은 제외.",
+            "depth=탐지 범위(1=가장 가까운 1명, 2=2~3명, 3=알려진 조력자 다수)"),
+        LORE_RECORD("lore_record", false,
+            "패시브(정보-전지적 독자시점). 시작 시 '과거에 이 사건에 도전했다 실패한 이들의 이야기'를 안다(특히 규칙 위반·행동 제약으로 탈락한 사례 → 규칙을 간접적으로 노출). 정답 자체는 제외.",
+            "depth=이야기 깊이(1=단편 일화, 2=구체 사례, 3=여러 사례·교훈)"),
         PASSIVE_GM("passive_gm", false,
             "패시브. effect에 적힌 상시 효과를 GM이 매 턴 항상 고려한다(예: 주인공 보호, 미묘한 이상 감지).",
             "(별도 파라미터 없음. 효과 내용은 effect 텍스트로 표현)"),
@@ -155,8 +166,8 @@ public class SystemTraitRegistry {
         sb.append("능력 기본 코스트(제약 없을 때, 등급 예산과 같은 점수):\n");
         sb.append("  · 10점: instant_clear · revive_ally · fate · group_rewind · dominate(power2) · choice_action(choices4) · ai_query(info3·uses2+) · sacrifice(scale3) · passive_trigger(intensity3·freq3)\n");
         sb.append("  · 5점 : gm_directive · ai_query(info3·uses1) · luck_roll(scale10+) · area_scan(scope3) · link_ally(depth3) · protect(power3) · guaranteed(scope3) · mobility(power3) · remote_sense(range3&info3) · foresight(depth3) · social(power3) · dominate(power1) · sacrifice(scale2)\n");
-        sb.append("  · 3점 : passive_gm · show_progress · scenario_insight(depth2~3) · area_scan(scope2) · passive_trigger(intensity2) · protect(power2) · luck_roll(scale5~9) · link_ally(depth2) · choice_action(choices2~3) · guaranteed · mobility(power2) · remote_sense · foresight · social(power1~2) · ai_query(info1~2)\n");
-        sb.append("  · 1점 : ai_query(info1·uses1) · scenario_insight(depth1) · protect(power1) · area_scan(scope1) · luck_roll(scale≤4) · link_ally(depth1) · passive_trigger(intensity1)\n");
+        sb.append("  · 3점 : passive_gm · show_progress · scenario_insight·entity_sense·ally_sense·lore_record(depth2~3) · area_scan(scope2) · passive_trigger(intensity2) · protect(power2) · luck_roll(scale5~9) · link_ally(depth2) · choice_action(choices2~3) · guaranteed · mobility(power2) · remote_sense · foresight · social(power1~2) · ai_query(info1~2)\n");
+        sb.append("  · 1점 : ai_query(info1·uses1) · scenario_insight·entity_sense·ally_sense·lore_record(depth1) · protect(power1) · area_scan(scope1) · luck_roll(scale≤4) · link_ally(depth1) · passive_trigger(intensity1)\n");
         sb.append("★ 제약을 걸수록 코스트가 싸진다(할인): 스테이지당 1회(cooldown_turns=-1) −3 · 쿨다운 5턴+ −2 · 쿨다운 2턴+ −1 · 최소 횟수(uses=1) −1. (능력은 최소 1점)\n");
         sb.append("★ 단점(음의 스텟)을 주면 그만큼 예산이 늘어난다(상쇄). 예: B(3) 특성에 매력 −2 → 예산 5로 늘어 A급 능력 1개 탑재 가능.\n");
         sb.append("→ 강한 능력을 낮은 등급에 넣고 싶으면 쿨다운·1회성·횟수제한·단점스텟으로 코스트를 예산 안에 맞춰라. ");
@@ -329,7 +340,7 @@ public class SystemTraitRegistry {
                 td.effectParams.putIfAbsent("choices", 3);
                 clamp(td, "uses", 1, 3); clamp(td, "choices", 2, 4);
             }
-            case SCENARIO_INSIGHT -> {
+            case SCENARIO_INSIGHT, ENTITY_SENSE, ALLY_SENSE, LORE_RECORD -> {
                 td.effectParams.putIfAbsent("depth", 2);
                 clamp(td, "depth", 1, 3);
             }
@@ -445,7 +456,7 @@ public class SystemTraitRegistry {
             case REMOTE_SENSE     -> (td.param("range", 2) >= 3 && td.param("info", 1) >= 3) ? 5 : 3;
             case FORESIGHT        -> td.param("depth", 2) >= 3 ? 5 : 3;
             case SOCIAL           -> td.param("power", 2) >= 3 ? 5 : 3;
-            case SCENARIO_INSIGHT -> td.param("depth", 1) >= 2 ? 3 : 1;
+            case SCENARIO_INSIGHT, ENTITY_SENSE, ALLY_SENSE, LORE_RECORD -> td.param("depth", 1) >= 2 ? 3 : 1;
             default               -> 3; // passive_gm·show_progress 등 텍스트 의존 = 기본 B
         };
         int discount = 0;
