@@ -40,7 +40,9 @@ public class NarrativeDelivery {
         // 문단(\n) → 문장 단위로 쪼갠 뒤, 한 덩이가 2줄(한글 MAX_CHAT_CHARS자×2)을 넘지 않게
         // ★문장 경계에서만★ 묶는다. 각 덩이는 MAX_CHAT_CHARS자 단위로 하드랩(MC 자동 인덴트 방지)해
         // 블록으로 큐에 넣는다 → 문장 중간이 끊기지 않고, 2줄을 넘기면 다음 라인으로 이어진다.
-        final int maxChunk = MAX_CHAT_CHARS * MAX_LINES_PER_BLOCK;
+        // 단어 단위 줄바꿈은 단어를 보존하느라 줄 끝에 여백이 남으므로, 2줄 한도(40자)에서 살짝 줄여
+        // 한 덩이가 2줄을 넘겨 3줄째로 흘러가지 않게 한다(타자기 한 블록 = 2줄 유지).
+        final int maxChunk = MAX_CHAT_CHARS * MAX_LINES_PER_BLOCK - 4;
         for (String para : format(raw).split("\n")) {
             if (para.isBlank()) continue;
             StringBuilder chunk = new StringBuilder();
@@ -120,6 +122,24 @@ public class NarrativeDelivery {
             if (!seg.isEmpty()) out.add(seg);
         }
         return out.isEmpty() ? Collections.singletonList(s.trim()) : out;
+    }
+
+    /**
+     * 서술 텍스트를 문단(\n)→문장 단위의 줄 목록으로 분해한다.
+     * 다이얼로그처럼 가운데 정렬되는 곳에서 한 문장씩 줄을 나눠 '벽글'을 막는 용도(외부 호출용).
+     */
+    public static List<String> toSentenceLines(String raw) {
+        List<String> out = new ArrayList<>();
+        if (raw == null) return out;
+        for (String para : raw.split("\n")) {
+            String p = para.strip();
+            if (p.isEmpty()) continue;
+            for (String sent : splitSentences(p)) {
+                String t = sent.trim();
+                if (!t.isEmpty()) out.add(t);
+            }
+        }
+        return out;
     }
 
     // 색상 구분: 기본 서술=흰색, 화자 태그[...]=주황, 연출/시스템<...>=노랑, 대사="..."=청록
@@ -213,32 +233,54 @@ public class NarrativeDelivery {
     }
 
     /**
-     * 색코드(§X)를 무시하고 실제 표시 문자 수 기준으로 줄을 분할한다.
-     * 한글 기준 MAX_CHAT_CHARS 자 이하로 나눠 MC 자동 인덴트를 방지.
+     * 색코드(§X)를 무시하고 실제 표시 문자 수 기준으로 줄을 분할한다(한글 기준 MAX_CHAT_CHARS 자 이하).
+     * - ★단어(공백) 경계★에서만 끊어 단어·문장부호가 잘리지 않게 한다(부득이 한 단어가 한 줄보다 길면 글자 단위 분할).
+     * - 줄을 넘길 때 직전 줄의 ★마지막 색코드★를 다음 줄 머리에 이어 붙여, 줄바꿈 시 서식(색)이 끊기지 않게 한다.
      */
     private static List<String> hardWrap(String line) {
         List<String> result = new ArrayList<>();
-        StringBuilder current = new StringBuilder();
-        int visualLen = 0;
-        int i = 0;
-        while (i < line.length()) {
-            char c = line.charAt(i);
-            if (c == '§' && i + 1 < line.length()) {
-                current.append(c).append(line.charAt(i + 1));
-                i += 2;
-                continue;
+        StringBuilder cur = new StringBuilder();
+        int vis = 0;
+        String carry = ""; // 줄을 넘길 때 다음 줄 머리에 이어붙일 직전 활성 색코드
+
+        for (String word : line.split(" ", -1)) {
+            if (word.isEmpty()) continue; // 연속·말단 공백 무시(단어 사이는 아래에서 한 칸씩 복원)
+            int wv = visualLength(word);
+
+            // 이 단어를 더하면 한 줄 한도를 넘는다 → 현재 줄을 끊고 단어를 통째로 다음 줄로(단어 보존)
+            if (vis > 0 && vis + 1 + wv > MAX_CHAT_CHARS) {
+                carry = lastColorCode(cur.toString(), carry);
+                result.add(cur.toString());
+                cur = new StringBuilder(carry);
+                vis = 0;
             }
-            current.append(c);
-            visualLen++;
-            if (visualLen >= MAX_CHAT_CHARS) {
-                result.add(current.toString());
-                current = new StringBuilder();
-                visualLen = 0;
+
+            if (wv > MAX_CHAT_CHARS) {
+                // 한 단어가 한 줄보다 길다 → 부득이 글자 단위로 분할(§코드 보존·색 이어붙임)
+                if (vis > 0) { carry = lastColorCode(cur.toString(), carry); result.add(cur.toString()); cur = new StringBuilder(carry); vis = 0; }
+                for (int k = 0; k < word.length(); ) {
+                    char c = word.charAt(k);
+                    if (c == '§' && k + 1 < word.length()) { cur.append(c).append(word.charAt(k + 1)); k += 2; continue; }
+                    if (vis >= MAX_CHAT_CHARS) { carry = lastColorCode(cur.toString(), carry); result.add(cur.toString()); cur = new StringBuilder(carry); vis = 0; }
+                    cur.append(c); vis++; k++;
+                }
+            } else {
+                if (vis > 0) { cur.append(' '); vis++; }
+                cur.append(word);
+                vis += wv;
             }
-            i++;
         }
-        if (!current.isEmpty()) result.add(current.toString());
+        if (visualLength(cur.toString()) > 0) result.add(cur.toString());
         return result.isEmpty() ? Collections.singletonList(line) : result;
+    }
+
+    /** s에 들어 있는 마지막 색코드(§X)를 반환한다(줄바꿈 시 색 유지용). 없으면 fallback을 그대로 돌려준다. */
+    private static String lastColorCode(String s, String fallback) {
+        String code = fallback;
+        for (int i = 0; i + 1 < s.length(); i++) {
+            if (s.charAt(i) == '§') { code = "§" + s.charAt(i + 1); i++; }
+        }
+        return code;
     }
 
     private void scheduleNext(Player player) {
