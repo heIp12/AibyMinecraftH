@@ -39,8 +39,9 @@ public class AICraft extends JavaPlugin {
 
     @Override
     public void onDisable() {
-        if (trpgManager != null && trpgManager.isActive()) {
-            trpgManager.stopSession(null);
+        if (trpgManager != null) {
+            if (trpgManager.isActive()) trpgManager.stopSession(null);
+            trpgManager.saveUsageOnDisable(); // 전체 누적 비용 최종 동기 저장
         }
     }
 
@@ -57,6 +58,8 @@ public class AICraft extends JavaPlugin {
             trpgManager.stopSession(null);
             if (sender != null) sender.sendMessage("§7진행 중이던 세션을 종료했습니다.");
         }
+        // 새 AiManager가 최신 누적을 이어받도록, 리로드 전에 동기 저장한다(비동기 저장 경쟁 방지).
+        if (trpgManager != null) trpgManager.saveUsageOnDisable();
 
         reloadConfig();
         String apiType = buildGame(sender);
@@ -90,6 +93,7 @@ public class AICraft extends JavaPlugin {
         }
 
         AiManager trpgAi = new AiManager(apiKey, apiType);
+        trpgAi.initUsagePersistence(new java.io.File(getDataFolder(), "usage.json")); // 전체 누적 비용 로드(영구)
         // AI 모델 설정 (config 'models' 섹션). 비워두면 자동 — claude는 API에서 각 등급 최신 모델을 탐지한다.
         trpgAi.setAutoLatest(getConfig().getBoolean("models.auto-latest", true));
         // 등급별 기본 모델 (비우면 자동/기본). 하위호환: 기존 gm-model-high(고품질) 키도 계속 읽는다.

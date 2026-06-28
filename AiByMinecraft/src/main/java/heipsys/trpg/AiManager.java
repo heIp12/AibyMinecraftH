@@ -81,11 +81,18 @@ public class AiManager {
     private final DoubleAdder accCostUsd = new DoubleAdder(); // 누적 비용(USD)
     private volatile UsageStat sessionStart = new UsageStat(0, 0, 0, 0.0);
     private volatile UsageStat stageStart   = new UsageStat(0, 0, 0, 0.0);
+    // 영구 누적 기준점(파일에서 로드 = 이전 가동까지의 전체 누적). 전체누적 = persistedBase + 이번 가동(accumulators).
+    private volatile UsageStat persistedBase = new UsageStat(0, 0, 0, 0.0);
+    private volatile java.io.File usageFile  = null;
+    private final Object usageSaveLock = new Object();
 
     /** AI 사용량 스냅샷(호출 수·입력/출력 토큰·USD 비용). */
     public record UsageStat(long calls, long inTok, long outTok, double costUsd) {
         public UsageStat minus(UsageStat o) {
             return new UsageStat(calls - o.calls, inTok - o.inTok, outTok - o.outTok, costUsd - o.costUsd);
+        }
+        public UsageStat plus(UsageStat o) {
+            return new UsageStat(calls + o.calls, inTok + o.inTok, outTok + o.outTok, costUsd + o.costUsd);
         }
     }
 
@@ -259,18 +266,58 @@ public class AiManager {
     }
 
     // ── 실사용량 조회·마킹 (실제 토큰 사용 기반, /trpg status용) ──
-    /** 현재까지의 영구 누적 사용량(서버 가동 중 전체). */
+    /** 이번 서버 가동 중 누적 사용량(메모리). */
     public UsageStat lifetimeUsage() {
         return new UsageStat(accCalls.sum(), accInTok.sum(), accOutTok.sum(), accCostUsd.sum());
     }
+    /** 전체 누적 사용량(영구) = 이전 가동까지 저장분 + 이번 가동. */
+    public UsageStat allTimeUsage() { return persistedBase.plus(lifetimeUsage()); }
     /** 세션(=/trpg start) 시작 시점 표시 — 이후 세션·스테이지 사용량을 0부터 잰다. */
-    public void markSessionStart() { sessionStart = lifetimeUsage(); stageStart = sessionStart; }
+    public void markSessionStart() { sessionStart = lifetimeUsage(); stageStart = sessionStart; saveUsage(); }
     /** 스테이지 시작 시점 표시 — 이후 스테이지 사용량을 0부터 잰다. */
-    public void markStageStart()   { stageStart = lifetimeUsage(); }
+    public void markStageStart()   { stageStart = lifetimeUsage(); saveUsage(); }
     /** /trpg start 이후 사용량. */
     public UsageStat sessionUsage() { return lifetimeUsage().minus(sessionStart); }
     /** 현재 스테이지 사용량. */
     public UsageStat stageUsage()   { return lifetimeUsage().minus(stageStart); }
+
+    // ── 영구 사용량 파일(서버 가동 간 누적 유지) ──
+    /** 영구 사용량 파일을 지정하고 즉시 로드한다. 서버 기동 시 1회 호출. */
+    public void initUsagePersistence(java.io.File file) { this.usageFile = file; loadPersistedUsage(file); }
+    /** 현재 전체 누적을 파일에 비동기 저장(게임 진행 중 체크포인트용). */
+    public void saveUsage() {
+        final java.io.File f = usageFile;
+        if (f != null) CompletableFuture.runAsync(() -> savePersistedUsage(f));
+    }
+    /** 현재 전체 누적을 파일에 동기 저장(플러그인 종료·리로드 직전용). */
+    public void saveUsageSync() { savePersistedUsage(usageFile); }
+
+    private void loadPersistedUsage(java.io.File file) {
+        try {
+            if (file == null || !file.exists()) return;
+            String s = new String(java.nio.file.Files.readAllBytes(file.toPath()), java.nio.charset.StandardCharsets.UTF_8);
+            JsonObject o = gson.fromJson(s, JsonObject.class);
+            if (o == null) return;
+            persistedBase = new UsageStat(usageLong(o, "calls"), usageLong(o, "inTok"),
+                usageLong(o, "outTok"), o.has("costUsd") ? o.get("costUsd").getAsDouble() : 0.0);
+        } catch (Exception ignored) { /* 손상·부재 시 0부터 */ }
+    }
+    private void savePersistedUsage(java.io.File file) {
+        if (file == null) return;
+        synchronized (usageSaveLock) {
+            try {
+                UsageStat all = allTimeUsage();
+                JsonObject o = new JsonObject();
+                o.addProperty("calls", all.calls());
+                o.addProperty("inTok", all.inTok());
+                o.addProperty("outTok", all.outTok());
+                o.addProperty("costUsd", all.costUsd());
+                if (file.getParentFile() != null) file.getParentFile().mkdirs();
+                java.nio.file.Files.write(file.toPath(),
+                    gson.toJson(o).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            } catch (Exception ignored) { /* 저장 실패는 게임 진행에 영향 없음 */ }
+        }
+    }
 
     /** 사용량 → 사람이 읽는 한 줄(USD + 원화 환산 + 호출·토큰 수). */
     public String usageLabel(UsageStat u) {
