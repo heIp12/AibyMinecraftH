@@ -70,7 +70,7 @@ public class AiManager {
     // 최신 모델 자동 탐지 (claude/openai/gemini 모두 지원). 고·중품질만 자동 탐지(저품질은 비용 최소로 고정).
     private boolean autoLatest = true;
     private volatile boolean modelsDiscovered = false;
-    private volatile String autoHigh = null, autoMedium = null;
+    private volatile String autoHigh = null, autoMedium = null, autoLow = null;
 
     public void setGmQuality(Quality q)    { if (q != null) this.gmQuality = q; }
     public Quality getGmQuality()          { return gmQuality; }
@@ -92,7 +92,7 @@ public class AiManager {
     // ── provider별 등급 기본 모델 (네트워크 없음) ──
     private String defHigh()   { return switch (apiType) { case "claude" -> "claude-opus-4-8";          case "openai" -> "gpt-4.1";     default -> "gemini-2.5-pro"; }; }
     private String defMedium() { return switch (apiType) { case "claude" -> "claude-sonnet-4-6";        case "openai" -> "gpt-4o";      default -> "gemini-2.0-flash"; }; }
-    private String defLow()    { return switch (apiType) { case "claude" -> "claude-3-5-haiku-20241022"; case "openai" -> "gpt-4o-mini"; default -> "gemini-2.0-flash-lite"; }; }
+    private String defLow()    { return switch (apiType) { case "claude" -> "claude-haiku-4-5-20251001"; case "openai" -> "gpt-4o-mini"; default -> "gemini-2.0-flash-lite"; }; }
 
     /** 백그라운드 워밍업 — 시작 시 호출하면 최신 모델 탐지가 메인 스레드를 막지 않는다. */
     public void warmUpModels() { CompletableFuture.runAsync(this::ensureModelsDiscovered); }
@@ -110,15 +110,22 @@ public class AiManager {
                     case "claude" -> { // anthropic 목록은 최신순 → 첫 매치가 최신
                         autoHigh   = firstMatch(ids, "opus", null);
                         autoMedium = firstMatch(ids, "sonnet", null);
+                        // 저품질=가용 Haiku 중 가장 저렴(3.5) 우선, 없으면 가용 Haiku 아무거나(예: 4.5)
+                        autoLow    = firstMatch(ids, "3-5-haiku", null);
+                        if (autoLow == null) autoLow = firstMatch(ids, "haiku", null);
                     }
                     case "openai" -> { // 유능 순: gpt-4.1 > gpt-4o (mini 제외)
                         autoHigh   = firstMatch(ids, "gpt-4.1", "mini");
                         if (autoHigh == null) autoHigh = firstMatch(ids, "gpt-4o", "mini");
                         autoMedium = firstMatch(ids, "gpt-4o", "mini");
+                        autoLow    = firstMatch(ids, "4o-mini", null);
+                        if (autoLow == null) autoLow = firstMatch(ids, "mini", null);
                     }
                     default -> { // gemini
                         autoHigh   = firstMatch(ids, "pro", "vision");
                         autoMedium = firstMatch(ids, "flash", "lite");
+                        autoLow    = firstMatch(ids, "flash-lite", null);
+                        if (autoLow == null) autoLow = firstMatch(ids, "flash", null);
                     }
                 }
             } catch (Exception ignored) { /* 실패 → 하드코딩 폴백 */ }
@@ -171,9 +178,10 @@ public class AiManager {
         return autoMedium != null ? autoMedium : defMedium();
     }
 
-    private String haikuModel() { // 저품질 — ★비용 최소★ 우선(자동 탐지 안 함). 더 싸게: config models.low 지정.
+    private String haikuModel() { // 저품질 — 가용한 가장 저렴한 모델(탐지값 우선). config models.low로 직접 지정 가능.
         if (lowModelOverride != null) return lowModelOverride;
-        return defLow();
+        ensureModelsDiscovered();
+        return autoLow != null ? autoLow : defLow();
     }
 
     /** 고품질 모델 (config 우선 → 자동 최신 → provider 기본값) */
@@ -643,6 +651,14 @@ public class AiManager {
             if (attempt >= 3) throw new RuntimeException("API 429: 재시도 횟수 초과 (3회)");
             Thread.sleep(7000L * (attempt + 1));
             return send(model, system, messages, maxTokens, attempt + 1);
+        }
+        // 모델 ID가 이 키에서 안 먹히면(404 not_found) 탐지된 '가용' 모델로 1회 폴백 — 잘못된 모델로 게임이 죽지 않게.
+        if (response.statusCode() == 404 && attempt < 2 && response.body().toLowerCase().contains("not_found")) {
+            ensureModelsDiscovered();
+            String fb = autoMedium != null ? autoMedium : (autoLow != null ? autoLow : autoHigh);
+            if (fb != null && !fb.equals(model)) {
+                return send(fb, system, messages, maxTokens, attempt + 1);
+            }
         }
         if (response.statusCode() != 200) {
             throw new RuntimeException("API " + response.statusCode() + ": " + response.body().substring(0, Math.min(200, response.body().length())));
