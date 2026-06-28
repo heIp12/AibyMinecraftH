@@ -41,8 +41,8 @@ public class NarrativeDelivery {
         UUID uuid = player.getUniqueId();
         ArrayDeque<Block> q = queues.computeIfAbsent(uuid, k -> new ArrayDeque<>());
 
-        // 문단(\n) → 문장 경계로 세그먼트(≤SEGMENT_TARGET자)로 묶는다. ★문장 도중에는 절대 끊지 않는다.★
-        // 각 세그먼트는 한 블록으로 출력하고(내부 빈 줄 없음), 빈 줄(여백)은 ★문단과 문단 사이에만★ 둔다.
+        // 문단(\n) → 문장 경계로 세그먼트(≤SEGMENT_TARGET자, 가로는 50자까지 채움)로 묶는다. ★문장 도중에는 절대 끊지 않는다.★
+        // 각 세그먼트(블록)는 한 줄(들)로 출력하고 ★뒤에 빈 줄 한 줄★을 둬 세로로 띄운다 → 벽처럼 뭉쳐 보이지 않게.
         for (String para : format(raw).split("\n")) {
             if (para.isBlank()) continue;
             List<String> segments = new ArrayList<>();
@@ -59,11 +59,10 @@ public class NarrativeDelivery {
             }
             if (seg.length() > 0) segments.add(seg.toString());
 
-            // 세그먼트들을 블록으로 큐에 — 문단 ★마지막★ 세그먼트만 뒤에 빈 줄(여백)
-            for (int i = 0; i < segments.size(); i++) {
-                String block = wrapToBlock(segments.get(i));
-                if (block.isEmpty()) continue;
-                q.add(new Block(block, i == segments.size() - 1));
+            // 세그먼트마다 한 블록 + 뒤에 빈 줄(여백) → 문장 묶음 사이가 시원하게 띄워진다(가독성).
+            for (String s : segments) {
+                String block = wrapToBlock(s);
+                if (!block.isEmpty()) q.add(new Block(block, true));
             }
         }
 
