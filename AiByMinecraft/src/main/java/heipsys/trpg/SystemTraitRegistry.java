@@ -89,6 +89,9 @@ public class SystemTraitRegistry {
         PHASE_OUT("phase_out", true,
             "발동 시 N턴간 턴을 건너뛰며 아무 간섭도 받지 않는다(위상 이탈). 종료 시 극적 탈출(건물 폭파 등)이 가능하다.",
             "turns=지속 턴수(1~3), uses=스테이지당 횟수(1)"),
+        POSSESS_NPC("possess_npc", true,
+            "발동 시 대상 NPC(적대 NPC 가능, 괴담 본체 불가)에 빙의한다 — 본체는 무방비로 남고(본체 사망 시 본인도 사망), NPC 몸으로 진행하며 그 NPC가 아는 정보를 모두 알게 된다(기록에 추가). 큰 피해·해제 선언 시 복귀.",
+            "uses=스테이지당 횟수(1)"),
         GUARANTEED("guaranteed", true,
             "발동 시 다음 행동 1회를 확정 성공으로 처리한다(주사위·실패를 무시하고 GM이 성공으로 서술). 회피가 아니라 '반드시 성공'하는 결과 보장이다.",
             "uses=스테이지당 횟수(1~2), scope=확정 범위(1=단일 행동, 2=연관 행동 묶음, 3=상황 전체 국면)"),
@@ -399,7 +402,7 @@ public class SystemTraitRegistry {
                 td.effectParams.putIfAbsent("uses", 1);
                 clamp(td, "uses", 1, 2);
             }
-            case PACT, PAST_EDIT -> {
+            case PACT, PAST_EDIT, POSSESS_NPC -> {
                 td.effectParams.putIfAbsent("uses", 1);
                 clamp(td, "uses", 1, 1);
             }
@@ -560,6 +563,7 @@ public class SystemTraitRegistry {
             case GDAM_MORPH       -> 5;
             case PHASE_OUT        -> td.param("turns", 2) >= 3 ? 10 : 5;
             case REVIVE_AS_ANIMAL -> 5;
+            case POSSESS_NPC      -> 10;
             default               -> 3; // passive_gm·show_progress 등 텍스트 의존 = 기본 B
         };
         int discount = 0;
@@ -638,7 +642,7 @@ public class SystemTraitRegistry {
                  SOCIAL, DOMINATE, FATE, GROUP_REWIND,
                  GET_CONTACTS, FORCE_ENCOUNTER, DECOY, DELAY, ONE_WAY_CALL,
                  TELEPORT, RALLY, EVADE_SENSE,
-                 OBSERVER_SIGHT, PACT, PAST_EDIT, GDAM_MORPH, PHASE_OUT -> td.param("uses", 1);
+                 OBSERVER_SIGHT, PACT, PAST_EDIT, GDAM_MORPH, PHASE_OUT, POSSESS_NPC -> td.param("uses", 1);
             default -> 0;
         };
     }
