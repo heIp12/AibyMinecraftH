@@ -1250,6 +1250,27 @@ public class DialogManager {
         player.showDialog(dialog);
     }
 
+    /**
+     * 단일 페이지 정보 다이얼로그(닫기 버튼만). /trpg status 등 짧은 정보 표시용.
+     * 각 줄은 colorizeEndingLine으로 서식 적용(§ 코드가 있으면 그대로 렌더).
+     */
+    public void showStatusDialog(Player player, String title, List<String> lines) {
+        var bodyB = Component.text();
+        boolean first = true;
+        for (String line : lines) {
+            if (!first) bodyB.appendNewline();
+            first = false;
+            bodyB.append(colorizeEndingLine(line));
+        }
+        Component body = bodyB.build();
+        ActionButton closeBtn = ActionButton.create(Component.text("닫기", TextColor.color(0xAAAAAA)), null, 100, null);
+        Dialog dialog = Dialog.create(b -> b.empty()
+            .base(DialogBase.builder(Component.text(title))
+                .body(List.of(DialogBody.plainMessage(body))).build())
+            .type(DialogType.multiAction(List.of(), closeBtn, 1)));
+        player.showDialog(dialog);
+    }
+
     // ──────────────────────────────────────────────────────────────
     //  상태 조회 / 초기화
     // ──────────────────────────────────────────────────────────────
