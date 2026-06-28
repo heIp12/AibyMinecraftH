@@ -18,10 +18,10 @@ public class NarrativeDelivery {
     private static final long MIN_DELAY_TICKS   = 40L;  // 2초
     private static final long MAX_DELAY_TICKS   = 100L; // 5초
     private static final long FIRST_DELAY_TICKS = 12L;  // 첫 블록은 빠르게(0.6초)
-    // 세그먼트(문장 묶음) 목표 글자 — 이 근처에서 ★문장 경계로만★ 끊는다(문장 도중 분할 금지).
-    private static final int SEGMENT_TARGET = 40;
-    // 한 라인(MC 채팅 한 줄) 최대 표시 길이 — 한글 기준 약 20자.
-    private static final int MAX_CHAT_CHARS = 20;
+    // 세그먼트(문장 묶음) 목표 글자 — 이 근처에서 ★문장 경계로만★ 끊는다(문장 도중 분할 금지). MAX_CHAT_CHARS보다 살짝 작게.
+    private static final int SEGMENT_TARGET = 38;
+    // 한 라인(MC 채팅 한 줄) 최대 표시 길이(한글 기준). 클라 채팅 폭에 맞춰 — 너무 크면 MC가 임의로 줄바꿈.
+    private static final int MAX_CHAT_CHARS = 40;
 
     private final Plugin plugin;
     private final Map<UUID, ArrayDeque<Block>>  queues  = new ConcurrentHashMap<>();
