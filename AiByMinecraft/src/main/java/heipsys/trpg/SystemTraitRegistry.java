@@ -74,6 +74,21 @@ public class SystemTraitRegistry {
         EVADE_SENSE("evade_sense", true,
             "발동 시 N턴간 괴담의 감지(perception 양식 전부 — 청각·시각·통신·전지 등)에서 벗어난다. 그동안 괴담은 자신을 직접 표적·추적하지 못한다.",
             "turns=지속 턴수(1~3), uses=스테이지당 횟수(1~2)"),
+        OBSERVER_SIGHT("observer_sight", true,
+            "발동 시 '무대 뒤(연출자)의 현재 사고'를 엿본다 — 지금 이 순간 무슨 의도로 일이 굴러가는지. 전체 각본·정답은 제외, 현재 사고만.",
+            "uses=스테이지당 횟수(1~2)"),
+        PACT("pact", true,
+            "발동 시 괴담과 1회 거래를 시도한다 — 대가(체력·정신력·단서 등)를 치르고 양보 1개를 얻는다. 고위험. GM이 거래를 판정·서술한다.",
+            "uses=스테이지당 횟수(1)"),
+        PAST_EDIT("past_edit", true,
+            "발동 시 자신이 한 과거 행동 1개를 다른 것으로 개찬한다 — 인과가 바뀐다(정답 날조 불가, GM이 개연성 판정).",
+            "uses=스테이지당 횟수(1)"),
+        GDAM_MORPH("gdam_morph", true,
+            "발동 시 N턴간 무작위 괴담으로 변신한다 — 그 괴담 본성대로 행동(★조작 불가, GM이 구동, 피아식별 없음). 난장판+통제 상실이 곧 대가.",
+            "turns=변신 지속 턴수(1~3), uses=스테이지당 횟수(1)"),
+        PHASE_OUT("phase_out", true,
+            "발동 시 N턴간 턴을 건너뛰며 아무 간섭도 받지 않는다(위상 이탈). 종료 시 극적 탈출(건물 폭파 등)이 가능하다.",
+            "turns=지속 턴수(1~3), uses=스테이지당 횟수(1)"),
         GUARANTEED("guaranteed", true,
             "발동 시 다음 행동 1회를 확정 성공으로 처리한다(주사위·실패를 무시하고 GM이 성공으로 서술). 회피가 아니라 '반드시 성공'하는 결과 보장이다.",
             "uses=스테이지당 횟수(1~2), scope=확정 범위(1=단일 행동, 2=연관 행동 묶음, 3=상황 전체 국면)"),
@@ -128,6 +143,12 @@ public class SystemTraitRegistry {
             "(파라미터 없음)"),
         FATAL_GUARD("fatal_guard", false,
             "패시브. '돌이킬 수 없는 1회성 치명 행동(즉사 규칙 위반 등)'을 저질러도 ★1회에 한해★ 그 결과를 무효화한다(아슬아슬하게 무위로). 이후엔 정상 판정.",
+            "(파라미터 없음)"),
+        ENCOUNTER_SCAN("encounter_scan", false,
+            "패시브(정보-첫 조우). 시작 시 처음 마주칠 적대 존재·핵심 인물에 대한 짧은 직감을 얻는다. 정답·정체·해결법은 제외.",
+            "depth=파악 깊이(1=암시, 2=중간, 3=상세)"),
+        REVIVE_AS_ANIMAL("revive_as_animal", false,
+            "패시브. 사망 시 1회 주변 동물로 되살아난다 — 정찰·방해·몸짓 정보전달 가능(GM 서술), 능력·아이템·통신 불가, 괴담은 정체 인지 못함. 휘말리거나 공격받으면 높은 확률로 사망.",
             "(파라미터 없음)");
 
         public final String  key;
@@ -370,9 +391,22 @@ public class SystemTraitRegistry {
                 td.effectParams.putIfAbsent("choices", 3);
                 clamp(td, "uses", 1, 3); clamp(td, "choices", 2, 4);
             }
-            case SCENARIO_INSIGHT, ENTITY_SENSE, ALLY_SENSE, LORE_RECORD -> {
+            case SCENARIO_INSIGHT, ENTITY_SENSE, ALLY_SENSE, LORE_RECORD, ENCOUNTER_SCAN -> {
                 td.effectParams.putIfAbsent("depth", 2);
                 clamp(td, "depth", 1, 3);
+            }
+            case OBSERVER_SIGHT -> {
+                td.effectParams.putIfAbsent("uses", 1);
+                clamp(td, "uses", 1, 2);
+            }
+            case PACT, PAST_EDIT -> {
+                td.effectParams.putIfAbsent("uses", 1);
+                clamp(td, "uses", 1, 1);
+            }
+            case GDAM_MORPH, PHASE_OUT -> {
+                td.effectParams.putIfAbsent("turns", 2);
+                td.effectParams.putIfAbsent("uses", 1);
+                clamp(td, "turns", 1, 3); clamp(td, "uses", 1, 1);
             }
             case AREA_SCAN -> {
                 td.effectParams.putIfAbsent("scope", 2);
@@ -519,7 +553,13 @@ public class SystemTraitRegistry {
             case REMOTE_SENSE     -> (td.param("range", 2) >= 3 && td.param("info", 1) >= 3) ? 5 : 3;
             case FORESIGHT        -> td.param("depth", 2) >= 3 ? 5 : 3;
             case SOCIAL           -> td.param("power", 2) >= 3 ? 5 : 3;
-            case SCENARIO_INSIGHT, ENTITY_SENSE, ALLY_SENSE, LORE_RECORD -> td.param("depth", 1) >= 2 ? 3 : 1;
+            case SCENARIO_INSIGHT, ENTITY_SENSE, ALLY_SENSE, LORE_RECORD, ENCOUNTER_SCAN -> td.param("depth", 1) >= 2 ? 3 : 1;
+            case OBSERVER_SIGHT   -> 5;
+            case PACT             -> 5;
+            case PAST_EDIT        -> 5;
+            case GDAM_MORPH       -> 5;
+            case PHASE_OUT        -> td.param("turns", 2) >= 3 ? 10 : 5;
+            case REVIVE_AS_ANIMAL -> 5;
             default               -> 3; // passive_gm·show_progress 등 텍스트 의존 = 기본 B
         };
         int discount = 0;
@@ -597,7 +637,8 @@ public class SystemTraitRegistry {
                  GUARANTEED, MOBILITY, REMOTE_SENSE, FORESIGHT,
                  SOCIAL, DOMINATE, FATE, GROUP_REWIND,
                  GET_CONTACTS, FORCE_ENCOUNTER, DECOY, DELAY, ONE_WAY_CALL,
-                 TELEPORT, RALLY, EVADE_SENSE -> td.param("uses", 1);
+                 TELEPORT, RALLY, EVADE_SENSE,
+                 OBSERVER_SIGHT, PACT, PAST_EDIT, GDAM_MORPH, PHASE_OUT -> td.param("uses", 1);
             default -> 0;
         };
     }
