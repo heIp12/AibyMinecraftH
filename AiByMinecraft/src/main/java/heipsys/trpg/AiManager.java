@@ -8,6 +8,8 @@ import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.DoubleAdder;
+import java.util.concurrent.atomic.LongAdder;
 
 /**
  * TRPG용 AI 매니저. 4종 AI 인스턴스(GM/Entity/NPC/Assistant)를 관리하며
@@ -71,6 +73,21 @@ public class AiManager {
     private boolean autoLatest = true;
     private volatile boolean modelsDiscovered = false;
     private volatile String autoHigh = null, autoMedium = null, autoLow = null;
+
+    // ── 실사용 토큰·비용 누적(서버 가동 중 영구) + 세션/스테이지 시작 스냅샷(델타용) ──
+    private final LongAdder   accCalls   = new LongAdder();
+    private final LongAdder   accInTok   = new LongAdder();   // 입력 토큰(캐시 읽기·쓰기 포함)
+    private final LongAdder   accOutTok  = new LongAdder();   // 출력 토큰
+    private final DoubleAdder accCostUsd = new DoubleAdder(); // 누적 비용(USD)
+    private volatile UsageStat sessionStart = new UsageStat(0, 0, 0, 0.0);
+    private volatile UsageStat stageStart   = new UsageStat(0, 0, 0, 0.0);
+
+    /** AI 사용량 스냅샷(호출 수·입력/출력 토큰·USD 비용). */
+    public record UsageStat(long calls, long inTok, long outTok, double costUsd) {
+        public UsageStat minus(UsageStat o) {
+            return new UsageStat(calls - o.calls, inTok - o.inTok, outTok - o.outTok, costUsd - o.costUsd);
+        }
+    }
 
     public void setGmQuality(Quality q)    { if (q != null) this.gmQuality = q; }
     public Quality getGmQuality()          { return gmQuality; }
@@ -239,6 +256,81 @@ public class AiManager {
     public String hourlyCostLabel(Quality q) {
         long krw = Math.round(estimateHourlyUsd(q) * 1400.0); // 환율 ~₩1,400/$
         return "약 ₩" + String.format("%,d", krw) + "/시간(추정)";
+    }
+
+    // ── 실사용량 조회·마킹 (실제 토큰 사용 기반, /trpg status용) ──
+    /** 현재까지의 영구 누적 사용량(서버 가동 중 전체). */
+    public UsageStat lifetimeUsage() {
+        return new UsageStat(accCalls.sum(), accInTok.sum(), accOutTok.sum(), accCostUsd.sum());
+    }
+    /** 세션(=/trpg start) 시작 시점 표시 — 이후 세션·스테이지 사용량을 0부터 잰다. */
+    public void markSessionStart() { sessionStart = lifetimeUsage(); stageStart = sessionStart; }
+    /** 스테이지 시작 시점 표시 — 이후 스테이지 사용량을 0부터 잰다. */
+    public void markStageStart()   { stageStart = lifetimeUsage(); }
+    /** /trpg start 이후 사용량. */
+    public UsageStat sessionUsage() { return lifetimeUsage().minus(sessionStart); }
+    /** 현재 스테이지 사용량. */
+    public UsageStat stageUsage()   { return lifetimeUsage().minus(stageStart); }
+
+    /** 사용량 → 사람이 읽는 한 줄(USD + 원화 환산 + 호출·토큰 수). */
+    public String usageLabel(UsageStat u) {
+        long krw = Math.round(u.costUsd() * 1400.0);
+        return "§f$" + String.format("%.3f", u.costUsd())
+             + " §7(₩" + String.format("%,d", krw) + ") §8호출 " + u.calls()
+             + "회·토큰 " + fmtTokens(u.inTok()) + "→" + fmtTokens(u.outTok());
+    }
+    private static String fmtTokens(long t) {
+        if (t >= 1_000_000) return String.format("%.2fM", t / 1_000_000.0);
+        if (t >= 1_000)     return String.format("%.1fK", t / 1_000.0);
+        return Long.toString(t);
+    }
+
+    /** 응답의 usage(토큰 사용량)를 provider별로 읽어 영구 누적에 더한다(캐시 단가 반영). */
+    private void accumulateUsage(JsonObject json, String model) {
+        try {
+            double[] price = modelPriceUsd(model); // [입력,출력] per 1M
+            long in = 0, out = 0, cacheRead = 0, cacheWrite = 0;
+            switch (apiType) {
+                case "claude" -> {
+                    JsonObject u = json.has("usage") ? json.getAsJsonObject("usage") : null;
+                    if (u == null) return;
+                    in         = usageLong(u, "input_tokens");
+                    out        = usageLong(u, "output_tokens");
+                    cacheRead  = usageLong(u, "cache_read_input_tokens");
+                    cacheWrite = usageLong(u, "cache_creation_input_tokens");
+                }
+                case "gemini" -> {
+                    JsonObject u = json.has("usageMetadata") ? json.getAsJsonObject("usageMetadata") : null;
+                    if (u == null) return;
+                    in  = usageLong(u, "promptTokenCount");
+                    out = usageLong(u, "candidatesTokenCount");
+                }
+                default -> { // openai
+                    JsonObject u = json.has("usage") ? json.getAsJsonObject("usage") : null;
+                    if (u == null) return;
+                    in  = usageLong(u, "prompt_tokens");
+                    out = usageLong(u, "completion_tokens");
+                    if (u.has("prompt_tokens_details") && u.get("prompt_tokens_details").isJsonObject()) {
+                        cacheRead = usageLong(u.getAsJsonObject("prompt_tokens_details"), "cached_tokens");
+                        in = Math.max(0, in - cacheRead); // 비캐시 입력만 정가 적용
+                    }
+                }
+            }
+            // 캐시 읽기 0.1×, 캐시 생성 1.25×(claude), 그 외 정가
+            double cost = (in * price[0]
+                         + cacheRead * price[0] * 0.1
+                         + cacheWrite * price[0] * 1.25
+                         + out * price[1]) / 1_000_000.0;
+            accCalls.increment();
+            accInTok.add(in + cacheRead + cacheWrite);
+            accOutTok.add(out);
+            accCostUsd.add(cost);
+        } catch (Exception ignored) { /* 사용량 집계 실패는 게임 진행에 영향 주지 않음 */ }
+    }
+
+    private static long usageLong(JsonObject o, String k) {
+        try { return (o != null && o.has(k) && o.get(k).isJsonPrimitive()) ? o.get(k).getAsLong() : 0L; }
+        catch (Exception e) { return 0L; }
     }
 
     /** GM AI 호출 모델 — 역할 오버라이드 우선, 없으면 품질 등급(저=Haiku/중=Sonnet/고=Opus). */
@@ -666,6 +758,7 @@ public class AiManager {
 
         try {
             JsonObject json = gson.fromJson(response.body(), JsonObject.class);
+            accumulateUsage(json, model); // 실사용 토큰·비용 누적(/trpg status 표시용)
             return switch (apiType) {
                 case "claude" -> json.getAsJsonArray("content").get(0)
                                      .getAsJsonObject().get("text").getAsString();

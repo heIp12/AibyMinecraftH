@@ -106,13 +106,15 @@ public class CMDTrpg implements CommandExecutor, TabCompleter {
         var state = trpg.getState();
         if (!state.isSessionActive()) {
             player.sendMessage("§7현재 진행 중인 TRPG 세션이 없습니다.");
-            return;
+        } else {
+            player.sendMessage("§e[TRPG 상태]");
+            player.sendMessage("§7스테이지: §f" + state.getRoomNumber()
+                + "  타임라인: §f" + (state.isDailyPhase() ? "일상(" + state.getDailyTurnsLeft() + "턴)" : state.getTimelineStage() + "단계")
+                + "  오염: §f" + state.getCorruption().level);
+            player.sendMessage("§7참여 인원: §f" + state.getTotalCount() + "명 (생존 " + state.getAliveCount() + "명)");
         }
-        player.sendMessage("§e[TRPG 상태]");
-        player.sendMessage("§7스테이지: §f" + state.getRoomNumber()
-            + "  타임라인: §f" + (state.isDailyPhase() ? "일상(" + state.getDailyTurnsLeft() + "턴)" : state.getTimelineStage() + "단계")
-            + "  오염: §f" + state.getCorruption().level);
-        player.sendMessage("§7참여 인원: §f" + state.getTotalCount() + "명 (생존 " + state.getAliveCount() + "명)");
+        // AI 실사용 비용은 세션 유무와 무관하게 표시(서버 누적은 항상 유효)
+        trpg.usageStatusLines().forEach(player::sendMessage);
     }
 
     @Override
