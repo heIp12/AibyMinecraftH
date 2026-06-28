@@ -7,6 +7,7 @@ import io.papermc.paper.registry.data.dialog.ActionButton;
 import io.papermc.paper.registry.data.dialog.DialogBase;
 import io.papermc.paper.registry.data.dialog.action.DialogAction;
 import io.papermc.paper.registry.data.dialog.body.DialogBody;
+import io.papermc.paper.registry.data.dialog.input.DialogInput;
 import io.papermc.paper.registry.data.dialog.type.DialogType;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickCallback;
@@ -1111,6 +1112,35 @@ public class DialogManager {
         Dialog dialog = Dialog.create(b -> b.empty()
             .base(DialogBase.builder(Component.text("[" + trait.name + "] 아군 감지"))
                 .body(List.of(DialogBody.plainMessage(body)))
+                .build())
+            .type(DialogType.multiAction(List.of(confirmBtn), cancelBtn, 1))
+        );
+        player.showDialog(dialog);
+    }
+
+    /**
+     * 범용 텍스트 입력 다이얼로그 — 다이얼로그 안의 입력칸에 직접 입력하고 확인하면 onSubmit(입력값)을 호출한다.
+     * 채팅창 입력(+탭 자동완성)을 대체한다. 취소하거나 빈 값이면 onSubmit은 호출되지 않는다.
+     */
+    public void showTextInput(Player player, Component title, Component body,
+                              String inputLabel, Component confirmLabel, Consumer<String> onSubmit) {
+        final String KEY = "v";
+        DialogInput input = DialogInput.text(KEY, Component.text(inputLabel))
+            .labelVisible(true).width(300).maxLength(150).build();
+        ActionButton confirmBtn = ActionButton.create(
+            confirmLabel, null, 250,
+            DialogAction.customClick((view, audience) -> {
+                String val = (view == null) ? null : view.getText(KEY);
+                if (val != null && !val.isBlank()) onSubmit.accept(val.trim());
+            }, ClickCallback.Options.builder().uses(1).build())
+        );
+        ActionButton cancelBtn = ActionButton.create(
+            Component.text("취소", TextColor.color(0xAAAAAA)), null, 100, null
+        );
+        Dialog dialog = Dialog.create(b -> b.empty()
+            .base(DialogBase.builder(title)
+                .body(List.of(DialogBody.plainMessage(body)))
+                .inputs(List.of(input))
                 .build())
             .type(DialogType.multiAction(List.of(confirmBtn), cancelBtn, 1))
         );
