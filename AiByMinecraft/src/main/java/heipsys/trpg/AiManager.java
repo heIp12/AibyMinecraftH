@@ -115,9 +115,9 @@ public class AiManager {
     }
 
     // ── provider별 등급 기본 모델 (네트워크 없음) ──
-    private String defHigh()   { return switch (apiType) { case "claude" -> "claude-opus-4-8";          case "openai" -> "gpt-4.1";     default -> "gemini-2.5-pro"; }; }
-    private String defMedium() { return switch (apiType) { case "claude" -> "claude-sonnet-4-6";        case "openai" -> "gpt-4o";      default -> "gemini-2.0-flash"; }; }
-    private String defLow()    { return switch (apiType) { case "claude" -> "claude-haiku-4-5-20251001"; case "openai" -> "gpt-4o-mini"; default -> "gemini-2.0-flash-lite"; }; }
+    private String defHigh()   { return switch (apiType) { case "claude" -> "claude-opus-4-8";          case "openai" -> "gpt-5.5";      default -> "gemini-2.5-pro"; }; }
+    private String defMedium() { return switch (apiType) { case "claude" -> "claude-sonnet-4-6";        case "openai" -> "gpt-5.4";      default -> "gemini-2.0-flash"; }; }
+    private String defLow()    { return switch (apiType) { case "claude" -> "claude-haiku-4-5-20251001"; case "openai" -> "gpt-5.4-nano"; default -> "gemini-2.0-flash-lite"; }; }
 
     /** 백그라운드 워밍업 — 시작 시 호출하면 최신 모델 탐지가 메인 스레드를 막지 않는다. */
     public void warmUpModels() { CompletableFuture.runAsync(this::ensureModelsDiscovered); }
@@ -139,12 +139,13 @@ public class AiManager {
                         autoLow    = firstMatch(ids, "3-5-haiku", null);
                         if (autoLow == null) autoLow = firstMatch(ids, "haiku", null);
                     }
-                    case "openai" -> { // 유능 순: gpt-4.1 > gpt-4o (mini 제외)
-                        autoHigh   = firstMatch(ids, "gpt-4.1", "mini");
-                        if (autoHigh == null) autoHigh = firstMatch(ids, "gpt-4o", "mini");
-                        autoMedium = firstMatch(ids, "gpt-4o", "mini");
-                        autoLow    = firstMatch(ids, "4o-mini", null);
-                        if (autoLow == null) autoLow = firstMatch(ids, "mini", null);
+                    case "openai" -> { // 최신 버전 우선(목록 순서 비보장 → 버전 번호로 최신 선별). gpt-5 계열 > gpt-4 계열.
+                        autoHigh = latestVer(ids, new String[]{"gpt-5"}, OAI_NON_FLAGSHIP);   // 최신 gpt-5 표준(mini·nano·pro 제외)
+                        if (autoHigh == null) autoHigh = latestVer(ids, new String[]{"gpt-4"}, OAI_NON_FLAGSHIP);
+                        autoMedium = latestVer(ids, new String[]{"gpt-5", "mini"}, OAI_SPECIAL); // 최신 gpt-5*-mini
+                        if (autoMedium == null) autoMedium = autoHigh;
+                        autoLow = latestVer(ids, new String[]{"nano"}, OAI_SPECIAL);          // 최신 *-nano(최저가)
+                        if (autoLow == null) autoLow = latestVer(ids, new String[]{"mini"}, OAI_SPECIAL);
                     }
                     default -> { // gemini
                         autoHigh   = firstMatch(ids, "pro", "vision");
@@ -197,6 +198,39 @@ public class AiManager {
         return null;
     }
 
+    // OpenAI 모델 선별용 제외 목록 — 표준 대화형이 아닌 특수/소형 변형들.
+    //  NON_FLAGSHIP: 고품질(플래그십) 자동 선택에서 소형(mini·nano)·고가(pro)·특수형 제외.
+    private static final String[] OAI_NON_FLAGSHIP = {
+        "mini","nano","pro","codex","audio","realtime","search","image","tts","transcribe","embedding","instruct","moderation"};
+    //  SPECIAL: 소형/중형 선택 시에도 대화형이 아닌 특수 변형은 제외(mini·nano는 허용).
+    private static final String[] OAI_SPECIAL = {
+        "pro","codex","audio","realtime","search","image","tts","transcribe","embedding","instruct","moderation"};
+
+    /** require 키워드를 ★모두★ 포함하고 exclude를 ★하나도★ 포함하지 않는 id 중 버전 번호가 가장 높은 것.
+     *  OpenAI 모델 목록은 최신순 정렬이 보장되지 않으므로, 버전으로 '최신'을 직접 고른다(gpt-5.4 < gpt-5.5 < gpt-6 …). */
+    private static String latestVer(List<String> ids, String[] require, String[] exclude) {
+        String best = null; double bestV = -1;
+        for (String id : ids) {
+            String l = id.toLowerCase();
+            boolean ok = true;
+            for (String r : require) if (!l.contains(r)) { ok = false; break; }
+            if (ok && exclude != null) for (String e : exclude) if (l.contains(e)) { ok = false; break; }
+            if (!ok) continue;
+            double v = parseVer(l);
+            if (v > bestV) { bestV = v; best = id; }
+        }
+        return best;
+    }
+
+    /** id에서 첫 버전 숫자를 비교용 근사값으로 추출(gpt-5.4→5.04, gpt-5→5.0, gpt-4.1→4.01). 없으면 0. */
+    private static double parseVer(String id) {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("(\\d+)(?:[._](\\d+))?").matcher(id);
+        if (!m.find()) return 0;
+        double major = Double.parseDouble(m.group(1));
+        double minor = (m.group(2) != null) ? Double.parseDouble(m.group(2)) : 0;
+        return major + minor / 100.0;
+    }
+
     private String sonnetModel() { // 중품질
         if (mediumModelOverride != null) return mediumModelOverride;
         ensureModelsDiscovered();
@@ -226,12 +260,17 @@ public class AiManager {
         if (m.contains("haiku"))  return m.contains("3-haiku")   ? new double[]{0.25, 1.25}
                                        : m.contains("3-5-haiku") ? new double[]{0.8, 4}
                                        : new double[]{1, 5};
-        // OpenAI
-        if (m.contains("4o-mini") || m.contains("4.1-mini") || m.contains("o4-mini")) return new double[]{0.15, 0.6};
-        if (m.contains("o3") || m.contains("o1"))  return new double[]{15, 60};
+        // OpenAI (2026 기준; gpt-5 계열 우선, 소형/특수 변형 먼저 판별)
+        if (m.contains("4o-mini") || m.contains("4.1-nano")) return new double[]{0.15, 0.6}; // 레거시 초저가
+        if (m.contains("gpt-5") && m.contains("pro")) return new double[]{30, 180};          // gpt-5.x-pro
+        if (m.contains("nano"))    return new double[]{0.20, 1.25};   // gpt-5.x-nano
+        if (m.contains("mini"))    return new double[]{0.75, 4.5};    // gpt-5.x-mini
+        if (m.contains("gpt-5.5") || m.contains("gpt-5-5")) return new double[]{5, 30};      // 플래그십
+        if (m.contains("gpt-5"))   return new double[]{2.5, 15};      // gpt-5 / 5.1 / 5.4 표준급
+        if (m.contains("o4") || m.contains("o3") || m.contains("o1")) return new double[]{2.2, 8.8}; // o-시리즈(추론)
         if (m.contains("gpt-4.1")) return new double[]{2, 8};
         if (m.contains("gpt-4o"))  return new double[]{2.5, 10};
-        if (m.startsWith("gpt"))   return new double[]{2.5, 10};
+        if (m.startsWith("gpt"))   return new double[]{2.5, 15};
         // Gemini
         if (m.contains("flash-lite")) return new double[]{0.10, 0.40};
         if (m.contains("flash"))      return new double[]{0.30, 2.50};
