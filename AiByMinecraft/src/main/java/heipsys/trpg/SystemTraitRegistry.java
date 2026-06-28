@@ -53,6 +53,15 @@ public class SystemTraitRegistry {
         GET_CONTACTS("get_contacts", true,
             "발동 시 아직 모르는 아군(플레이어 우선, 부족하면 조력 NPC)의 연락처를 즉시 입수한다.",
             "count=즉시 입수할 연락처 수(1~3), uses=스테이지당 횟수(1~2)"),
+        FORCE_ENCOUNTER("force_encounter", true,
+            "발동 시 진행을 돕는 조력 NPC 1명을 자신과 같은 구역에 확정 등장(조우)시킨다. 괴담 본체는 대상 아님.",
+            "uses=스테이지당 횟수(1~2)"),
+        DECOY("decoy", true,
+            "발동 시 괴담/위협의 다음 표적·추적을 다른 대상(미끼)으로 돌린다. 자신은 잠시 직접 표적에서 벗어난다.",
+            "uses=스테이지당 횟수(1~2)"),
+        DELAY("delay", true,
+            "발동 시 다가오던 파국 이벤트나 괴담의 다음 위협 행동을 몇 턴 지연시킨다(무효 아님, 미뤄짐).",
+            "turns=지연 턴수(1~2), uses=스테이지당 횟수(1~2)"),
         GUARANTEED("guaranteed", true,
             "발동 시 다음 행동 1회를 확정 성공으로 처리한다(주사위·실패를 무시하고 GM이 성공으로 서술). 회피가 아니라 '반드시 성공'하는 결과 보장이다.",
             "uses=스테이지당 횟수(1~2), scope=확정 범위(1=단일 행동, 2=연관 행동 묶음, 3=상황 전체 국면)"),
@@ -370,6 +379,15 @@ public class SystemTraitRegistry {
                 td.effectParams.putIfAbsent("uses", 1);
                 clamp(td, "count", 1, 3); clamp(td, "uses", 1, 2);
             }
+            case FORCE_ENCOUNTER, DECOY -> {
+                td.effectParams.putIfAbsent("uses", 1);
+                clamp(td, "uses", 1, 2);
+            }
+            case DELAY -> {
+                td.effectParams.putIfAbsent("turns", 1);
+                td.effectParams.putIfAbsent("uses", 1);
+                clamp(td, "turns", 1, 2); clamp(td, "uses", 1, 2);
+            }
             case GUARANTEED -> {
                 td.effectParams.putIfAbsent("uses", 1);
                 td.effectParams.putIfAbsent("scope", 1);
@@ -459,6 +477,9 @@ public class SystemTraitRegistry {
             case AREA_SCAN        -> { int sp = td.param("scope", 1); yield sp >= 3 ? 5 : sp >= 2 ? 3 : 1; }
             case LINK_ALLY        -> { int d = td.param("depth", 1); yield d >= 3 ? 5 : d >= 2 ? 3 : 1; }
             case GET_CONTACTS     -> td.param("count", 1) >= 3 ? 3 : 1;
+            case FORCE_ENCOUNTER  -> 3;
+            case DECOY            -> 3;
+            case DELAY            -> td.param("turns", 1) >= 2 ? 5 : 3;
             case PROTECT          -> { int p = td.param("power", 2); yield p >= 3 ? 5 : p >= 2 ? 3 : 1; }
             case GUARANTEED       -> td.param("scope", 1) >= 3 ? 5 : 3;
             case MOBILITY         -> { int p = td.param("power", 2); yield p >= 3 ? 5 : p >= 2 ? 3 : 1; }
