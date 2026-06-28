@@ -69,14 +69,17 @@ public class NarrativeDelivery {
         if (!taskIds.containsKey(uuid)) scheduleNext(player);
     }
 
-    /** 한 덩이(문장 묶음)를 MAX_CHAT_CHARS자 단위로 하드랩해 최대 2줄짜리 블록(들)으로 큐에 넣는다. */
+    /**
+     * 한 덩이(문장 묶음)를 MAX_CHAT_CHARS자 단위로 하드랩해 ★하나의 블록★으로 큐에 넣는다.
+     * 한 덩이는 항상 '완결된 문장(들)'이므로 통째로 한 블록에 담는다 → 빈 줄(블록 사이 여백)은
+     * 문장과 문장 사이에만 들어가고, 한 문장이 3줄로 늘어나도 도중에 빈 줄이 끼지 않는다
+     * ("구분이 안" / (빈 줄) / "된다." 처럼 끊겨 보이던 문제 해결).
+     */
     private void enqueueChunk(ArrayDeque<String> q, String chunk) {
         StringBuilder block = new StringBuilder();
-        int count = 0;
         for (String seg : hardWrap(chunk.trim())) {
-            if (count > 0) block.append('\n');
+            if (block.length() > 0) block.append('\n');
             block.append(seg);
-            if (++count >= MAX_LINES_PER_BLOCK) { q.add(block.toString()); block.setLength(0); count = 0; }
         }
         if (block.length() > 0) q.add(block.toString());
     }
