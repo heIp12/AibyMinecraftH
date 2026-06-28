@@ -461,6 +461,26 @@ cooldown_turns: B~D급이므로 능동이면 0~2, 수동이면 반드시 0.
               .append("단계 상향되었다. 위 '목표 등급'은 이미 보정된 값이며, new_trait도 평소보다 강력하고 가치 있게 생성하라.\n\n");
         }
 
+        // ★이번 스테이지에 플레이어가 직접 한 행동들(narrativeLog의 "[행동▷] …")을 모아 new_trait의 착안 근거로 제공.
+        String behavior;
+        synchronized (pd.narrativeLog) {
+            java.util.List<String> acts = new java.util.ArrayList<>();
+            for (String line : pd.narrativeLog)
+                if (line != null && line.startsWith("[행동▷]")) acts.add(line);
+            StringBuilder bs = new StringBuilder();
+            for (int i = Math.max(0, acts.size() - 12); i < acts.size(); i++) {
+                String l = acts.get(i).replace("[행동▷]", "").replace("\n", " ").trim();
+                if (l.isEmpty()) continue;
+                if (l.length() > 90) l = l.substring(0, 90) + "…";
+                bs.append("- ").append(l).append("\n");
+            }
+            behavior = bs.toString();
+        }
+        if (!behavior.isBlank()) {
+            sb.append("## 이번 스테이지 플레이어가 한 행동 (new_trait 착안 근거 ★최우선)\n")
+              .append(behavior).append("\n");
+        }
+
         String system = """
 너는 TRPG 특성 성장 시스템이야.
 아래 JSON 형식으로만 응답 (다른 텍스트 금지):
@@ -485,7 +505,10 @@ map_upgrade 규칙:
 - 시나리오 한정 내용 제거, 다른 상황에서도 통하게 범용화. 사건 직접 언급 금지.
 - 단점이 있으면 범용화하면서 단점도 완화할 수 있음.
 
-new_trait: 완전히 새로운 범용 특성. 직업·테마에서 착안하되 사건 직접 언급 금지. 단점 없이 순수 긍정이어도 됨.
+new_trait: ★이번 스테이지에서 플레이어가 실제로 한 행동·플레이스타일을 반영한★ 새 범용 특성.
+  (예: 자주 숨거나 도망쳤다면 은신·회피형 / 동료를 돕고 치료했다면 보조·치유형 / 정면으로 맞섰다면 전투·돌파형 /
+   단서·정보를 파고들었다면 통찰·탐색형 / 설득·교섭을 즐겼다면 화술형 / 도구·환경을 활용했다면 기지·제작형.)
+  위 '플레이어가 한 행동'을 최우선 근거로 삼아라. 행동 기록이 없을 때만 직업·테마에서 착안. 사건 직접 언급 금지. 단점 없이 순수 긍정이어도 됨.
 
 공통:
 - description: 최대 18자 명사구 한 줄. 장황 금지.
