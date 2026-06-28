@@ -413,9 +413,11 @@ cooldown_turns: B~D급이므로 능동이면 0~2, 수동이면 반드시 0.
             ? (bestPlayer.originGrade == null || bestPlayer.originGrade.isEmpty() ? bestPlayer.grade : bestPlayer.originGrade) : "";
         int    oBonus    = (bestPlayer != null) ? Math.max(0, gradeToInt("D") - gradeToInt(myOrigin)) : 0; // F=+2, E=+1, D이상=0
         int    effBonus  = oBonus + Math.max(0, powerBonus);  // 실효 파워 가산 (표시 등급엔 미반영)
-        // 스테이지별 상한(maxGrade)으로 표시·실효 등급을 모두 클램프 — 초반 과도 보상 방지.
+        // 표시(명목) 등급은 maxGrade로 클램프해 인플레를 막되, ★실효 파워는 약체 보정분만큼 상한을 완화★한다.
+        //   → 약하게 시작한 사람이 '같은 표시 등급이라도 더 강한 효과'를 받아, 강하게 시작한 사람을 따라잡고 넘어설 수 있다(역전 성장).
+        String effCap    = clampGrade(bumpGrade(maxGrade, Math.min(2, Math.max(0, powerBonus))), "S");
         String myNominal = clampGrade(bumpGrade(bestPlayer != null ? computeUpgradeGrade(bestPlayer) : "B", gradeBoost), maxGrade); // 표시(명목)
-        String myTarget  = clampGrade(bumpGrade(myNominal, effBonus), maxGrade); // AI에 알릴 '실효 파워' 등급(효과·스탯 강도 기준)
+        String myTarget  = clampGrade(bumpGrade(myNominal, effBonus), effCap); // AI에 알릴 '실효 파워' 등급(효과·스탯 강도 기준)
         String mapOrigin = (bestMap != null)
             ? (bestMap.originGrade == null || bestMap.originGrade.isEmpty() ? bestMap.grade : bestMap.originGrade) : "";
         String mapTarget = bestMap != null ? clampGrade(bumpGrade(computeUpgradeGrade(bestMap), gradeBoost), maxGrade) : null;
