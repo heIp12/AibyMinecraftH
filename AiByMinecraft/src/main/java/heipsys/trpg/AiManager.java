@@ -322,17 +322,9 @@ public class AiManager {
         }
     }
 
-    /** 사용량 → 사람이 읽는 한 줄(USD + 원화 환산 + 호출·토큰 수). */
+    /** 사용량 → 원화 환산 누적 비용(₩만, 호출·토큰·달러·괄호 없이 깔끔하게). */
     public String usageLabel(UsageStat u) {
-        long krw = Math.round(u.costUsd() * 1400.0);
-        return "§f$" + String.format("%.3f", u.costUsd())
-             + " §7(₩" + String.format("%,d", krw) + ") §8호출 " + u.calls()
-             + "회·토큰 " + fmtTokens(u.inTok()) + "→" + fmtTokens(u.outTok());
-    }
-    private static String fmtTokens(long t) {
-        if (t >= 1_000_000) return String.format("%.2fM", t / 1_000_000.0);
-        if (t >= 1_000)     return String.format("%.1fK", t / 1_000.0);
-        return Long.toString(t);
+        return "₩" + String.format("%,d", Math.round(u.costUsd() * 1400.0));
     }
 
     /** 응답의 usage(토큰 사용량)를 provider별로 읽어 영구 누적에 더한다(캐시 단가 반영). */
