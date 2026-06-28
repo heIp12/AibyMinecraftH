@@ -768,7 +768,7 @@ public class DialogManager {
 
     /**
      * 수집 정보 스냅샷을 '대상별 그룹' 형태의 평탄 줄 목록으로 만든다.
-     * - infoGroups가 비어있지 않으면: 각 대상마다 헤더 줄 "[<대상>에 대한 단서]" + 그 아래 "  • <단서>".
+     * - infoGroups가 비어있지 않으면: 각 대상마다 헤더 줄 "[<대상>]" + 그 아래 "  • <단서>".
      *   대상 순서는 LinkedHashMap 삽입순(스냅샷 복사).
      * - infoGroups가 비어있으면(구버전 데이터 폴백): 기존 infoItems 평탄 목록.
      */
@@ -788,7 +788,7 @@ public class DialogManager {
         }
         List<String> out = new ArrayList<>();
         for (Map.Entry<String, List<String>> e : groupSnap.entrySet()) {
-            out.add("[" + e.getKey() + "에 대한 단서]");
+            out.add("[" + e.getKey() + "]"); // 대상 헤더는 짧게 (예: [카메라])
             for (String clue : e.getValue()) {
                 out.add(INFO_BULLET + clue);
             }
@@ -801,7 +801,7 @@ public class DialogManager {
         List<String> logSnap, infoSnap;
         synchronized (pd.narrativeLog) { logSnap  = new ArrayList<>(pd.narrativeLog); }
         infoSnap = buildInfoLines(pd);
-        // 헤더 줄([...에 대한 단서])을 제외한 실제 단서 건수
+        // 헤더 줄([...])을 제외한 실제 단서 건수
         long infoCount = infoSnap.stream().filter(l -> l.startsWith(INFO_BULLET)).count();
         if (infoCount == 0) infoCount = infoSnap.size(); // 폴백(평탄 목록)일 때는 전체 줄 수
         long logCount = logSnap.stream().filter(l -> !l.startsWith(PlayerData.MOVE_TAG)).count();
@@ -974,7 +974,7 @@ public class DialogManager {
 
     /**
      * 정보 목록을 줄 수 한도로 페이지 분할.
-     * 그룹 헤더 줄("[...에 대한 단서]")이 페이지 맨 끝에 홀로 남지 않도록,
+     * 그룹 헤더 줄("[...]")이 페이지 맨 끝에 홀로 남지 않도록,
      * 한도 도달 시점의 줄이 헤더이면 다음 페이지로 넘긴다.
      */
     private static List<RecordPage> paginateInfo(List<String> items) {
@@ -1003,7 +1003,7 @@ public class DialogManager {
         if (t.startsWith("*"))            return Component.text(line, NamedTextColor.GRAY);
         // CODE-13: 대상별 그룹 헤더 / 들여쓴 단서
         if (line.startsWith(INFO_BULLET)) return Component.text(line, NamedTextColor.WHITE);
-        if (t.startsWith("[") && t.endsWith("에 대한 단서]"))
+        if (t.startsWith("[") && t.endsWith("]") && !t.startsWith("[행동"))
             return Component.text(line, NamedTextColor.GOLD, TextDecoration.BOLD);
         if (line.startsWith("[행동"))      return Component.text(line, NamedTextColor.YELLOW);
         if (line.startsWith("•"))          return Component.text(line, NamedTextColor.AQUA);
