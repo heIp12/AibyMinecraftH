@@ -61,17 +61,68 @@ public class AiManager {
 
     /** 게임 시작 시 선택되는 GM AI 품질 (기본: 중품질). */
     private volatile Quality gmQuality = Quality.MEDIUM;
-    /** config.yml에서 지정한 고품질 모델 ID (없으면 기본값 사용) */
-    private String highModelOverride = null;
+
+    // 등급별 모델 오버라이드 (config; 비우면 자동 탐지 → 하드코딩 폴백)
+    private String highModelOverride = null;   // 고품질(Opus)
+    private String mediumModelOverride = null; // 중품질(Sonnet)
+    private String lowModelOverride = null;    // 저품질(Haiku)
+    // 역할별 모델 오버라이드 (config; 비우면 등급 기본)
+    private String gmOverride = null, entityOverride = null, npcOverride = null,
+                   assistantOverride = null, gdamOverride = null;
+    // 최신 모델 자동 탐지 (claude 전용; API에서 각 family 최신 모델을 1회 조회)
+    private boolean autoLatest = true;
+    private volatile boolean modelsDiscovered = false;
+    private volatile String autoOpus = null, autoSonnet = null, autoHaiku = null;
 
     public void setGmQuality(Quality q)    { if (q != null) this.gmQuality = q; }
     public Quality getGmQuality()          { return gmQuality; }
     public boolean isGmHighQuality()       { return gmQuality == Quality.HIGH; }
-    public void setHighModelOverride(String m) {
-        if (m != null && !m.isBlank()) this.highModelOverride = m.trim();
+    private static String norm(String m)   { return (m != null && !m.isBlank()) ? m.trim() : null; }
+    public void setHighModelOverride(String m)   { this.highModelOverride   = norm(m); }
+    public void setMediumModelOverride(String m) { this.mediumModelOverride = norm(m); }
+    public void setLowModelOverride(String m)    { this.lowModelOverride    = norm(m); }
+    public void setAutoLatest(boolean b)         { this.autoLatest = b; }
+    /** 역할별 모델 지정(비우면 등급 기본). config 'models' 섹션에서 호출. */
+    public void setRoleModels(String gm, String entity, String npc, String assistant, String gdam) {
+        this.gmOverride = norm(gm); this.entityOverride = norm(entity); this.npcOverride = norm(npc);
+        this.assistantOverride = norm(assistant); this.gdamOverride = norm(gdam);
+    }
+
+    /** claude + autoLatest일 때, API에서 각 등급(opus/sonnet/haiku)의 최신 모델을 1회 조회. 실패 시 폴백 사용. */
+    private void ensureModelsDiscovered() {
+        if (modelsDiscovered || !autoLatest || !"claude".equals(apiType) || apiKey.isEmpty()) return;
+        synchronized (this) {
+            if (modelsDiscovered) return;
+            modelsDiscovered = true; // 1회만 시도(실패해도 재시도 안 함 — 게임 지연 방지)
+            try {
+                HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create("https://api.anthropic.com/v1/models?limit=100"))
+                    .header("x-api-key", apiKey)
+                    .header("anthropic-version", "2023-06-01")
+                    .timeout(Duration.ofSeconds(15))
+                    .GET().build();
+                HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
+                if (resp.statusCode() == 200) {
+                    JsonObject root = JsonParser.parseString(resp.body()).getAsJsonObject();
+                    if (root.has("data") && root.get("data").isJsonArray()) {
+                        // data는 최신순(created_at desc) — 각 family 첫 매치가 최신.
+                        for (JsonElement el : root.getAsJsonArray("data")) {
+                            if (!el.isJsonObject() || !el.getAsJsonObject().has("id")) continue;
+                            String id = el.getAsJsonObject().get("id").getAsString();
+                            if (autoOpus   == null && id.contains("opus"))   autoOpus   = id;
+                            if (autoSonnet == null && id.contains("sonnet")) autoSonnet = id;
+                            if (autoHaiku  == null && id.contains("haiku"))  autoHaiku  = id;
+                        }
+                    }
+                }
+            } catch (Exception ignored) { /* 실패 → 하드코딩 폴백 */ }
+        }
     }
 
     private String sonnetModel() {
+        if (mediumModelOverride != null) return mediumModelOverride;
+        ensureModelsDiscovered();
+        if (autoSonnet != null) return autoSonnet;
         return switch (apiType) {
             case "claude" -> "claude-sonnet-4-6";
             case "openai" -> "gpt-4o";
@@ -80,6 +131,9 @@ public class AiManager {
     }
 
     private String haikuModel() {
+        if (lowModelOverride != null) return lowModelOverride;
+        ensureModelsDiscovered();
+        if (autoHaiku != null) return autoHaiku;
         return switch (apiType) {
             case "claude" -> "claude-haiku-4-5-20251001";
             case "openai" -> "gpt-4o-mini";
@@ -87,9 +141,11 @@ public class AiManager {
         };
     }
 
-    /** 고품질 GM 모델 (config 우선, 없으면 provider별 기본값) */
+    /** 고품질 모델 (config 우선 → 자동 최신 → provider 기본값) */
     private String highModel() {
         if (highModelOverride != null) return highModelOverride;
+        ensureModelsDiscovered();
+        if (autoOpus != null) return autoOpus;
         return switch (apiType) {
             case "claude" -> "claude-opus-4-8";
             case "openai" -> "gpt-4.1";
@@ -97,8 +153,9 @@ public class AiManager {
         };
     }
 
-    /** GM AI 호출 모델 — 저품질=Haiku / 중품질=Sonnet / 고품질=Opus. */
+    /** GM AI 호출 모델 — 역할 오버라이드 우선, 없으면 품질 등급(저=Haiku/중=Sonnet/고=Opus). */
     private String gmModel() {
+        if (gmOverride != null) return gmOverride;
         return switch (gmQuality) {
             case HIGH   -> highModel();
             case LOW    -> haikuModel();
@@ -106,10 +163,18 @@ public class AiManager {
         };
     }
 
-    /** .gdam 생성 모델 — 구조화 JSON이라 최소 Sonnet 보장(저품질이라도 Haiku로 생성하지 않음). 고품질만 Opus. */
+    /** .gdam 생성 모델 — 역할 오버라이드 우선, 없으면 최소 Sonnet 보장(고품질만 Opus). */
     private String gdamModel() {
+        if (gdamOverride != null) return gdamOverride;
         return gmQuality == Quality.HIGH ? highModel() : sonnetModel();
     }
+
+    /** 괴담(엔티티) AI 모델 — 역할 오버라이드 우선, 없으면 저품질(Haiku). */
+    private String entityModel()    { return entityOverride    != null ? entityOverride    : haikuModel(); }
+    /** NPC AI 모델 — 역할 오버라이드 우선, 없으면 저품질(Haiku). */
+    private String npcModel()       { return npcOverride       != null ? npcOverride       : haikuModel(); }
+    /** 보조(특성·처리) AI 모델 — 역할 오버라이드 우선, 없으면 저품질(Haiku). */
+    private String assistantModel() { return assistantOverride != null ? assistantOverride : haikuModel(); }
 
     // ======================================================
     //  GM AI  (Sonnet, 플레이어 전체 정보 접근)
@@ -175,7 +240,7 @@ public class AiManager {
                     snapshot = new ArrayList<>(entityContext);
                 }
                 try {
-                    String result = send(haikuModel(), systemPrompt, snapshot, ASST_MAX_TOKENS);
+                    String result = send(entityModel(), systemPrompt, snapshot, ASST_MAX_TOKENS);
                     synchronized (entityLock) { entityContext.add(msg("assistant", result)); }
                     return result;
                 } catch (Exception e) {
@@ -202,7 +267,7 @@ public class AiManager {
                     snapshot = new ArrayList<>(ctx);
                 }
                 try {
-                    String result = send(haikuModel(), systemPrompt, snapshot, ASST_MAX_TOKENS);
+                    String result = send(npcModel(), systemPrompt, snapshot, ASST_MAX_TOKENS);
                     synchronized (ctx) { ctx.add(msg("assistant", result)); }
                     return result;
                 } catch (Exception e) {
@@ -220,7 +285,7 @@ public class AiManager {
         return CompletableFuture.supplyAsync(() -> {
             try {
                 List<JsonObject> messages = List.of(msg("user", task + "\n\n" + data));
-                return send(haikuModel(),
+                return send(assistantModel(),
                     "너는 간단한 데이터 처리 도우미야. 요청받은 작업만 수행해.",
                     messages, ASST_MAX_TOKENS);
             } catch (Exception e) {

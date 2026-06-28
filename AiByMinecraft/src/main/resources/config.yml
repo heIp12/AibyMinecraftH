@@ -4,10 +4,25 @@
 api-type: "openai"
 api-key:
 
-# [TRPG] 고품질 GM 모델 ID (선택)
-# /trpg start 시 "고품질 모드"를 고르면 GM AI가 이 모델을 사용합니다.
-# 비워두면 provider별 기본값 사용 (claude=claude-opus-4-1, openai=gpt-4.1, gemini=gemini-2.5-pro)
-# 사용 중인 API 키가 접근 가능한 정확한 모델 ID로 바꿔주세요.
+# [TRPG] AI 모델 설정
+# 비워두면 자동(auto). claude는 API 키만 넣으면 ★각 등급(opus/sonnet/haiku)의 최신 모델을 자동 탐지★해 사용합니다.
+# (자동 탐지는 api-type=claude일 때만. openai/gemini는 아래 등급 기본값/오버라이드를 사용.)
+# 게임 시작 시 저품질/중품질/고품질을 고르면 각각 haiku/sonnet/opus 등급이 적용됩니다.
+models:
+  # API에서 최신 모델 자동 탐지 (claude 전용). false면 아래 값/하드코딩 기본만 사용.
+  auto-latest: true
+  # 등급별 모델 (비우면 자동 탐지 → 하드코딩 폴백). 정확한 모델 ID로 직접 지정해도 됩니다.
+  high: ""      # 고품질 (기본 Opus 최신)
+  medium: ""    # 중품질 (기본 Sonnet 최신)
+  low: ""       # 저품질 (기본 Haiku 최신)
+  # 역할별 세부 모델 (비우면 위 등급을 따름). 특정 역할만 다른 모델로 돌리고 싶을 때만 지정.
+  gm: ""        # 게임 마스터(서술·판정) — 비우면 선택한 품질 등급
+  entity: ""    # 괴담(공포 존재) AI
+  npc: ""       # NPC AI (서브 NPC 포함)
+  assistant: "" # 특성·데이터 보조 처리 AI
+  gdam: ""      # 시나리오(.gdam) 생성 — 비우면 최소 Sonnet(고품질 선택 시 Opus)
+
+# (구버전 호환) 아래 키는 models.high 가 비어 있을 때만 고품질 모델로 사용됩니다.
 gm-model-high: ""
 # 0~5 뒤로 갈수록 플레이어의 상상을 그대로 구현합니다
 #[0 현실주의] [1 벨런스] [2 기본] [3 판타지] [4 신화] [5 카오스] [6 종말]
@@ -179,4 +194,3 @@ prompts:
       "title": "(책 제목)",
       "story": "(재구성된 이야기 본문)"
     }
->>>>>>> branch 'claude/optimistic-hamilton-jw2ayv' of https://github.com/heIp12/AibyMinecraftH

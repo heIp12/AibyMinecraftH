@@ -90,8 +90,21 @@ public class AICraft extends JavaPlugin {
         }
 
         AiManager trpgAi = new AiManager(apiKey, apiType);
-        // 고품질 GM 모델 ID 오버라이드 (선택). 없으면 provider별 기본 Opus/Pro 사용.
-        trpgAi.setHighModelOverride(getConfig().getString("gm-model-high", ""));
+        // AI 모델 설정 (config 'models' 섹션). 비워두면 자동 — claude는 API에서 각 등급 최신 모델을 탐지한다.
+        trpgAi.setAutoLatest(getConfig().getBoolean("models.auto-latest", true));
+        // 등급별 기본 모델 (비우면 자동/기본). 하위호환: 기존 gm-model-high(고품질) 키도 계속 읽는다.
+        String highKey = getConfig().getString("models.high", "");
+        if (highKey == null || highKey.isBlank()) highKey = getConfig().getString("gm-model-high", "");
+        trpgAi.setHighModelOverride(highKey);
+        trpgAi.setMediumModelOverride(getConfig().getString("models.medium", ""));
+        trpgAi.setLowModelOverride(getConfig().getString("models.low", ""));
+        // 역할별 세부 모델 (GM/괴담/NPC/보조/시나리오). 비우면 등급 기본을 따른다.
+        trpgAi.setRoleModels(
+            getConfig().getString("models.gm", ""),
+            getConfig().getString("models.entity", ""),
+            getConfig().getString("models.npc", ""),
+            getConfig().getString("models.assistant", ""),
+            getConfig().getString("models.gdam", ""));
         trpgManager = new TRPGGameManager(this, trpgAi);
 
         if (getCommand("trpg") != null) {
