@@ -122,7 +122,13 @@ public class SystemTraitRegistry {
             "intensity=발동 효과 강도(1=미약, 2=중간, 3=강), trigger_freq=발동 빈도(1=드물게, 2=가끔, 3=자주)"),
         PROTECT("protect", false,
             "패시브. effect에 적힌 종류의 피해·효과를 자동으로 줄이거나 막는다. 보호 대상(물리·정신·초자연 등)은 effect 텍스트로 표현한다.",
-            "power=방어력(1=소폭 경감, 2=절반 경감, 3=거의 무효화), uses=스테이지당 발동 횟수(0=무제한, 1~3=횟수 제한)");
+            "power=방어력(1=소폭 경감, 2=절반 경감, 3=거의 무효화), uses=스테이지당 발동 횟수(0=무제한, 1~3=횟수 제한)"),
+        DEATH_RELAY("death_relay", false,
+            "패시브. 사망하는 순간, 자신이 '능력으로 밝혀낸 사실(중요 정보)'을 가까운 아군 1명에게 자동으로 전달한다.",
+            "(파라미터 없음)"),
+        FATAL_GUARD("fatal_guard", false,
+            "패시브. '돌이킬 수 없는 1회성 치명 행동(즉사 규칙 위반 등)'을 저질러도 ★1회에 한해★ 그 결과를 무효화한다(아슬아슬하게 무위로). 이후엔 정상 판정.",
+            "(파라미터 없음)");
 
         public final String  key;
         public final boolean active;
@@ -505,6 +511,8 @@ public class SystemTraitRegistry {
             case TELEPORT         -> 3;
             case RALLY            -> 3;
             case EVADE_SENSE      -> td.param("turns", 2) >= 3 ? 5 : 3;
+            case DEATH_RELAY      -> 2;
+            case FATAL_GUARD      -> 5;
             case PROTECT          -> { int p = td.param("power", 2); yield p >= 3 ? 5 : p >= 2 ? 3 : 1; }
             case GUARANTEED       -> td.param("scope", 1) >= 3 ? 5 : 3;
             case MOBILITY         -> { int p = td.param("power", 2); yield p >= 3 ? 5 : p >= 2 ? 3 : 1; }
