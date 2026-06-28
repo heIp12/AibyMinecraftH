@@ -65,6 +65,15 @@ public class SystemTraitRegistry {
         ONE_WAY_CALL("one_way_call", true,
             "발동 시 지정한 아군 1명에게 ★일방적으로★ 말을 전한다(거리·연락처·통신차단 무관, 답신 불가, 소리 아님). 턴을 소모하지 않는다.",
             "uses=스테이지당 횟수(1~3)"),
+        TELEPORT("teleport", true,
+            "발동 시 무작위 구역·아군 위치·NPC 위치로 순간이동한다(아직 안 가본 곳도 갈 수 있다).",
+            "uses=스테이지당 횟수(1~2)"),
+        RALLY("rally", true,
+            "발동 시 흩어진 아군들을 자신의 현재 위치로 불러모은다(파티 재집결).",
+            "uses=스테이지당 횟수(1~2)"),
+        EVADE_SENSE("evade_sense", true,
+            "발동 시 N턴간 괴담의 감지(perception 양식 전부 — 청각·시각·통신·전지 등)에서 벗어난다. 그동안 괴담은 자신을 직접 표적·추적하지 못한다.",
+            "turns=지속 턴수(1~3), uses=스테이지당 횟수(1~2)"),
         GUARANTEED("guaranteed", true,
             "발동 시 다음 행동 1회를 확정 성공으로 처리한다(주사위·실패를 무시하고 GM이 성공으로 서술). 회피가 아니라 '반드시 성공'하는 결과 보장이다.",
             "uses=스테이지당 횟수(1~2), scope=확정 범위(1=단일 행동, 2=연관 행동 묶음, 3=상황 전체 국면)"),
@@ -382,13 +391,18 @@ public class SystemTraitRegistry {
                 td.effectParams.putIfAbsent("uses", 1);
                 clamp(td, "count", 1, 3); clamp(td, "uses", 1, 2);
             }
-            case FORCE_ENCOUNTER, DECOY -> {
+            case FORCE_ENCOUNTER, DECOY, TELEPORT, RALLY -> {
                 td.effectParams.putIfAbsent("uses", 1);
                 clamp(td, "uses", 1, 2);
             }
             case ONE_WAY_CALL -> {
                 td.effectParams.putIfAbsent("uses", 1);
                 clamp(td, "uses", 1, 3);
+            }
+            case EVADE_SENSE -> {
+                td.effectParams.putIfAbsent("turns", 2);
+                td.effectParams.putIfAbsent("uses", 1);
+                clamp(td, "turns", 1, 3); clamp(td, "uses", 1, 2);
             }
             case DELAY -> {
                 td.effectParams.putIfAbsent("turns", 1);
@@ -488,6 +502,9 @@ public class SystemTraitRegistry {
             case DECOY            -> 3;
             case DELAY            -> td.param("turns", 1) >= 2 ? 5 : 3;
             case ONE_WAY_CALL     -> 1;
+            case TELEPORT         -> 3;
+            case RALLY            -> 3;
+            case EVADE_SENSE      -> td.param("turns", 2) >= 3 ? 5 : 3;
             case PROTECT          -> { int p = td.param("power", 2); yield p >= 3 ? 5 : p >= 2 ? 3 : 1; }
             case GUARANTEED       -> td.param("scope", 1) >= 3 ? 5 : 3;
             case MOBILITY         -> { int p = td.param("power", 2); yield p >= 3 ? 5 : p >= 2 ? 3 : 1; }
@@ -571,7 +588,8 @@ public class SystemTraitRegistry {
                  INSTANT_CLEAR, AREA_SCAN, LINK_ALLY, SACRIFICE,
                  GUARANTEED, MOBILITY, REMOTE_SENSE, FORESIGHT,
                  SOCIAL, DOMINATE, FATE, GROUP_REWIND,
-                 GET_CONTACTS, FORCE_ENCOUNTER, DECOY, DELAY, ONE_WAY_CALL -> td.param("uses", 1);
+                 GET_CONTACTS, FORCE_ENCOUNTER, DECOY, DELAY, ONE_WAY_CALL,
+                 TELEPORT, RALLY, EVADE_SENSE -> td.param("uses", 1);
             default -> 0;
         };
     }
