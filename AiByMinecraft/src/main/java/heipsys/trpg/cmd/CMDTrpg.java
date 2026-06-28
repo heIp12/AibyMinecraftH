@@ -83,6 +83,7 @@ public class CMDTrpg implements CommandExecutor, TabCompleter {
             case "log"    -> trpg.openRecordLog(player);
             case "info"   -> trpg.openRecordInfo(player);
             case "keyinfo", "중요" -> trpg.openImportantInfo(player); // 전화번호·능력으로 밝힌 사실
+            case "추천", "recommend", "hint" -> trpg.showRecommendations(player); // 정답 모르는 동료의 행동 제안(스포일러 없음)
             case "map"    -> trpg.openMap(player);
             case "trait"  -> trpg.reopenTraitDialog(player);
             case "ending" -> trpg.reopenEndingDialog(player);
@@ -117,7 +118,7 @@ public class CMDTrpg implements CommandExecutor, TabCompleter {
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (args.length == 1) {
-            List<String> subs = List.of("start", "stop", "retry", "next", "load", "read", "replay", "replaylist", "list", "status", "me", "log", "info", "map", "trait", "ending", "givetrait", "help");
+            List<String> subs = List.of("start", "stop", "retry", "next", "load", "read", "replay", "replaylist", "list", "status", "me", "log", "info", "추천", "map", "trait", "ending", "givetrait", "help");
             String partial = args[0].toLowerCase();
             return subs.stream()
                 .filter(s -> s.startsWith(partial))
