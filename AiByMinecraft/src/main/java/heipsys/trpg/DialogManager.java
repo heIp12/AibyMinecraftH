@@ -629,7 +629,7 @@ public class DialogManager {
                 + cooldownLine(choices.srcMyTrait(), t)
                 + "\n효과: " + t.effect;
             buttons.add(ActionButton.create(
-                Component.text("⬆ 내 특성 강화  [" + t.grade + "] " + t.name + statSuffix(t), NamedTextColor.AQUA, TextDecoration.BOLD),
+                Component.text("⬆ [" + t.grade + "] " + t.name + statSuffix(t), NamedTextColor.AQUA, TextDecoration.BOLD),
                 Component.text(tooltip, NamedTextColor.GRAY),
                 200,
                 DialogAction.customClick((v, a) -> {
@@ -649,7 +649,7 @@ public class DialogManager {
                 + cooldownLine(choices.srcMapTrait(), t)
                 + "\n효과: " + t.effect;
             buttons.add(ActionButton.create(
-                Component.text("✦ 맵 특성 가져가기  [" + t.grade + "] " + t.name + statSuffix(t), NamedTextColor.GOLD, TextDecoration.BOLD),
+                Component.text("✦ [" + t.grade + "] " + t.name + statSuffix(t), NamedTextColor.GOLD, TextDecoration.BOLD),
                 Component.text(tooltip, NamedTextColor.GRAY),
                 200,
                 DialogAction.customClick((v, a) -> {
@@ -667,7 +667,7 @@ public class DialogManager {
                 + statLine(t)
                 + "\n효과: " + t.effect;
             buttons.add(ActionButton.create(
-                Component.text("✨ 새로운 특성  [" + t.grade + "] " + t.name + statSuffix(t), NamedTextColor.GREEN, TextDecoration.BOLD),
+                Component.text("✨ [" + t.grade + "] " + t.name + statSuffix(t), NamedTextColor.GREEN, TextDecoration.BOLD),
                 Component.text(tooltip, NamedTextColor.GRAY),
                 200,
                 DialogAction.customClick((v, a) -> {
