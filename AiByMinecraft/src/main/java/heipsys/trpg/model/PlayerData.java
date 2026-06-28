@@ -134,6 +134,9 @@ public class PlayerData {
     public int     origAge      = -1;
     public String  origJob      = "";
 
+    /** npc_bind(NPC 저장→다음 게임 소환)로 저장한 NPC의 JSON. 다음 스테이지 시작 시 1회 소환되고 비워진다. clearRoleData로 지워지지 않는다. */
+    public String  savedNpcJson = "";
+
     // Base stats snapshot — used to reset on retry
     public int[] baseHp  = {6, 6};
     public int   baseStr = 5;

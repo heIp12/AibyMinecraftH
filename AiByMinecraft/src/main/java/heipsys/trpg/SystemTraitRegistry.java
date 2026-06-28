@@ -95,6 +95,9 @@ public class SystemTraitRegistry {
         MIMIC("mimic", true,
             "발동 시 지정한 아군의 대표 특성 1개를 이번 스테이지 동안 빌려 쓴다(복제본 획득). 스탯 보정은 빌리지 않고 능력만 모방.",
             "uses=스테이지당 횟수(1~2)"),
+        NPC_BIND("npc_bind", true,
+            "발동 시 대상 NPC를 '인연'으로 저장한다 — 다음 스테이지에 그 NPC가 아군으로 소환된다(1회).",
+            "uses=스테이지당 횟수(1)"),
         GUARANTEED("guaranteed", true,
             "발동 시 다음 행동 1회를 확정 성공으로 처리한다(주사위·실패를 무시하고 GM이 성공으로 서술). 회피가 아니라 '반드시 성공'하는 결과 보장이다.",
             "uses=스테이지당 횟수(1~2), scope=확정 범위(1=단일 행동, 2=연관 행동 묶음, 3=상황 전체 국면)"),
@@ -405,7 +408,7 @@ public class SystemTraitRegistry {
                 td.effectParams.putIfAbsent("uses", 1);
                 clamp(td, "uses", 1, 2);
             }
-            case PACT, PAST_EDIT, POSSESS_NPC -> {
+            case PACT, PAST_EDIT, POSSESS_NPC, NPC_BIND -> {
                 td.effectParams.putIfAbsent("uses", 1);
                 clamp(td, "uses", 1, 1);
             }
@@ -568,6 +571,7 @@ public class SystemTraitRegistry {
             case PHASE_OUT        -> td.param("turns", 2) >= 3 ? 10 : 5;
             case REVIVE_AS_ANIMAL -> 3; // 5→3: B등급부터 생성돼도 무력화되지 않게
             case POSSESS_NPC      -> 10;
+            case NPC_BIND         -> 5;
             default               -> 3; // passive_gm·show_progress 등 텍스트 의존 = 기본 B
         };
         int discount = 0;
@@ -646,7 +650,7 @@ public class SystemTraitRegistry {
                  SOCIAL, DOMINATE, FATE, GROUP_REWIND,
                  GET_CONTACTS, FORCE_ENCOUNTER, DECOY, DELAY, ONE_WAY_CALL,
                  TELEPORT, RALLY, EVADE_SENSE,
-                 OBSERVER_SIGHT, PACT, PAST_EDIT, GDAM_MORPH, PHASE_OUT, POSSESS_NPC, MIMIC -> td.param("uses", 1);
+                 OBSERVER_SIGHT, PACT, PAST_EDIT, GDAM_MORPH, PHASE_OUT, POSSESS_NPC, MIMIC, NPC_BIND -> td.param("uses", 1);
             default -> 0;
         };
     }
