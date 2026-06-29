@@ -34,14 +34,14 @@ public class CorruptionManager {
     /** 클리어 등급에 오염도 보정 적용 후 최종 보상 등급 반환 */
     public String getRewardGrade(String clearGrade) {
         int boost = state.getCorruption().level;
-        String[] grades = {"F","D","C","B","A","S"};
+        String[] grades = {"F","E","D","C","B","A","S"};
         int idx = gradeIdx(clearGrade) + boost;
         idx = Math.min(idx, grades.length - 1);
         return grades[idx];
     }
 
-    /** 4단계 오염 전용 특수 특성 보상 여부 */
-    public boolean isSpecialReward() { return state.getCorruption().level >= 4; }
+    /** 최고 오염 단계 도달 시 특수 특성 보상 여부 (CODE-17: 단계 수 규모 가변) */
+    public boolean isSpecialReward() { return state.getCorruption().level >= state.getMaxCorruptionLevel(); }
 
     // ──────────────────────────────────────────────────────────────
     //  GM AI 컨텍스트 주입
@@ -107,11 +107,12 @@ public class CorruptionManager {
 
     private int gradeIdx(String grade) {
         return switch (grade) {
-            case "S" -> 5;
-            case "A" -> 4;
-            case "B" -> 3;
-            case "C" -> 2;
-            case "D" -> 1;
+            case "S" -> 6;
+            case "A" -> 5;
+            case "B" -> 4;
+            case "C" -> 3;
+            case "D" -> 2;
+            case "E" -> 1;
             default  -> 0;
         };
     }

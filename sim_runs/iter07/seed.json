@@ -1,0 +1,580 @@
+{
+  "_sim_note": "프롬프트 검증용 평문(실게임은 AES-256-GCM 설치별 키 암호화)",
+  "_familiar": true,
+  "_legend_origin": "El Silbón — 베네수엘라·콜롬비아 야노스 평원 전설",
+  "_patches_applied": ["P1","P3","P6","P7","P8","P10","P9","P11","P17","P21","P12","P16","P20"],
+  "_patches_na": ["P13(gated_zones 해당 없음)","P14(comms_monitored=false)","P18","P19"],
+
+  "seed": "TK9R-2ELB",
+  "room": 2,
+  "scale": "로컬",
+
+  "entity": {
+    "name": "실보네",
+    "type": "지능형",
+    "rules": [
+      "휘파람이 가까이 들리면 실제론 멀리 있고, 멀리 들리면 이미 곁에 있다 — 소리 방향으로 판단하면 반드시 틀린다.",
+      "아버지를 살해하고 뼈를 자루에 담아 다니는 저주받은 청년. 사냥개 두 마리를 앞에 몰며 이동한다.",
+      "스쳐 지나가면 지나친 자의 내장·뼈를 빨아 먹는다 — 접촉(같은 zone에서 1턴 이상 공존)이 계속되면 HP 2 소모.",
+      "럼(rum) 냄새를 맡으면 잠시 멈춰 서서 냄새 방향을 추적한다 — 럼으로 경로 유인이 가능.",
+      "서로 모르는 두 사람이 같은 공간에 있으면 그 중 혈연 관계가 없는 쪽을 우선 표적으로 삼는다.",
+      "개들이 먼저 짖으면 실보네가 15분(1턴) 뒤 그 zone에 도달한다는 경보다."
+    ],
+    "weakness": "아버지에 대한 죄책감이 유일한 균열 — 아버지를 연상시키는 권위적 목소리나 유언으로 제압 가능하며, 자루의 뼈를 정화 의례로 돌려보내면 저주가 풀린다.",
+    "solution": "자루 속 아버지의 뼈를 야노스 전통 방식(럼 붓기 + 말 뼈로 만든 십자가 짚기)으로 정화한 뒤, 아버지의 이름을 불러 사죄하면 실보네가 통곡하며 소멸한다.",
+    "exploit_path": "실보네의 음향 역설 규칙을 역이용한다 — 휘파람 소리 방향이 항상 반대이므로, 소리가 멀리 들릴 때가 실제 위험 순간임을 이해하고 이를 플레이어의 허위 미끼로 활용할 수 있다.",
+    "escape": "럼 냄새를 두 개 이상 zone에 흩뿌려 실보네의 경로를 분산시킨 뒤, 사냥개가 없는 방향(개 짖음 반대편)을 통해 목장 외곽 울타리를 넘으면 생존 탈출 가능.",
+    "hidden_rules": [
+      "실보네의 사냥개 두 마리는 실보네 자신보다 2턴 먼저 zone에 진입한다 — 개 짖음은 '이미 여기 있다'가 아니라 '곧 온다'는 신호다. 이를 모르면 개가 나타날 때마다 즉각 도주하게 되어 오히려 실보네에게 유리한 방향으로 몰린다.",
+      "자루 안 뼈는 아버지의 것이 아니다 — 저주를 내린 장인(岳父)의 뼈다. 실보네는 연인을 납치당한 뒤 장인을 죽였으나, 저주는 아버지를 죽인 자에게 내리는 형태로 변형되어 자신도 진실을 모른 채 아버지 뼈라고 믿는다. 정화 의례 성공 후 '아버지가 아닌 장인의 이름'을 부르면 추가 생존 보상이 있다.",
+      "럼을 코앞에 들이밀면 실보네가 접촉 직전 1턴 동안 완전히 멈춘다 — 그러나 럼이 없어지는 순간 분노 상태로 전환되어 HP 피해가 1.5배가 된다.",
+      "실보네가 휘파람을 부는 동안에는 개들도 짖지 않는다 — 동시에 휘파람과 개 짖음이 들리면 그것은 실보네의 모방이 아니라 두 개의 다른 위협이 동시에 접근하는 신호다."
+    ],
+    "independent_ai": true,
+    "can_impersonate": false,
+    "ai_context": {
+      "personality": "저주받은 방랑자. 울면서 먹이를 찾는다. 논리적 사고보다 냄새·소리 본능에 따라 이동한다.",
+      "initial_pattern": "목장 외곽 야노스 초원에서 천천히 원을 그리며 접근. 휘파람은 1턴에 1회.",
+      "corruption_behavior": {
+        "0": "멀리서 끊긴 휘파람. 개 짖음 없음.",
+        "1": "반복되는 휘파람. 밤바람에 실려 오는 소리 — 방향을 특정할 수 없다.",
+        "2": "개 짖음 시작. 목장 짐승들이 안쪽으로 모인다. 럼 냄새가 갑자기 의미를 잃는 것 같은 느낌.",
+        "3": "실보네가 zone 내로 진입. 뼈 부딪히는 소리. 내장이 조여드는 압박감.",
+        "4": "밀착 상태. 매 턴 HP 2 소모. 뼈 자루가 열린다."
+      }
+    }
+  },
+
+  "world_rules": {
+    "core": "소리의 거리는 실재와 반대다 — 가깝게 들리면 멀고, 멀게 들리면 이미 곁에 있다.",
+    "details": [
+      "실보네의 접근을 소리로 판단하면 항상 반대 방향으로 행동하게 된다.",
+      "럼 냄새는 그를 일시 멈추게 하는 유일한 환경 트리거다.",
+      "개들은 실보네보다 2턴 앞서 zone에 도달한다(선행 경보).",
+      "아버지 죄책감을 건드리는 자극(권위 있는 목소리, 연장자 언어)에 실보네가 1턴 정지한다."
+    ],
+    "hidden": true,
+    "loophole": "음향 역설을 이해하면 '소리가 멀수록 위험하다'는 역논리로 실보네의 현재 위치를 정확히 추적할 수 있다.",
+    "collapse_condition": "자루 속 뼈를 전통 정화 의례(럼 + 말 뼈 십자가)로 처리하고 '아버지의 이름'을 불러 사죄하면 저주가 풀려 실보네 소멸.",
+    "npc_dependency": "high"
+  },
+
+  "constraints": {
+    "era": "현대(1990년대 말, 베네수엘라 야노스 목장지대)",
+    "phone_usable": false,
+    "outside_contact": false,
+    "can_leave_scene": false,
+    "comms_monitored": false,
+    "notes": [
+      "목장 외곽 5km는 야노스 평원 — 방향 없는 초원으로 탈출하면 길을 잃는다.",
+      "전화선이 끊겨 있음(폭풍 피해). 인근 마을까지 차로 2시간.",
+      "럼 재고는 목장 창고에 3병 — 유한 자원.",
+      "말과 소가 갇혀 있어 외부 소음(동물 울음)이 지속됨 — 개 짖음과 혼동 위험."
+    ]
+  },
+
+  "timeline": {
+    "daily_turns": 5,
+    "start_time": "19:30",
+    "end_time": "04:00",
+    "minutes_per_turn": 20,
+    "time_visible": true,
+    "main_events": [
+      {
+        "id": "E1",
+        "time": "19:30",
+        "label": "첫 번째 휘파람",
+        "condition": "일상 파트 종료",
+        "effect": "야노스 초원 쪽에서 가늘고 긴 휘파람이 들린다. 방향을 가늠할 수 없다.",
+        "blockable": false,
+        "branches": {
+          "auto": {"condition": "아무 행동 없으면", "next": "E2"},
+          "intervene": [{"condition": "럼을 외부에 뿌리면", "next": "E2-B"}]
+        }
+      },
+      {
+        "id": "E2",
+        "time": "21:00",
+        "label": "사냥개 출현",
+        "condition": "타임라인 1단계 이상",
+        "effect": "목장 서편 외양간 쪽에서 두 마리 개 짖음. 짐승들이 한 방향으로 몰린다.",
+        "blockable": true,
+        "branches": {
+          "auto": {"condition": "막지 못하면", "next": "E3"},
+          "intervene": [
+            {"condition": "개들을 외양간에 가두면(럼 유인 사용)", "next": "E3-B"},
+            {"condition": "실보네 위치를 음향 역설로 역추적하면", "next": "E3-C"}
+          ]
+        }
+      },
+      {
+        "id": "E2-B",
+        "time": "21:00",
+        "label": "럼 경로 유인 성공",
+        "condition": "럼을 E1에서 외부에 뿌린 경우",
+        "effect": "실보네가 럼 냄새 방향으로 15분 우회. 다음 접근이 E3 시각보다 1턴 늦어진다.",
+        "blockable": false
+      },
+      {
+        "id": "E3",
+        "time": "22:30",
+        "label": "실보네 목장 진입",
+        "condition": "E2 미차단",
+        "effect": "본채 앞마당에서 뼈 부딪히는 소리. 같은 zone의 캐릭터 HP -1(공포).",
+        "blockable": true,
+        "branches": {
+          "auto": {"condition": "정화 미완료", "next": "E4"},
+          "intervene": [
+            {"condition": "정화 의례 시작(자루 뼈+럼+말 뼈 십자가)", "next": "E_CLEAR"},
+            {"condition": "생존 탈출로 확보(울타리 방향)", "next": "E3-B"}
+          ]
+        }
+      },
+      {
+        "id": "E3-B",
+        "time": "22:30",
+        "label": "생존 탈출 시도",
+        "condition": "울타리 탈출로 확보",
+        "effect": "개 짖음 반대편 울타리 쪽 경로가 잠시 열린다. 탈출하면 생존판정 가능.",
+        "blockable": false
+      },
+      {
+        "id": "E3-C",
+        "time": "22:30",
+        "label": "음향 역설 파악",
+        "condition": "실보네 위치를 역추적 성공",
+        "effect": "실보네의 실제 위치를 파악함. 다음 정화 의례 판정 DC -3 감소.",
+        "blockable": false
+      },
+      {
+        "id": "E4",
+        "time": "00:30",
+        "label": "본채 침투",
+        "condition": "정화 미완료 + 실보네 미차단",
+        "effect": "실보네가 본채 내부로 진입. 모든 zone이 위협권. 매 턴 HP -2.",
+        "blockable": true,
+        "branches": {
+          "auto": {"condition": "아무도 못 막으면", "next": "E_END"},
+          "intervene": [
+            {"condition": "정화 의례 완료", "next": "E_CLEAR"}
+          ]
+        }
+      },
+      {
+        "id": "E_CLEAR",
+        "time": "00:00",
+        "label": "정화 의례 완료",
+        "condition": "럼+말 뼈 십자가+이름 호명",
+        "effect": "실보네가 통곡하며 연기로 사라진다. 자루가 흙이 된다.",
+        "blockable": false,
+        "is_end": true
+      },
+      {
+        "id": "E_END",
+        "time": "04:00",
+        "label": "새벽 파국",
+        "condition": "미해결",
+        "effect": "끝 — 목장에서 아무도 새벽을 보지 못했다.",
+        "blockable": false,
+        "is_end": true
+      }
+    ],
+    "1": {
+      "condition": "휘파람이 2회 이상 들렸거나 개 짖음 시작",
+      "effect": "목장 동물들이 극도로 불안해함. 내부 이동 중 소음 발생 위험 증가."
+    },
+    "2": {
+      "condition": "실보네가 목장 부지 내 zone에 진입",
+      "effect": "럼 재고 1병 소모(유인 시도). 럼 없는 zone은 실보네 경유 속도가 빨라짐."
+    },
+    "3": {
+      "condition": "실보네가 본채 30m 이내 접근",
+      "effect": "뼈 부딪히는 소리가 모든 zone에 들림. 현재 zone 불문 HP -1(공포 압박)."
+    },
+    "4": {
+      "condition": "E4 발동 또는 전원 HP 절반 이하",
+      "effect": "실보네가 뼈 자루를 열기 시작. 매 턴 HP -2. 탈출 경로가 막힐 위험."
+    }
+  },
+
+  "roles": [
+    {
+      "role_id": "role_A",
+      "name": "목장주의 딸",
+      "char_name": "마리솔 카스티요",
+      "gender": "여성",
+      "is_core": true,
+      "age_range": [24, 38],
+      "job_pool": ["목장 경영인", "가축 수의사", "농업 전문가", "목축업자", "환경 연구원", "지역 공무원", "시골 교사"],
+      "spawn_timeline": "시작 즉시",
+      "spawn_location": "목장 본채 거실",
+      "zone": "zone_A",
+      "initial_info": [
+        "어릴 때 할머니에게 실보네 전설을 들었다 — 소리가 가까우면 안전, 멀면 위험하다는 역설.",
+        "창고에 럼 3병이 있다는 것을 안다.",
+        "말이 쓰러지거나 짐승이 이상하게 굴면 그날 밤 외출하지 말라고 배웠다."
+      ],
+      "hidden_info": [
+        "아버지가 작년에 실종됐다. 야노스 초원에서 뼈만 발견됐다.",
+        "아버지의 옛 물건 중 말 뼈로 만든 십자가 장신구가 다락방에 있다."
+      ],
+      "pre_spawn_beats": [],
+      "start_item": ["낡은 손전등", "스위스 아미 나이프", "할머니의 쪽지"],
+      "knowledge_advantage": false,
+      "role_stats": {
+        "str_add": 1,
+        "cha_add": 2,
+        "luk_add": 0,
+        "spr_add": 1,
+        "hp_max_add": 0,
+        "san_max_add": 1,
+        "luk_fixed": -1,
+        "summary": "목장 토박이: 근력+1, 매력+2, 정신+1, 정신력최대+1"
+      }
+    },
+    {
+      "role_id": "role_B",
+      "name": "민속학 연구자",
+      "char_name": "에두아르도 렌히포",
+      "gender": "남성",
+      "is_core": true,
+      "age_range": [30, 50],
+      "job_pool": ["대학 민속학 교수", "인류학 연구원", "박물관 큐레이터", "다큐멘터리 작가", "여행 저술가", "문화재 조사관", "고고학 현장 연구원"],
+      "spawn_timeline": "시작 즉시",
+      "spawn_location": "목장 외양간 인근 텐트",
+      "zone": "zone_C",
+      "initial_info": [
+        "El Silbón 전설의 정식 문헌 버전을 연구 중 — 럼, 고추, 개가 약점이라는 기록을 안다.",
+        "사냥개 두 마리가 실보네보다 먼저 온다는 구술 채록 기록이 있다.",
+        "전설에서 정화 의례의 존재를 알지만 구체적 절차는 모른다."
+      ],
+      "hidden_info": [
+        "그가 가진 현장 노트에 '말 뼈 십자가 + 럼'이 정화 재료로 기록된 단편이 있다 — 아직 읽지 않은 페이지에.",
+        "실보네는 아버지에 대한 죄책감이 있어 권위 있는 연장자 목소리에 잠시 멈춘다는 구전이 있다."
+      ],
+      "pre_spawn_beats": [],
+      "start_item": ["현장 노트(3/4 읽음)", "녹음기", "헤드랜턴"],
+      "knowledge_advantage": false,
+      "role_stats": {
+        "str_add": -1,
+        "cha_add": 1,
+        "luk_add": 0,
+        "spr_add": 3,
+        "hp_max_add": -1,
+        "san_max_add": 2,
+        "luk_fixed": -1,
+        "summary": "학자 체질: 근력-1, 매력+1, 정신+3, HP최대-1, 정신력최대+2"
+      }
+    },
+    {
+      "role_id": "role_C",
+      "name": "길 잃은 트럭 운전사",
+      "char_name": "다리오 우르다네타",
+      "gender": "남성",
+      "is_core": false,
+      "age_range": [35, 55],
+      "job_pool": ["장거리 화물 운전사", "건설 현장 인부", "석유 시추 노동자", "농산물 운반업자", "전직 군인", "보안 경비원", "자동차 정비사"],
+      "spawn_timeline": "타임라인 1단계",
+      "spawn_location": "목장 정문 도로변",
+      "zone": "zone_B",
+      "initial_info": [
+        "차가 고장나 목장에 피신했다. 야노스 평원에서 무언가를 들었다 — 휘파람 같기도 한 소리.",
+        "트럭 짐칸에 럼 한 케이스(6병)가 있다 — 화물이다."
+      ],
+      "hidden_info": [
+        "젊었을 때 야노스에서 실보네를 목격했다. 소리가 멀수록 위험하다는 것을 몸으로 안다.",
+        "트럭 안에 구급상자가 있다(HP 회복 아이템)."
+      ],
+      "pre_spawn_beats": [
+        "야노스 고속도로를 달리던 중 엔진이 꺼진다. 전화도 안 된다.",
+        "멀리 불빛이 보인다 — 목장이다. 짐칸을 확인하니 럼 케이스가 있다.",
+        "정문으로 걸어가는 도중, 나무 저편에서 길고 기이한 휘파람 소리가 들린다.",
+        "그 소리가 멀게 들릴수록 발걸음이 빨라진다 — 본능적인 공포."
+      ],
+      "start_item": ["트럭 열쇠", "담배 한 갑", "낡은 지포 라이터"],
+      "knowledge_advantage": true,
+      "role_stats": {
+        "str_add": 3,
+        "cha_add": -1,
+        "luk_add": 1,
+        "spr_add": 0,
+        "hp_max_add": 2,
+        "san_max_add": -1,
+        "luk_fixed": -1,
+        "summary": "현장 베테랑: 근력+3, 매력-1, 행운+1, HP최대+2, 정신력최대-1"
+      }
+    }
+  ],
+
+  "relationships": [
+    {
+      "type": "완전_타인",
+      "roles": ["role_A", "role_B"],
+      "mutual_contact": false,
+      "same_start_zone": false,
+      "description": "목장주 딸이 연구 허가를 내준 관계 — 공식 면식은 있으나 개인적으로는 거의 모르는 사이"
+    },
+    {
+      "type": "완전_타인",
+      "roles": ["role_A", "role_C"],
+      "mutual_contact": false,
+      "same_start_zone": false,
+      "description": "처음 만나는 타인 — 위기 속 우연히 만난 피난민"
+    },
+    {
+      "type": "완전_타인",
+      "roles": ["role_B", "role_C"],
+      "mutual_contact": false,
+      "same_start_zone": false,
+      "description": "처음 만나는 타인 — 공통점은 야노스의 밤이라는 것뿐"
+    }
+  ],
+
+  "zones": [
+    {
+      "zone_id": "zone_A",
+      "name": "본채 거실",
+      "area": "본채",
+      "accessible_by": [],
+      "exclusive": false,
+      "connections": ["zone_B", "zone_D"]
+    },
+    {
+      "zone_id": "zone_B",
+      "name": "정문 마당",
+      "area": "야외",
+      "accessible_by": [],
+      "exclusive": false,
+      "connections": ["zone_A", "zone_C", "zone_E"]
+    },
+    {
+      "zone_id": "zone_C",
+      "name": "외양간·텐트",
+      "area": "야외",
+      "accessible_by": [],
+      "exclusive": false,
+      "connections": ["zone_B", "zone_F"]
+    },
+    {
+      "zone_id": "zone_D",
+      "name": "본채 다락",
+      "area": "본채",
+      "accessible_by": [],
+      "exclusive": false,
+      "connections": ["zone_A"]
+    },
+    {
+      "zone_id": "zone_E",
+      "name": "창고",
+      "area": "야외",
+      "accessible_by": [],
+      "exclusive": false,
+      "connections": ["zone_B", "zone_F"]
+    },
+    {
+      "zone_id": "zone_F",
+      "name": "외곽 울타리",
+      "area": "야외",
+      "accessible_by": [],
+      "exclusive": false,
+      "connections": ["zone_C", "zone_E"]
+    }
+  ],
+
+  "npcs": [
+    {
+      "id": "npc_A",
+      "name": "로시오 카스티요",
+      "zone": "zone_A",
+      "critical": true,
+      "role_type": "열쇠",
+      "true_role": "열쇠 — 말 뼈 십자가의 위치를 알고 있으나 공황 상태라 자발적으로 말하지 않음. 정화 의례의 마지막 단계(이름 호명)를 유도할 수 있는 유일한 인물.",
+      "personality": "마리솔의 어머니. 남편 실종 이후 외상 후 스트레스로 과묵해졌다. 겉으론 냉담하나 딸을 지키려는 의지가 강하다.",
+      "motivation": "딸을 안전하게 하고 싶다. 그러나 진실(남편의 죽음과 전설의 연관)을 인정하는 것이 두렵다.",
+      "knowledge": [
+        "다락방 나무 상자 안에 말 뼈 십자가가 있다.",
+        "남편이 실종되기 전날 밤 '먼 곳에서 들리는 아주 가까운 휘파람'을 들었다고 했다.",
+        "아버지의 본명 — 페드로 카스티요"
+      ],
+      "schedule": [
+        {
+          "time": "19:30",
+          "action": "본채 주방에서 창문을 닫고 혼자 기도한다. 아무에게도 말을 걸지 않는다.",
+          "will": "강함",
+          "duration_turns": 2,
+          "after_duration": "복귀 — 거실로 나와 딸의 안위를 확인하려 한다"
+        },
+        {
+          "time": "E2 이후 1턴",
+          "action": "개 짖음을 들으면 창문을 모두 닫고 십자가 얘기를 꺼내려다 멈춘다. 말하기 직전 망설이는 행동을 보인다.",
+          "will": "약함",
+          "condition": "개 짖음이 들리면",
+          "duration_turns": 1,
+          "after_duration": "대기 — 누군가 적극적으로 묻기를 기다린다"
+        },
+        {
+          "time": "반응",
+          "condition": "플레이어가 남편(페드로)의 이름을 언급하거나 다락방을 물어보면",
+          "action": "처음엔 시선을 피하다가, 2회 이상 재차 묻거나 딸이 함께 요청하면 다락방 나무 상자를 알려준다.",
+          "will": "상황",
+          "duration_turns": 1,
+          "after_duration": "복귀 — 알려준 뒤 주방으로 물러나 혼자 운다"
+        }
+      ]
+    },
+    {
+      "id": "npc_B",
+      "name": "떠돌이 농부 알폰소",
+      "zone": "zone_E",
+      "critical": false,
+      "role_type": "mislead",
+      "true_role": "무관 — 창고에 숨어있던 인부. 실보네를 본 척 과장해서 말하지만 실제로는 아무것도 못 봤다. 가짜 단서(실보네가 고추를 무서워한다)를 퍼뜨린다."
+    }
+  ],
+
+  "key_items": [
+    {
+      "id": "item_쪽지",
+      "name": "할머니의 쪽지",
+      "type": "paper",
+      "description": "낡고 접힌 종이",
+      "lore_info": "스페인어와 한국어 혼용 손글씨. 마리솔의 할머니가 쓴 것.",
+      "content": [
+        "솔리타에게 — 실보네가 오면 절대 소리 방향으로 뛰지 마라. 멀리 들릴수록 이미 곁에 있다. 럼 냄새로 멈추게 해라.",
+        "아버지의 뼈는 대지로 돌아가야 한다. 말 뼈 십자가와 럼이 있으면 이름을 불러 돌려보내라."
+      ],
+      "location": "마리솔 start_item",
+      "clue_value": "음향 역설 + 정화 의례 힌트(불완전)"
+    },
+    {
+      "id": "item_노트",
+      "name": "현장 노트(미독 페이지)",
+      "type": "written_book",
+      "description": "가죽 표지 현장 조사 노트. 마지막 몇 페이지가 접혀 있다.",
+      "lore_info": "에두아르도의 현장 노트. 읽지 않은 부분에 정화 재료 기록이 있다.",
+      "content": [
+        "2/18 — 구전 채록: '개가 짖으면 실보네가 온다'는 통설은 부정확. 개는 항상 먼저 온다. 실보네는 2바퀴 뒤에.",
+        "2/19 — 정화 의례 단편: 말 뼈(caballo) 십자가에 럼을 부어 '저주받은 자의 진짜 이름'을 부른다. 정확한 이름을 잘못 부르면 의례가 실패한다.",
+        "2/20 (미독) — 추가 채록: 알폰소 증언 — '고추로 쫓아냈다'고 하나 신뢰 불가. 고추는 개를 쫓는 법이지 실보네가 아님."
+      ],
+      "location": "에두아르도 start_item (3/4 읽음 → 마지막 페이지는 탐색 행동으로 열람)",
+      "clue_value": "정화 의례 핵심 재료 + mislead 반증"
+    },
+    {
+      "id": "item_십자가",
+      "name": "말 뼈 십자가",
+      "type": "physical:TRIPWIRE_HOOK",
+      "description": "회백색 말 뼈로 만든 소박한 십자가 형태 장신구.",
+      "lore_info": "나무 상자 바닥에 오래된 천에 싸여 있음. 장인어른(페드로의 부친)이 만든 물건.",
+      "location": "zone_D 다락방 나무 상자",
+      "clue_value": "정화 의례 필수 도구"
+    },
+    {
+      "id": "item_럼",
+      "name": "럼 (창고 재고)",
+      "type": "physical:POTION",
+      "description": "갈색 유리병, 라벨 바랜 베네수엘라 사탕수수 럼.",
+      "lore_info": "창고에 3병 비축. 실보네 유인 및 정화 의례 재료로 사용 가능. 병당 1회 사용.",
+      "location": "zone_E 창고 선반",
+      "clue_value": "유인 트리거 + 정화 의례 재료"
+    },
+    {
+      "id": "item_트럭럼",
+      "name": "럼 케이스 (트럭 짐칸)",
+      "type": "physical:POTION",
+      "description": "목재 포장 럼 6병. 화물 라벨 붙어 있음.",
+      "lore_info": "다리오의 트럭에 실린 화물. 창고 럼이 소진돼도 대량 확보 가능.",
+      "location": "zone_B 정문 마당 트럭 짐칸",
+      "clue_value": "럼 유인 자원 확장"
+    },
+    {
+      "id": "item_구급상자",
+      "name": "트럭 구급상자",
+      "type": "physical:POTION",
+      "description": "빨간 십자가 표시 금속 케이스.",
+      "lore_info": "다리오 트럭 조수석 아래. 붕대·소독제·진통제 포함. HP 2 회복 1회 사용.",
+      "location": "zone_B 트럭 내부",
+      "clue_value": "HP 회복 — 리트라이 전 부분 피해 완화용"
+    }
+  ],
+
+  "clues": [
+    {
+      "id": "clue_1",
+      "type": "genuine",
+      "description": "할머니 쪽지: 소리 방향 역설 + 럼으로 멈춤",
+      "location": "role_A start_item",
+      "revealed": false
+    },
+    {
+      "id": "clue_2",
+      "type": "genuine",
+      "description": "노트 미독 페이지: 정화 의례(말 뼈 + 럼 + 이름 호명)",
+      "location": "role_B start_item — 탐색 행동 필요",
+      "revealed": false
+    },
+    {
+      "id": "clue_3",
+      "type": "genuine",
+      "description": "개들이 실보네보다 2턴 먼저 도착한다는 사실 — 다리오의 hidden_info",
+      "location": "role_C hidden_info — 신뢰 형성 후 공유 가능",
+      "revealed": false
+    },
+    {
+      "id": "clue_4",
+      "type": "genuine",
+      "description": "로시오가 망설이며 다락방을 언급 — 십자가 위치",
+      "location": "npc_A schedule 반응",
+      "revealed": false
+    },
+    {
+      "id": "clue_5",
+      "type": "mislead",
+      "description": "알폰소: '고추로 쫓아냈다' — 고추가 실보네를 쫓는다는 잘못된 단서(개를 쫓는 법)",
+      "location": "npc_B / zone_E 창고",
+      "revealed": false
+    },
+    {
+      "id": "clue_6",
+      "type": "mislead",
+      "description": "창고 벽의 낡은 낙서: '소리가 오면 반대로 뛰어라' — 맥락 없이 읽으면 '소리 방향 반대로 뛰라'는 뜻으로 오독 가능. 실제 의미는 '소리 방향 반대가 위험'이라는 뜻이지만 처음엔 단순 도주 지시처럼 보임.",
+      "location": "zone_E 창고 벽",
+      "revealed": false
+    }
+  ],
+
+  "daily_prologue": {
+    "turns": 5,
+    "role_placements": [
+      {"role_id": "role_A", "zone": "zone_A", "activity": "석양 무렵 거실에서 저녁 식사 준비 중"},
+      {"role_id": "role_B", "zone": "zone_C", "activity": "텐트에서 현장 노트 정리 중"},
+      {"role_id": "role_C", "zone": "외부", "activity": "아직 등장 전 — 야노스 도로에서 차 고장"}
+    ],
+    "foreshadowing": [
+      "석양이 유달리 붉다. 말들이 한쪽으로만 몰린다.",
+      "바람이 없는데 초원 쪽에서 풀 흔들리는 소리가 난다."
+    ]
+  },
+
+  "meeting_design": {
+    "physically_possible": true,
+    "meeting_window": "타임라인 1단계 (role_C 등장 후 zone_B 정문 마당에서 자연 합류 가능)",
+    "natural_barriers": [
+      "role_B는 외양간 텐트에서 출발 — zone_C에서 zone_B를 경유해야 본채 합류",
+      "role_C는 정문 마당 도착 후 내부로 도움 요청"
+    ]
+  },
+
+  "join_system": {
+    "mid_join_allowed": true,
+    "timeline_limit": 2
+  },
+
+  "common_items": [],
+
+  "info_sharing": {
+    "chat_allowed": true,
+    "item_transfer": true,
+    "remote_item_transfer": false
+  }
+}

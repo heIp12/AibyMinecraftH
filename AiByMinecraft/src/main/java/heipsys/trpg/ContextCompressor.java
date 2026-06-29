@@ -33,13 +33,15 @@ public class ContextCompressor {
         if (state.getLogSize() <= COMPRESS_THRESHOLD) return false;
 
         List<EventLogEntry> liveLog = state.getLog();
-        int cutoff = liveLog.size() - RECENT_KEEP;
-        if (cutoff <= 0) return false;
-
-        // 스냅샷: 비동기 콜백이 끝나기 전에 live list가 변해도 안전
-        int batchSize = Math.min(cutoff, OLD_BATCH_SIZE);
-        List<EventLogEntry> snapshot = new ArrayList<>(liveLog.subList(0, batchSize));
-        String rawLog = snapshot.stream().map(EventLogEntry::toLogString).collect(Collectors.joining("\n"));
+        // snapshot 생성을 liveLog로 동기화 — async cleanup과 main-thread log() 간 race 방지
+        final List<EventLogEntry> snapshot;
+        synchronized (liveLog) {
+            int cutoff = liveLog.size() - RECENT_KEEP;
+            if (cutoff <= 0) return false;
+            int batchSize = Math.min(cutoff, OLD_BATCH_SIZE);
+            snapshot = new ArrayList<>(liveLog.subList(0, batchSize));
+        }
+        String rawLog = snapshot.stream().map(e -> e.toLogString(state::resolveDisplayName)).collect(Collectors.joining("\n"));
 
         String task = "아래 TRPG 이벤트 로그를 핵심만 5줄 이내로 요약해줘.\n"
             + "반드시 포함: 단서 발견, 타임라인 변화, 플레이어 상태 변화, 아이템 획득.\n"
@@ -67,7 +69,7 @@ public class ContextCompressor {
 
         if (daily.isEmpty()) return CompletableFuture.completedFuture(null);
 
-        String rawLog = daily.stream().map(EventLogEntry::toLogString).collect(Collectors.joining("\n"));
+        String rawLog = daily.stream().map(e -> e.toLogString(state::resolveDisplayName)).collect(Collectors.joining("\n"));
         String task   = "아래는 TRPG 일상 파트의 대화/행동 로그입니다.\n"
             + "나중에 '그게 그거였구나' 하는 순간을 만들 수 있도록\n"
             + "핵심 복선과 중요 정보만 3줄로 압축 요약해줘.";

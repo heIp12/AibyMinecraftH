@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "stage": 5,
+  "seed": "#ADZ-7KQN",
+  "created": "2026-06-27",
+  "players": [
+    {
+      "role_id": "R01",
+      "name": "박지수",
+      "minecraft_name": "Jisu_Park",
+      "start_power": 12,
+      "hp": 6,
+      "san": 6,
+      "start_zone": "zone_A",
+      "active_traits": ["응급 처치", "의심 촉각"]
+    },
+    {
+      "role_id": "R02",
+      "name": "콰메 아사레",
+      "minecraft_name": "Kwame_Asare",
+      "start_power": 10,
+      "hp": 5,
+      "san": 5,
+      "start_zone": "zone_B",
+      "active_traits": ["에웨어 유창", "현장 잠입"]
+    },
+    {
+      "role_id": "R03",
+      "name": "이민호",
+      "minecraft_name": "Minho_Lee",
+      "start_power": 8,
+      "hp": 4,
+      "san": 4,
+      "start_zone": "zone_C",
+      "active_traits": ["민속학 지식", "빠른 학습"]
+    }
+  ],
+  "entity": "Adze (아제)",
+  "legend_origin": "서아프리카 에웨족 — 가나·토고 볼타 지역 구전 전승",
+  "familiar_coverage_completed": ["라틴(iter07)", "슬라브(iter10)", "동남아(iter18)", "중동(iter20)", "아프리카(iter22)"],
+  "clue_count": 7,
+  "mislead_count": 2,
+  "critical_npcs": ["아마 세나(NPC01)", "코피 아산테(NPC02)"],
+  "zones_count": 8,
+  "gate_type": "stage5_resolve_only",
+  "retry_allowed": true,
+  "collapse_paths": 2,
+  "patches_validated": ["P22", "P23", "P34", "P46", "P32", "P12", "P44", "P45", "P1", "P41"],
+  "full_regression": "P1~P52 상호 충돌 0건"
+}

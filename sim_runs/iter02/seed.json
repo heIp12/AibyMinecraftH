@@ -1,0 +1,445 @@
+{
+  "_sim_note": "평문 검증용",
+  "seed": "#VY8K-3PMQ",
+  "room": 1,
+  "scale": "로컬",
+  "entity": {
+    "name": "헛손질",
+    "type": "환경형",
+    "rules": [
+      "이 고가 저수탑에서 '소리를 내어 도움을 요청하면' 안개가 두꺼워지며 탑 외벽의 쇠창살이 오그라든다 — 출구를 점점 봉쇄한다.",
+      "안개는 소리의 강도에 비례해 짙어진다. 외침·총성·금속 충격 같은 큰 소음은 1단계 봉쇄를 즉시 진행시킨다.",
+      "완전 침묵 상태가 30분(2턴) 연속으로 유지되면 봉쇄가 한 단계 후퇴한다.",
+      "탑 내부의 보조 수문을 역방향으로 조작하면 안개를 밖으로 방출할 수 있는 통로가 열린다 — 이것이 유일한 탈출로."
+    ],
+    "weakness": "안개를 만들어내는 압력 자체를 역방향으로 이용하면 봉쇄 구조가 스스로 무너진다.",
+    "solution": "저수탑 3층 보조 수문 레버를 역방향으로 전환하여 내부 압력을 바깥으로 방출 → 안개 소산, 쇠창살 원위치.",
+    "exploit_path": "봉쇄를 만드는 압력 메커니즘이 뒤집히면 오히려 출구를 강제로 열어젖히는 힘이 된다 — 규칙을 거스르는 방향이 아니라 규칙 자체를 역용하는 방향.",
+    "escape": "봉쇄가 2단계 이하인 상태에서 1층 비상 환기 창문을 통해 외부로 나가면 생존 탈출 성공.",
+    "hidden_rules": [
+      "안개는 인간이 생성한 것이 아니다 — 19세기 이 탑이 완공된 날 폭발 사고로 사망한 수공 인부 11명의 집합적 공포가 압력 시스템에 깃든 것이다. 그래서 '소리=공포의 메아리'로 반응한다.",
+      "탑 외벽 쇠창살에 새겨진 숫자 각인(1~11)이 사망한 인부의 번호다. 모든 번호를 손으로 짚으며 이름 없이 묵념하면 안개가 일시적으로 30초간 멈춘다 — 아무도 알려주지 않는다.",
+      "저수탑의 수위계가 실은 봉쇄 단계와 연동되어 있어서, 수위가 올라갈수록 봉쇄가 강화된다. 수위를 내리면(하부 밸브 개방) 봉쇄 속도가 절반으로 줄어든다."
+    ],
+    "independent_ai": true,
+    "can_impersonate": false,
+    "ai_context": {
+      "personality": "수동적·반응형. 소리가 없으면 아무것도 하지 않는다. 소리에만 반응한다.",
+      "initial_pattern": "안개가 탑 1층 입구 주변에 얕게 깔려 있다. 창살이 아직 열려 있다.",
+      "corruption_behavior": {
+        "0": "안개가 발목 높이. 창살 80% 개방. 소리에 느리게 반응.",
+        "1": "안개가 허리 높이. 창살 60% 개방. 소리에 즉각 반응, 봉쇄가 빨라진다.",
+        "2": "안개가 어깨 높이. 창살 40% 개방. 2층 계단 일부가 잠긴다.",
+        "3": "안개가 천장 근처. 창살 20% 개방. 3층 보조 수문에만 접근 가능.",
+        "4": "완전 봉쇄 임박. 창살 5% 이하. 침묵 2턴 연속 유지하지 않으면 완전 잠금."
+      }
+    }
+  },
+  "world_rules": {
+    "core": "이 탑 안에서 소리를 내면 봉쇄가 강화된다 — 침묵이 유일한 방어이고, 침묵을 지켜도 탈출은 스스로 열어야 한다.",
+    "details": [
+      "외침·금속 충격·통화 음성 등 의도적 소음은 즉각 봉쇄 단계를 올린다.",
+      "30분(2턴) 연속 침묵이면 봉쇄 단계가 1 후퇴한다.",
+      "봉쇄 5단계 도달 시 내부에 갇혀 탈출 불가 — 산소 고갈로 시간 내 사망.",
+      "수문 레버 역방향 조작은 소음 없이 수행할 수 있다 — 이것이 허점."
+    ],
+    "hidden": true,
+    "loophole": "봉쇄를 일으키는 압력 방향을 역전시키면 봉쇄 구조가 스스로 해체된다.",
+    "collapse_condition": "3층 보조 수문 레버를 역방향 전환 → 내부 압력 방출 → 안개 소산 + 창살 원위치.",
+    "npc_dependency": "low"
+  },
+  "constraints": {
+    "era": "1980년대 한국",
+    "phone_usable": false,
+    "outside_contact": false,
+    "can_leave_scene": false,
+    "comms_monitored": false,
+    "notes": [
+      "1980년대 — 휴대폰 없음. 유선전화 1대(1층 관리실, 현재 불통).",
+      "폭우와 산사태로 탑으로 통하는 유일한 도로가 유실 — 외부 접근 불가.",
+      "비상 발전기 가동 중이나 전력 불안정 — 조명이 수시로 깜빡임.",
+      "창살 봉쇄 소음 감지 반경: 탑 내부 전체. 외부 빗소리는 감지되지 않는다."
+    ]
+  },
+  "timeline": {
+    "daily_turns": 3,
+    "start_time": "14:00",
+    "end_time": "22:00",
+    "minutes_per_turn": 20,
+    "time_visible": true,
+    "main_events": [
+      {
+        "id": "E1",
+        "time": "14:00",
+        "label": "일상 파트 종료 — 산사태 발생",
+        "condition": "일상 파트 3턴 경과",
+        "effect": "폭우가 절정에 달하며 외부 도로 유실. 탑 입구 쇠창살이 처음으로 미세하게 조여든다.",
+        "blockable": false
+      },
+      {
+        "id": "E2",
+        "time": "16:00",
+        "label": "1층 비상 환기창 반쯤 봉쇄",
+        "condition": "봉쇄 단계 2 이상",
+        "effect": "1층 비상 환기 창문이 50%까지 좁아진다. 이 상태로도 몸집 작은 사람은 통과 가능.",
+        "blockable": true,
+        "branches": {
+          "auto": {"condition": "막지 못하면", "next": "E3"},
+          "intervene": [
+            {"condition": "침묵 2턴 연속 유지해 봉쇄 후퇴", "next": "E2-B"}
+          ]
+        }
+      },
+      {
+        "id": "E2-B",
+        "time": "16:00",
+        "label": "봉쇄 후퇴 — 환기창 회복",
+        "condition": "침묵 2턴 연속",
+        "effect": "창살이 약간 벌어진다. 탈출 여유가 생긴다.",
+        "blockable": false
+      },
+      {
+        "id": "E3",
+        "time": "18:30",
+        "label": "2층 계단 부분 잠금",
+        "condition": "봉쇄 단계 3 이상",
+        "effect": "2층으로 올라가는 계단 철문이 반쯤 잠긴다. 힘이 필요하거나 소음 없는 공구가 필요.",
+        "blockable": true
+      },
+      {
+        "id": "E4",
+        "time": "20:30",
+        "label": "완전 봉쇄 임박",
+        "condition": "봉쇄 단계 4",
+        "effect": "산소가 희박해지기 시작. 매 턴 SAN -1. 창살이 거의 닫혔다.",
+        "blockable": true
+      },
+      {
+        "id": "E_END",
+        "time": "22:00",
+        "label": "완전 봉쇄 — 파국",
+        "condition": "미해결",
+        "effect": "끝",
+        "blockable": false,
+        "is_end": true
+      }
+    ],
+    "1": {
+      "condition": "첫 소음 발생",
+      "effect": "안개가 발목에서 허리 높이로 빠르게 짙어진다. 입구 창살이 삐걱거린다."
+    },
+    "2": {
+      "condition": "누적 소음 3회 이상 또는 봉쇄 단계 2",
+      "effect": "2층 일부 구역이 잠기기 시작. 안개 속에서 알 수 없는 압력음이 들린다."
+    },
+    "3": {
+      "condition": "봉쇄 단계 3 이상 또는 침묵 유지 실패",
+      "effect": "창살 40% 이하 개방. 산소가 줄기 시작. 수문 레버가 있는 3층만 열려 있다."
+    },
+    "4": {
+      "condition": "봉쇄 단계 4 이상",
+      "effect": "완전 봉쇄 직전. 침묵 2턴 연속 또는 레버 조작만이 탈출구."
+    }
+  },
+  "roles": [
+    {
+      "role_id": "role_A",
+      "name": "수자원 관리 기사",
+      "char_name": "임도현",
+      "gender": "남성",
+      "is_core": true,
+      "age_range": [35, 55],
+      "job_pool": [
+        "수자원 관리 기사", "토목 기사", "건설 현장 감독", "시설 관리원", "댐 운영 기술자",
+        "상하수도 기사", "공무원(시설과)"
+      ],
+      "spawn_timeline": "시작 즉시",
+      "spawn_location": "저수탑 1층 관리실",
+      "zone": "zone_A",
+      "initial_info": [
+        "이 저수탑이 1940년대 일제강점기에 지어졌으며 폭발 사고 이력이 있다는 것을 안다.",
+        "3층에 보조 수문 레버가 있으며 비상 시 역방향 조작 규정이 있다는 것을 안다.",
+        "오늘 폭우 예보를 알고 있어 서류 작업차 탑에 들른 참이었다."
+      ],
+      "hidden_info": [
+        "사고 당시 인부 11명이 사망했다는 기록이 창고 서랍 어딘가에 있다."
+      ],
+      "pre_spawn_beats": [],
+      "start_item": ["낡은 손전등", "수문 점검 일지", "공구 세트(소형)"],
+      "knowledge_advantage": false,
+      "role_stats": {
+        "str_add": 2,
+        "cha_add": -1,
+        "luk_add": 0,
+        "spr_add": 1,
+        "hp_max_add": 1,
+        "san_max_add": 0,
+        "luk_fixed": -1,
+        "summary": "수자원 기사: 근력+2, 매력-1, 영감+1, 체력최대+1"
+      }
+    },
+    {
+      "role_id": "role_B",
+      "name": "지역 신문 기자",
+      "char_name": "최수빈",
+      "gender": "여성",
+      "is_core": true,
+      "age_range": [24, 38],
+      "job_pool": [
+        "지역 신문 기자", "프리랜서 작가", "사진기자", "라디오 기자", "잡지 편집자",
+        "향토 역사 연구가", "문화재 답사가"
+      ],
+      "spawn_timeline": "시작 즉시",
+      "spawn_location": "저수탑 2층 전망 계단참",
+      "zone": "zone_B",
+      "initial_info": [
+        "이 저수탑의 역사적 가치를 취재하러 왔다 — 폐기 예정이라는 소식을 들었다.",
+        "탑 외벽에 숫자가 새겨진 쇠창살이 있다는 사실을 사진으로 기록해 두었다.",
+        "폭우가 심상치 않아 빨리 내려가려 했는데 산사태 소리를 들었다."
+      ],
+      "hidden_info": [
+        "가방 안에 탑의 1940년대 사고를 다룬 오래된 신문 복사본이 있다 — 아직 꺼내 보지 않았다."
+      ],
+      "pre_spawn_beats": [],
+      "start_item": ["필름 카메라", "낡은 신문 복사본", "메모 수첩"],
+      "knowledge_advantage": false,
+      "role_stats": {
+        "str_add": -1,
+        "cha_add": 2,
+        "luk_add": 1,
+        "spr_add": 1,
+        "hp_max_add": 0,
+        "san_max_add": 1,
+        "luk_fixed": -1,
+        "summary": "지역 기자: 근력-1, 매력+2, 행운+1, 영감+1, 정신력최대+1"
+      }
+    },
+    {
+      "role_id": "role_C",
+      "name": "길 잃은 여행자",
+      "char_name": "박정훈",
+      "gender": "남성",
+      "is_core": false,
+      "age_range": [20, 32],
+      "job_pool": [
+        "대학생", "자전거 여행가", "군 제대자", "공장 노동자", "농업 보조",
+        "배달원", "무직 청년"
+      ],
+      "spawn_timeline": "타임라인 1단계",
+      "spawn_location": "저수탑 1층 입구 — 폭우 피해 뛰어들어옴",
+      "zone": "zone_A",
+      "initial_info": [
+        "이 지역 지리를 잘 모른다 — 자전거 여행 중 폭우를 피해 뛰어들어왔다.",
+        "탑 입구 창살이 들어올 때부터 뭔가 이상하게 조여 있는 것 같았다."
+      ],
+      "hidden_info": [
+        "어릴 때 비슷한 폐쇄 공포를 겪어서 밀폐 공간에서 패닉이 올 수 있다 — 첫 봉쇄 반응 시 SAN -1 자동."
+      ],
+      "pre_spawn_beats": [
+        "폭우 속에서 자전거가 미끄러져 도로변에 쓰러진다. 무릎이 긁혔다.",
+        "저 멀리 탑 건물 불빛이 보여 달려가기로 한다.",
+        "산사태 굉음이 뒤에서 들리며 도로가 무너지는 소리가 난다.",
+        "탑 입구에 도착해 문을 열고 뛰어들어오는 순간 창살이 삐걱거리는 것을 느낀다."
+      ],
+      "start_item": ["자전거 공구 키트", "비상 식량(초코바 2개)"],
+      "knowledge_advantage": false,
+      "role_stats": {
+        "str_add": 1,
+        "cha_add": 0,
+        "luk_add": -1,
+        "spr_add": 0,
+        "hp_max_add": 0,
+        "san_max_add": -1,
+        "luk_fixed": -1,
+        "summary": "여행자: 근력+1, 행운-1, 정신력최대-1"
+      }
+    }
+  ],
+  "relationships": [
+    {
+      "type": "완전_타인",
+      "roles": ["role_A", "role_B"],
+      "mutual_contact": false,
+      "same_start_zone": false,
+      "description": "처음 보는 사이 — 탑에서 우연히 마주침"
+    },
+    {
+      "type": "완전_타인",
+      "roles": ["role_A", "role_C"],
+      "mutual_contact": false,
+      "same_start_zone": true,
+      "description": "처음 보는 사이 — 같은 1층에서 조우"
+    },
+    {
+      "type": "완전_타인",
+      "roles": ["role_B", "role_C"],
+      "mutual_contact": false,
+      "same_start_zone": false,
+      "description": "처음 보는 사이 — 계단에서 마주침"
+    }
+  ],
+  "zones": [
+    {
+      "zone_id": "zone_A",
+      "name": "1층 관리실",
+      "area": "1층",
+      "accessible_by": ["role_A"],
+      "exclusive": false,
+      "connections": ["zone_B", "zone_C"]
+    },
+    {
+      "zone_id": "zone_B",
+      "name": "2층 계단참",
+      "area": "2층",
+      "accessible_by": [],
+      "exclusive": false,
+      "connections": ["zone_A", "zone_D", "zone_E"]
+    },
+    {
+      "zone_id": "zone_C",
+      "name": "1층 입구홀",
+      "area": "1층",
+      "accessible_by": [],
+      "exclusive": false,
+      "connections": ["zone_A"]
+    },
+    {
+      "zone_id": "zone_D",
+      "name": "2층 배수 기계실",
+      "area": "2층",
+      "accessible_by": [],
+      "exclusive": false,
+      "connections": ["zone_B", "zone_E"]
+    },
+    {
+      "zone_id": "zone_E",
+      "name": "3층 수문 조절실",
+      "area": "3층",
+      "accessible_by": [],
+      "exclusive": false,
+      "connections": ["zone_B", "zone_D"]
+    }
+  ],
+  "npcs": [
+    {
+      "id": "npc_A",
+      "name": "고 씨 영감",
+      "zone": "zone_D",
+      "critical": true,
+      "role_type": "열쇠",
+      "true_role": "보조 수문 레버 역방향 조작법을 유일하게 알고 있는 前 관리인 — 탑에 혼자 남아 있었다. 죽이거나 내버려두면 조작 방법을 알 수 없어 퍼펙트 클리어 불가.",
+      "personality": "과묵하고 고집스럽지만, 탑에 대한 죄책감이 있다. 먼저 말하지 않는다.",
+      "motivation": "탑에서 조용히 혼자 있으려 한다 — 과거의 일이 들킬까봐 두렵다.",
+      "knowledge": [
+        "보조 수문 레버 역방향 조작 순서를 안다.",
+        "1940년대 폭발 사고 당시 자신이 그 자리에 있었다(매우 고령).",
+        "침묵 2턴 유지가 봉쇄를 후퇴시킨다는 사실을 직관적으로 안다 — 수십 년 관찰 결과."
+      ],
+      "schedule": [
+        {
+          "time": "E1 이후 1턴",
+          "action": "2층 기계실에서 조용히 배수 기어를 점검하며 혼자 있다. 발소리나 빛에 반응하지 않는다.",
+          "will": "약함"
+        },
+        {
+          "time": "반응",
+          "condition": "플레이어가 소리를 지르거나 금속을 두들기면",
+          "action": "입에 손가락을 대고 '쉬이이' 하는 몸짓으로 경고한다. 말하지 않는다.",
+          "will": "강함"
+        },
+        {
+          "time": "반응",
+          "condition": "플레이어가 조용히 접근해 필담 또는 몸짓으로 대화를 시도하면",
+          "action": "처음엔 거부하다가, 두 번째 시도에서 레버 조작 순서를 손짓으로 알려준다.",
+          "will": "상황"
+        }
+      ]
+    }
+  ],
+  "key_items": [
+    {
+      "id": "item_일지",
+      "name": "수문 점검 일지",
+      "type": "written_book",
+      "description": "낡고 기름때 묻은 녹색 표지 공책",
+      "lore_info": "관리 기사가 매년 작성하는 점검 기록장. 최근 3년치.",
+      "content": [
+        "1978년 9월 4일. 보조 수문 레버 녹 발생. 역방향 조작 시 저항이 크나 가능. 긴급 배수 시 반드시 역방향으로 전환할 것.",
+        "1980년 3월 12일. 야간 점검 중 탑 내부에서 이상한 압력음 발생. 원인 미상. 바람소리인지 수압인지 판단 불가. 다음 번 점검 시 재확인 요망.",
+        "1981년 6월 2일. 비 오는 날 탑 안에서 혼자 작업하다 이상한 소리를 질렀는데 갑자기 창살이 1cm 조여드는 것 같았다. 기분 탓인지도. 다음엔 조용히 작업하기."
+      ],
+      "location": "zone_A 관리실 서랍",
+      "clue_value": "레버 역방향 조작 + 침묵의 중요성 암시"
+    },
+    {
+      "id": "item_신문",
+      "name": "낡은 신문 복사본",
+      "type": "written_book",
+      "description": "1942년 지역 신문 복사본. 가장자리가 누렇게 바랬다.",
+      "lore_info": "기자가 취재 전 자료 조사용으로 가져온 자료",
+      "content": [
+        "1942년 8월 15일. 도청 저수탑 공사 중 폭발 사고 발생. 사망자 11명. 사고 원인은 공사 중 수압 배관 오작동으로 인한 가스 역류로 추정.",
+        "현장 목격자 증언: '큰 소리가 나자마자 탑 창살이 전부 조여들었다. 도망치려 했지만 출구가 막혀버렸다.' 생존자 고(高) 씨(당시 16세)는 탈출에 성공했다고 전했다."
+      ],
+      "location": "role_B start_item — 가방 안",
+      "clue_value": "사고 이력 + 고 씨 영감의 존재 + 소리에 창살이 반응한다는 단서"
+    },
+    {
+      "id": "item_각인도",
+      "name": "외벽 쇠창살 탁본",
+      "type": "paper",
+      "description": "쇠창살에 새겨진 숫자 각인을 종이에 탁본한 것",
+      "lore_info": "최수빈이 취재 중 우연히 만든 탁본. 1~11 숫자가 나열됨.",
+      "content": [
+        "창살 각인 번호: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11. 일정한 간격으로 새겨져 있음. 공사 관련 표시인지 불명."
+      ],
+      "location": "role_B start_item — 가방 안 수첩에 끼워져",
+      "clue_value": "11명 사망자 = 11개 각인 연결 단서 (히든 룰 진입)"
+    },
+    {
+      "id": "item_레버_도면",
+      "name": "수문 조작 도면",
+      "type": "map",
+      "description": "3층 수문 조절실의 배관과 레버 위치를 그린 낡은 도면",
+      "lore_info": "관리실 벽에 붙어 있던 도면. 역방향 전환 화살표가 빨간 펜으로 표시되어 있다.",
+      "content": [
+        "도면 여백에 붉은 펜 메모: '비상 시 레버 역방향 — 반시계 방향 3바퀴. 강한 힘 필요.' 화살표가 반시계 방향으로 그려져 있다."
+      ],
+      "location": "zone_A 관리실 벽 게시판",
+      "clue_value": "레버 역방향 전환 방법 + 힘이 필요하다는 힌트"
+    }
+  ],
+  "clues": [
+    {"id": "clue_1", "desc": "창살 미세 진동 — 소리가 날 때마다 삐걱거린다.", "zone": "zone_A"},
+    {"id": "clue_2", "desc": "안개가 소리에 반응해 짙어지는 패턴", "zone": "zone_A"},
+    {"id": "clue_3", "desc": "점검 일지의 1981년 기록", "zone": "zone_A"},
+    {"id": "clue_4", "desc": "외벽 숫자 각인 (11개)", "zone": "zone_C"},
+    {"id": "clue_5", "desc": "고 씨 영감의 '쉬이이' 경고 몸짓", "zone": "zone_D"}
+  ],
+  "daily_prologue": {
+    "turns": 3,
+    "role_placements": [
+      {"role_id": "role_A", "desc": "1층 관리실에서 폭우를 피해 서류 작업 중"},
+      {"role_id": "role_B", "desc": "2층 전망 계단참에서 창밖 풍경을 촬영 중"}
+    ],
+    "foreshadowing": [
+      "빗소리가 점점 거세진다. 창문이 덜컹거린다.",
+      "먼 곳에서 낮은 굉음 — 산사태인지 천둥인지 모를 소리."
+    ]
+  },
+  "meeting_design": {
+    "physically_possible": true,
+    "meeting_window": "타임라인 1~2단계",
+    "natural_barriers": ["2층 계단 철문 반쯤 잠김(E3 이후)", "안개로 시야 제한"]
+  },
+  "join_system": {
+    "mid_join_allowed": true,
+    "timeline_limit": 2
+  },
+  "common_items": [],
+  "info_sharing": {
+    "chat_allowed": false,
+    "item_transfer": true,
+    "remote_item_transfer": false
+  }
+}

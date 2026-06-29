@@ -1,0 +1,120 @@
+{
+  "version": 1,
+  "stage": 4,
+  "seed": "#WN3K-8DPV",
+  "created": "2026-06-27",
+  "scenario": "망각의 조위(潮位)",
+  "scale": "내셔널",
+  "concept_one_line": "한 어부 가문의 억울한 수장(1892) 원한이 조수에 결박되어 매 절기마다 비정상 범람·기억침식으로 확산하는 세대 저주",
+  "focus_patches": ["P55", "P54", "P3"],
+  "regression_range": "P1~P55 (+P44b)",
+  "players": [
+    {
+      "role": "role_A",
+      "char_name": "한소율",
+      "gender": "여성",
+      "job": "해양환경 연구원",
+      "start_zone": "zone_A",
+      "start_power": "중간 (HP14/SAN13)",
+      "traits_used": ["잠수 전문 x2"],
+      "final_state": "HP13/SAN8 / 침식2단계 / 생존",
+      "grade": "B"
+    },
+    {
+      "role": "role_B",
+      "char_name": "정우현",
+      "gender": "남성",
+      "job": "향토사학자",
+      "start_zone": "zone_C",
+      "start_power": "낮음 (HP10/SAN11)",
+      "traits_used": ["문서 해독 x2"],
+      "final_state": "HP9/SAN8 / 침식0단계 / 생존",
+      "grade": "A",
+      "weakness_bonus": 2
+    },
+    {
+      "role": "role_C",
+      "char_name": "최다은",
+      "gender": "여성",
+      "job": "간호사",
+      "start_zone": "zone_B",
+      "start_power": "높음 (HP12/SAN16)",
+      "traits_used": ["의료 지식 x2"],
+      "final_state": "HP12/SAN11 / 침식1단계 / 생존",
+      "grade": "B"
+    }
+  ],
+  "npcs_critical": [
+    {
+      "id": "npc_1",
+      "name": "박재인",
+      "final_state": "침식3단계 / 봉인 의식 후 회복 진행 중"
+    },
+    {
+      "id": "npc_2",
+      "name": "이승원",
+      "final_state": "계장직 사임·공개 인정 의식 수행 완료 / collapse 주체"
+    }
+  ],
+  "timeline_reached": 3,
+  "clear_result": {
+    "grade": "B",
+    "resolved": true,
+    "retry_count": 0,
+    "gate_passed": true
+  },
+  "p55_sim_evidence": {
+    "timeskip_1": {
+      "from": "2026-03-20",
+      "to": "2026-06-20",
+      "duration_months": 3,
+      "cumulative_changes": [
+        "한소율 침식 0→1단계 진행·SAN -3",
+        "정우현 SAN -2·치료제 소진",
+        "최다은 침식 0→1단계·SAN -3",
+        "박재인 침식 0→2단계·의지 약화",
+        "주민 침식2단계 12명 + 신규1단계 30명",
+        "어항 동쪽 진입 금지·주민 50명 이탈"
+      ],
+      "reset_applied": false
+    },
+    "timeskip_2": {
+      "from": "2026-06-21",
+      "to": "2026-09-22",
+      "duration_months": 3,
+      "cumulative_changes": [
+        "한소율 침식 1→2단계·SAN -3",
+        "정우현 SAN -2 추가 소진",
+        "최다은 침식 1단계 유지·SAN -2",
+        "박재인 침식 2→3단계·몽유 상태 일중 발생",
+        "이승원 결심 굳힘·계장직 사임 통보",
+        "구급낭 70% 소진",
+        "주민 200명 강제 대피·정부 비상조사단 파견"
+      ],
+      "reset_applied": false
+    },
+    "safe_zone_exception": {
+      "zone": "zone_H",
+      "turn": "T50",
+      "date": "2026-09-22",
+      "note": "안전지대 명시 휴식 1회 — SAN +1 회복, 누적 악화 예외 적용(P55 예외 조항)"
+    }
+  },
+  "p54_sim_evidence": {
+    "landing_1": {
+      "date": "2026-06-20",
+      "next_deadline": "추분 2026-09-23",
+      "days_remaining": 95
+    },
+    "landing_2": {
+      "date": "2026-09-22",
+      "next_deadline": "동지(최종) 2026-12-21",
+      "days_remaining": 90
+    }
+  },
+  "p3_sim_evidence": {
+    "urgent_turns_minute_based": ["T10(3분)", "T11(7분)", "T12(6분)", "T13(7분)", "T30(5분)", "T31(3분)", "T60(10분)", "T61(5분)", "T62(10분)", "T63(5분)", "T64(12분)"],
+    "timeskip_in_urgent_zone": false,
+    "calm_to_urgent_transition": "춘분00:01 범람 시작→즉시 분단위"
+  }
+}

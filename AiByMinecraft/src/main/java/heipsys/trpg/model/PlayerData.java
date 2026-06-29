@@ -2,7 +2,9 @@ package heipsys.trpg.model;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -36,9 +38,14 @@ public class PlayerData {
 
     public List<TraitData> traits = new ArrayList<>();
     public int diceRollsRemaining = 3;
+    /** 기절 상태 남은 회복 턴 수 (0 = 기절 아님 또는 이미 회복) */
+    public int faintTurnsRemaining = 0;
+    /** 완전 잠식(관전) 상태 자동회복 카운터 (0=행동가능, >0=관전 중 — 0이 되면 SAN 1 회복) */
+    public int puppetRecoveryTurns = 0;
 
     public String    status       = "normal";  // normal / puppet / dead
     public String    zone         = "";
+    public String    spot         = "";        // 세부 위치 (zone 내 위치, 예: 계단앞)
     public boolean   isDead       = false;
     /** 괴담이 이 배역을 제거하고 정체를 차지한 상태 (다른 플레이어 기만) */
     public boolean   impersonated = false;
@@ -46,14 +53,89 @@ public class PlayerData {
 
     public boolean statsConfirmed = false;
     public boolean roleAssigned   = false;
+    /** 기여도 — 스테이지 평가 등급 누적치 (능력 강화 게이팅·진척 표시용, 능력 Phase C). 회차·챕터 넘어 유지. */
+    public int contribution = 0;
 
     /** 현재 소지 중인 아이템 ID 집합 (통신 기기 추적 등에 사용) */
     public Set<String> heldItemIds = new HashSet<>();
+    /** 기계 효과(item_type) 아이템의 런타임 상태 (아이템 Phase II). 키=아이템 id. heldItemIds와 병행. */
+    public Map<String, ItemInstance> itemStates = new LinkedHashMap<>();
+
+    /** GM 서술 + 행동 기록 (Log GUI용) */
+    public List<String> narrativeLog = new ArrayList<>();
+    /** AI가 추출한 정보 조각 목록 (Info GUI용) */
+    public List<String> infoItems    = new ArrayList<>();
+    public static final int NARRATIVE_LOG_MAX = 80;
+    public static final int INFO_ITEMS_MAX    = 120;
+    /** narrativeLog 안의 '위치 이동' 구분 마커 접두사 (페이지 분할 지점). PUA 문자라 trim/일반 텍스트와 충돌 없음 */
+    public static final String MOVE_TAG = "##MOVE##";
+
+    /**
+     * 정보 자동기록을 대상 태그(주제)별로 묶은 그룹 구조 (Info GUI 헤더 렌더용).
+     * key = 대상 태그(예: "괴담의 정체", "전화번호", NPC 이름 등), value = 그 대상의 단서 줄들.
+     * 기존 평탄한 {@link #infoItems} 와 함께 유지되며(하위호환 mirror), 그룹 출력은 이쪽을 사용한다.
+     */
+    public Map<String, List<String>> infoGroups = new LinkedHashMap<>();
+
+    /**
+     * 중요 정보 — 능력(특성)으로 밝혀낸 사실들(원격감지·예지·탐색·엿보기 등).
+     * 일반 단서(infoGroups)와 분리해 '중요 정보' GUI에 모은다. 최근 KEY_FACTS_MAX개 유지.
+     */
+    public final List<String> keyFacts = new ArrayList<>();
+    public static final int KEY_FACTS_MAX = 60;
+    public void addKeyFact(String fact) {
+        if (fact == null || fact.isBlank()) return;
+        String f = fact.trim();
+        synchronized (keyFacts) {
+            if (keyFacts.contains(f)) return;
+            keyFacts.add(f);
+            if (keyFacts.size() > KEY_FACTS_MAX) keyFacts.remove(0);
+        }
+    }
+
+    /**
+     * 단서를 대상 태그(주제)별 그룹에 기록한다. 기존 {@link #infoItems} 에도 "[subject] line" 형태로 mirror 추가(하위호환).
+     * @param subject 대상 태그. null/blank면 "단서"로 분류.
+     * @param line    단서 내용 한 줄. 같은 그룹에 동일 줄이 이미 있으면 중복 추가하지 않는다.
+     */
+    public void addInfo(String subject, String line) {
+        if (line == null) return;
+        String subj = (subject == null || subject.isBlank()) ? "단서" : subject;
+        synchronized (infoGroups) {
+            List<String> group = infoGroups.computeIfAbsent(subj, k -> new ArrayList<>());
+            if (!group.contains(line)) group.add(line);
+        }
+        // 하위호환: 다른 파일이 읽는 평탄 목록에도 mirror 추가
+        String mirror = "[" + subj + "] " + line;
+        synchronized (infoItems) {
+            infoItems.add(mirror);
+            if (infoItems.size() > INFO_ITEMS_MAX) infoItems.remove(0);
+        }
+    }
+
+    /** 방문해 본 zone 집합 (직접 그린 약도에 드러나는 범위) */
+    public Set<String> visitedZones = new HashSet<>();
+    /** 전체 지도를 입수했는지 (true면 약도에 모든 zone 표시) */
+    public boolean hasFullMap = false;
 
     /** 무작위 비공개 연락처 번호 (예: "1186"). 1회차에서 타인은 모름 */
     public String contactId = "";
     /** 이 플레이어가 연락처를 알고 있는 상대들의 UUID */
     public final Set<UUID> knownContacts = new HashSet<>();
+    /** 한 번이라도 알게 된 연락처 (다회차 보정 — 재도전 시 재적용해 이전에 안 번호를 유지) */
+    public final Set<UUID> everKnownContacts = new HashSet<>();
+    /** 한 번이라도 알게 된 NPC 연락처 id 누적 (다회차 이월 — 재도전 시 NPC 번호 유지. 복구는 GameStateManager/TRPGGameManager가 수행) */
+    public final Set<String> everKnownNpcContacts = new HashSet<>();
+
+    /** 마지막(피날레) 스테이지 '원년 배역 복귀'용 — 1스테이지 캐릭터 정체성 스냅샷. clearRoleData로 지워지지 않는다. */
+    public boolean hasOrigChar = false;
+    public String  origCharName = "";
+    public String  origGender   = "";
+    public int     origAge      = -1;
+    public String  origJob      = "";
+
+    /** npc_bind(NPC 저장→다음 게임 소환)로 저장한 NPC의 JSON. 다음 스테이지 시작 시 1회 소환되고 비워진다. clearRoleData로 지워지지 않는다. */
+    public String  savedNpcJson = "";
 
     // Base stats snapshot — used to reset on retry
     public int[] baseHp  = {6, 6};
@@ -88,12 +170,36 @@ public class PlayerData {
         spr = baseSpr;
         // 배역이 있으면 배역 나이로, 없으면 고유 나이로 복귀 (재도전 시 배역 나이 유지)
         age = (roleAge >= 0) ? roleAge : baseAge;
-        isDead       = false;
-        impersonated = false;
-        status       = "normal";
-        turnState    = TurnState.IDLE;
+        isDead              = false;
+        impersonated        = false;
+        status              = "normal";
+        faintTurnsRemaining = 0;
+        puppetRecoveryTurns = 0;
+        spot                = "";
+        turnState          = TurnState.IDLE;
         // heldItemIds / contactId / knownContacts 는 회차(재도전)에도 유지
         // (마인크래프트 인벤토리와 학습한 연락처는 재도전 시 보존됨)
+    }
+
+    /**
+     * resetToBase()로 현재 스탯을 base로 되돌린 뒤, 보유 중인 (영구) 특성의 스탯 보정을 다시 누적한다.
+     * 특성은 스테이지를 넘어 유지되므로, 이 재적용이 없으면 클리어 보상 특성의 스탯이 다음 스테이지에서 사라진다.
+     */
+    public void reapplyTraitStats() {
+        for (TraitData t : traits) {
+            str += t.str_add;
+            cha += t.cha_add;
+            luk += t.luk_add;
+            spr += t.spr_add;
+            if (t.hp_max_add != 0) {
+                hp[1] = Math.max(1, hp[1] + t.hp_max_add);
+                hp[0] = Math.min(hp[0], hp[1]);
+            }
+            if (t.san_max_add != 0) {
+                san[1] = Math.max(1, san[1] + t.san_max_add);
+                san[0] = Math.min(san[0], san[1]);
+            }
+        }
     }
 
     /** 챕터 종료 후 다음 스테이지 진행 시: roleSpecific 특성 제거, 기본 스탯 복구, 역할 초기화 */
@@ -102,14 +208,23 @@ public class PlayerData {
         roleAge = -1;          // 배역 해제 → 다음 배역 전까지 고유 나이로
         job = baseJob;         // 배역 해제 → 고유 직업으로 복귀
         resetToBase();
+        reapplyTraitStats();   // 영구(비배역) 특성 스탯 보정 복원 — 다음 스테이지에서도 유지
         roleId       = "";
         zone         = "";
+        spot         = "";
         charName     = "";
         gender       = "";
         roleAssigned = false;
         heldItemIds.clear();
+        itemStates.clear();
         knownContacts.clear();
         contactId    = "";
+        narrativeLog.clear();
+        infoItems.clear();
+        infoGroups.clear();
+        synchronized (keyFacts) { keyFacts.clear(); }
+        visitedZones.clear();
+        hasFullMap = false;
     }
 
     public String getStatsSummary() {
@@ -217,10 +332,22 @@ public class PlayerData {
         return sb.toString().trim();
     }
 
+    /**
+     * GM·서술 컨텍스트 전용 표시 이름. ★플레이어 계정(닉네임)을 절대 노출하지 않는다.★
+     * char_name이 누락된 배역(.gdam에 char_name 없음)이라도 계정명 대신 인게임 호칭으로 폴백한다.
+     * 우선순위: 캐릭터명 → 배역 직업(일반인 제외) → 일반 호칭.
+     * (계정명은 시나리오 서술·후일담에 새어 들어가면 몰입을 깨므로 이 메서드로만 GM에 전달한다)
+     */
+    public String gmDisplayName() {
+        if (charName != null && !charName.isEmpty()) return charName;
+        if (job != null && !job.isBlank() && !job.equals("일반인")) return job;
+        return "이름 모를 인물";
+    }
+
     /** GM AI turn input용 플레이어 상세 줄 (행동자에게만 사용) */
     public String toTurnLine() {
         StringBuilder sb = new StringBuilder();
-        sb.append(charName.isEmpty() ? name : charName)
+        sb.append(gmDisplayName())
           .append("[").append(roleId.isEmpty() ? "?" : roleId)
           .append(" ").append(age).append("세 ").append(job).append("]")
           .append(" HP").append(hp[0]).append("/").append(hp[1])
@@ -249,9 +376,12 @@ public class PlayerData {
 
     /** 비행동 플레이어용 압축 요약 (HP/SAN/상태만). GM 전용 — 플레이어에게 노출 금지 */
     public String toShortLine() {
-        if (impersonated) return name + "[괴담이 정체 차용 중]";
-        if (isDead) return name + "[사망]";
-        String st = status.equals("puppet") ? "[꼭두각시]" : "";
-        return name + " HP" + hp[0] + "/" + hp[1] + " SAN" + san[0] + "/" + san[1] + st;
+        String display = gmDisplayName();
+        if (impersonated) return display + "[괴담이 정체 차용 중]";
+        if (isDead) return display + "[사망]";
+        String st = status.equals("puppet") ? "[홀림]"
+                  : status.equals("faint")  ? "[기절]"
+                  : "";
+        return display + " HP" + hp[0] + "/" + hp[1] + " SAN" + san[0] + "/" + san[1] + st;
     }
 }

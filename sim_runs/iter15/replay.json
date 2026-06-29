@@ -1,0 +1,192 @@
+{
+  "version": 1,
+  "stage": 6,
+  "seed": "#QN7K-3TMV",
+  "created": "2026-06-26",
+  "scenario": "소각되지 않는 기억자(記憶者)",
+  "scale": "내셔널",
+  "can_impersonate": true,
+  "critical_npc_count": 2,
+  "zones_count": 12,
+  "main_events_count": 15,
+  "branch_count": 6,
+  "players": [
+    {
+      "player_id": "P1",
+      "char_name": "오현수",
+      "role_id": "role_A",
+      "role_name": "기록 조사관",
+      "job": "국가기록원 특임 감사관",
+      "age": 44,
+      "gender": "남성",
+      "start_hp": 10,
+      "start_san": 10,
+      "str": 9,
+      "cha": 14,
+      "luk": 11,
+      "spr": 13,
+      "active_traits": ["공문서 독해", "설득의 무게"],
+      "start_items": ["스마트폰", "기록고 보안 통행증(전 구역)", "감사 지시문"],
+      "final_hp": 10,
+      "final_san": 6,
+      "grade": "A",
+      "reward_trait": "위기 기억자",
+      "reward_detail": "SAN 최대+2 영구(기억 역류 체험 강화)",
+      "highlight": "이수진 위장의 비망록 모순 발견·NPC 황도연 판단력 회복 유도·의식 주도 수행",
+      "deduction": "없음"
+    },
+    {
+      "player_id": "P2",
+      "char_name": "박서준(PC)",
+      "role_id": "role_B",
+      "role_name": "시설 보안 책임자",
+      "job": "기록고 단지 보안 책임자(전직 특수부대 하사관)",
+      "age": 51,
+      "gender": "남성",
+      "start_hp": 15,
+      "start_san": 7,
+      "str": 16,
+      "cha": 9,
+      "luk": 12,
+      "spr": 10,
+      "active_traits": ["강압 통제", "시설 완전 파악"],
+      "start_items": ["스마트폰", "마스터 보안 카드키", "무전기"],
+      "final_hp": 15,
+      "final_san": 5,
+      "grade": "B",
+      "reward_trait": "철벽 봉쇄",
+      "reward_detail": "zone 봉쇄 판정 DC+3",
+      "highlight": "강민준 격리 주도·이수진 사물함 열쇠 제공·시설 이동 경로 최적화",
+      "deduction": "초반 단독 봉쇄 결정 1턴 협력 지연·황도연 충돌 유발(중재 부담 증가)"
+    },
+    {
+      "player_id": "P3",
+      "char_name": "문소연",
+      "role_id": "role_C",
+      "role_name": "외부 초빙 기억과학자",
+      "job": "인지신경과학 박사/연구소 책임연구원",
+      "age": 37,
+      "gender": "여성",
+      "spawn_timeline": "타임라인 1단계",
+      "start_hp": 8,
+      "start_san": 12,
+      "str": 8,
+      "cha": 13,
+      "luk": 10,
+      "spr": 16,
+      "active_traits": ["기억 패턴 분석", "정서 공명"],
+      "start_items": ["스마트폰", "전문가 신분증", "소형 녹음기"],
+      "final_hp": 8,
+      "final_san": 9,
+      "grade": "S",
+      "reward_trait": "공간 기억 직관",
+      "reward_detail": "잠식형 괴담 SPR+3·첫 단서 발견 확률 상향",
+      "highlight": "기억 패턴 분석으로 위장 의심 최초 확보·정서 공명으로 NPC 충돌 중재·대면 전략 도청 회피·2차 위장 즉시 간파·음성 파일 확보",
+      "deduction": "없음",
+      "anti_spoiler_note": "낮은 시작파워(HP8)로 설계됐으나 특성 2회+ 활용으로 S 달성"
+    }
+  ],
+  "npc_log": [
+    {
+      "npc_id": "npc_hwang",
+      "name": "황도연",
+      "role_type": "복합(열쇠+방어막)",
+      "final_state": "생존·판단력 복원",
+      "key_actions": [
+        "E2 이후 '이수진' 목격 보고(schedule 발동)",
+        "오현수 모순 증거 제시 후 판단력 회복(반응 condition 정확 충족)",
+        "경로 B 단서(아카이브실 서버 경로) 전달",
+        "박서준과 충돌 후 문소연 중재로 협력 복원",
+        "duration_turns 종료 후 zone_F2 자율 복귀(after_duration 실행)"
+      ],
+      "npc_ai_consistency": "✓ 감정·목표 일관성 유지. will=반응 condition 엄밀 적용 확인."
+    },
+    {
+      "npc_id": "npc_park",
+      "name": "박서준(NPC)",
+      "role_type": "방어막+복합",
+      "final_state": "생존·협력 상태",
+      "key_actions": [
+        "E1 이후 지하 2층 봉쇄 독자 결정(schedule will=강함)",
+        "오현수 설득 후 부분 협력 허용",
+        "강민준 격리 시도 + 황도연 충돌",
+        "플레이어 중재 후 협력 전환 + 금고 열쇠 자율 제공(P21 자율 결정)",
+        "E3-HOLD 봉쇄 미발동(E3-BREACH 경로로 우회됨)"
+      ],
+      "npc_ai_consistency": "✓ 규칙 우선 motivation 일관. 협력 전환도 동기(시설 보호) 내에서 처리됨."
+    },
+    {
+      "npc_id": "npc_kang",
+      "name": "강민준",
+      "role_type": "피해자",
+      "final_state": "생존·회복 중(기억 소진 초기에서 회복)",
+      "key_actions": [
+        "격리 상태 유지",
+        "collapse 완료 후 회복 시작"
+      ]
+    }
+  ],
+  "impersonation_log": [
+    {
+      "attempt": 1,
+      "time": "11:30",
+      "target": "오현수(role_A)",
+      "method": "이수진으로 위장·소각 유도",
+      "result": "간파됨(오현수 비망록 모순 + 문소연 패턴 분석)",
+      "outcome": "위장 해제 → 잠식 수축 창 2턴 개방",
+      "p26_gap_observed": "위장 중 corruption 단계 진행 기준 없음. GM 자체 판단으로 처리."
+    },
+    {
+      "attempt": 2,
+      "time": "14:30",
+      "target": "문소연(role_C)",
+      "method": "'소연아' 호칭 활용(도청 정보 이용)·소각 유도",
+      "result": "즉시 간파됨(비망록 '태우지 마라' 기억 활용)",
+      "outcome": "2차 위장 해제 → 의식 수행 타이밍 확보",
+      "p26_gap_observed": "2차 위장 재활성화 조건·쿨다운 기준 없음. GM 자체 판단."
+    }
+  ],
+  "branch_path": [
+    "E1(일상 종료)",
+    "E2-DOUBT(위장 의심·검증)",
+    "E3-BREACH(위장 강제 해제)",
+    "E4-NPC-CONFLICT(NPC 충돌)",
+    "E4-RECOVER(NPC 협력 복원)",
+    "E5-PATH(3호실 접근)",
+    "E6-RESOLVE(기억자 소멸)"
+  ],
+  "resolution": {
+    "resolved": true,
+    "clear_type": "완전 해결",
+    "grade": "A+",
+    "turns_used": 10,
+    "retry_count": 0,
+    "survivors": ["오현수", "박서준(PC)", "문소연", "황도연(NPC)", "강민준(NPC)"],
+    "sacrifice": false,
+    "collapse_path": "경로 B(이수진 마지막 음성 파일 재생)",
+    "p1_verified": "✓ 재도전 0회·강등 없음",
+    "p12_verified": "✓ collapse 완전 충족 + 위협권 전원 생존 = 해결판정",
+    "p38_verified": "✓ 희생 강요·차단 없음(선택 기회 존재·미선택)"
+  },
+  "patch_verification": {
+    "P1_grade_no_retry_deduction": "PASS(재도전 0회)",
+    "P3_time_variable": "PASS(TIME_SKIP 평온구간 적극·급박구간 분단위)",
+    "P5_P17_P33_npc_reaction": "PASS(황도연 condition 정확 충족→더 좋은 결과·duration 추적)",
+    "P6_cooperative_roll": "PASS(오현수 d20+2=15 vs DC12 협력 판정)",
+    "P8_P10_mislead": "PASS(mislead 2개·배관보고서+강민준증언·진짜단서 후 반증)",
+    "P9_P11_P21_duration_after": "PASS(황도연 duration=2·after=복귀 자율 수행)",
+    "P12_resolve_boundary": "PASS(collapse 완전 충족+전원 생존=해결판정)",
+    "P14_P18_P31_P43_comms": "PASS(무전 도청→오염도+1·대면=안전채널·핵심정보 미전송)",
+    "P15_large_zones": "PASS(12개 zone·accessible_by 계층 구현)",
+    "P16_P20_retry_state": "PASS(분기B 시뮬·HP/SAN+기억흡수 유지)",
+    "P32_dual_path": "PASS(경로A·경로B 독립 2경로·어느 쪽이 막혀도 대안 존재)",
+    "P33_fallback_trigger": "N/A(황도연 condition 충족으로 보조 트리거 미발동·정상)",
+    "P38_sacrifice": "PASS(희생 강요 없음·선택 미발동)",
+    "P41_anti_spoiler": "PASS(hidden_info 존재·방법만·이유 미인지)",
+    "P26_gap_can_impersonate_true": "★FAIL(지침 없음 — 위장 중 corruption 연동·위장 재활성화·해제 반응 타이밍 GM 자의적)",
+    "NPC_orchestration_3plus": "PARTIAL_PASS(황도연·박서준 2명 일관 조율·충돌→협력 달성. 3번째 critical NPC 부재 — 설계에서 강민준을 비중요로 처리해 3 critical 동시 운용 미달)",
+    "stage6_gate": "PASS(resolved=true·전원생존·게이트 조건 충족)",
+    "zones_9to12": "PASS(12개 zone·대분류+소분류 구조)",
+    "branch_3plus": "PASS(6개 이상 연쇄 분기·3개 이상 선택 가지)"
+  }
+}

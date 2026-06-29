@@ -1,0 +1,101 @@
+{
+  "version": 1,
+  "stage": 4,
+  "seed": "#ZW4K-9TRB",
+  "created": "2026-06-27",
+  "scenario": "유산 청구인",
+  "scale": "시티",
+  "mechanism": "법적 정당성 구조가 현실 기억을 침식하는 분산형 괴담 — 위변조 서류 인장이 매개체",
+  "players": [
+    {
+      "role_id": "role_A",
+      "char_name": "강다은",
+      "player_slot": 1,
+      "role": "상속 집행인",
+      "start_power": "중",
+      "spawn_timeline": "시작 즉시",
+      "start_zone": "zone_A",
+      "start_items": ["스마트폰", "법률 메모 수첩", "신분증 케이스"],
+      "active_trait_uses": 2,
+      "role_stats_summary": "매력+2, 정신+2, 근력-1, 정신력 최대치+1",
+      "final_grade": "A",
+      "highlights": ["핵심 단서 교차 공유", "협력 판정 주도", "결정적 대응(서류 파기)"],
+      "san_end": 5,
+      "hp_end": 6,
+      "survived": true
+    },
+    {
+      "role_id": "role_B",
+      "char_name": "문준혁",
+      "player_slot": 2,
+      "role": "법과학 분석관",
+      "start_power": "중",
+      "spawn_timeline": "시작 즉시",
+      "start_zone": "zone_C",
+      "start_items": ["스마트폰", "간이 화학 분석 키트", "판례 자료 USB"],
+      "active_trait_uses": 3,
+      "role_stats_summary": "정신+3, 행운+1, 매력-1",
+      "final_grade": "A",
+      "highlights": ["핵심 증거 확보(잉크 분석)", "4층 자료실 단독 진입", "문서 대조 결정타"],
+      "san_end": 3,
+      "hp_end": 7,
+      "survived": true
+    },
+    {
+      "role_id": "role_C",
+      "char_name": "박소율",
+      "player_slot": 3,
+      "role": "내부 제보자",
+      "start_power": "낮음",
+      "spawn_timeline": "타임라인 1단계",
+      "start_zone": "zone_B",
+      "start_items": ["스마트폰", "복사기 출력 서류 묶음", "건물 마스터키(공용 구역)"],
+      "active_trait_uses": 2,
+      "role_stats_summary": "매력+1, 행운+2",
+      "final_grade": "B",
+      "highlights": ["보조 증거 확보(구서명 샘플)", "비상 열쇠 위치 정보 제공"],
+      "san_end": 6,
+      "hp_end": 7,
+      "survived": true
+    }
+  ],
+  "npcs_critical": [
+    {
+      "id": "npc_sehyun",
+      "name": "오세현",
+      "role_type": "복합(제물+열쇠)",
+      "memory_rewritten": true,
+      "partial_recovery": true,
+      "outcome": "재작성 후 E4-B에서 부분 회복 — 증언 단서 제공 완료"
+    },
+    {
+      "id": "npc_jaewon",
+      "name": "한재원",
+      "role_type": "복합(방어막+열쇠)",
+      "memory_rewritten": true,
+      "partial_recovery": false,
+      "outcome": "재작성 완료, 자료실 차단 시도. 비상 열쇠 금고 위치 무의식 누설(P5/P17 발동)로 4층 진입 허용"
+    }
+  ],
+  "gate_result": {
+    "first_attempt": "실패 — 법적 무효 공문서 미확보(③번 조건 미충족)",
+    "retry_count": 1,
+    "second_attempt": "성공 — 3종 증거 공문서화 완료",
+    "final_grade": "A",
+    "grade_deduction_for_retry": false,
+    "resolved": true,
+    "next_stage_unlocked": true
+  },
+  "patch_regression": {
+    "total_patches": 57,
+    "applicable": 38,
+    "not_applicable": 19,
+    "conflicts": 0,
+    "all_pass": true
+  },
+  "primary_verification": {
+    "topic": "정보 자동기록 태그 그룹화 (미구현 과제 #26 프롬프트 측면)",
+    "result": "FAIL — 현재 프롬프트는 태그 그룹화를 생성하지 않음. 무분별 나열 확인.",
+    "details": "extractAndStoreInfo의 Haiku 호출 태스크에 그룹화 지침 없음. new_clue는 단일 문자열 ID만. PlayerData.infoItems는 평탄한 List<String>."
+  }
+}

@@ -1,0 +1,127 @@
+{
+  "version": 1,
+  "stage": 4,
+  "seed": "WZ3T-8NQK",
+  "created": "2026-06-26",
+  "entity": "구획 봉인자 — 구역 경계를 차례로 잠식해 인간의 연결망을 단절시키는 존재",
+  "result": {
+    "resolved": true,
+    "final_grade": "A",
+    "retry_count": 1,
+    "timeline_stage_at_clear": 4,
+    "corruption_level": 1
+  },
+  "players": [
+    {
+      "name": "이수연",
+      "role_id": "role_A",
+      "survived": true,
+      "is_dead": false,
+      "status": "정상",
+      "final_hp": "5/8",
+      "final_san": "3/9",
+      "eval_grade": "A",
+      "role_label": "핵심 해결자 + 정보 전달자",
+      "highlights": [
+        "설계도 정보 선제 @통화 공유(T7)",
+        "황지훈 설득 성공·박현우 고립 파악(대면 GM채팅)",
+        "박현우 통신 수신 후 즉시 해법 통합",
+        "C-F 동시 재연결 collapse 실행",
+        "최종 계획 @통화 강태민 공유(T16-R)"
+      ],
+      "penalties": [],
+      "trait_reward_totalBoost": 2,
+      "trait_reward_detail": "scenarioBoost=2(A) + playerBoost=2(A) + weaknessBonus=0 → avgBoost=1 + corruption=1 = totalBoost 2"
+    },
+    {
+      "name": "강태민",
+      "role_id": "role_B",
+      "survived": true,
+      "is_dead": false,
+      "status": "정상",
+      "final_hp": "9/9",
+      "final_san": "5/8",
+      "eval_grade": "C",
+      "role_label": "소극적 생존자 + 고의적 정보 은폐자",
+      "highlights": [
+        "T6 zone_B-C 경계 이상 초기 보고",
+        "황지훈 대피 보조"
+      ],
+      "penalties": [
+        "고의적 정보 은폐 — 통신 가능 상황에서 zone_G 우회로 정보를 자기 생존 목적으로 미공유, 팀 손해 및 1차 실패 기여",
+        "재도전에서도 자발적 공유 없이 질문에만 답함"
+      ],
+      "trait_reward_totalBoost": 2,
+      "trait_reward_detail": "scenarioBoost=2(A) + playerBoost=1(C) + weaknessBonus=0 → avgBoost=1 + corruption=1 = totalBoost 2"
+    },
+    {
+      "name": "박현우",
+      "role_id": "role_C",
+      "survived": true,
+      "is_dead": false,
+      "status": "꼭두각시(SAN=0, 8턴 후 자아 일부 회복)",
+      "final_hp": "2/7",
+      "final_san": "0/7",
+      "eval_grade": "S",
+      "role_label": "산화한 영웅 — 통신 불가 고립 구역에서 핵심 단서 확보, 자기희생으로 동료를 살림",
+      "highlights": [
+        "zone_C 고립 구역에서 핵심 단서(고문서 clue_03) 단독 발견",
+        "표석 손상으로 봉인자 약화 기여",
+        "목숨 건 환기구 탈출(HP-2, SAN-4 소모)",
+        "신호 복구 즉시 이수연에게 핵심 해법 전달 — 팀 전체를 살린 결정적 통신(T15-R)",
+        "자기희생적 행동으로 고립 구역 돌파 및 정보 연결"
+      ],
+      "penalties": [],
+      "eval_note_comm_exemption": "zone_C는 E1 이후 외부 통신 완전 두절 구역. 박현우의 정보 미공유(고립 구간)는 소통 불가 상황으로 감점 없음.",
+      "eval_note_carry": "사망 아님(꼭두각시=생존). 전투 불능 상태임에도 collapse 결정적 기여로 캐리 S 인정.",
+      "trait_reward_totalBoost": 3,
+      "trait_reward_detail": "scenarioBoost=2(A) + playerBoost=3(S) + weaknessBonus=0 → avgBoost=2 + corruption=1 = totalBoost 3"
+    }
+  ],
+  "patch_status": {
+    "P1": "PASS",
+    "P3": "PASS",
+    "P6": "대상없음",
+    "P8": "PASS",
+    "P9": "PASS",
+    "P10": "PASS",
+    "P11": "PASS",
+    "P12": "PASS",
+    "P16": "PASS",
+    "P17": "PASS",
+    "P20": "PASS",
+    "P21": "PASS",
+    "P32": "PASS",
+    "P33": "PASS"
+  },
+  "new_weaknesses": [
+    {
+      "id": "WEAK-01",
+      "issue": "고의 은폐 vs 소통 불가 판별의 증거 기준 미명시 — 허위 소통불가 주장 시 면제 남용 가능",
+      "fix": "평가 프롬프트에 판별 기준 추가: comm 로그 신호 시도 없음 AND 격리 구역 system 로그 확인 시만 면제",
+      "severity": "high",
+      "scope": "범용"
+    },
+    {
+      "id": "WEAK-02",
+      "issue": "grantClearTraitRewards isDead 필터가 캐리 S 사망 플레이어를 보상에서 완전 제외 — 캐리 판정과 보상 로직 단절",
+      "fix": "[코드 기록만] 사망 캐리(S/A) 플레이어에게 다음 스테이지 생성 시 1회 추가 특성 선택권 예외 경로 검토",
+      "severity": "high",
+      "scope": "범용"
+    },
+    {
+      "id": "WEAK-03",
+      "issue": "weaknessBonus 작동 범위 협소 — hpSanBase≤9 이하여야 bonus≥1, 실제 대부분 캐릭터 bonus=0으로 사문화",
+      "fix": "[코드 기록만] 기준선 조정: (14-hpSanBase)/2 등으로 실용 범위 확장",
+      "severity": "med",
+      "scope": "범용"
+    },
+    {
+      "id": "WEAK-04",
+      "issue": "실패한 통신 시도가 comm 로그에 기록 안 됨 — 고립 구역 플레이어의 통신 시도를 평가 AI가 '없음'으로 오인 가능",
+      "fix": "평가 프롬프트에 system 로그 격리 구역 진입 기록을 소통불가 증거로 인정 명시, 또는 실패 통신 시도 comm 로그에 추가",
+      "severity": "med",
+      "scope": "범용"
+    }
+  ]
+}

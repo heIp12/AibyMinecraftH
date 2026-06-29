@@ -1,0 +1,465 @@
+{
+  "_sim_note": "프롬프트 검증용 평문(실게임 AES-256-GCM). iter24 P55/P54/P3 집중검증 + P1~P55 전체 회귀.",
+  "seed": "#WN3K-8DPV",
+  "format_version": "gdam_v2",
+  "room": 4,
+  "scale": "내셔널",
+  "title": "망각의 조위(潮位)",
+  "concept": "해안선이 계절마다 조금씩 바뀌는 어촌 지역에서 수십 년째 이어지는 '조위(潮位) 저주' — 한 가문의 억압받은 원한이 조수(潮水)에 스며들어, 매 절기마다 해수면이 비정상 상승하고 그 물이 닿은 사람은 서서히 기억을 잃으며 바다로 이끌린다. 한 해가 지날수록 침수 범위와 희생자 수가 기하급수적으로 늘어나는 세대 저주.",
+
+  "world_rules": {
+    "core": "원한을 머금은 조수(潮水)가 매 절기(춘분·하지·추분·동지)마다 비정상 범람하고, 그 물에 닿은 자는 절기마다 기억·의지가 한 층씩 침식되어 결국 바다로 걸어 들어간다.",
+    "details": [
+      "침식 단계: 1절기 접촉=기억 흐릿(SAN -2/절기), 2절기=의지 약화(SAN -4/절기), 3절기=자아 붕괴(SAN -6/절기, 자동 행동 유발), 4절기=완전 잠식(바다 귀환 행동 강제)",
+      "조위 물은 '절기 기간(3일)' 동안만 활성화된다. 절기 외 기간에는 평범한 바닷물이지만 침식은 누적 상태를 유지한다.",
+      "원한의 근원은 1892년 억울하게 수장된 어부 가문 '박씨 세 남매'의 집단 원한 — 그 원한이 조위에 결박된 채 세대를 넘어 계속 먹는다.",
+      "침식된 자는 절기마다 바다 방향으로 이끌리는 몽유 상태가 나타나며, 의식이 있어도 이를 저항하려면 판정이 필요하다."
+    ],
+    "hidden": true,
+    "loophole": "원한의 결박은 박씨 가문이 직접 제 발로 바다에 들어가 스스로 풀어야만 해제된다 — 가해자 계보가 그 행위를 '목격·승인'하면 결박이 끊긴다는 역설적 구조.",
+    "collapse_condition": "박씨 세 남매의 수장 장소(침수 선착장 아래 3m)에서 1892년 억울함을 기록한 '원한 석판'을 인양하고, 현재 가해자 계보(이 지역 어촌계장 직계)가 그 앞에서 공개 인정·봉인 의식을 수행하면 조위 저주 소멸.",
+    "npc_dependency": "high"
+  },
+
+  "entity": {
+    "name": "박씨 조위(朴氏 潮位)",
+    "type": "세대저주형 환경 괴담 / 절기 기반 확산",
+    "independent_ai": true,
+    "can_impersonate": false,
+    "rules": [
+      "절기(춘분·하지·추분·동지) 전날 밤부터 3일간 바닷물이 비정상 범람한다.",
+      "범람한 조위 물에 피부 접촉 시 즉시 침식 1회 적용(오염도 +1 누적).",
+      "절기 외 기간에 범람은 없지만 기존 침식 누적치는 사라지지 않는다.",
+      "침식된 자는 절기가 올 때마다 바다로 이끌리는 충동 판정(SAN DR20 - 침식단계×3)이 강제 발동된다.",
+      "침식 4단계에 이른 자는 절기 시작 즉시 바다로 걸어 들어간다(자동 행동, 구제 불가)."
+    ],
+    "weakness": "원한의 결박이 형성된 1892년의 억울함이 공식적으로 인정·봉인되면 조위에서 원한이 분리된다.",
+    "solution": "원한 석판을 인양하고 가해자 계보 직계가 공개 인정 의식을 수행한다(P23: 정확 조건=석판 현장+계보 직계의 자발 발언; 오류 시=침식 전체 1단계 추가 급상승).",
+    "exploit_path": "침식 메커니즘이 '절기 기간'에만 활성화된다는 특성 — 절기 사이 평온 기간을 활용해 가해자 계보를 고립·압박하면 저주 해제 행위를 유도할 수 있다.",
+    "escape": "침식 2단계 이하인 자가 절기 시작 전 24시간 내 이 지역에서 완전히 벗어나면 생존 가능(그러나 침식 누적치는 유지).",
+    "ai_context": {
+      "corruption_behavior": [
+        "0단계(잠복): 조위 수위만 소폭 높음. NPC 몇몇이 멍한 표정.",
+        "1단계(첫 범람): 절기 때 비정상 범람 발생. 침식 피해자 발생 시작.",
+        "2단계(확산): 범람 범위 확대, 마을 일부 침수. 몽유 상태 NPC 목격.",
+        "3단계(침잠): 어촌 전체 침수 위기. 마을 절반이 침식 2단계 이상.",
+        "4단계(귀환): 침식 4단계 달성자들이 바다로 행진. 저주 완전 가속."
+      ]
+    }
+  },
+
+  "constraints": {
+    "can_leave_scene": true,
+    "outside_contact": true,
+    "phone_usable": true,
+    "comms_monitored": false,
+    "era": "현대(2026년 봄~겨울)",
+    "gated_zones": [
+      {
+        "zone": "zone_F",
+        "requires": "잠수 장비 또는 산소 공급",
+        "bypass": "짧은 숨참기(침수 3m)",
+        "bypass_dc": 18,
+        "remote_bypass": false
+      },
+      {
+        "zone": "zone_G",
+        "requires": "어촌계장 허가증 또는 잠금 해제",
+        "bypass": "자물쇠 물리 파손",
+        "bypass_dc": 14,
+        "remote_bypass": false
+      }
+    ],
+    "notes": "절기 기간(3일)에는 연안도로가 침수되어 차량 이동 불가. 대형 선박 접안은 절기 외에만 가능. 잠수 장비는 zone_E 창고에 보관."
+  },
+
+  "timeline": {
+    "start_time": "2026-03-18",
+    "scale_note": "춘분(3월 20일) ~ 동지(12월 21일) 약 9개월 단계 확산. 내셔널 스케일 — 정부 개입 전 지역 봉쇄 위기.",
+    "fixed_deadlines": [
+      {"event": "춘분 범람", "date": "2026-03-20", "note": "첫 번째 비정상 범람. 사건 인식 시작."},
+      {"event": "하지 범람", "date": "2026-06-21", "note": "2차 범람. 침식 피해자 급증. 정부 파악 시작."},
+      {"event": "추분 범람", "date": "2026-09-23", "note": "3차 범람. 마을 절반 침식. 강제 대피령."},
+      {"event": "동지 범람(최종 마감)", "date": "2026-12-21", "note": "4차 범람. 침식 4단계 달성자 집단 귀환 시작. 저주 완전화 — 이후 해결 불가."}
+    ],
+    "time_visible": true,
+    "minutes_per_turn": 20,
+    "stages": {
+      "1": {
+        "condition": "춘분 범람 발생 — 이상 현상 인지 시작",
+        "effect": "어촌 주민 12명 침식 1단계. 수산시장 일부 침수. 범람 원인 불명.",
+        "cumulative_change": "[절기간 누적] 침식 1단계 피해자 12명 발생. 마을 경계 조위 수위 +0.8m 기록. 정부 해양조사팀 파견 준비."
+      },
+      "2": {
+        "condition": "하지 범람 발생(3개월 도약 후)",
+        "effect": "기존 침식 1단계 피해자 → 2단계 진행. 신규 침식 1단계 30명 추가. 어촌 동쪽 침수 심화.",
+        "cumulative_change": "[3개월 도약 기간 중 누적] 기존 12명 침식 1→2단계 진행(SAN 추가 -2~-4). 신규 피해자 30명 발생. 범람 구역 어항 전체 진입 불가. 마을 주민 50명 이탈. NPC 박재인: 침식 2단계 진행으로 의지 약화 상태(혼자 있을 때 바다 방향 응시 행동 시작)."
+      },
+      "3": {
+        "condition": "추분 범람 발생(또 3개월 도약 후)",
+        "effect": "기존 침식 2단계 → 3단계 진행(자아 붕괴 위기). 신규 침식 1단계 80명. 마을 절반 침수.",
+        "cumulative_change": "[3개월 도약 기간 중 누적] 침식 2단계 피해자 30명 → 3단계(자동 행동 유발 단계). 마을 주민 200명 강제 대피. 어촌계장 이승원: 압박 받아 심리적 동요 시작(고립 상태). NPC 박재인: 침식 3단계 — 몽유 상태 빈번, 혼자 두면 바다로 이동 시도. 자원: 플레이어 잔여 치료제 소진(3개월간 사용), SAN 자연 회복 최소화."
+      },
+      "4": {
+        "condition": "동지 범람(최종 마감) 직전 결판",
+        "effect": "침식 4단계 달성자 집단 바다 행진. 마을 전체 물에 잠기기 직전. 저주 해제 또는 대파국.",
+        "cumulative_change": "[3개월 도약 기간 중 누적] 기존 침식 3단계 피해자 다수 → 4단계 위기. 정부 비상선포. 어촌 완전 고립. 플레이어: 9개월간 이 사건에 연루되어 SAN 누적 손실·자원 감소가 누적 반영."
+      }
+    },
+    "main_events": [
+      {
+        "id": "E1",
+        "time": "2026-03-20",
+        "label": "춘분 첫 범람",
+        "condition": "춘분 시작",
+        "effect": "비정상 조위 범람. 12명 침식 1단계. 수산시장 침수.",
+        "blockable": false,
+        "is_end": false,
+        "branches": {
+          "auto": {"condition": "개입 없으면", "next": "E2"},
+          "intervene": [
+            {"condition": "피해자 격리에 성공하면", "next": "E2-A"},
+            {"condition": "원인 조사 진입하면", "next": "E2"}
+          ]
+        }
+      },
+      {
+        "id": "E2",
+        "time": "2026-06-21",
+        "label": "하지 2차 범람(★P55 도약 착지)",
+        "condition": "3개월 TIME_SKIP 도약 후 하지 도달",
+        "effect": "누적 침식 반영: 기존 12명 2단계 진행·신규 30명 1단계. 어항 봉쇄.",
+        "blockable": false,
+        "is_end": false,
+        "branches": {
+          "auto": {"condition": "해결 시도 없으면", "next": "E3"},
+          "intervene": [
+            {"condition": "가해자 계보 접촉 성공 시", "next": "E3-A"},
+            {"condition": "원한 석판 위치 파악 시", "next": "E3"}
+          ]
+        }
+      },
+      {
+        "id": "E2-A",
+        "time": "2026-06-22",
+        "label": "피해자 격리 성공 분기",
+        "condition": "춘분 기간 격리 성공",
+        "effect": "침식 진행 속도 1절기 지연. 그러나 원인 해결 없이 하지 도달 시 역압 발생.",
+        "blockable": true,
+        "is_end": false
+      },
+      {
+        "id": "E3",
+        "time": "2026-09-23",
+        "label": "추분 3차 범람(강제 대피령)",
+        "condition": "3개월 TIME_SKIP 도약 후 추분 도달",
+        "effect": "마을 절반 침수. 3단계 피해자 몽유 상태 집단화. 정부 비상조치.",
+        "blockable": false,
+        "is_end": false,
+        "branches": {
+          "auto": {"condition": "의식 수행 없으면", "next": "E4"},
+          "intervene": [
+            {"condition": "원한 석판 인양 완료 시", "next": "E_RESOLVE"},
+            {"condition": "가해자 계보 설득 실패 시", "next": "E4"}
+          ]
+        }
+      },
+      {
+        "id": "E3-A",
+        "time": "2026-09-24",
+        "label": "가해자 계보 설득 분기",
+        "condition": "이승원 접촉·압박 성공",
+        "effect": "이승원이 동행 조건부 수락. 원한 석판 인양 작업 개시.",
+        "blockable": true,
+        "is_end": false
+      },
+      {
+        "id": "E_RESOLVE",
+        "time": "2026-12-18",
+        "label": "원한 석판 인양+봉인 의식 성공",
+        "condition": "석판 인양 + 이승원 공개 인정 의식 수행",
+        "effect": "박씨 조위 저주 소멸. 침식 진행 정지. 기존 피해자 단계별 회복.",
+        "blockable": false,
+        "is_end": true,
+        "branches": {}
+      },
+      {
+        "id": "E4",
+        "time": "2026-12-21",
+        "label": "동지 4차 범람(최종 파국)",
+        "condition": "해결 없이 동지 도달",
+        "effect": "침식 4단계 달성자들 집단 바다 행진. 마을 완전 침수. 저주 고착화.",
+        "blockable": false,
+        "is_end": true,
+        "branches": {}
+      }
+    ]
+  },
+
+  "clues": [
+    {
+      "id": "clue_1",
+      "type": "physical",
+      "location": "zone_A 수산시장 지하 창고",
+      "description": "1892년 작성된 낡은 어업허가증 — '박씨 세 남매' 이름이 지워진 흔적이 있음.",
+      "clue_value": "가해자 계보 추적의 첫 실마리. 박씨 가문이 억울하게 허가권을 박탈당했음을 시사."
+    },
+    {
+      "id": "clue_2",
+      "type": "mislead",
+      "location": "zone_B 마을회관 게시판",
+      "description": "1970년대 해양 공해 보고서 — '중금속 유입으로 인한 조위 이상' 기록.",
+      "clue_value": "★mislead: 환경 오염 원인으로 보이게 함. 진짜 단서 2개 확보 전까지 오답 방향으로 유도(P8/P10). 나중에 '중금속 수치는 정상'이라는 현재 자료로 오답 드러남."
+    },
+    {
+      "id": "clue_3",
+      "type": "written",
+      "location": "zone_C 폐가(박씨 구택)",
+      "description": "1892년 박씨 막내딸 수기 — '조위가 우리를 부른다, 이 땅이 우리 한을 먹은 뒤엔 절기마다 돌려받을 것이다'",
+      "clue_value": "절기 기반 저주 메커니즘의 핵심 단서. hidden_rules 연결."
+    },
+    {
+      "id": "clue_4",
+      "type": "npc_testimony",
+      "location": "zone_D 어촌계장실",
+      "description": "이승원의 오래된 가족 사진 — 배경에 '박씨 수장 사건' 이전 사진이 있고, 이승원 조부가 어업허가증을 들고 있음.",
+      "clue_value": "가해자 계보(이씨 가문)가 현 어촌계장까지 이어짐을 확인. P32 2경로: clue_1 + clue_4."
+    },
+    {
+      "id": "clue_5",
+      "type": "mislead",
+      "location": "zone_E 창고 선반",
+      "description": "1988년 수기 — '박재인 할머니가 절기마다 바다에 제사를 지내야 한다고 했다. 안 지내면 범람한다.'",
+      "clue_value": "★mislead 2: 제사 미이행이 원인처럼 보임. 실제로는 제사와 무관하나, 플레이어가 제사 재개 시도를 한 번 실행해보도록 유도(P10). 진짜 단서 clue_3·clue_4 확보 후 오답 드러남."
+    },
+    {
+      "id": "clue_6",
+      "type": "physical",
+      "location": "zone_F 침수 선착장 수중",
+      "description": "1892년 박씨 가문 원한 석판(한자 음각) — '이씨가 우리를 수장시켰다. 조위여, 갚아라.'",
+      "clue_value": "collapse_condition 달성 핵심 아이템. 인양 필수. P32: zone_C 수기(경로1)와 NPC 박재인 증언(경로2)으로 위치 파악 가능."
+    },
+    {
+      "id": "clue_7",
+      "type": "npc_testimony",
+      "location": "zone_B",
+      "description": "박재인(critical NPC)의 증언 — '절기마다 바다에서 세 사람 목소리가 들린다. 어릴 때부터 들었다.'",
+      "clue_value": "원한의 존재를 확인. clue_6 위치 파악 대체 경로(P32 2경로 보장)."
+    }
+  ],
+
+  "npcs": [
+    {
+      "id": "npc_1",
+      "name": "박재인",
+      "role": "critical",
+      "description": "70대 여성. 박씨 가문 방계 후손. 절기마다 바다 근처에서 멍하게 있는 습관이 있다. 침식 진행 중.",
+      "motivation": "저주의 피해자이자 가문 역사 보유자. 진실을 알려주고 싶지만 두려워 회피해왔다.",
+      "knowledge": ["원한 석판 위치(zone_F 수중)", "1892년 수장 사건 전말", "절기마다 바다 목소리 청취"],
+      "spawn_timeline": "시작 즉시",
+      "schedule": [
+        {
+          "condition": "플레이어가 박씨 가문 역사를 언급하거나 clue_3 제시",
+          "will": "반응",
+          "action": "수장 사건 전말 증언 + 석판 위치 단서 제공",
+          "duration_turns": 3,
+          "after_duration": "복귀(두려움으로 침묵)",
+          "note": "P17: 단순 방문으로 발동 안 됨. 가문 언급·clue_3 제시가 구체 트리거. P33: 조건 미충족이라도 6턴 경과 시 먼저 다가와 일부 증언."
+        }
+      ],
+      "current_state_per_timeline": {
+        "stage_1": "침식 0단계 — 약간 멍한 기색",
+        "stage_2_after_3month_skip": "침식 2단계 — 의지 약화, 혼자 있을 때 바다 응시",
+        "stage_3_after_3month_skip": "침식 3단계 — 몽유 상태 빈번, 혼자 두면 바다로 이동 시도"
+      }
+    },
+    {
+      "id": "npc_2",
+      "name": "이승원",
+      "role": "critical",
+      "description": "55세 남성. 현 어촌계장. 가해자 계보 직계. 저주 사실을 어렴풋이 알지만 인정하면 자신의 가문이 파멸한다고 믿어 회피 중.",
+      "motivation": "가문 보호 vs 마을 구제 갈등. 압박이 충분해지면 협력 가능.",
+      "knowledge": ["가문 내 구전(박씨 수장 가담 사실)", "어업허가증 조작 역사", "원한 석판 존재 인지(확실하지 않은 상태)"],
+      "spawn_timeline": "시작 즉시",
+      "schedule": [
+        {
+          "condition": "플레이어가 clue_1+clue_4 동시 제시하거나 가해자 계보를 공식 증거로 제시",
+          "will": "반응",
+          "action": "방어적 부인 → 압박 지속 시 조건부 협력 수락",
+          "duration_turns": 4,
+          "after_duration": "대기(결심 숙고 상태)",
+          "note": "P46: 이승원과 박재인이 같은 zone에 있으면 GM이 두 NPC 교대 서술로 정보 교환·충돌 구현."
+        }
+      ],
+      "collapse_role": "봉인 의식 수행의 필수 주체 — 그의 자발적 공개 인정 발언 없이는 collapse_condition 미충족."
+    }
+  ],
+
+  "zones": [
+    {
+      "zone_id": "zone_A",
+      "name": "수산시장",
+      "description": "해안가 재래시장. 절기 때 침수 1순위 구역.",
+      "connections": ["zone_B", "zone_E"],
+      "accessible_by": "전원 가능",
+      "clue_ids": ["clue_1"]
+    },
+    {
+      "zone_id": "zone_B",
+      "name": "마을회관",
+      "description": "어촌 행정·사교 중심지. NPC 박재인 주 활동 구역.",
+      "connections": ["zone_A", "zone_C", "zone_D"],
+      "accessible_by": "전원 가능",
+      "clue_ids": ["clue_2", "clue_7"]
+    },
+    {
+      "zone_id": "zone_C",
+      "name": "박씨 폐가",
+      "description": "1892년 박씨 가문 구택. 마을 외곽 방치. 절기 때 바닷물 흔적이 남는다.",
+      "connections": ["zone_B", "zone_D"],
+      "accessible_by": "전원 가능",
+      "clue_ids": ["clue_3"]
+    },
+    {
+      "zone_id": "zone_D",
+      "name": "어촌계장실",
+      "description": "이승원의 집무실. 잠겨 있거나 이승원이 있을 때 개방.",
+      "connections": ["zone_B", "zone_C", "zone_G"],
+      "accessible_by": "이승원 동행 또는 열쇠",
+      "clue_ids": ["clue_4"]
+    },
+    {
+      "zone_id": "zone_E",
+      "name": "어구 창고",
+      "description": "잠수 장비·어구 보관. clue_5 위치. 잠수 장비 입수 가능.",
+      "connections": ["zone_A", "zone_F"],
+      "accessible_by": "전원 가능",
+      "clue_ids": ["clue_5"]
+    },
+    {
+      "zone_id": "zone_F",
+      "name": "침수 선착장",
+      "description": "수면 아래 3m. 잠수 장비 또는 짧은 숨참기(DC18)로만 진입 가능. 원한 석판 위치.",
+      "connections": ["zone_E"],
+      "accessible_by": "잠수 장비 또는 DC18 숨참기(P13/P19 gated)",
+      "clue_ids": ["clue_6"]
+    },
+    {
+      "zone_id": "zone_G",
+      "name": "계장실 지하",
+      "description": "이승원 가문 비밀 문서 보관소. 자물쇠 잠금(P13 gated).",
+      "connections": ["zone_D"],
+      "accessible_by": "어촌계장 허가증 또는 DC14 파손(P13/P19 gated)",
+      "clue_ids": []
+    },
+    {
+      "zone_id": "zone_H",
+      "name": "안전 대피소",
+      "description": "마을 가장 높은 지점. 절기 범람 영향 없음. 플레이어 안전지대(★P55 예외: 여기서 명시 휴식 시 누적 변화 중단).",
+      "connections": ["zone_B"],
+      "accessible_by": "전원 가능",
+      "clue_ids": []
+    }
+  ],
+
+  "roles": [
+    {
+      "role_id": "role_A",
+      "char_name": "한소율",
+      "gender": "여성",
+      "spawn_location": "zone_A",
+      "spawn_timeline": "시작 즉시",
+      "job_pool": ["해양환경 연구원", "생태조사원", "수산과학원 직원", "해양부 공무원", "환경단체 조사관", "NGO 현장활동가"],
+      "age_range": [28, 42],
+      "initial_info": "국립해양연구원 소속. 조위 이상 보고를 받고 현장 파견됨. 수산시장 지하 창고에 1892년 문서들이 있다는 정보를 사전에 입수했다.",
+      "hidden_info": "잠수 장비 사용법 숙지(zone_F 진입 가능). 그 능력이 원한 석판 인양에 쓰일 수 있다는 사실은 모름(P41: 용도 미인지).",
+      "role_stats": {"spr_add": 2, "str_add": 1, "cha_add": -1, "summary": "해양연구원: 정신+2, 근력+1, 매력-1"},
+      "start_item": ["잠수 고글", "방수 손전등", "현장 조사 태블릿"],
+      "start_power": "중간 — HP 14, SAN 13",
+      "relationships": [{"with": "role_B", "description": "업무상 처음 만난 사이. 상호 경계 중."}, {"with": "role_C", "description": "완전 타인. 현장에서 조우."}],
+      "pre_spawn_beats": []
+    },
+    {
+      "role_id": "role_B",
+      "char_name": "정우현",
+      "gender": "남성",
+      "spawn_location": "zone_C",
+      "spawn_timeline": "시작 즉시",
+      "job_pool": ["지역 향토사학자", "문화재 조사원", "민속기록 연구자", "고문서 전문가", "지방지 편집위원", "박물관 큐레이터", "대학 역사학과 강사"],
+      "age_range": [35, 58],
+      "initial_info": "박씨 폐가가 1892년 수장 사건과 관련된 역사 현장이라는 논문 자료를 보유. 폐가 조사 목적으로 혼자 방문.",
+      "hidden_info": "박씨 가문 수기(clue_3)의 해석 능력 보유. 그 내용이 저주 메커니즘의 핵심임을 모름.",
+      "role_stats": {"spr_add": 1, "cha_add": 2, "luk_fixed": -1, "summary": "역사학자: 정신+1, 매력+2, 행운 무보정"},
+      "start_item": ["조사 노트", "1892년 관련 논문 복사본", "휴대폰"],
+      "start_power": "낮음 — HP 10, SAN 11 (★반스포일러 P41: clue_3 해석 가능하지만 저주와의 연결은 플레이 중 발견)",
+      "relationships": [{"with": "role_A", "description": "업무상 처음 만난 사이."}, {"with": "role_C", "description": "완전 타인."}],
+      "pre_spawn_beats": []
+    },
+    {
+      "role_id": "role_C",
+      "char_name": "최다은",
+      "gender": "여성",
+      "spawn_location": "zone_B",
+      "spawn_timeline": "시작 즉시",
+      "job_pool": ["지역 간호사", "응급구조사", "마을보건소 직원", "공중보건의", "복지관 상담사", "119 구조대원"],
+      "age_range": [25, 45],
+      "initial_info": "마을 보건소 근무 중 절기마다 원인 불명 멍한 증상 환자가 급증함을 관찰. 박재인 할머니를 정기 방문하는 의료진.",
+      "hidden_info": "침식 증상 관찰 기록 보유(몽유·방향성 행동). 그 증상이 조위 접촉과 연관됨을 모름.",
+      "role_stats": {"san_max_add": 2, "str_add": -1, "cha_add": 2, "summary": "간호사: 정신최대+2, 근력-1, 매력+2"},
+      "start_item": ["청진기·구급낭", "환자 관찰 기록지", "보건소 통행증"],
+      "start_power": "높음 — HP 12, SAN 16 (★차등: SAN이 가장 높음 — 침식 저항력 우위)",
+      "relationships": [{"with": "role_A", "description": "현장에서 조우한 타인."}, {"with": "role_B", "description": "타인. 박재인을 공통 접점으로 만남."}],
+      "pre_spawn_beats": []
+    }
+  ],
+
+  "key_items": [
+    {
+      "id": "item_허가증",
+      "name": "1892년 어업허가증(훼손본)",
+      "type": "written_book",
+      "description": "누렇게 바랜 문서. 특정 이름 부분이 긁혀 지워져 있다.",
+      "lore_info": "박씨 이름이 지워진 흔적. 뒷면에 이씨 가문 도장이 찍혀 있다.",
+      "location": "zone_A 지하 창고",
+      "clue_value": "가해자 계보 추적 시작",
+      "content": ["어업허가증 제호 아래 날짜 '명치25년 (1892) 4월'. 허가자 란에 원래 이름이 긁혀 지워지고 그 위에 '이씨 가문' 도장이 선명하다. 지워진 글자를 빛에 비추면 '朴' 자가 희미하게 보인다."]
+    },
+    {
+      "id": "item_수기",
+      "name": "박씨 막내딸 수기",
+      "type": "written_book",
+      "description": "너덜거리는 한지 묶음. 먹 글씨로 가득하다.",
+      "lore_info": "1892년 작성. 맨 마지막 장에 '조위여 갚아라'는 글씨가 유독 굵고 깊게 새겨져 있다.",
+      "location": "zone_C 폐가 마루 아래",
+      "clue_value": "절기 저주 메커니즘 핵심",
+      "content": [
+        "을사년이 되면 우리 세 남매는 이 땅을 떠나리라 했건만. 이씨가 허가증을 빼앗고 우리를 바다에 내던졌다. 춘분날 밤이었다.",
+        "조위여, 너는 우리 한을 먹었다. 절기마다 돌아와 그들을 먹어라. 이 땅에 이씨 핏줄이 남는 한, 너는 범람하라."
+      ]
+    },
+    {
+      "id": "item_석판",
+      "name": "원한 석판",
+      "type": "physical:COMPARATOR",
+      "description": "수중에서 인양한 청회색 돌판. 한자가 음각되어 있다.",
+      "lore_info": "'李氏가 우리를 수장시켰다. 朴氏 三南妹의 원한이 이 조위에 깃들어 있노라.' 날짜 1892년 4월.",
+      "location": "zone_F 침수 선착장 수중 3m",
+      "clue_value": "collapse_condition 달성 핵심 아이템 — 인양 후 의식 현장에 지참 필수"
+    },
+    {
+      "id": "item_잠수장비",
+      "name": "잠수 장비 세트",
+      "type": "physical:LEATHER",
+      "description": "zone_E 창고에 보관된 기본 잠수 장비.",
+      "lore_info": "산소통 잔량 약 40분. zone_F 진입 시 DC18 판정 면제.",
+      "location": "zone_E 창고 선반",
+      "clue_value": "zone_F(gated) 진입 가능하게 함"
+    }
+  ],
+
+  "relationships": [
+    {"roles": ["role_A", "role_B"], "description": "처음 만나는 타인. 조사 목적 공유로 협력 가능."},
+    {"roles": ["role_B", "role_C"], "description": "박재인 할머니를 공통 접점으로 처음 조우."},
+    {"roles": ["role_A", "role_C"], "description": "완전 타인. 현장 우연 조우."}
+  ]
+}

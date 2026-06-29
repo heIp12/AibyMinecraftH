@@ -1,0 +1,115 @@
+{
+  "version": 1,
+  "stage": 3,
+  "seed": "#MB7X-4QKN",
+  "created": "2026-06-26",
+  "sim_iter": "iter06",
+  "era": "현대(2024년)",
+  "scale": "시티",
+  "entity_name": "부채무(負債霧) — 빚의 안개",
+  "entity_summary": "타인에게 도움을 받거나 부탁하면 그 행위가 물성화된 채무로 고착되어 시설을 탈출할 수 없게 되는 규칙형 괴담. 채무 원장 데이터 + 클라우드 백업 접근권 동시 파괴로 규칙 붕괴.",
+  "outcome": {
+    "grade": "A",
+    "resolved": true,
+    "attempts": 2,
+    "timeline_stage_final": 3,
+    "p1_applied": true,
+    "note": "재도전 1회. 최종 성공 시점 조건만으로 A등급 판정(P1 준수). 전원 생존."
+  },
+  "players": [
+    {
+      "char_name": "오세준",
+      "role": "야근 잔류 IT엔지니어",
+      "role_id": "role_A",
+      "gender": "남성",
+      "age": 33,
+      "job": "시스템 엔지니어",
+      "stats_summary": "HP 6 / SAN 5 / STR 4 / CHA 3 / LUK 5 / SPR 8",
+      "start_items": ["사원증(레벨1 카드키)", "노트북", "스마트폰", "에너지 드링크"],
+      "role_traits": ["시스템 직감(C)", "배선 작업(D-능동)"],
+      "role_stats_applied": "spr_add+3",
+      "final_hp": 3,
+      "final_san": 3,
+      "individual_grade": "A",
+      "highlight": "배선 작업 특성 2회 사용으로 덕트 침투 경로 개척. 시스템 로그 채무 단서 최초 발견."
+    },
+    {
+      "char_name": "한수현",
+      "role": "외부 감사인",
+      "role_id": "role_B",
+      "gender": "여성",
+      "age": 39,
+      "job": "공인회계사",
+      "stats_summary": "HP 5 / SAN 7(max) / STR 3 / CHA 7 / LUK 4 / SPR 5",
+      "start_items": ["스마트폰", "감사 예비 서류", "볼펜", "레벨2 카드키 발급 코드 메모"],
+      "role_traits": ["재무 독해(C)", "설득력(D-능동)"],
+      "role_stats_applied": "cha_add+2, san_max_add+1",
+      "final_hp": 2,
+      "final_san": 5,
+      "individual_grade": "B+",
+      "highlight": "mislead A 실제 실행 후 오답 확인(P10 보강). 순수 증여로 loophole 최초 실증. CHA 기반 이현도 설득 성공."
+    },
+    {
+      "char_name": "박도현",
+      "role": "건물 보안요원",
+      "role_id": "role_C",
+      "gender": "남성",
+      "age": 31,
+      "job": "건물 보안요원",
+      "stats_summary": "HP 8 / SAN 5 / STR 7 / CHA 4 / LUK 6 / SPR 4",
+      "start_items": ["스마트폰", "무전기", "레벨2 카드키", "손전등", "보안 일지"],
+      "role_traits": ["야간 순찰(C)", "제압(D-능동)"],
+      "role_stats_applied": "str_add+2, luk_add+1, hp_max_add+1",
+      "final_hp": 8,
+      "final_san": 4,
+      "individual_grade": "A",
+      "highlight": "마스터키 카드 교환으로 레벨3 카드키 확보. 덕트 협력 판정 주도자(d20+4=20 대성공)."
+    }
+  ],
+  "patches_verified": {
+    "P1": "검증",
+    "P6": "검증",
+    "P8": "검증",
+    "P10_보강": "검증",
+    "P12": "검증",
+    "P13": "검증",
+    "P14": "검증",
+    "P15": "검증",
+    "P16": "검증",
+    "P17": "검증",
+    "P9": "확인",
+    "P11": "확인",
+    "P2": "확인",
+    "P3": "확인"
+  },
+  "new_issues_found": [
+    {
+      "id": "I-01",
+      "issue": "comms_monitored 핵심정보 판별 기준 미명시 — GM이 '핵심정보'와 '일반정보' 경계를 임의 판정",
+      "fix": "comms_monitored 지침에 '핵심정보 정의: collapse_condition·weakness·exploit_path에 직접 연관된 정보를 언급하면 핵심정보=true' 한 줄 추가",
+      "severity": "med",
+      "scope": "범용"
+    },
+    {
+      "id": "I-02",
+      "issue": "gated_zones bypass 물리 우회 성공 후 zone 진입 허용 여부 GM 재량 과다 — bypass 성공판정 DC가 seed에만 있고 buildGmPrompt에 미주입",
+      "fix": "buildGmPrompt의 gated_zones 주입부에 bypass 조건 + DC 수치를 함께 출력: '우회 조건: [bypass 내용] (판정 DC: X)'",
+      "severity": "med",
+      "scope": "범용"
+    },
+    {
+      "id": "I-03",
+      "issue": "리트라이 후 채무·상태이상 등 괴담 고유 축적값 초기화 기준 미명시 — P16이 HP/SAN만 명시, 괴담 종속 수치(채무 잔액·오염 단계·NPC 관계 변화)도 유지인지 불명",
+      "fix": "P16 지침에 '괴담 고유 축적값(채무·감염·저주 등 시나리오 종속 수치)도 리트라이 시 유지된다' 한 줄 추가",
+      "severity": "med",
+      "scope": "범용"
+    },
+    {
+      "id": "I-04",
+      "issue": "NPC duration_turns 종료 후 after_duration 실행 주체 불명 — critical NPC AI가 자율 실행하는지, GM이 서술로만 처리하는지 지침 없음",
+      "fix": "buildNpcSystemPrompt 주입문에 'duration_turns 종료 후 after_duration은 NPC AI가 자율 결정하고 GM이 다음 서술에 녹인다' 한 줄 추가",
+      "severity": "low",
+      "scope": "범용"
+    }
+  ]
+}

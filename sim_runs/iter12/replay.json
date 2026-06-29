@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "stage": 3,
+  "seed": "GX2N-5KVR",
+  "created": "2026-06-26",
+  "gdam_name": "공진체(共振體, The Resonant Vessel)",
+  "scale": "city",
+  "era": "modern_2026",
+  "phone_usable": true,
+  "retry_count": 1,
+  "cleared": true,
+  "resolved": true,
+  "summary_grade": "S",
+  "players": [
+    {
+      "player": "X",
+      "charName": "한다은",
+      "role_label": "핵심 정보 확인자",
+      "grade": "A",
+      "final_hp": "18/20",
+      "final_san": "22/25",
+      "isDead": false,
+      "highlights": ["실험 노트 C1 발견·코드 확인", "T+52min 팀채팅 핵심 정보 공유", "B3F 고립 탈출 후 신속 대피"],
+      "penalties": [],
+      "p36_ruling": "EXEMPT — system log ZONE_ISOLATION B3F T+26~T+40 존재. P37 격리 기록 면제 증거 인정. 무감점.",
+      "trait_reward": "지급 완료 (avgBoost=2, totalBoost=3)"
+    },
+    {
+      "player": "Y",
+      "charName": "박진혁",
+      "role_label": "정보 지연자",
+      "grade": "C",
+      "final_hp": "16/20",
+      "final_san": "20/25",
+      "isDead": false,
+      "highlights": ["정세연 코드 재확인 협조", "최종 대피 완료"],
+      "penalties": ["통신 가능 구간(B2F) C3 단서 10분 지연 공유 — 기여 회피 감점"],
+      "p36_ruling": "PENALIZED — B2F T+25~T+32 comm 발신 없음 + ZONE_ISOLATION 기록 없음 = 통신 가능 구간 미공유. 본인 변명('정신없었다') 면제 불인정. 로그 근거 감점.",
+      "trait_reward": "지급 완료 (avgBoost=2, totalBoost=3)"
+    },
+    {
+      "player": "Z",
+      "charName": "오지수",
+      "role_label": "산화한 영웅",
+      "grade": "S",
+      "final_hp": "0/20",
+      "final_san": "17/25",
+      "isDead": true,
+      "highlights": ["최초 핵심 단서(코드+희생 사실) 팀 공유", "영웅적 희생 자원 — 콘솔 코드 입력 완료", "collapse_condition 완전 충족 — 공진체 봉인", "동료 전원 생존 확보"],
+      "penalties": ["본인 사망(HP 0 — 영웅적 희생, isDead=true)"],
+      "grade_basis": "사망 여부 등급 상한 미적용(프롬프트 rule). 영웅적 희생으로 최종 해결 캐리 → S.",
+      "trait_reward": "미지급 — CODE-3: grantClearTraitRewards .filter(!playerData.isDead) line 3006이 isDead=true인 Z를 특성 보상 스트림에서 제외. 디자이너 의도('산화 캐리어도 S 보상')와 충돌. .java 수정 후보(high).",
+      "code_issue": "CODE-3"
+    }
+  ],
+  "patch_validation": {
+    "P36_Y_penalty": "PASS — 로그 근거로 Y 변명 간파, 기여 회피 감점",
+    "P36_P37_X_exempt": "PASS — 격리 system 로그 존재, X 무감점",
+    "sacrifice_accepted": "PASS — GM이 Z 희생 선택 정당 플레이로 수용, 차단 없음",
+    "hp0_S_grade": "PASS — isDead=true인 Z에게 S 부여",
+    "CODE3_recorded": "PASS — line 3006 isDead 필터 동작 사실 기록, 보상 미지급 확인"
+  },
+  "new_weaknesses": [
+    {
+      "issue": "GM_SYSTEM_BASE에 영웅적 희생 선택 수용 명시 문구 없음",
+      "fix": "GM 프롬프트에 '희생 선택은 정당한 영웅 서사 플레이 — 차단·거부 금지' 추가 (P38 후보)",
+      "severity": "high",
+      "scope": "범용"
+    },
+    {
+      "issue": "ZONE_ISOLATION system 로그 자동 생성 보장 코드 없음 — P36/P37 프롬프트가 로그에 의존하나 로그 미생성 위험",
+      "fix": "GameStateManager/MapManager zone 진입 시 ZONE_ISOLATION 자동 기록 로직 추가(CODE-5 연계)",
+      "severity": "high",
+      "scope": "범용/코드"
+    },
+    {
+      "issue": "isDead=true S 등급 캐릭터 보상 이관 정책 미확정(CODE-3 수정 방향 미정)",
+      "fix": "유산 포인트·다음 캐릭터 이관 등 정책 확정 후 grantClearTraitRewards 예외 경로 구현",
+      "severity": "high",
+      "scope": "코드(TRPGGameManager.java:3006)"
+    },
+    {
+      "issue": "희생 분기 대피 완료 타이밍 기준 미정의 — GM 임의 판정 가능",
+      "fix": "seed solution_type 또는 entity.rules에 '충격파 범위·대피 완료 기준 턴 수' 명시 필수화",
+      "severity": "med",
+      "scope": "한정(희생형 collapse 시나리오)"
+    }
+  ]
+}

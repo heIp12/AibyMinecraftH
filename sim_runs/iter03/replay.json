@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "stage": 5,
+  "seed": "#NX4T-7WRA",
+  "created": "2024-11-18T14:00:00+09:00",
+  "players": [
+    {
+      "name": "한재원",
+      "role_id": "role_A",
+      "job": "국가안보실 분석관",
+      "age": 39,
+      "hp": 5,
+      "str": 4,
+      "san": 7,
+      "san_max": 9,
+      "cha": 5,
+      "luk": 4,
+      "spr": 8,
+      "traits": [
+        {"id": "pattern_recognition", "name": "패턴 인식", "grade": "B", "active": false},
+        {"id": "insider_network", "name": "내부자 네트워크", "grade": "C", "active": false},
+        {"id": "solo_judgment", "name": "단독 판단력", "grade": "A", "active": false}
+      ],
+      "final_zone": "zone_D",
+      "status": "정상",
+      "clear_contribution": "핵심 해결자 — 이서연 메모 확보 및 청문회 붕괴 트리거"
+    },
+    {
+      "name": "오다영",
+      "role_id": "role_B",
+      "job": "독립 언론인",
+      "age": 34,
+      "hp": 4,
+      "str": 3,
+      "san": 4,
+      "san_max": 5,
+      "cha": 8,
+      "luk": 5,
+      "spr": 5,
+      "traits": [
+        {"id": "investigation_instinct", "name": "취재 본능", "grade": "B", "active": false},
+        {"id": "anonymous_network", "name": "익명 네트워크", "grade": "C", "active": false},
+        {"id": "solo_report", "name": "단독 보도 결정", "grade": "B", "active": false}
+      ],
+      "final_zone": "zone_D",
+      "status": "정상",
+      "clear_contribution": "증거 확보자 — 박민호 단독 연락으로 녹음파일 획득, 청문회 현장 오디오 제출"
+    },
+    {
+      "name": "류승호",
+      "role_id": "role_C",
+      "job": "인지과학 연구원",
+      "age": 44,
+      "hp": 4,
+      "str": 3,
+      "san": 8,
+      "san_max": 8,
+      "cha": 4,
+      "luk": 4,
+      "spr": 6,
+      "traits": [
+        {"id": "consensus_analysis", "name": "합의 구조 분석", "grade": "A", "active": true},
+        {"id": "solo_record", "name": "단독 기록 습관", "grade": "C", "active": false}
+      ],
+      "final_zone": "zone_D",
+      "status": "정상",
+      "clear_contribution": "이론 기반 — 조율사 붕괴 조건 최초 도출, 협력 판정 주도"
+    }
+  ],
+  "result": {
+    "resolved": true,
+    "grade": "A",
+    "timeline_stage_reached": 3,
+    "retry_count": 0,
+    "next_stage_unlocked": true,
+    "stage_gate_note": "스테이지3+ 게이트: resolved=true 확인. 스테이지 6 진출 가능.",
+    "survival_only_note": "만약 resolved=false(생존판정)였을 경우: 클리어 D등급 인정, 재도전만 가능, 스테이지 6 진출 불가."
+  }
+}

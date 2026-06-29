@@ -69,7 +69,7 @@ public class TraitButtonManager {
                 String rapid = t.usedThisStage >= 1
                     ? " (반복 발동)"
                     : "";
-                return "[특성 발동] " + pd.name + "이(가) 특성 '" + t.name + "'"
+                return "[특성 발동] " + pd.gmDisplayName() + "이(가) 특성 '" + t.name + "'"
                     + (t.effect != null && !t.effect.isBlank() ? "(" + t.effect + ")" : "")
                     + "을(를) 사용한다." + rapid + " 현재 상황에 적절하면 효과를 반영하고, "
                     + "부적절하거나 무리한 사용이면 역효과가 날 수도 있다.";

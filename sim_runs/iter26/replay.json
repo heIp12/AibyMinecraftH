@@ -1,0 +1,122 @@
+{
+  "version": 1,
+  "stage": 4,
+  "seed": "#QL7M-4XRB",
+  "created": "2026-06-27",
+  "title": "시티 균형자(均衡者)",
+  "mechanism_tag": "debt_resonance_city_equilibrium",
+  "scale": "city",
+  "clear_grade": "A",
+  "resolved": true,
+  "timeline_stage_reached": 2,
+  "retry_count": 0,
+  "p56_branch_conflict_events": ["E3(인질 vs 봉인)", "E5(공개 vs 은폐)"],
+
+  "players": [
+    {
+      "role_id": "role_A",
+      "char_name": "강민서",
+      "gender": "여성",
+      "job": "시청 감사관",
+      "start_power": "중",
+      "HP_start": 6,
+      "SAN_start": 8,
+      "HP_end": 6,
+      "SAN_end": 7,
+      "individual_grade": "A",
+      "active_trait_uses": [
+        {"trait": "내부망 접근", "turns": [2, 13]},
+        {"trait": "설득 압박", "turns": [7]}
+      ],
+      "p56_role": "E3=구출 우선(미채택→구출팀 역할 반영), E5=공개(채택=행동주도자)",
+      "trait_reward": ["B급 특성 풀 2개 선택"]
+    },
+    {
+      "role_id": "role_B",
+      "char_name": "조현우",
+      "gender": "남성",
+      "job": "채권 추심원",
+      "start_power": "중상",
+      "HP_start": 9,
+      "SAN_start": 6,
+      "HP_end": 9,
+      "SAN_end": 5,
+      "individual_grade": "B",
+      "active_trait_uses": [
+        {"trait": "채무 분석", "turns": [3]},
+        {"trait": "강제 억류", "turns": [6]},
+        {"trait": "채무 분석(재사용)", "turns": [12]}
+      ],
+      "p56_role": "E3=봉인 우선(미채택→봉인팀 단독 역할 반영), E5=은폐(미채택→파훼 DC 완화 지원 반영)",
+      "trait_reward": ["B급 특성 풀 2개 선택"]
+    },
+    {
+      "role_id": "role_C",
+      "char_name": "윤지현",
+      "gender": "여성",
+      "job": "전기 엔지니어",
+      "start_power": "하(합류 지연)",
+      "spawn_turn": 5,
+      "HP_start": 7,
+      "SAN_start": 9,
+      "HP_end": 7,
+      "SAN_end": 9,
+      "individual_grade": "S",
+      "active_trait_uses": [
+        {"trait": "즉흥 조립", "turns": [10]},
+        {"trait": "인프라 해킹", "turns": [13]}
+      ],
+      "p56_role": "E3=팀분리(채택=P6 협력판정 d20=11 DC12 성공), E5=공개(미채택측이나 role_A와 의견 일치)→최종 선언 성공",
+      "final_action": "채무 없는 자로 균형자 내부 모순 선언 — collapse 달성",
+      "trait_reward": ["A급 특성 풀 2개 선택(S등급 보상)"]
+    }
+  ],
+
+  "p56_summary": {
+    "case_1_E3": {
+      "conflict": "role_A=구출, role_B=봉인, role_C=팀분리",
+      "priority_1_unanimous": false,
+      "priority_2_leader": "조현우(봉인) vs 윤지현(팀분리) — 동률",
+      "priority_3_cooperative": "P6 협력 판정 d20+9+2=22 vs DC12 — 성공",
+      "chosen_branch": "E4-split(팀 분리)",
+      "basis_stated": true,
+      "unaccepted_reflected": true,
+      "result": "PASS"
+    },
+    "case_2_E5": {
+      "conflict": "role_A=공개(2), role_B=은폐(1), role_C=공개(2)",
+      "priority_1_unanimous": false,
+      "priority_2_leader": "강민서(role_A) — 문서 발견·열람 직접 행동자",
+      "chosen_branch": "E6-expose(공개)",
+      "basis_stated": true,
+      "unaccepted_reflected": true,
+      "note": "다수결 2:1이나 P56은 다수결 아닌 주도자 기준임을 GM이 명시",
+      "result": "PASS"
+    },
+    "case_3_supplemental": {
+      "conflict": "없음 — 전원 합의",
+      "priority_1_unanimous": true,
+      "chosen_branch": "윤지현 최종 선언 역할",
+      "result": "PASS"
+    },
+    "overall_p56": "PASS"
+  },
+
+  "patch_regression_P1_P56": {
+    "P1": "PASS", "P2": "PASS", "P3": "PASS", "P4": "N/A",
+    "P5": "PASS", "P6": "PASS", "P7": "N/A", "P8": "PASS",
+    "P9": "PASS", "P10": "PASS", "P11": "PASS", "P12": "PASS",
+    "P13": "PASS", "P14": "N/A", "P15": "PASS", "P16": "PASS",
+    "P17": "PASS", "P18": "N/A", "P19": "PASS", "P20": "PASS",
+    "P21": "PASS", "P22": "N/A", "P23": "N/A", "P24": "N/A",
+    "P25": "N/A", "P26": "PASS", "P27": "N/A", "P28": "N/A",
+    "P29": "N/A", "P30": "N/A", "P31": "N/A", "P32": "PASS",
+    "P33": "PASS", "P34": "N/A", "P35": "N/A", "P36": "PASS",
+    "P37": "PASS", "P38": "N/A", "P39": "PASS", "P40": "N/A",
+    "P41": "PASS", "P42": "N/A", "P43": "N/A", "P44": "N/A",
+    "P44b": "N/A", "P45": "PASS", "P46": "N/A", "P47": "PASS",
+    "P48": "N/A", "P49": "PASS", "P50": "PASS", "P51": "N/A",
+    "P52": "PASS", "P53": "N/A", "P54": "PASS", "P55": "PASS",
+    "P56": "PASS"
+  }
+}

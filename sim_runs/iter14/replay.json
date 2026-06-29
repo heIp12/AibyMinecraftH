@@ -1,0 +1,94 @@
+{
+  "version": 1,
+  "stage": 3,
+  "seed": "PW2K-9FVN",
+  "created": "2026-06-26",
+  "title": "사신의 교환원",
+  "result": "CLEAR",
+  "grade": "A",
+  "resolved": true,
+  "attempts": 2,
+  "patches_applied": ["P1","P3","P6","P8","P10","P12","P14","P16","P18","P20","P29","P31","P32","P33","P36","P37","P38","P39","P41"],
+  "players": [
+    {
+      "name": "강하늘",
+      "player": "Player_A",
+      "role": "IT 보안 컨설턴트",
+      "start_zone": "floor7_corridor",
+      "final_hp": [7, 7],
+      "final_san": [3, 6],
+      "grade": "S",
+      "traits_used": ["잠금 해제(1회)","기술문서 독해(passive)"],
+      "highlights": ["Rack-07 위치·공구 발견","collapse 계획 안전채널 전달","배선절단 수행(결정타)","도청 회피 전략(대면 채택)"]
+    },
+    {
+      "name": "이서윤",
+      "player": "Player_B",
+      "role": "프리랜서 기자",
+      "start_zone": "floor3_office",
+      "final_hp": [5, 5],
+      "final_san": [4, 8],
+      "grade": "A",
+      "traits_used": ["취재 본능(1회)","설득의 언어(passive)"],
+      "highlights": ["기술문서(clue_manual) 발굴","#19 번호모르고 최승아 연결","#20 everKnownContacts 재연락","#0417 진단번호 확인","동시발신 수행"],
+      "penalties": ["1차 mislead_1 실행(시간 손실)"]
+    },
+    {
+      "name": "박도훈",
+      "player": "Player_C",
+      "role": "배달부",
+      "start_zone": "lobby",
+      "final_hp": [6, 6],
+      "final_san": [5, 7],
+      "grade": "A",
+      "traits_used": ["위험 직감(1회)","체력 소지(passive)"],
+      "highlights": ["오해진 출입카드 확보","서버실 B구역 진입 지원","CB-07 전원차단(결정타 공동)"]
+    }
+  ],
+  "comm_log_summary": [
+    {"turn": "1차-T3", "from": "강하늘", "to": "이서윤", "method": "스마트폰", "type": "#19(번호모름→허용)", "content_type": "핵심정보(랙위치)", "p14_fired": true, "p18_fired": true, "p31_fired": true},
+    {"turn": "1차-T4", "from": "이서윤", "to": "박도훈", "method": "스마트폰", "type": "#19(번호모름→허용)", "content_type": "일반위치", "p14_fired": true, "p18_fired": false, "p31_fired": false},
+    {"turn": "1차-T5", "from": "이서윤", "to": "최승아(NPC)", "method": "유선내선(#19·번호모름)", "type": "NPC통화·deliverDirectMessage", "content_type": "핵심정보(exploit_path)", "p14_fired": true, "p18_fired": true, "p31_fired": true, "npc_autonomous": true},
+    {"turn": "1차-T7", "from": "강하늘", "to": "이서윤", "method": "스마트폰", "type": "기존연락처", "content_type": "위치정보", "p14_fired": true, "p18_fired": false, "word_substitution": true},
+    {"turn": "2차-T2", "from": "이서윤", "to": "최승아(NPC)", "method": "스마트폰", "type": "#20(everKnownContacts 복구)", "content_type": "핵심정보(exploit_path 재확인)", "p14_fired": true, "p18_fired": true, "p31_fired": true, "npc_autonomous": true},
+    {"turn": "2차-T3", "from": "강하늘", "to": "박도훈", "method": "대면(server_room_b)", "type": "안전채널(도청불가)", "content_type": "핵심정보(collapse계획)", "p14_fired": false, "p18_fired": false, "safe_channel": true},
+    {"turn": "2차-T3", "from": "이서윤", "to": "강하늘", "method": "스마트폰", "type": "기존연락처", "content_type": "핵심정보(동시발신준비)", "p14_fired": true, "p18_fired": true, "p31_fired": true}
+  ],
+  "verification": {
+    "no19_unknown_contact_attempt": "PASS — 강하늘→이서윤(스마트폰·번호미보유) 및 이서윤→최승아(유선내선·번호미보유) 모두 시도 허용, 연결 성공, 번호 자동 교환.",
+    "no20_everKnownContacts": "PASS — 1차 회차 exchangeContacts로 everKnownContacts 갱신. onRetry() 시 knownContacts.addAll(everKnownContacts) 실행. 2회차 이서윤→최승아 contactKnown=true 즉시 연결.",
+    "npc_call_deliverDirectMessage": "PASS — 이서윤→최승아(2회): handleNpcDirectComm→buildNpcDirectConvPrompt→NPC AI 자율응답. 역할유형(우호형)·동기(기술도움) 반영. 도청 직감·단서전달 자율 표현. 해결책 통째 미제공.",
+    "player_comm_eval_reflected": "PASS — [COMM] 강하늘→박도훈(대면·안전) 핵심정보 전달이 runScenarioEvaluation 하이라이트에 반영(P36). 이서윤 정보공유 기여 A등급 반영.",
+    "eavesdrop_p14_p18_p31": "PASS — P14: 5회 통화 전체 오염도·위협 적용. P18: 3회 핵심정보 도청→모방 발동. P31: 3회 다음1턴 선제차단 발동. 안전채널(B구역 대면)에서는 미발동."
+  },
+  "new_weaknesses": [
+    {
+      "issue": "번호모르고 시도(#19) 시 '연결 실패' 결과가 없음 — 항상 성공으로만 처리됨",
+      "fix": "번호 미보유 시도는 '시도 허용'이되 연결 성공률을 상황 맥락(인프라·신호·대상 위치)에 따라 가변. 합리적 연결 실패 결과(단서·우회 방법 제시)를 GM이 서술하도록 지침 추가.",
+      "severity": "med",
+      "scope": "범용",
+      "code_required": false
+    },
+    {
+      "issue": "comms_monitored 도청이 '모든 기기 통신'에 일률 적용 — 안전 채널(P29)을 seed에 명시해야만 인정, 미명시 시 대면도 도청 대상 될 수 있음",
+      "fix": "buildGmPrompt comms_monitored 주입 시 '대면(같은 zone) 통화는 기기 통신이 아니므로 도청 대상 아님'을 자동 명시. 안전 채널을 seed.notes 없이도 시스템이 보장.",
+      "severity": "med",
+      "scope": "범용",
+      "code_required": false
+    },
+    {
+      "issue": "NPC 통화(handleNpcDirectComm)가 같은 zone 제한이 있어 전화로 NPC에게 연락 불가 — 원격 NPC 전화 시나리오 지원 불가",
+      "fix": "handleNpcDirectComm에 'phone_usable=true + 플레이어가 NPC 연락처 알고 있거나 번호 모르고 시도(#19)' 경로 추가. 같은 zone 아닐 때도 기기 통신으로 NPC AI 응답 가능하게 확장.",
+      "severity": "high",
+      "scope": "통화 기믹 한정",
+      "code_required": true
+    },
+    {
+      "issue": "everKnownContacts가 NPC UUID를 저장하지 않음 — 플레이어↔NPC 연락처 교환 후 리트라이 시 NPC 번호가 소실됨",
+      "fix": "exchangeContacts 또는 CONTACT_REVEAL 처리 시 NPC 식별자(npc_id)도 everKnownContacts에 기록. onRetry() 복구 시 NPC 연락처도 함께 복구.",
+      "severity": "med",
+      "scope": "통화 기믹 한정",
+      "code_required": true
+    }
+  ]
+}

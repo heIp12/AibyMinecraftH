@@ -45,6 +45,29 @@ public class ChatListener implements Listener {
             trpgManager.handleChat(player, message));
     }
 
+    /** 채팅에서 탭 → 아는 연락처(이름·번호)·@전체 자동완성. 빈 입력에서 탭만 눌러도 전체 후보 표시. */
+    @EventHandler
+    public void onChatTabComplete(com.destroystokyo.paper.event.server.AsyncTabCompleteEvent event) {
+        if (event.isCommand()) return; // 명령어 자동완성은 제외 (채팅만)
+        TRPGGameManager trpgManager = trpg();
+        if (trpgManager == null || !trpgManager.isActive()) return;
+        if (!(event.getSender() instanceof Player player)) return;
+        String buffer = event.getBuffer() == null ? "" : event.getBuffer();
+        int lastSpace = buffer.lastIndexOf(' ');
+        String lastWord = buffer.substring(lastSpace + 1);
+        java.util.List<String> all = trpgManager.commSuggestions(player);
+        if (all.isEmpty()) return;
+        java.util.List<String> sugg = new java.util.ArrayList<>();
+        if (lastWord.isEmpty()) {
+            sugg.addAll(all); // 아무것도 안 친 상태에서 탭 → 전체 후보(@전체·이름·번호)
+        } else if (lastWord.startsWith("@")) {
+            for (String s : all) if (s.startsWith(lastWord)) sugg.add(s); // '@' 입력 중 → 접두사 필터
+        } else {
+            return; // 일반 단어 입력 중엔 개입하지 않음
+        }
+        if (!sugg.isEmpty()) event.setCompletions(sugg);
+    }
+
     @EventHandler
     public void onPlayerDeath(PlayerDeathEvent event) {
         Player player = event.getPlayer();
@@ -62,7 +85,7 @@ public class ChatListener implements Listener {
         trpgManager.getNarrativeDelivery().onSneak(event.getPlayer());
     }
 
-    /** 캐릭터 정보 아이템 우클릭 → 정보 GUI 열기 */
+    /** 캐릭터 정보 / 기록 아이템 우클릭 → 해당 GUI 열기 */
     @EventHandler
     public void onInfoItemUse(PlayerInteractEvent event) {
         TRPGGameManager trpgManager = trpg();
@@ -70,19 +93,26 @@ public class ChatListener implements Listener {
         if (event.getHand() != EquipmentSlot.HAND) return; // 양손 중복 방지
         Action action = event.getAction();
         if (action != Action.RIGHT_CLICK_AIR && action != Action.RIGHT_CLICK_BLOCK) return;
-        if (!trpgManager.isInfoItem(event.getItem())) return;
-
-        event.setCancelled(true);
         Player player = event.getPlayer();
-        Bukkit.getScheduler().runTask(plugin, () -> trpgManager.openCharacterInfo(player));
+        if (trpgManager.isInfoItem(event.getItem())) {
+            event.setCancelled(true);
+            Bukkit.getScheduler().runTask(plugin, () -> trpgManager.openCharacterInfo(player));
+        } else if (trpgManager.isRecordItem(event.getItem())) {
+            event.setCancelled(true);
+            Bukkit.getScheduler().runTask(plugin, () -> trpgManager.openRecords(player));
+        } else if (trpgManager.isMapItem(event.getItem())) {
+            event.setCancelled(true);
+            Bukkit.getScheduler().runTask(plugin, () -> trpgManager.openMapSelector(player));
+        }
     }
 
-    /** 캐릭터 정보 아이템은 버릴 수 없음 */
+    /** 캐릭터 정보 / 기록 아이템은 버릴 수 없음 */
     @EventHandler
     public void onInfoItemDrop(PlayerDropItemEvent event) {
         TRPGGameManager trpgManager = trpg();
         if (trpgManager == null || !trpgManager.isActive()) return;
-        if (trpgManager.isInfoItem(event.getItemDrop().getItemStack())) event.setCancelled(true);
+        var dropped = event.getItemDrop().getItemStack();
+        if (trpgManager.isInfoItem(dropped) || trpgManager.isRecordItem(dropped) || trpgManager.isMapItem(dropped)) event.setCancelled(true);
     }
 
     @EventHandler

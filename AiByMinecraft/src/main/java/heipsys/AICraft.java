@@ -27,6 +27,13 @@ public class AICraft extends JavaPlugin {
 
         if (getCommand("r") != null) getCommand("r").setExecutor(new CMDReload(this));
 
+        // 누적 비용 주기적 자동 저장(서버 비정상 종료 대비). 5분마다, 변경이 있을 때만 기록.
+        // onEnable에서 1회만 등록 — trpgManager 필드는 리로드 시 갱신되므로 항상 현재 매니저를 가리킨다.
+        long usageSavePeriod = 20L * 60L * 5L;
+        getServer().getScheduler().runTaskTimer(this, () -> {
+            if (trpgManager != null) trpgManager.saveUsagePeriodic();
+        }, usageSavePeriod, usageSavePeriod);
+
         getServer().getScheduler().scheduleSyncDelayedTask(instance, () -> {
             Bukkit.broadcastMessage("§f===========================");
             Bukkit.broadcastMessage("§e[AIByMinecraft] TRPG 준비 완료");
@@ -39,8 +46,9 @@ public class AICraft extends JavaPlugin {
 
     @Override
     public void onDisable() {
-        if (trpgManager != null && trpgManager.isActive()) {
-            trpgManager.stopSession(null);
+        if (trpgManager != null) {
+            if (trpgManager.isActive()) trpgManager.stopSession(null);
+            trpgManager.saveUsageOnDisable(); // 전체 누적 비용 최종 동기 저장
         }
     }
 
@@ -57,6 +65,8 @@ public class AICraft extends JavaPlugin {
             trpgManager.stopSession(null);
             if (sender != null) sender.sendMessage("§7진행 중이던 세션을 종료했습니다.");
         }
+        // 새 AiManager가 최신 누적을 이어받도록, 리로드 전에 동기 저장한다(비동기 저장 경쟁 방지).
+        if (trpgManager != null) trpgManager.saveUsageOnDisable();
 
         reloadConfig();
         String apiType = buildGame(sender);
@@ -90,8 +100,27 @@ public class AICraft extends JavaPlugin {
         }
 
         AiManager trpgAi = new AiManager(apiKey, apiType);
-        // 고품질 GM 모델 ID 오버라이드 (선택). 없으면 provider별 기본 Opus/Pro 사용.
-        trpgAi.setHighModelOverride(getConfig().getString("gm-model-high", ""));
+        trpgAi.initUsagePersistence(new java.io.File(getDataFolder(), "usage.json")); // 전체 누적 비용 로드(영구)
+        // AI 모델 설정 (config 'models' 섹션). 비워두면 자동 — claude는 API에서 각 등급 최신 모델을 탐지한다.
+        trpgAi.setAutoLatest(getConfig().getBoolean("models.auto-latest", true));
+        // 등급별 기본 모델 (비우면 자동/기본). 하위호환: 기존 gm-model-high(고품질) 키도 계속 읽는다.
+        String highKey = getConfig().getString("models.high", "");
+        if (highKey == null || highKey.isBlank()) highKey = getConfig().getString("gm-model-high", "");
+        trpgAi.setHighModelOverride(highKey);
+        trpgAi.setMediumModelOverride(getConfig().getString("models.medium", ""));
+        trpgAi.setLowModelOverride(getConfig().getString("models.low", ""));
+        // 역할별 세부 모델 (GM/괴담/NPC/보조/시나리오). 비우면 등급 기본을 따른다.
+        trpgAi.setRoleModels(
+            getConfig().getString("models.gm", ""),
+            getConfig().getString("models.entity", ""),
+            getConfig().getString("models.npc", ""),
+            getConfig().getString("models.assistant", ""),
+            getConfig().getString("models.gdam", ""));
+        trpgAi.warmUpModels(); // 백그라운드로 최신 모델 탐지 — 메인 스레드 비차단
+        getLogger().info("[AI] provider=" + trpgAi.providerLabel()
+            + " | 시간당 예상비용(추정) 저=" + trpgAi.hourlyCostLabel(AiManager.Quality.LOW)
+            + " 중=" + trpgAi.hourlyCostLabel(AiManager.Quality.MEDIUM)
+            + " 고=" + trpgAi.hourlyCostLabel(AiManager.Quality.HIGH));
         trpgManager = new TRPGGameManager(this, trpgAi);
 
         if (getCommand("trpg") != null) {

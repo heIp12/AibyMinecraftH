@@ -1,0 +1,115 @@
+{
+  "version": 1,
+  "stage": 2,
+  "seed": "#QR5M-2HBK",
+  "created": "1963-10-31T14:00:00+09:00",
+  "sim_date": "2026-06-26",
+  "era": "1963년 부산 (한국전쟁 이후 재건기, 일제강점기 석조 건물)",
+  "phone_usable": false,
+  "comms_method": "쪽지·전령·유선전화(교환원 경유)",
+  "scenario": "잠든 이름 — 시청 별관 명부 소각",
+  "clear_grade": "C",
+  "resolved": false,
+  "stage_advance": true,
+  "stage_advance_reason": "스테이지 2(room=2) — 생존판정(resolved=false)도 다음 스테이지 진출 가능 (P7 적용)",
+  "retry_count": 1,
+  "retry_reason": "1차 소각 시도 시 점화 도구(등잔/성냥) 미확보. 양초 탐색 후 2차 성공.",
+  "players": [
+    {
+      "name": "강민준",
+      "role": "전직 서기",
+      "job": "시청 서기",
+      "age": 44,
+      "survived": true,
+      "final_hp": 5,
+      "final_san": 8,
+      "traits_gained": ["침묵의 기억", "봉인 문서 독해"],
+      "key_actions": [
+        "봉인 조항 문서 발견 및 해독",
+        "최봉석에게 문서를 제시해 지하 열쇠 확보",
+        "양초 탐색으로 재도전 가능하게 함",
+        "명부 소각 주도"
+      ]
+    },
+    {
+      "name": "오철수",
+      "role": "부산항 하역 노동자",
+      "job": "항구 하역꾼",
+      "age": 31,
+      "survived": true,
+      "final_hp": 7,
+      "final_san": 4,
+      "traits_gained": ["침묵의 기억", "지하 감각"],
+      "key_actions": [
+        "석조 벽 해체로 철제 함(명부) 발굴",
+        "소각 중 침묵 유지 (SAN 판정 성공)",
+        "최봉석 주머니에서 정문 열쇠 확보",
+        "경비 제압 후 탈출 성공"
+      ]
+    },
+    {
+      "name": "박순희",
+      "role": "조선일보 부산지국 기자",
+      "job": "신문기자",
+      "age": 29,
+      "survived": true,
+      "final_hp": 4,
+      "final_san": 5,
+      "traits_gained": ["봉인 문서 독해", "침묵의 기억"],
+      "key_actions": [
+        "타임라인 1단계 합류, 제보 편지로 이름 정보 보유",
+        "최봉석 설득 협력 판정 주도 (CHA 7 + 협력 합산, 대성공)",
+        "소각 중 침묵 유지 (배역 특성으로 자동 성공)",
+        "취재 수첩에 전 과정 기록 (공개하지 않음)"
+      ]
+    }
+  ],
+  "npcs": [
+    {
+      "name": "이도경",
+      "role_type": "피해자",
+      "fate": "구출 — 명부 소각 후 목소리 회복",
+      "duration_turns_used": false
+    },
+    {
+      "name": "최봉석",
+      "role_type": "방어막+열쇠 복합",
+      "fate": "지하에 쓰러진 채 발견 — 생존, 건물 복귀 거부",
+      "duration_turns_used": true,
+      "duration_turns_detail": "봉쇄 duration_turns=3 / 반응 duration_turns=1 모두 정상 적용"
+    }
+  ],
+  "patches_verified": {
+    "P1": "검증 완료 — 재도전 1회, C등급 유지",
+    "P2": "검증 완료 (P8 강화 적용)",
+    "P3": "검증 완료 — TIME_SKIP 평온 구간 2회, 급박 구간 분 단위 진행",
+    "P4": "해당 없음 — phone_usable=false, 유선전화·쪽지·전령으로 대체",
+    "P5": "검증 완료 — 반응 발동 조건 충족 직후 1턴 이내",
+    "P6": "검증 완료 — 3회 협력 판정, 공식 기록(설득 24/벽해체 26/소각 18)",
+    "P7": "★ 핵심 검증 완료 — 생존판정(resolved=false), 스테이지3 진출 허용, CLEAR reason 명시",
+    "P8": "★ 검증 완료 — mislead 단서 2개 필수 포함(clue_4 사전, clue_5 가려진 사진)",
+    "P9": "★ 검증 완료 — 최봉석 봉쇄 duration_turns=3, 반응 duration_turns=1"
+  },
+  "new_weaknesses_found": [
+    {
+      "issue": "phone_usable=false 시대에 P4(통화 소음 처리) 패치가 무의미해짐 — 쪽지/전령 소통의 소음 판정 기준이 없다",
+      "fix": "constraints.notes에 '시대별 대체 통신(쪽지·전령·유선)의 발각/도청 위험도 판정 기준' 항목 추가",
+      "severity": "low"
+    },
+    {
+      "issue": "mislead 단서가 게임 내에서 '오답으로 드러나는 시점'에 대한 GM 지침이 없다 — 언제 오답임을 암시해야 하는지 불명확",
+      "fix": "P8 보완: mislead 단서는 '진짜 단서 2개 이상 확보 후 자연스럽게 오답이 드러나도록' 발동 조건 한 줄 추가",
+      "severity": "med"
+    },
+    {
+      "issue": "NPC duration_turns가 있어도 그 상태가 끝난 후 NPC의 다음 행동이 미정의 — 봉쇄 3턴 후 최봉석이 어떻게 행동해야 하는지 공백",
+      "fix": "schedule 항목에 선택적 after_duration 필드 추가: duration 종료 후 기본 행동(복귀/대기/도주 등) 한 줄 명시",
+      "severity": "med"
+    },
+    {
+      "issue": "collapse_condition이 부분 충족(명부 소각 성공)이나 잔류자 미구출로 생존판정 처리됐을 때, 해결판정과 생존판정의 경계 기준이 GM 재량에 지나치게 의존",
+      "fix": "CLEAR 판정 지침에 'collapse_condition 충족 + 전원 탈출=해결판정 / collapse_condition 충족 + 일부 잔류=GM 재량(생존·해결 선택)' 기준선 추가",
+      "severity": "high"
+    }
+  ]
+}

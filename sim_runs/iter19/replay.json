@@ -1,0 +1,180 @@
+{
+  "version": 1,
+  "stage": 7,
+  "seed": "#KZ9V-7QNT",
+  "title": "인과의 채권자",
+  "scale": "코즈믹",
+  "entity": "잔고자(殘高者, The Ledger)",
+  "created": "2026-06-26",
+  "patch_set": "P1~P48 (+P44b) — 누적 전체 적용",
+  "players": [
+    {
+      "role_id": "role_A",
+      "char_name": "류시온",
+      "gender": "남성",
+      "job": "양자컴퓨팅 보안 엔지니어",
+      "age": 34,
+      "starting_power": "중간",
+      "hp": 10,
+      "san": 8,
+      "role_stats_summary": "정신력+2, 근력-1, 매력+1. 기술 판정 DC-2.",
+      "spawn_zone": "zone_C",
+      "active_traits": [
+        {
+          "name": "원인 선언(인과 브레이커)",
+          "uses_total": 3,
+          "uses_remaining_end": 1,
+          "key_activations": ["zone_D 1차 삽입(23:00)", "zone_D 2차 삽입(02:03)"]
+        },
+        {
+          "name": "프로토콜 역추적",
+          "uses_total": 2,
+          "uses_remaining_end": 2,
+          "key_activations": []
+        }
+      ],
+      "final_hp": 8,
+      "final_san": 7,
+      "grade": "A",
+      "highlight": "zone_D 1·2차 삽입 성공, 오메가-9 카드 확보, 채권 잔액 자력 해소",
+      "penalty": "1차 zone_J 판정 실패로 삽입 무효화 유발",
+      "trait_reward": "원인 선언 업그레이드(사용 +1회, DC-4)"
+    },
+    {
+      "role_id": "role_B",
+      "char_name": "소피아 마르티네스",
+      "gender": "여성",
+      "job": "인과론 철학자",
+      "age": 38,
+      "starting_power": "중간",
+      "hp": 8,
+      "san": 10,
+      "role_stats_summary": "정신력+3, 근력-2, SAN최대+1. 단서 해독 DC-3.",
+      "spawn_zone": "zone_G",
+      "active_traits": [
+        {
+          "name": "역설 해석",
+          "uses_total": 3,
+          "uses_remaining_end": 1,
+          "key_activations": ["clue_3 조기 해독(22:15)", "clue_2+3 통합(01:30)"]
+        },
+        {
+          "name": "논리 차단막",
+          "uses_total": 2,
+          "uses_remaining_end": 0,
+          "key_activations": ["zone_H 1차 삽입 인과왜곡 무효(00:32)", "zone_H 2차 삽입 지원(02:03)"]
+        }
+      ],
+      "final_hp": 8,
+      "final_san": 9,
+      "grade": "S",
+      "highlight": "loophole 조기 파악, zone_H 삽입 성공, 차민아 zone_J 배치 제안, 전원 대피 계획 수립",
+      "penalty": null,
+      "trait_reward": "역설 해석 업그레이드(SAN+2) + 새 특성 후보 1개"
+    },
+    {
+      "role_id": "role_C",
+      "char_name": "강도현",
+      "gender": "남성",
+      "job": "건물 관리 기술자",
+      "age": 48,
+      "starting_power": "낮음",
+      "hp": 9,
+      "san": 6,
+      "role_stats_summary": "근력+3, HP최대+1, 정신력-1, 매력+1. 물리 작업 DC-3.",
+      "spawn_zone": "zone_K",
+      "active_traits": [
+        {
+          "name": "인과 봉인",
+          "uses_total": 3,
+          "uses_remaining_end": 2,
+          "key_activations": ["zone_J 결절점 봉인 + 삽입 동시 수행(02:05)"]
+        },
+        {
+          "name": "긴급 배선 차단",
+          "uses_total": 2,
+          "uses_remaining_end": 0,
+          "key_activations": ["zone_J DC 20→16 인하(01:45)", "zone_H DC 16→12 인하(사전 준비)"]
+        }
+      ],
+      "final_hp": 9,
+      "final_san": 5,
+      "grade": "S",
+      "highlight": "핵심 단서 clue_2 최초 발견, zone_J DC 인하 결정적 기여, 삽입자 자발 수행 + P40 대피 기준 충족",
+      "penalty": null,
+      "sacrifice_note": "P38: 삽입자 역할 자발적 수행(영웅 서사). P40 대피 기준 충족으로 생존.",
+      "weakness_bonus": true,
+      "trait_reward": "인과 봉인 업그레이드(사용 +2회) + 약체 보너스 특성 1개(P16 CODE-4 취지 적용)"
+    }
+  ],
+  "overall": {
+    "clear_grade": "S",
+    "resolved": true,
+    "timeline_stage_at_clear": 3,
+    "survivors_all": true,
+    "npc_survivors": ["이노우에 카즈마", "박세훈", "차민아", "최 연구생"],
+    "npc_lost": ["채 대리(E1)", "오 박사(E1)"],
+    "retry_count": 1,
+    "retry_grade_penalty": false,
+    "corruption_level_peak": 2,
+    "stage8_unlocked": true
+  },
+  "patch_regression": {
+    "P1_retry_no_downgrade": "PASS",
+    "P2_hidden_rule_concealment": "PASS",
+    "P3_time_variable": "PASS",
+    "P5_npc_reaction_timing": "PASS",
+    "P6_coop_formula": "PASS",
+    "P8_mislead_mandatory": "PASS",
+    "P9_duration_turns": "PASS",
+    "P10_mislead_timing": "PASS",
+    "P11_after_duration": "PASS",
+    "P12_resolve_boundary": "PASS",
+    "P15_large_zones_access": "PASS",
+    "P16_retry_state_keep": "PASS",
+    "P17_npc_condition_strict": "PASS",
+    "P20_custom_accumulate_keep": "PASS",
+    "P21_after_duration_subject": "PASS",
+    "P24_resolve_path_preserved": "PASS",
+    "P25_single_entity_relaxed": "N/A(구조체형)",
+    "P26_single_ai_stage_order": "PASS",
+    "P32_two_path_clue": "PASS",
+    "P33_fallback_trigger": "PASS",
+    "P36_concealment_judge": "PASS",
+    "P38_sacrifice_respected": "PASS",
+    "P39_isolation_log_tag": "PASS",
+    "P40_shockwave_evacuation": "PASS",
+    "P41_hidden_info_nospoil": "PASS",
+    "P43_facetoface_safe": "PASS",
+    "P44_can_impersonate": "N/A(false)",
+    "P44b": "N/A(false)",
+    "P45_inactive_npc_watchdog": "PASS",
+    "P46_multi_npc_coordination": "PASS",
+    "P47_scale_duration_split": "PASS",
+    "P48_instant_clear_protection": "N/A(해결형 종료)"
+  },
+  "new_weaknesses": [
+    {
+      "id": "W19-1",
+      "issue": "가변 1턴 길이(P3)와 다중 앵커 분 단위 무효 조건이 충돌 — '30분 후 무효'를 턴으로 환산할 때 GM 혼동 위험",
+      "fix": "collapse_condition에 분 단위·턴 단위 병기 + GM 지침: '가변 턴 시나리오는 시간 기반 무효 조건을 실제 분으로만 계산'",
+      "severity": "medium",
+      "scope": "한정(다중 앵커·타이밍 동기화 시나리오) — 코즈믹 스케일 특유",
+      "code_change": false
+    },
+    {
+      "id": "W19-2",
+      "issue": "gated_zones bypass DC 경감 특성이 위치 의존적(zone_K에서만 발동)일 때, 급박 구간 이동 비용이 판정 기회를 소모해 '이동=실패' 구조 발생 위험",
+      "fix": "gated_zones 항목에 'remote_bypass: true/false' 선택 필드 추가 + buildGmPrompt 주입: remote_bypass=false면 현장 필수·이동 비용 명시",
+      "severity": "low",
+      "scope": "한정(다중 가변 구역·이동 의존 특성) — 코즈믹/글로벌 대규모 zones 특유",
+      "code_change": false
+    }
+  ],
+  "cosmic_regression_summary": {
+    "a_resolve_path_viable": "PASS — 2경로(P32) 완전 유지. NPC 사망 시에도 아이템 대체 경로 존재. loophole(P12) 정상 발동.",
+    "b_duration_natural": "PASS — 영향범위=코즈믹, 기간=4시간 집중형. 억지 TIME_SKIP 없음(P47 준수). P3 가변 시간 정상 활용.",
+    "c_large_zones_npc": "PASS — 11 zones·4계층·분기 6개+. critical NPC 2명 조율(P46) 정상. gated_zones 3개 정상.",
+    "d_patch_conflict": "충돌 없음 — P1~P48 상호 충돌 발견 안 됨. 신규 약점 2건 모두 코즈믹 스케일 특유(범용 충돌 아님)."
+  }
+}

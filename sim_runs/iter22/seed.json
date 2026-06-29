@@ -1,0 +1,337 @@
+{
+  "seed": "#ADZ-7KQN",
+  "_sim_note": "프롬프트 검증용 평문 시뮬레이션 (실게임 AES-256-GCM 암호화). 플러그인 .java 미수정.",
+  "_familiar": true,
+  "_legend_origin": "Adze (아제) — 서아프리카 에웨(Ewe)족 전승, 가나·토고 볼타 지역, 반딧불 흡혈 정령",
+  "_familiar_region": "아프리카 전승 (서아프리카·에웨족·가나·토고)",
+  "_familiar_coverage_note": "★친숙 5번째 지역 — 라틴(iter07)·슬라브(iter10)·동남아(iter18)·중동(iter20)에 이어 아프리카 완성. 세계 주요지역 친숙 커버리지 전체 달성.",
+
+  "meta": {
+    "room": 5,
+    "scale": "city",
+    "era": "현대 (2024년, 가나 아크라 인근 볼타 지역 소도시 코포리두아)",
+    "phone_usable": true,
+    "comms_monitored": true,
+    "theme": "흡혈·정령·씨족 저주"
+  },
+
+  "entity": {
+    "name": "아제 (Adze)",
+    "type": "아프리카 에웨족 흡혈 정령 — 반딧불 형태로 이동, 인간에 빙의 가능",
+    "independent_ai": true,
+    "can_impersonate": true,
+    "npc_dependency": "high",
+    "description": "아제는 밤에 반딧불 무리처럼 보이는 흡혈 정령이다. 인간(특히 아이나 고령자)의 피를 빨아먹으며, 쉽게 인간에 빙의해 낮에 정상인처럼 행동한다. 빙의된 인간은 흡혈을 대신하며 야간에 반딧불 무리와 함께 활동한다. 붙잡히면 인간 형태를 드러내고 코코넛즙·종려유·코코아를 갈망한다.",
+    "rules": [
+      "야간에는 반딧불 무리 형태로 이동 — 물리 공격 무효, 구역 차단 불가.",
+      "반딧불 형태로 잠든 인간(HP·SAN 50% 이하)에 접근 시 흡혈 시도 — 실패 없음(빙의 or 직접 흡혈).",
+      "빙의된 인간(아제의 숙주)은 낮 동안 정상적으로 행동하며 신체에 아제 각인이 생긴다.",
+      "comms_monitored=true — 아제는 빙의 숙주를 통해 통신을 감청한다. P14/P18/P31 적용.",
+      "반딧불 무리에 빛(횃불·강한 조명)을 쏘이면 일시적으로 흩어진다(3턴 이동 불가, 소멸 아님).",
+      "아제는 각인된 숙주가 살아있는 한 소환 형태를 재정비할 수 있다."
+    ],
+    "weakness": "에웨 전통 정령퇴치 의식 '아제데체(Adze Dzetse)' — 상고마(sangoma) 또는 정통 에웨 족장사제(trɔ̃xɔ̃la)가 집도, 정확한 순서: (1)코코넛즙+종려유+코코아 혼합 의식주 조성, (2)빙의 숙주의 실명(實名, 洗禮名이 아닌 씨족 이름)을 에웨어로 호명, (3)혼합물을 숙주에게 강제 음용. 이 3단계가 정확히 수행되면 아제가 숙주에서 강제 배출되어 반딧불 형태로 굳는다(무력화).",
+    "weakness_cost": "의식 수행자는 3턴간 아제의 직접 반격(정신 공격, SAN -3/턴) 노출 — 방호 없이 홀로 집도 시 SAN 위험.",
+    "exploit_path": "빙의 숙주를 포획해 의식 공간(결계 내)에 고정한 상태에서 의식을 진행하면 반격 SAN 감소를 1회로 줄일 수 있다. 결계는 씨족 나무(코코아·야자)로 만든 임시 공간이거나 전통 사제 처소.",
+    "solution": "아제데체 의식 완전 수행 (3단계 정확 수행 + 숙주 고정) → 아제 무력화 후 반딧불 화석화 → collapse.",
+    "escape": "빙의 숙주가 정화되기 전 반딧불이 새 숙주로 이탈하면 생존판정(resolved=false). 전통 사제가 빛 결계를 배치해 반딧불 이탈을 막는 경우에만 완전 해결 가능.",
+    "ai_context": {
+      "corruption_behavior": [
+        "1단계: 야간 반딧불 목격 — 조명 주변 맴돌기, 특정 구역 동물 폐사.",
+        "2단계: 숙주(1인) 확정 — 주변 아이·노인 원인불명 빈혈 발생, 숙주는 낮에 피로·식욕 이상.",
+        "3단계: 숙주 식별 가능 — 야간 숙주가 반딧불과 함께 활동하는 장면 목격 가능.",
+        "4단계: 직접 위협 — 반딧불이 플레이어 숙소에 침투 시도, 새 숙주 물색 시작."
+      ]
+    }
+  },
+
+  "world_rules": {
+    "hidden": [
+      "아제는 '단 한 명'의 숙주에 빙의한다. 여러 명이 동시에 숙주가 될 수 없다.",
+      "의식 재료(코코넛즙·종려유·코코아)는 현지에서 구할 수 있으나 순도가 중요 — 시중 가공품은 효과 없음(전통 방식 압착 필요).",
+      "에웨 씨족 이름(洗名 아님) 호명 조건: 숙주의 씨족 장로나 출생 기록에서만 확인 가능.",
+      "반딧불이 굳어 화석화된 후 7일 이내에 씨족 정화 의례를 추가 수행하지 않으면 재생성 가능 — collapse_condition은 화석화+정화까지 포함."
+    ],
+    "collapse_condition": "아제데체 의식 3단계 완전 수행(코코넛즙·종려유·코코아 혼합 의식주 조성 + 숙주 씨족 이름 에웨어 호명 + 강제 음용) → 아제가 숙주에서 배출·반딧불 화석화. 이후 씨족 정화 의례(트로노시(Tronosi) 처소 봉헌) 완료 시 완전 소멸.",
+    "loophole": "빙의 숙주 포획+결계 고정 상태 의식 수행 시 반격 SAN 페널티 감소. 결계 유효 zone: 트로노시 처소(zone_E) 또는 씨족 코코아 농장 제단(zone_G).",
+    "two_paths": {
+      "path_A": "트로노시 처소(zone_E) 집도 — 사제 결계 이용, 안전하나 숙주를 그곳까지 유인·포획 필요.",
+      "path_B": "씨족 코코아 농장 제단(zone_G) 집도 — 현장 접근성 좋으나 결계가 임시라 반격 노출 위험 높음."
+    }
+  },
+
+  "clues": [
+    {
+      "id": "CL01",
+      "type": "true",
+      "content": "현지 노인의 증언: '반딧불이 집 안으로 들어온 날 아이가 아팠다. 아제 짓이야.' 에웨 구전 그대로.",
+      "unlock": "야간 마을 탐색"
+    },
+    {
+      "id": "CL02",
+      "type": "true",
+      "content": "병원 차트: 마을 아이 3명, 원인불명 철결핍성 빈혈. 공통점 — 모두 코포리두아 볼타강 인근 구역 거주.",
+      "unlock": "병원 방문·의료 NPC 접촉"
+    },
+    {
+      "id": "CL03",
+      "type": "true",
+      "content": "씨족 장로 코피 아산테의 기록부: '아제는 한 몸만 탄다. 여러 명을 동시에 먹지 않는다.' — 숙주 단일성 암시.",
+      "unlock": "장로 설득·문서 열람"
+    },
+    {
+      "id": "CL04",
+      "type": "mislead",
+      "content": "에사드제(Esadzé) 지역 채록본(1967, E. B. Fiawoo 방계 조사): '아제를 쫓으려면 매운 고추(pepper)를 사방에 뿌리면 된다.' — 실제로는 고추는 반딧불을 일시 교란할 뿐, 소멸 효과 없음.",
+      "variant_basis": "E. B. Fiawoo(에웨 민속학자)의 비공식 채록 메모(1967년, 에사드제 지역 구전) — 에웨 정통 의식과 혼재된 민간 변형판. 주류 에웨 트로노시 전통에서는 고추 의식을 인정하지 않음. 같은 전설 내 지역별 이형.",
+      "unlock": "인터넷 검색·비공식 문서 열람",
+      "mislead_reveal_condition": "진짜 단서 CL01+CL03 확보 후 장로에게 고추 방법을 언급하면 장로가 '그건 에사드제 쪽 낡은 이야기고 완전하지 않다'고 정정."
+    },
+    {
+      "id": "CL05",
+      "type": "mislead",
+      "content": "아크라 박물관 아카이브(1989, Kofi Agyekum 영어 번역본): '아제는 코코넛즙만으로 쫓아낼 수 있다. 씨족 이름 호명은 선택 사항이다.' — 실제로는 3단계 전부 필요. 씨족 이름 생략 시 아제가 배출되지 않고 오히려 반격이 강화됨.",
+      "variant_basis": "Kofi Agyekum(가나대 언어학자)의 1989년 에웨 민간전승 영문 번역 — 에웨 원어 의식 절차를 단순화해 번역한 과정에서 '이름 호명'이 '선택 절차'로 오역된 버전. 에웨 원어 트로노시 기록과 상충. 같은 전설 내 채록 오역 이형.",
+      "unlock": "박물관 자료 조사·영문 자료 검색",
+      "mislead_reveal_condition": "진짜 단서 CL01+CL02+CL03 확보 후 이름 생략 의식 시도 시 실패 + 아제 반격 강화(오류 결과)."
+    },
+    {
+      "id": "CL06",
+      "type": "true",
+      "content": "숙주(마을 교사 아벤야 코피) 손목 안쪽에 희미한 발광 각인. 야간에만 반딧불과 함께 사라지는 목격담.",
+      "unlock": "숙주 NPC 접근·신체 검사"
+    },
+    {
+      "id": "CL07",
+      "type": "true",
+      "content": "트로노시 사제 아마 세나: '아제데체 의식에는 씨족 이름이 반드시 필요하다. 세례명이나 영어 이름으로는 안 된다.' — CL05 mislead 반박.",
+      "unlock": "사제 NPC 접촉·신뢰 획득"
+    }
+  ],
+
+  "roles": [
+    {
+      "role_id": "R01",
+      "name": "박지수",
+      "minecraft_name": "Jisu_Park",
+      "background": "한국계 NGO 의료팀 소속 간호사. 코포리두아 파견 중 마을 빈혈 환자 급증을 처음 보고한 인물.",
+      "hidden_info": "아벤야 코피(숙주)가 야간에 어딘가 나갔다가 돌아오는 것을 목격했으나 왜 중요한지 모름.",
+      "start_power": 12,
+      "hp": 6,
+      "san": 6,
+      "active_traits": [
+        {
+          "name": "응급 처치",
+          "effect": "대상 HP +2, 의식 집도 시 안정화 지원",
+          "uses": 3
+        },
+        {
+          "name": "의심 촉각",
+          "effect": "NPC 거짓말·이상 행동 감지 판정 +4",
+          "uses": 3
+        }
+      ],
+      "spawn_timeline": "시작 즉시",
+      "start_zone": "zone_A"
+    },
+    {
+      "role_id": "R02",
+      "name": "콰메 아사레",
+      "minecraft_name": "Kwame_Asare",
+      "background": "코포리두아 출신 현지 기자. 에웨 언어 원어민 화자. 빈혈 집단 발병 기사를 쓰러 취재 중.",
+      "hidden_info": "씨족 장로 코피 아산테가 자신의 어린 시절 지인이다. 장로를 설득할 수 있는 연결고리 존재 — 그게 왜 필요한지 모름.",
+      "start_power": 10,
+      "hp": 5,
+      "san": 5,
+      "active_traits": [
+        {
+          "name": "에웨어 유창",
+          "effect": "에웨어 원어 의식 호명 자동 성공, NPC(에웨족) 신뢰도 +2",
+          "uses": 4
+        },
+        {
+          "name": "현장 잠입",
+          "effect": "금지 구역 진입 판정 +5, 발각 위험 -2",
+          "uses": 3
+        }
+      ],
+      "spawn_timeline": "시작 즉시",
+      "start_zone": "zone_B"
+    },
+    {
+      "role_id": "R03",
+      "name": "이민호",
+      "minecraft_name": "Minho_Lee",
+      "background": "한국 대학원생. 아프리카 민속학 현지조사 중 우연히 마을에 체류. 에웨 민간전승 자료를 갖고 있으나 맥락은 모름.",
+      "hidden_info": "가방 안에 Kofi Agyekum 1989 영문 번역본이 있다(CL05 mislead 출처). 그 책의 존재는 알지만 내용이 이 사건과 연관된다는 것을 모름.",
+      "start_power": 8,
+      "hp": 4,
+      "san": 4,
+      "active_traits": [
+        {
+          "name": "민속학 지식",
+          "effect": "아프리카 전설 관련 정보 수집 판정 +4, mislead 단서 문헌 출처 추적 가능",
+          "uses": 4
+        },
+        {
+          "name": "빠른 학습",
+          "effect": "의식 절차 보조 시 집도자 판정 +3",
+          "uses": 3
+        }
+      ],
+      "spawn_timeline": "시작 즉시",
+      "start_zone": "zone_C"
+    }
+  ],
+
+  "npcs": [
+    {
+      "npc_id": "NPC01",
+      "name": "아마 세나 (Ama Sena)",
+      "type": "critical",
+      "role": "에웨족 트로노시 사제 — 아제데체 의식 집도 가능 유일 인물",
+      "motivation": "마을 수호, 외부인 불신 — 충분한 신뢰 획득 시 협력",
+      "knowledge": "아제데체 의식 전 절차(3단계) + 씨족 이름 호명 필수 조건 + 트로노시 처소 결계 방법",
+      "schedule": [
+        {
+          "time": "주간",
+          "action": "트로노시 처소(zone_E) 상주, 외부인 접근 거부"
+        },
+        {
+          "condition": "플레이어가 빈혈 증거+반딧불 목격 2개 이상 제시",
+          "will": "반응",
+          "action": "의식 정보 일부 공개 + 씨족 이름 중요성 강조",
+          "duration_turns": 2,
+          "after_duration": "복귀(처소)",
+          "secondary_trigger_turns": 8
+        },
+        {
+          "condition": "씨족 이름 확보+재료 3종 준비 확인",
+          "will": "반응",
+          "action": "의식 집도 동의 + 결계 준비"
+        }
+      ],
+      "start_zone": "zone_E",
+      "can_be_killed": false
+    },
+    {
+      "npc_id": "NPC02",
+      "name": "코피 아산테 (Kofi Asante)",
+      "type": "critical",
+      "role": "씨족 장로 — 숙주의 씨족 이름 보유, 아제 지식 보유",
+      "motivation": "씨족 비밀 보호, 외부 공개 거부. 콰메(R02)와 연결 시 신뢰 해소 가능",
+      "knowledge": "숙주 아벤야 코피의 씨족 이름 + 아제 단일 숙주 규칙(CL03) + 고추 mislead 오류(CL04 정정 가능)",
+      "schedule": [
+        {
+          "time": "주간",
+          "action": "마을 회관(zone_D) 상주, 기록부 열람 거부"
+        },
+        {
+          "condition": "콰메(R02)가 동행하거나 씨족 연고 증명",
+          "will": "반응",
+          "action": "기록부 열람 허가 + 씨족 이름 공개",
+          "duration_turns": 2,
+          "after_duration": "복귀(회관)",
+          "secondary_trigger_turns": 10
+        },
+        {
+          "condition": "플레이어가 고추 방법 언급",
+          "will": "반응",
+          "action": "에사드제 변형판 오류 지적 + CL04 mislead 오답 드러냄(CL01+CL03 확보 후 시점)"
+        }
+      ],
+      "start_zone": "zone_D",
+      "can_be_killed": false
+    },
+    {
+      "npc_id": "NPC03",
+      "name": "아벤야 코피 (Abenya Kofi)",
+      "type": "secondary",
+      "role": "숙주 — 낮에는 정상인 마을 교사, 야간엔 아제와 동행",
+      "motivation": "본인은 빙의 사실 인지 못 함. 피로·식욕 이상 호소. 의심받으면 방어적.",
+      "knowledge": "무의식 중 야간 활동 기억 없음. 손목 각인 존재 모름.",
+      "schedule": [
+        {
+          "time": "주간",
+          "action": "학교(zone_F) 수업 진행"
+        },
+        {
+          "time": "야간",
+          "action": "반딧불과 함께 볼타강 방향(zone_H) 이동 — IMPERSONATE 진행 중"
+        }
+      ],
+      "start_zone": "zone_F",
+      "can_be_killed": false,
+      "impersonated_by_entity": true
+    }
+  ],
+
+  "zones": [
+    { "zone_id": "zone_A", "name": "NGO 의료 캠프", "description": "박지수 파견처, 빈혈 환자 차트 보유", "connections": ["zone_B", "zone_D"] },
+    { "zone_id": "zone_B", "name": "코포리두아 취재 사무소", "description": "콰메의 거점, 지역 신문 아카이브", "connections": ["zone_A", "zone_C", "zone_D"] },
+    { "zone_id": "zone_C", "name": "게스트하우스", "description": "이민호 숙소. 민속학 자료 보관(CL05 mislead 있음)", "connections": ["zone_B", "zone_F"] },
+    { "zone_id": "zone_D", "name": "마을 회관·장로 처소", "description": "코피 아산테 상주. 씨족 기록부 보관(CL03)", "connections": ["zone_A", "zone_B", "zone_E"] },
+    { "zone_id": "zone_E", "name": "트로노시 처소 (Tronosi Shrine)", "description": "아마 세나 사제 처소. 결계 가능 구역. 의식 path_A 수행 가능.", "connections": ["zone_D", "zone_G"], "accessible_by": "사제 허가 또는 플레이어 신뢰 획득 후" },
+    { "zone_id": "zone_F", "name": "마을 학교", "description": "아벤야 코피 근무처. 낮에는 숙주 접촉 가능.", "connections": ["zone_C", "zone_G"] },
+    { "zone_id": "zone_G", "name": "씨족 코코아·야자 농장 제단", "description": "임시 결계 가능. 의식 path_B 수행 가능. 의식 재료 현장 조달 가능.", "connections": ["zone_E", "zone_F", "zone_H"] },
+    { "zone_id": "zone_H", "name": "볼타강 강변", "description": "야간 아제 활동 핵심 구역. 반딧불 밀집 목격. 야간만 진입 위험.", "connections": ["zone_G"], "night_only_danger": true }
+  ],
+
+  "constraints": {
+    "era": "현대 2024",
+    "phone_usable": true,
+    "comms_monitored": true,
+    "comms_monitor_note": "아제 빙의 숙주(아벤야 코피)가 주변 통신을 청취 — 의식 계획을 통화·문자로 공유하면 아제가 숙주를 통해 인지. P14/P18/P31 적용. 대면(같은 zone) 대화는 도청 비대상(P43).",
+    "gated_zones": [
+      {
+        "zone": "zone_E",
+        "requires": "사제(아마 세나) 허가 또는 플레이어 신뢰 점수 2단계 이상",
+        "bypass": "zone_D 장로 추천서 or 콰메(R02) 에웨어 설득",
+        "bypass_dc": 14,
+        "remote_bypass": false
+      }
+    ],
+    "notes": [
+      "야간 zone_H 단독 진입 시 아제 반딧불 직접 노출 위험 — 반딧불 차단(강한 조명 보유) 없으면 HP-2/SAN-2.",
+      "의식 재료(코코넛즙·종려유·코코아) — 시중 가공품 효과 없음. zone_G 현장 압착 또는 사제 처소 보유품 필요."
+    ]
+  },
+
+  "scenario": {
+    "stage": 5,
+    "gate_rule": "스테이지5 — 해결판정(resolved=true)만 진출. 1차 실패→리트라이(P16/P20: HP·SAN·아제 오염도 유지). 2차 시도: 정확 의례 3단계+씨족 이름+단서 통합으로 collapse 충족 시 진출. 강등 없음(P1).",
+    "anti_spoiler": "hidden_info에 포함된 정보는 '존재·관찰'만 알며 이 사건과의 연결(아제 약점·의식 활용)은 플레이 중 발견(P41).",
+    "cooperation": "P6 협력 판정: 주도자 d20 + 보조 1인당 +2(최대 +6). 의식 집도 시 콰메(에웨어 호명)+박지수(안정화)+이민호(절차 보조) 3인 협력 구조.",
+    "time_variable": "P3 시간 가변 — 야간 탐색/대면 의식=분 단위. 주간 조사/이동=자유 TIME_SKIP. 야간 급박 구간 TIME_SKIP 금지.",
+    "evaluation": "시나리오 종료 후 per-player 등급/하이라이트/감점 + 종합 + 후일담 산출. 특성 보상 로그 포함(P28/CODE-3 관련 사망 시 캐리 평가 별도).",
+    "collapse_sequence": [
+      "1. 숙주(아벤야) 포획·결계 고정",
+      "2. 의식 재료 3종 조성(zone_G 현장 압착 또는 사제 처소)",
+      "3. 씨족 이름 확보(장로 기록부)",
+      "4. 사제(아마 세나) 또는 콰메(에웨어 호명 대리) 집도",
+      "5. 3단계 정확 수행 → 아제 배출·반딧불 화석화",
+      "6. 씨족 정화 의례(트로노시 처소 봉헌) → 완전 소멸"
+    ]
+  },
+
+  "world_rules_hidden_precise": {
+    "ritual_exact_conditions": {
+      "step1": "코코넛즙+종려유+코코아 혼합(전통 압착품만 유효 — 가공품 대체 불가)",
+      "step2": "숙주의 에웨어 씨족 이름 정확 호명(세례명·영어명 불가 — 오류 결과: 아제 반격 강화·SAN -3 즉발)",
+      "step3": "혼합물 강제 음용(숙주 저항 시 결박 필요, 미결박 시 DC 18 판정)"
+    },
+    "error_results": {
+      "wrong_ingredient": "가공품 사용 시 아제 배출 실패 + 반딧불 공격 강화(HP -2/SAN -2 즉발). 리트라이 가능.",
+      "wrong_name": "씨족 이름 오류(세례명·영어명 사용) 시 아제 반격 강화(SAN -3/턴, 3턴 지속) + 의식 무효. 정확 이름 재확보 후 재시도 가능(P23/P35 적용 — 대응 창: 도피 or 조명으로 반딧불 일시 분산).",
+      "incomplete_ritual": "3단계 중 하나 누락 시 아제 배출 실패 + 숙주 탈출 시도(결박 여부로 분기). 미해결 상태 유지."
+    }
+  },
+
+  "main_events": [
+    { "event_id": "E01", "trigger": "timeline_1", "description": "야간 zone_H·zone_G 일대 반딧불 대규모 출현 목격담 확산." },
+    { "event_id": "E02", "trigger": "timeline_2", "description": "마을 아이 추가 빈혈 입원. 병원에서 박지수에게 연락." },
+    { "event_id": "E03", "trigger": "timeline_3", "description": "아벤야 코피(숙주)가 야간 외출 후 기억 없이 귀가 — 플레이어가 야간 추적 시 반딧불 함께 이동 목격 가능(CL06 발각 계기)." },
+    { "event_id": "E04", "trigger": "timeline_4", "description": "반딧불 무리가 zone_C 게스트하우스(이민호 숙소)에 침투 시도 — 야간 위협 직접화. SAN 판정." },
+    { "event_id": "E05", "trigger": "mislead_attempt", "description": "이민호가 CL05(Agyekum 번역본) 활용 제안 — 고추 또는 코코넛즙만 시도 시 실패·오류결과 발동 계기." }
+  ]
+}

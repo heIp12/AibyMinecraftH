@@ -28,7 +28,6 @@ import java.util.stream.Collectors;
 public class CharacterGenerator {
 
     private static final Random RNG = new Random();
-
     private enum JobTier { COMMON, STRONG, RARE }
 
     /** 평범한 직업 (~70%) */
@@ -54,7 +53,7 @@ public class CharacterGenerator {
         "조련사","잠수부","등반가",
         "정치인","공무원","외교관","통역사"
     };
-
+    
     /** 해결사/전문 능력자 (~20%) — A/B등급 초기 특성 부여 */
     private static final String[] STRONG_JOB_POOL = {
         "엑소시스트","퇴마사","봉마사","신부(퇴마 전문)",
@@ -351,7 +350,52 @@ public class CharacterGenerator {
 
         boostLowest(pd);
         applyBonuses(pd);
+        ensureSurvivalFloor(pd); // HP·SAN 최소 생존선 보장 (1/1 즉사 캐릭터 방지)
         return tier;
+    }
+
+    /**
+     * 생존 직결 스탯(HP·SAN) 최소선 보장.
+     * 주사위 분배가 HP·SAN을 1까지 떨어뜨릴 수 있어, 호러 생존 게임에서
+     * 한 대만 맞아도 즉시 탈락하는 캐릭터가 생기는 것을 막는다.
+     * 총합은 보존한다 — 부족분은 HP·SAN을 제외한 가장 높은 스탯에서 끌어온다.
+     */
+    private void ensureSurvivalFloor(PlayerData pd) {
+        final int FLOOR = 3;
+        raiseToFloor(pd, 0, FLOOR); // HP
+        raiseToFloor(pd, 2, FLOOR); // SAN
+    }
+
+    private void raiseToFloor(PlayerData pd, int idx, int floor) {
+        while (statAt(pd, idx) < floor) {
+            int donor = highestDonor(pd, idx);
+            if (donor < 0) break; // 끌어올 여유 스탯 없음
+            applyStatDelta(pd, donor, -1);
+            applyStatDelta(pd, idx, 1);
+        }
+    }
+
+    /** HP(0)·SAN(2)이 아닌 스탯 중 4 이상으로 가장 높은 것의 인덱스 (도너도 3 미만으로 떨어뜨리지 않음) */
+    private int highestDonor(PlayerData pd, int exceptIdx) {
+        int[] vals = {pd.hp[1], pd.str, pd.san[1], pd.cha, pd.luk, pd.spr};
+        int best = -1, bestVal = 3;
+        for (int i = 0; i < vals.length; i++) {
+            if (i == 0 || i == 2 || i == exceptIdx) continue; // HP·SAN은 도너 제외
+            if (vals[i] > bestVal) { bestVal = vals[i]; best = i; }
+        }
+        return best;
+    }
+
+    private int statAt(PlayerData pd, int idx) {
+        return switch (idx) {
+            case 0 -> pd.hp[1];
+            case 1 -> pd.str;
+            case 2 -> pd.san[1];
+            case 3 -> pd.cha;
+            case 4 -> pd.luk;
+            case 5 -> pd.spr;
+            default -> 0;
+        };
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -386,6 +430,7 @@ public class CharacterGenerator {
             + "\"cooldownTurns\":0},...]\n\n"
             + "공통 규칙:\n"
             + "- 직업·나이에서 자연스럽게 연결되는 능력/약점\n"
+            + "- hidden_info에 해결 수단(아이템·경로·조작법)이 포함되면, 그 '존재·방법'만 알게 하고 '왜 필요한지(괴담 약점·해법과의 연결)'는 캐릭터가 인지하지 못한 상태로 설계하라. 정답을 처음부터 쥐여주지 마라(용도는 플레이 중 발견).\n"
             + "- description과 effect에 스탯 숫자·스탯 약어(STR/HP/SAN/CHA/LUK/SPR) 절대 사용 금지\n"
             + "- description: 아주 짧은 명사구 한 줄(최대 18자). 예: \"빠른 처치 손길\", \"겁 많은 성격\"\n"
             + "- effect: 한 문장으로 간결하게 (수동이면 판정에서 발휘되는 식, 능동이면 사용 효과)\n"

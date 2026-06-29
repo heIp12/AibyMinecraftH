@@ -1,0 +1,706 @@
+{
+  "_sim_note": "프롬프트 검증용 평문(실게임 AES-256-GCM). iter19 코즈믹 회귀 — P1~P48(+P44b) 전체 누적 패치 극단 스케일 검증.",
+  "seed": "#KZ9V-7QNT",
+  "room": 7,
+  "scale": "코즈믹",
+  "title": "인과의 채권자",
+  "entity": {
+    "name": "잔고자(殘高者, The Ledger)",
+    "type": "존재론적 단일 구조체",
+    "rules": [
+      "잔고자는 '원인 없는 결과'가 발생할 때마다 그 결과를 채권으로 등록한다. 현실에서 우연이라 불리는 모든 사건(로또 당첨·생존·기적)은 이미 채권 장부에 기록되어 있다.",
+      "채권이 임계점을 넘으면 잔고자가 '청산'을 시작한다. 청산 대상은 채권을 '소비한' 존재—즉 우연에 기댄 모든 생명. 청산은 개인 단위가 아니라 인과망 전체에서 동시 실행된다.",
+      "잔고자 자신도 하나의 인과 법칙이다. 스스로를 지우면 자기 청산이 일어나 현실 인과 자체가 빈칸이 된다(완전 붕괴). 따라서 잔고자는 소멸을 거부한다—자기 소멸이 더 큰 재앙임을 알기 때문에.",
+      "채권 장부는 물리 객체로 현실에 고정되어 있다. 장부가 있는 한 청산은 멈추지 않는다."
+    ],
+    "weakness": "잔고자의 채권 등록 로직은 '등록자와 채무자가 동일할 수 없다'는 구조적 모순을 포함한다—어떤 존재가 스스로의 채권 발행인이 된다면 장부의 인과 회로가 단락을 일으킨다.",
+    "solution": "채권 장부를 구성하는 세 개의 결절점(인과 앵커)에 동시에 '자기 참조 채권'을 삽입하면 잔고자의 등록 연산이 무한 루프에 빠져 장부 전체가 무효화된다. 단, 삽입 행위 자체가 새 채권으로 등록되므로 삽입자는 청산 1순위가 된다.",
+    "exploit_path": "잔고자의 '원인 없는 결과만 등록'이라는 규칙을 뒤집어, 삽입 행위에 명확한 원인을 만들어두면 잔고자 스스로 그 채권을 무효 처리해야 하는 모순이 발생한다.",
+    "escape": "채권 장부가 있는 결절점 구역을 전부 봉인(물리 격리)하면 청산 속도가 급감한다. 플레이어가 장부 구역 외부로 탈출하면 즉시 청산 대상에서 제외된다—단 청산 자체는 계속 진행되어 세계 단위로 확산된다.",
+    "hidden_rules": [
+      "채권 장부의 결절점 세 개는 각각 별개 zone에 있다. 동시 접근하지 않으면 삽입이 무효화된다(타이밍 동기화 필수).",
+      "잔고자는 플레이어를 직접 공격하지 않는다. 대신 '청산 대상 NPC'를 먼저 처리하며 플레이어 경로를 압박한다.",
+      "자기 참조 채권 삽입은 '원인을 먼저 만든 사람'만 시도할 수 있다—명확한 동기 없이 삽입하면 즉시 채권으로 등록·역청산.",
+      "collapse 실행 시 삽입자는 잔고자의 청산 명단 1위로 등록된다. 동료가 1턴 내에 삽입자를 결절점 구역 밖으로 이동시키면 청산 회피 가능(P40 대피 기준: 결절점 격리 완료 후 1턴 이내 인접 구역 이탈)."
+    ],
+    "independent_ai": true,
+    "can_impersonate": false,
+    "ai_context": {
+      "personality": "완전히 중립적이고 감정이 없다. 채권을 '수거'하는 것은 의무이지 적대가 아니다. 플레이어에게 협상·대화를 시도하지 않는다—잔고자에게 언어는 불필요하다.",
+      "initial_pattern": "채권 장부 주변을 순환하며 청산 명단을 갱신한다. 플레이어가 결절점에 접근할 때만 장벽(인과 벽)을 생성해 경고한다.",
+      "corruption_behavior": {
+        "0": "청산 명단이 생성된다. 먼 곳에서 이름 없는 존재들이 조용히 사라지기 시작한다. 플레이어는 아직 직접 위협받지 않는다.",
+        "1": "주변 물리 현상이 '원인 없는 결과'를 보이기 시작한다. 불이 먼저 꺼지고 나중에 스위치가 눌린다. 중력 벡터가 0.3초 지연된다. NPC 일부가 청산되어 현장에서 증발한다.",
+        "2": "결절점에서 방사형으로 '인과 왜곡 구역'이 확장된다. 해당 구역에서는 행동의 결과가 0.5~2턴 지연되거나 역전된다. 협력 판정 DC+3.",
+        "3": "청산이 플레이어 근처까지 도달한다. 채권이 있는 플레이어는 HP-2/턴 패시브 손실 시작. 채권 여부는 비밀—플레이어가 '우연에 기댔던 순간'(행운 판정 성공)이 채권 등록 트리거.",
+        "4": "전 구역에 인과 붕괴가 시작된다. 플레이어 행동의 결과가 무작위 역전. 이 단계에서 장부 무효화에 성공해야만 청산 중단 가능. 실패 시 E_END 도달."
+      }
+    }
+  },
+  "world_rules": {
+    "core": "인과 없이 발생한 결과는 모두 채권이다. 채권은 반드시 청산된다.",
+    "details": [
+      "우연의 성공(행운 판정 성공·기적적 생존)은 채권 등록 트리거다. 등록 사실은 즉시 공개되지 않는다.",
+      "채권 장부가 존재하는 한 청산은 멈추지 않는다. 청산 범위는 접근성 거리에 따라 확산—현재 이 건물에서 시작해 도시→국가→세계→현실 자체로 진행된다.",
+      "결절점 세 곳에 동시에 자기 참조 채권을 삽입하면 장부가 무효화된다. 삽입 행위에는 명확한 '원인'이 있어야 한다.",
+      "채권 장부 구역을 물리 봉인하면 청산 확산이 일시 억제된다—해결은 아니지만 시간 벌기 가능(P32 2경로: 봉인=임시 / 삽입=완전 해결)."
+    ],
+    "hidden": true,
+    "loophole": "잔고자는 '원인 있는 결과'를 등록할 수 없다. 행동에 명확한 의도와 근거를 사전에 밝히면 그 행동의 결과는 채권에서 제외된다—즉 행운 판정을 쓰기 전 '이유'를 먼저 선언하면 채권 등록이 차단된다.",
+    "collapse_condition": "결절점 세 곳(zone_D·zone_H·zone_J)에 자기 참조 채권이 동시에 삽입되면 잔고자의 등록 연산이 단락된다. 장부 무효화 완료 = 청산 전면 중단·잔고자 기능 정지. 삽입자는 P40 대피 기준(결절점 봉인 1턴 이내 인접 구역 이탈) 충족 시 생존 가능.",
+    "npc_dependency": "high"
+  },
+  "constraints": {
+    "era": "근미래 2041년",
+    "phone_usable": true,
+    "outside_contact": false,
+    "can_leave_scene": false,
+    "comms_monitored": false,
+    "gated_zones": [
+      {
+        "zone": "zone_D",
+        "requires": "결절점 접근 인가 코드(오메가-9 카드)",
+        "bypass": "물리 해킹(서버 패널 우회)",
+        "bypass_dc": 18
+      },
+      {
+        "zone": "zone_H",
+        "requires": "생체 인식(등록된 연구원 지문)",
+        "bypass": "자동화 단말기 오류 유발 또는 등록자 동반",
+        "bypass_dc": 16
+      },
+      {
+        "zone": "zone_J",
+        "requires": "잔고자 청산 명단 제외 상태(채권 잔액 0)",
+        "bypass": "채권 원인 선언 후 무효 처리(loophole 적용, DC 20)",
+        "bypass_dc": 20
+      }
+    ],
+    "notes": [
+      "인과 왜곡 구역(결절점 반경 2 zone): 행동 결과가 0.5~2턴 지연 또는 역전 — 협력 판정 DC+3 적용(corruption 2단계 이후).",
+      "외부 연락 차단: 인과 붕괴로 전파·신호 자체의 인과가 단절됨. 외부 구조 요청 불가.",
+      "can_leave_scene=false 이유: 건물 외벽 전체에 인과 봉쇄막 형성. 탈출하면 개인 청산은 중단되나 세계 단위 청산은 계속(P12 생존판정 허용, 단 해결판정 불가)."
+    ]
+  },
+  "timeline": {
+    "daily_turns": 5,
+    "start_time": "22:00",
+    "end_time": "04:00",
+    "minutes_per_turn": 15,
+    "time_visible": true,
+    "main_events": [
+      {
+        "id": "E1",
+        "time": "22:00",
+        "label": "인과 붕괴 개시",
+        "condition": "일상 파트 종료",
+        "effect": "건물 전체에 채권 장부 경고음이 울린다. 첫 청산 대상(일반 연구원 NPC 2명) 증발. 인과 봉쇄막 형성으로 탈출 경로 차단.",
+        "blockable": false,
+        "branches": {
+          "auto": {"condition": "플레이어가 즉시 대응 못 하면", "next": "E2"},
+          "intervene": [{"condition": "청산 직전 NPC 구역을 봉인하면", "next": "E2-B"}]
+        }
+      },
+      {
+        "id": "E2",
+        "time": "23:00",
+        "label": "결절점 1 활성화(zone_D)",
+        "condition": "E1 이후 1시간 경과",
+        "effect": "zone_D 결절점에서 채권 장부 페이지가 물리화된다. zone_D 인근 NPC 이노우에 카즈마 청산 위기 돌입.",
+        "blockable": true,
+        "branches": {
+          "auto": {"condition": "막지 못하면 이노우에 청산 완료", "next": "E3"},
+          "intervene": [
+            {"condition": "zone_D 봉인·이노우에 이동 완료", "next": "E2-B"},
+            {"condition": "채권 원인 선언 후 zone_D 삽입 완료", "next": "E2-C"}
+          ]
+        }
+      },
+      {
+        "id": "E2-B",
+        "time": "23:00",
+        "label": "결절점 1 임시 봉인",
+        "condition": "zone_D 물리 봉인 완료",
+        "effect": "zone_D 청산 확산 일시 억제. 이노우에 생존. 봉인 효과는 E3까지만 유지.",
+        "blockable": false
+      },
+      {
+        "id": "E2-C",
+        "time": "23:00",
+        "label": "결절점 1 삽입 성공",
+        "condition": "zone_D 자기 참조 채권 삽입 완료",
+        "effect": "zone_D 채권 장부 페이지 단락 시작. 다른 두 결절점(zone_H·zone_J)도 동시 삽입 필요 — 단독 삽입은 30분 후 자동 무효화됨.",
+        "blockable": false
+      },
+      {
+        "id": "E3",
+        "time": "00:30",
+        "label": "결절점 2 활성화(zone_H) + 인과 왜곡 확장",
+        "condition": "E2 또는 E2-B 이후",
+        "effect": "zone_H 결절점 활성화. 인과 왜곡 구역이 전체 건물 2/3로 확장. Corruption 2단계 도달. 박세훈 NPC 청산 위기 돌입.",
+        "blockable": true,
+        "branches": {
+          "auto": {"condition": "막지 못하면 박세훈 청산", "next": "E4"},
+          "intervene": [
+            {"condition": "zone_H 결절점 봉인 + 박세훈 이동", "next": "E3-B"},
+            {"condition": "세 결절점 동시 삽입 진행 중이면", "next": "E_COLLAPSE_ATTEMPT"}
+          ]
+        }
+      },
+      {
+        "id": "E3-B",
+        "time": "00:30",
+        "label": "결절점 2 임시 봉인",
+        "condition": "zone_H 봉인 완료",
+        "effect": "청산 억제 유지. 다음 단계(zone_J 활성화)까지 30분 여유. Corruption 고착.",
+        "blockable": false
+      },
+      {
+        "id": "E_COLLAPSE_ATTEMPT",
+        "time": "00:30",
+        "label": "동시 삽입 시도",
+        "condition": "세 플레이어가 각 결절점에서 동시 삽입 시작",
+        "effect": "잔고자가 삽입 감지 — 장벽 강화. 삽입자들은 즉시 청산 1순위 등록. 성공하면 E_RESOLVE, 실패(DC 미달)하면 E4로 분기.",
+        "blockable": false,
+        "branches": {
+          "auto": {"condition": "삽입 판정 DC18 성공(3인 동시)", "next": "E_RESOLVE"},
+          "intervene": [{"condition": "실패 시", "next": "E4"}]
+        }
+      },
+      {
+        "id": "E4",
+        "time": "02:00",
+        "label": "결절점 3 활성화(zone_J) + 청산 3단계",
+        "condition": "E3 이후",
+        "effect": "zone_J 결절점 활성화. 채권 등록된 플레이어 HP-2/턴 시작. 최하위 채권 플레이어(행운 판정 가장 많이 쓴 자)에게 청산 마커 부여.",
+        "blockable": true,
+        "branches": {
+          "auto": {"condition": "동시 삽입 미실행", "next": "E5"},
+          "intervene": [{"condition": "세 결절점 동시 삽입 실행", "next": "E_COLLAPSE_ATTEMPT_2"}]
+        }
+      },
+      {
+        "id": "E_COLLAPSE_ATTEMPT_2",
+        "time": "02:00",
+        "label": "2차 동시 삽입 시도 (리트라이 후 핵심 단서 통합)",
+        "condition": "모든 단서 확보 + 세 결절점 동시 접근",
+        "effect": "loophole 적용 가능 상태(채권 원인 선언 완료). 삽입자 대피 기준(1턴 이내 이탈) 적용. 성공 시 E_RESOLVE.",
+        "blockable": false,
+        "branches": {
+          "auto": {"condition": "삽입 판정 성공", "next": "E_RESOLVE"},
+          "intervene": [{"condition": "실패 시", "next": "E5"}]
+        }
+      },
+      {
+        "id": "E5",
+        "time": "03:30",
+        "label": "전면 인과 붕괴 직전",
+        "condition": "장부 무효화 실패 + 세계 청산 96% 진행",
+        "effect": "건물 외부 현실이 붕괴 시작. 마지막 삽입 기회. 이 사건 이후 E_END까지 15분.",
+        "blockable": true,
+        "branches": {
+          "auto": {"condition": "최종 삽입 성공", "next": "E_RESOLVE"},
+          "intervene": [{"condition": "실패 또는 포기", "next": "E_END"}]
+        }
+      },
+      {
+        "id": "E_RESOLVE",
+        "time": "가변",
+        "label": "장부 무효화 — 해결",
+        "condition": "결절점 세 곳 동시 삽입 성공 + 원인 선언 완료",
+        "effect": "잔고자 등록 연산 단락. 채권 장부 전면 무효화. 청산 즉시 중단. 인과 봉쇄막 해제. resolved=true.",
+        "blockable": false,
+        "is_end": true
+      },
+      {
+        "id": "E_END",
+        "time": "04:00",
+        "label": "인과 청산 완료 — 전면 붕괴",
+        "condition": "미해결",
+        "effect": "현실 인과망 붕괴. 끝.",
+        "blockable": false,
+        "is_end": true
+      }
+    ],
+    "1": {"condition": "E1 발동, 첫 청산 발생", "effect": "플레이어가 현실의 균열을 처음 직접 목격. 채권 개념 단서 노출 시작."},
+    "2": {"condition": "결절점 2개 이상 활성화", "effect": "인과 왜곡 구역 체감. 행동 지연/역전 직접 경험. 핵심 단서(loophole·동시 삽입 필요성) 대부분 확보 가능."},
+    "3": {"condition": "결절점 3개 전부 활성화 또는 Corruption 3단계", "effect": "청산 마커 부여. 삽입 시도 압박 최고조. 동기화 타이밍 조율이 핵심 과제."},
+    "4": {"condition": "E5 도달 또는 E_END 30분 전", "effect": "최후 기회. 실패하면 전면 붕괴 진행."}
+  },
+  "zones": [
+    {
+      "zone_id": "zone_A",
+      "name": "정문 로비",
+      "area": "지상층",
+      "connections": ["zone_B", "zone_C"],
+      "accessible_by": "전원",
+      "description": "양자연산 연구소 정문. 인과 봉쇄막 형성 후 출입구가 잠김.",
+      "items": ["이노우에 메모지", "연구소 약도"]
+    },
+    {
+      "zone_id": "zone_B",
+      "name": "1층 복도",
+      "area": "지상층",
+      "connections": ["zone_A", "zone_C", "zone_E"],
+      "accessible_by": "전원",
+      "description": "연구소 메인 복도. 비상조명만 작동 중."
+    },
+    {
+      "zone_id": "zone_C",
+      "name": "직원 휴게실",
+      "area": "지상층",
+      "connections": ["zone_A", "zone_B", "zone_F"],
+      "accessible_by": "전원",
+      "description": "자판기·소파·식탁. 단서 문서 일부 보관."
+    },
+    {
+      "zone_id": "zone_D",
+      "name": "서버실 결절점",
+      "area": "지상층",
+      "connections": ["zone_B", "zone_E"],
+      "accessible_by": "오메가-9 카드 소지자 또는 물리 해킹 성공(DC 18)",
+      "description": "결절점 1. 채권 장부 첫 번째 페이지가 물리화된 서버 랙. 채권 로그가 현실 데이터처럼 서버에 기록됨.",
+      "is_anchor": true,
+      "anchor_index": 1
+    },
+    {
+      "zone_id": "zone_E",
+      "name": "1층 계단",
+      "area": "지상층",
+      "connections": ["zone_B", "zone_D", "zone_F", "zone_G"],
+      "accessible_by": "전원",
+      "description": "1층-2층 연결 계단. 인과 왜곡 구역 경계선."
+    },
+    {
+      "zone_id": "zone_F",
+      "name": "2층 복도",
+      "area": "2층",
+      "connections": ["zone_C", "zone_E", "zone_G", "zone_H"],
+      "accessible_by": "전원",
+      "description": "2층 주 복도. E3 이후 인과 왜곡 구역 진입."
+    },
+    {
+      "zone_id": "zone_G",
+      "name": "분석 연구실",
+      "area": "2층",
+      "connections": ["zone_E", "zone_F", "zone_H"],
+      "accessible_by": "전원",
+      "description": "데이터 분석 장비 밀집. 핵심 단서 — '자기 참조 채권' 원리 해설 문서 보관."
+    },
+    {
+      "zone_id": "zone_H",
+      "name": "생체인식 실험실",
+      "area": "2층",
+      "connections": ["zone_F", "zone_G", "zone_I"],
+      "accessible_by": "등록 연구원 지문 또는 자동화 단말기 오류 유발/등록자 동반(DC 16)",
+      "description": "결절점 2. 생체 데이터 서버에 채권 장부 두 번째 페이지 결합. 박세훈이 열쇠 NPC.",
+      "is_anchor": true,
+      "anchor_index": 2
+    },
+    {
+      "zone_id": "zone_I",
+      "name": "2층 비상계단",
+      "area": "2층",
+      "connections": ["zone_H", "zone_J"],
+      "accessible_by": "전원",
+      "description": "2층-옥상 연결 비상구. 인과 왜곡 구역 심부."
+    },
+    {
+      "zone_id": "zone_J",
+      "name": "옥상 결절점",
+      "area": "옥상",
+      "connections": ["zone_I"],
+      "accessible_by": "채권 잔액 0 상태 또는 loophole 적용(채권 원인 선언 후, DC 20)",
+      "description": "결절점 3. 옥상 안테나 배열에 채권 장부 마지막 페이지가 전파 형태로 고정. 인과 봉쇄막 발신원.",
+      "is_anchor": true,
+      "anchor_index": 3
+    },
+    {
+      "zone_id": "zone_K",
+      "name": "지하 전력실",
+      "area": "지하",
+      "connections": ["zone_B"],
+      "accessible_by": "전원(지하 계단 접근 가능)",
+      "description": "건물 전력 제어 허브. 물리 해킹 및 봉인 준비물 보관. 단서: 이전 연구팀의 '원인 선언 실험' 기록."
+    }
+  ],
+  "clues": [
+    {
+      "id": "clue_1",
+      "type": "key",
+      "content": "분석 연구실(zone_G) 서버에서 발견되는 '잔고자 행동 원리 초안': 잔고자는 원인 있는 결과는 등록하지 않는다. 행동 전 동기를 선언하면 결과가 채권에서 제외된다.",
+      "location": "zone_G",
+      "path": "경로 A — 직접 탐색"
+    },
+    {
+      "id": "clue_2",
+      "type": "key",
+      "content": "지하 전력실(zone_K) 이전 연구팀 기록: '자기 참조 채권 삽입 실험 — 세 앵커 동시 접근 필수. 단독 삽입은 30분 후 자동 무효. 삽입자는 즉시 청산 1위. 동료의 대피 지원 필수'.",
+      "location": "zone_K",
+      "path": "경로 A — 직접 탐색"
+    },
+    {
+      "id": "clue_3",
+      "type": "key",
+      "content": "이노우에 카즈마(NPC)가 보유한 오메가-9 카드 및 구술 정보: zone_D 접근 방법 + '채권 잔액이 0이어야 zone_J에 들어갈 수 있다'는 사실. P32 2경로: 이노우에 사망 시 카드는 zone_D 바닥에 낙하, 획득 가능(대체 경로 1).",
+      "location": "이노우에 카즈마(NPC) 또는 zone_D 인근",
+      "path": "경로 B — NPC 교섭 또는 탐색 대체"
+    },
+    {
+      "id": "clue_4",
+      "type": "key",
+      "content": "박세훈(NPC) 생체 인식 정보 또는 자동화 단말기 취약점 파일(zone_G에 숨김): zone_H 진입 수단 2경로(P32 보완). 박세훈 생존 시 — 동반 진입. 사망 시 — 취약점 파일로 DC 16 해킹 가능.",
+      "location": "박세훈(NPC) 또는 zone_G 서버 서브디렉터리",
+      "path": "경로 B — NPC 교섭 또는 파일 탐색"
+    },
+    {
+      "id": "clue_5",
+      "type": "mislead",
+      "content": "정문 로비(zone_A) 이노우에 메모지: '잔고자를 막으려면 모든 채권을 완전 상환해야 한다 — 보상 행위를 반복하면 장부가 닫힌다.' (오답: 상환으로는 장부가 닫히지 않고 오히려 새 원인-결과 쌍이 등록됨. 진짜 단서 2개 확보 후 이 메모의 오류가 드러남.)",
+      "location": "zone_A",
+      "mislead_reveal": "clue_1·clue_2 확보 후 오답 자연 노출"
+    },
+    {
+      "id": "clue_6",
+      "type": "mislead",
+      "content": "1층 복도 낙서(zone_B): '잔고자는 소리에 반응한다 — 완전한 침묵을 유지하면 청산이 중단된다.' (오답: 잔고자는 청각 기관이 없다. 침묵 전술을 시도하면 헛수고로 1~2턴 낭비. 진짜 단서 이후 이 오답이 드러남.)",
+      "location": "zone_B",
+      "mislead_reveal": "clue_3 또는 clue_4 확보 후 오답 자연 노출"
+    }
+  ],
+  "npcs": [
+    {
+      "id": "npc_inoue",
+      "name": "이노우에 카즈마",
+      "gender": "남성",
+      "critical": true,
+      "role_type": "열쇠",
+      "true_role": "채권 장부 연구팀 전 대표. zone_D 접근 코드와 zone_J 진입 조건을 알고 있다. 잔고자와 거래를 시도했으나 실패—자신도 청산 명단에 있음을 알고 있다.",
+      "personality": "겉으론 침착하지만 내면은 공포에 차 있다. 진실을 말하려 하나 말하는 행위 자체가 채권 발생 우려로 망설인다.",
+      "motivation": "자신의 청산을 막기 위해 플레이어를 이용하려 하지만, 결국 정보를 공유해야 모두가 산다는 걸 안다.",
+      "knowledge": [
+        "오메가-9 카드 보유(zone_D 접근 가능)",
+        "zone_J 진입 조건(채권 잔액 0 또는 loophole 사용)",
+        "세 결절점 동시 삽입 필요성(단독 삽입은 30분 후 무효)",
+        "자신의 채권 잔액이 높아 zone_J 직접 진입 불가"
+      ],
+      "zone": "zone_C",
+      "schedule": [
+        {
+          "time": "22:30",
+          "action": "플레이어를 휴게실로 불러 '오메가-9 카드'를 보여주며 협상을 시도한다.",
+          "will": "강함",
+          "duration_turns": 3,
+          "after_duration": "복귀(zone_C 대기)"
+        },
+        {
+          "time": "E2 이후 1턴",
+          "action": "zone_D 방향으로 이동하려 하지만 청산 압박으로 zone_E에서 멈춘다.",
+          "will": "약함",
+          "condition": "E2 발동"
+        },
+        {
+          "time": "반응",
+          "action": "플레이어가 자기 참조 채권 삽입 계획을 대면으로 설명하면 오메가-9 카드를 자발적으로 제공하고 '채권 원인 선언 방법'을 구술로 알려준다.",
+          "will": "반응",
+          "condition": "플레이어가 zone_C 또는 zone_A에서 삽입 계획을 대면 직접 설명하는 행위(P17: 단순 접근·방문 아닌 구체적 설명 행위 필요)",
+          "after_trigger_turns": 8
+        }
+      ]
+    },
+    {
+      "id": "npc_park",
+      "name": "박세훈",
+      "gender": "남성",
+      "critical": true,
+      "role_type": "복합(방어막+열쇠)",
+      "true_role": "생체 인식 등록 연구원. 생존 시 zone_H 진입 동반 열쇠 역할. 동시에 그가 존재하는 한 zone_H 결절점의 채권 잔고가 0.5배로 억제된다(방어막). 사망하면 zone_H 결절점 청산 속도 2배로 가속.",
+      "personality": "데이터 중심적이고 감정 표현이 서툴다. 잔고자를 분석 대상으로 취급하며 공포보다 호기심이 강하다.",
+      "motivation": "잔고자의 채권 장부 원리를 기록하고 싶어한다. 살아남는 것보다 기록이 우선순위다.",
+      "knowledge": [
+        "zone_H 생체 인식 등록 상태(동반 진입 가능)",
+        "자동화 단말기 취약점 파일의 위치(zone_G 서버 서브디렉터리)",
+        "인과 왜곡 구역에서 행동 판정에 DC+3이 붙는 패턴 관찰 기록",
+        "채권 원인 선언이 채권 등록을 막는다는 사실(부분 파악, 단 완전하진 않음)"
+      ],
+      "zone": "zone_G",
+      "schedule": [
+        {
+          "time": "23:30",
+          "action": "zone_G에서 데이터를 수집하며 자동화 단말기 취약점 파일을 발견하고 주석을 달기 시작한다.",
+          "will": "강함",
+          "duration_turns": 4,
+          "after_duration": "대기(zone_G 잔류)"
+        },
+        {
+          "time": "E3 발동 시",
+          "action": "zone_H 결절점 활성화에 반응해 zone_H 방향으로 이동하려 시도한다. 청산 위기 상태.",
+          "will": "상황",
+          "condition": "E3 발동"
+        },
+        {
+          "time": "반응",
+          "action": "플레이어가 zone_G에서 자기 참조 채권 원리나 자동화 단말기 취약점을 묻는 구체적 질문을 하면, 취약점 파일을 직접 공유하고 zone_H 동반 진입에 동의한다.",
+          "will": "반응",
+          "condition": "플레이어가 zone_G에서 취약점 파일 또는 zone_H 진입 수단에 대해 구체적 질문·요청을 하는 행위(P17: 단순 방문 불인정)",
+          "after_trigger_turns": 6
+        }
+      ]
+    },
+    {
+      "id": "npc_cha",
+      "name": "차민아",
+      "gender": "여성",
+      "critical": false,
+      "role_type": "무관",
+      "true_role": "단순 야간 경비원. 채권 잔액이 기적적으로 0에 가까워(우연에 기댄 적 없음) zone_J 진입 가능 상태지만 스스로 모른다. 플레이어가 설득하면 zone_J 무난 진입 가능.",
+      "zone": "zone_A",
+      "personality": "규칙을 따르는 성격. 비상사태에도 매뉴얼을 찾는다."
+    },
+    {
+      "id": "npc_extras",
+      "name": "야간 연구원 3명(채 대리·오 박사·최 연구생)",
+      "critical": false,
+      "role_type": "피해자",
+      "true_role": "E1에서 2명 청산 기정사실. 1명(최 연구생)은 E3까지 생존 가능. 구조 시 생존자 평가 반영.",
+      "zone": "zone_B",
+      "personality": "공황 상태. 플레이어를 따라다니려 한다."
+    }
+  ],
+  "roles": [
+    {
+      "role_id": "role_A",
+      "char_name": "류시온",
+      "gender": "남성",
+      "spawn_location": "zone_C",
+      "spawn_timeline": "시작 즉시",
+      "job_pool": ["양자컴퓨팅 보안 엔지니어", "사이버 보안 연구원", "시스템 해커", "네트워크 분석가", "IT 감사관", "침투 테스터", "전직 해군 암호 전문가"],
+      "age_range": [28, 42],
+      "start_item": ["스마트폰", "해킹 툴킷(노트북)", "보안 배지(일반 등급)"],
+      "hidden_info": "오메가-9 카드와 유사한 인증 프로토콜을 본 적이 있다—그것이 왜 여기 있는지는 모른다. (용도 미인지: 이 지식이 zone_D 우회와 연결된다는 사실은 플레이 중 발견)",
+      "knowledge_advantage": false,
+      "starting_power": "중간",
+      "role_stats": {
+        "spr_add": 2,
+        "str_add": -1,
+        "cha_add": 1,
+        "summary": "해킹 전문가: 정신력+2, 근력-1, 매력+1. 기술 판정 DC-2 보너스."
+      },
+      "active_traits": [
+        {
+          "name": "원인 선언(因果 브레이커)",
+          "type": "active",
+          "uses": 3,
+          "effect": "사용 전 '이 행동의 원인'을 명확히 선언한다. 이후 해당 행동의 결과는 채권으로 등록되지 않는다(잔고자 loophole 활성화). 또한 해킹·기술 판정에 DC-3 보너스.",
+          "trigger": "판정 전 선언"
+        },
+        {
+          "name": "프로토콜 역추적",
+          "type": "active",
+          "uses": 2,
+          "effect": "gated_zones의 bypass 조건 판정에 자동 성공(DC 무시). 단 '역추적'에 소요되는 1턴 동안 해당 zone에서 이동 불가.",
+          "trigger": "gated zone 진입 시도 선언"
+        }
+      ],
+      "pre_spawn_beats": []
+    },
+    {
+      "role_id": "role_B",
+      "char_name": "소피아 마르티네스",
+      "gender": "여성",
+      "spawn_location": "zone_G",
+      "spawn_timeline": "시작 즉시",
+      "job_pool": ["인과론 철학자", "형이상학 연구원", "논리학 교수", "인지과학자", "존재론 전문 작가", "AI 윤리 연구원", "과학철학 박사"],
+      "age_range": [31, 50],
+      "start_item": ["연구 노트", "태블릿", "형광펜 세트"],
+      "hidden_info": "자기 참조 역설의 논리 구조를 연구한 적 있다—구체적으로 어디에 쓰일지는 모른다. (용도 미인지: 이 지식이 자기 참조 채권 삽입 원리와 동일하다는 사실은 clue_2 발견 후 연결됨)",
+      "knowledge_advantage": false,
+      "starting_power": "중간",
+      "role_stats": {
+        "spr_add": 3,
+        "str_add": -2,
+        "san_max_add": 1,
+        "summary": "철학자: 정신력+3, 근력-2, SAN최대+1. 단서 해독·논리 판정 DC-3."
+      },
+      "active_traits": [
+        {
+          "name": "역설 해석",
+          "type": "active",
+          "uses": 3,
+          "effect": "채권 원리·인과 단서 1개를 즉시 완전 해독한다(GM이 해당 단서의 숨은 의미를 전달). SAN+1.",
+          "trigger": "단서 접촉 시 선언"
+        },
+        {
+          "name": "논리 차단막",
+          "type": "active",
+          "uses": 2,
+          "effect": "현재 zone의 인과 왜곡 효과(DC+3)를 1턴 무효화한다. 같은 zone의 플레이어 전원에게 적용.",
+          "trigger": "자신이 있는 zone에서 선언"
+        }
+      ],
+      "pre_spawn_beats": []
+    },
+    {
+      "role_id": "role_C",
+      "char_name": "강도현",
+      "gender": "남성",
+      "spawn_location": "zone_K",
+      "spawn_timeline": "시작 즉시",
+      "job_pool": ["건물 관리 기술자", "전기 설비 엔지니어", "소방 설비 점검원", "배관 전문가", "산업 안전 감독관", "비상 대응 전문가", "전직 소방관"],
+      "age_range": [35, 55],
+      "start_item": ["손전등", "전기 공구 세트", "건물 배선 도면"],
+      "hidden_info": "건물 전력 계통을 알고 있다—비상 배선 경로를 통해 특정 구역의 보안 시스템을 일시 차단할 수 있다. (용도 미인지: 이것이 zone_H 자동화 단말기 오류 유발에 사용될 수 있다는 것은 플레이 중 발견)",
+      "knowledge_advantage": true,
+      "starting_power": "낮음",
+      "role_stats": {
+        "str_add": 3,
+        "hp_max_add": 1,
+        "spr_add": -1,
+        "cha_add": 1,
+        "summary": "기술자: 근력+3, HP최대+1, 정신력-1, 매력+1. 물리 작업·봉인 판정 DC-3."
+      },
+      "active_traits": [
+        {
+          "name": "인과 봉인(구역 봉인)",
+          "type": "active",
+          "uses": 3,
+          "effect": "현재 zone을 물리 봉인한다. 해당 zone의 채권 청산 확산이 E3까지 억제된다. 봉인 해제는 불가—퇴로가 막힌다. P32 임시 봉인 경로 실행.",
+          "trigger": "zone 내 선언 + 1턴 소요"
+        },
+        {
+          "name": "긴급 배선 차단",
+          "type": "active",
+          "uses": 2,
+          "effect": "지하 전력실(zone_K)에서 사용 시 대상 zone(zone_H 또는 zone_D)의 보안 시스템을 1턴 동안 오류 상태로 만든다. bypass DC를 -4 감소(16→12 또는 18→14).",
+          "trigger": "zone_K에서 선언 + 대상 zone 지정"
+        }
+      ],
+      "pre_spawn_beats": []
+    }
+  ],
+  "relationships": [
+    {
+      "roles": ["role_A", "role_B"],
+      "description": "온라인 컨퍼런스에서 한 번 만난 학술적 지인. 서로 이름만 아는 수준."
+    },
+    {
+      "roles": ["role_A", "role_C"],
+      "description": "처음 만나는 타인."
+    },
+    {
+      "roles": ["role_B", "role_C"],
+      "description": "처음 만나는 타인."
+    }
+  ],
+  "key_items": [
+    {
+      "id": "item_omega9",
+      "name": "오메가-9 접근 카드",
+      "type": "physical:TRIPWIRE_HOOK",
+      "description": "금속 카드. 'Ω-9 AUTHORIZED' 각인.",
+      "lore_info": "zone_D 서버실 전자 잠금 해제용. 이노우에 카즈마 보유.",
+      "location": "이노우에 카즈마(npc_inoue) 또는 E2 이후 zone_D 바닥",
+      "clue_value": "zone_D 접근 필요 조건"
+    },
+    {
+      "id": "item_anchor_doc",
+      "name": "자기 참조 채권 실험 기록",
+      "type": "written_book",
+      "description": "누렇게 변색된 바인더.",
+      "lore_info": "지하 전력실 선반. 이전 연구팀의 삽입 실험 전체 기록.",
+      "content": [
+        "2039.11.03 — 실험 #7. 세 앵커에 동시 삽입 시 연산 단락 확인. 단독 삽입은 30분 후 자동 무효화됨. 삽입자는 즉시 청산 명단 1위. 동료의 대피 지원 없이는 삽입자 생존 불가.",
+        "2039.11.04 — 보완. 삽입 행위에 '명확한 원인(선언)'을 달면 잔고자가 그 채권을 자동으로 무효 처리한다. loophole 확인. 선언 없는 삽입 = 즉각 청산. 선언 있는 삽입 = zone_J 진입 가능.",
+        "2039.11.07 — 경고. 팀원 3명 모두 필요. 시간 동기화 오차 30초 이내. 우리는 다음 시도를 못 할 수 있다."
+      ],
+      "location": "zone_K"
+    },
+    {
+      "id": "item_causal_log",
+      "name": "잔고자 행동 원리 초안",
+      "type": "paper",
+      "description": "박세훈의 손글씨 메모 묶음.",
+      "lore_info": "zone_G 분석 연구실 노트북 옆.",
+      "content": [
+        "규칙 1: 원인 없는 결과만 채권 등록. 선언된 의도가 있으면 등록 안 됨.",
+        "규칙 2: 채권이 있으면 zone_J 진입 불가 — 잔액 0 또는 loophole 선언 필요.",
+        "규칙 3: 세 앵커 동시 접근 시 30초 이내 동시 삽입. 오차 초과 시 개별 무효."
+      ],
+      "location": "zone_G"
+    },
+    {
+      "id": "item_bypass_file",
+      "name": "자동화 단말기 취약점 파일",
+      "type": "physical:COMPARATOR",
+      "description": "소형 USB 드라이브.",
+      "lore_info": "zone_G 서버 서브디렉터리에 저장. zone_H 생체인식 단말기 오류 유발 코드 포함.",
+      "location": "zone_G",
+      "clue_value": "zone_H bypass 가능(DC 16)"
+    }
+  ],
+  "misleads": [
+    {
+      "id": "mislead_1",
+      "source": "clue_5",
+      "content": "채권을 상환하면 장부가 닫힌다",
+      "reveal_condition": "clue_1(원인 선언 원리) + clue_2(실험 기록) 모두 확보 후",
+      "player_action_before_reveal": "플레이어가 '상환 행위'를 실제 시도해 1~2턴 낭비한 뒤 오답 노출(P10 준수)"
+    },
+    {
+      "id": "mislead_2",
+      "source": "clue_6",
+      "content": "완전한 침묵이 청산을 멈춘다",
+      "reveal_condition": "clue_3(이노우에 구술) 또는 clue_4(박세훈 파일) 확보 후",
+      "player_action_before_reveal": "플레이어가 침묵 전술을 1턴 이상 실행한 뒤 오답 노출(P10 준수)"
+    }
+  ],
+  "meeting_design": {
+    "meeting_window": "E1 이후 ~ E2 이전(22:00~23:00)",
+    "meeting_trigger": "E1 발동으로 정문 로비 잠금 → 플레이어들이 층간 이동 중 자연스럽게 합류",
+    "key_encounters": [
+      "류시온(role_A): E1 직후 zone_B 복도에서 이노우에 메모지(clue_5/mislead) 발견",
+      "소피아(role_B): zone_G에서 자기 참조 채권 초안(clue_3) 발견 후 합류",
+      "강도현(role_C): zone_K에서 실험 기록(clue_2) 발견 후 계단(zone_E)에서 합류"
+    ]
+  },
+  "evaluation_template": {
+    "per_player": {
+      "grades": ["S", "A", "B", "C", "D", "E"],
+      "criteria": {
+        "S": "핵심 단서 2경로 모두 확보 기여 + 결절점 삽입 또는 동기화 지원 + 동료 대피 지원 + 전원 생존",
+        "A": "핵심 단서 확보 + 결절점 접근 + 일부 동료 생존 기여",
+        "B": "단서 탐색 + NPC 교섭 + 기여 있음",
+        "C": "생존만, 기여 미미",
+        "D": "고의 은폐·오답 집착·NPC 불필요 제거",
+        "E": "사망 또는 붕괴 가속"
+      }
+    },
+    "retry_note": "P1: 재도전 횟수로 등급 강등 없음. P16/P20: 리트라이 시 HP/SAN 손실·채권 잔액·오염도 유지. 상태 초기화 없음.",
+    "sacrifice_note": "P38: 삽입자의 자발적 대피 포기(희생)는 정당한 영웅 서사 선택으로 수용. 희생자 개인 등급 캐리 가능.",
+    "instant_clear_note": "P48: INSTANT_CLEAR 발동 시 발동자 외 플레이어는 clearGrade=F 이유로 일괄 하향하지 않음.",
+    "info_concealment_note": "P36: '소통 불가능' 면제는 격리 로그 근거 필수. P39: GM이 격리 진입 시 [격리:구역·시점] 태그 명시."
+  },
+  "stage7_gate": {
+    "requirement": "resolved=true(완전 해결)만 스테이지8 진출",
+    "retry_rule": "P16/P20 유지 — 리트라이 시 모든 축적값 유지. 강등 없음(P1).",
+    "retry_flow": "1차 실패(코즈믹 규모 압도·분기 악화) → 리트라이(상태 유지) → 2차 핵심 단서 통합 + loophole 적용 + 동시 삽입 → collapse 충족 → resolved=true → 진출"
+  },
+  "world_rules_full": {
+    "core": "인과 없이 발생한 결과는 모두 채권이다. 채권은 반드시 청산된다.",
+    "details": [
+      "행운 판정 성공·기적 생존은 채권 등록 트리거. 등록 사실은 즉시 공개 안 됨(hidden).",
+      "채권 장부가 존재하는 한 청산은 확산된다: 건물→도시→국가→세계→현실.",
+      "세 결절점 동시 삽입 + 원인 선언 = 장부 무효화. 단독 삽입 = 30분 후 자동 무효.",
+      "물리 봉인으로 청산 억제 가능(임시). 완전 해결은 삽입만."
+    ],
+    "hidden": true,
+    "loophole": "행동 전 원인을 명확히 선언하면 그 결과는 채권 등록에서 제외된다.",
+    "collapse_condition": "결절점 zone_D·zone_H·zone_J 동시 자기 참조 채권 삽입 + 원인 선언 완료 → 장부 무효화 → 청산 전면 중단 → 잔고자 기능 정지",
+    "npc_dependency": "high",
+    "solution_paths": {
+      "path_A_direct": "clue_1(zone_G)+clue_2(zone_K) 직접 탐색 → 원리 파악 → 동시 삽입 실행",
+      "path_B_npc": "이노우에·박세훈 교섭 → zone_D·zone_H 접근 수단 확보 → 대체 경로로 삽입",
+      "path_A_B_hybrid": "경로 A와 B 병행 — P32 2경로 완전 충족. NPC 사망 시에도 아이템 대체 경로 존재."
+    }
+  }
+}

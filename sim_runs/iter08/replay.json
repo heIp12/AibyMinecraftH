@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "stage": 3,
+  "seed": "#LK3P-9TWM",
+  "created": "2026-06-26",
+  "entity_name": "보수귀(步數鬼)",
+  "era": "조선 후기 1780년대 경상도 산촌",
+  "mechanism": "걸음 수 누적 추적형 — 기원지 반경 진입 시 누적 시작, 역보로 약화, 흙판 소각으로 소멸",
+  "players": [
+    {
+      "role_id": "role_A",
+      "char_name": "이형준",
+      "player_slot": 1,
+      "role_name": "마을 의원 보조",
+      "job": "한의원 보조",
+      "age": 27,
+      "spawn": "시작 즉시",
+      "start_zone": "zone_A",
+      "final_grade": "A",
+      "highlight": "두루마리 해독 및 박씨 할미 설득 주도, 흙판 소각 집행",
+      "hp_lost": 0,
+      "san_lost": 4,
+      "survived": true
+    },
+    {
+      "role_id": "role_B",
+      "char_name": "최돌쇠",
+      "player_slot": 2,
+      "role_name": "떠돌이 짐꾼",
+      "job": "등짐장수(보부상)",
+      "age": 34,
+      "spawn": "시작 즉시",
+      "start_zone": "zone_E",
+      "final_grade": "A",
+      "highlight": "연속 역보 3회 성공으로 보수귀 마비 유도 — 해결 경로 확보 핵심 기여",
+      "hp_lost": 3,
+      "san_lost": 12,
+      "survived": true
+    },
+    {
+      "role_id": "role_C",
+      "char_name": "박연화",
+      "player_slot": 3,
+      "role_name": "마을 훈장 딸",
+      "job": "훈장 딸(약초꾼)",
+      "age": 22,
+      "spawn": "타임라인 2단계",
+      "start_zone": "zone_D",
+      "final_grade": "A",
+      "highlight": "할미와의 인연 특성으로 박씨 할미 설득, 소각 직전 박귀남 이름 호명 상기시켜 완전 해결 달성",
+      "hp_lost": 0,
+      "san_lost": 2,
+      "survived": true
+    }
+  ],
+  "run_summary": {
+    "attempt_count": 2,
+    "attempt_1_result": "생존판정 D — 흙판 파내기 실패, 전원 생존 후 후퇴",
+    "attempt_2_result": "해결판정 A — 역보+약화+소각 완전 달성. collapse_condition 충족",
+    "final_grade": "A",
+    "resolved": true,
+    "gate_behavior": "스테이지3 생존판정(resolved:false) → 재도전. 2차 해결판정(resolved:true) → 진출 가능",
+    "patches_verified": ["P1","P3","P6","P8","P10","P12","P16","P20","P9","P11","P17","P21","P23"],
+    "patches_not_applicable": ["P13","P14","P18","P19","P22"],
+    "entity_type": "단일 주체형 (independent_ai:true, can_impersonate:false)",
+    "single_entity_check": true,
+    "era_check": "조선 후기 — phone_usable:false, 대체통신(구전·서신), 조명 촛불·횃불"
+  }
+}
