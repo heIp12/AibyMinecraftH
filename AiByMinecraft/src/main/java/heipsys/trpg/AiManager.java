@@ -690,6 +690,7 @@ public class AiManager {
             .replaceAll("<CLEAR>[\\s\\S]*?</CLEAR>", "")
             .replaceAll("<WITNESS[^>]*>[\\s\\S]*?</WITNESS>", "")
             .replaceAll("<NPC_CALL[^>]*>[\\s\\S]*?</NPC_CALL>", "")
+            .replaceAll("<NPC_LEARN[^>]*>[\\s\\S]*?</NPC_LEARN>", "")
             .replaceAll("<SPAWN[^/]*/?>", "")
             .replaceAll("<COMM [^/]*/?>", "")
             .replaceAll("<COMM_CLOSE [^/]*/?>", "")
@@ -759,6 +760,23 @@ public class AiManager {
             from = close + "</NPC_CALL>".length();
         }
         return result;
+    }
+
+    /** <NPC_LEARN>새로 알게 된 것</NPC_LEARN> 태그 내용 목록 추출 — NPC가 플레이 중 수집한 정보. */
+    public java.util.List<String> parseNpcLearnTags(String response) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        final String OPEN = "<NPC_LEARN>", CLOSE = "</NPC_LEARN>";
+        int from = 0;
+        while (true) {
+            int o = response.indexOf(OPEN, from);
+            if (o == -1) break;
+            int c = response.indexOf(CLOSE, o + OPEN.length());
+            if (c == -1) break;
+            String v = response.substring(o + OPEN.length(), c).trim();
+            if (!v.isEmpty()) out.add(v);
+            from = c + CLOSE.length();
+        }
+        return out;
     }
 
     /** <MAP_GRANT player="name"/> 태그들에서 플레이어명 목록 추출 (지도 전체 입수) */
