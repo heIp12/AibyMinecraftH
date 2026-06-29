@@ -779,10 +779,18 @@ public class GameStateManager {
         if (zoneFilter == null || zoneFilter.isEmpty()) return buildEntityLog(limit);
         List<String> lines = new ArrayList<>();
         for (EventLogEntry e : getRecentLog(Math.max(limit * 4, 12))) {
-            if (!"action".equals(e.type)) continue;
+            boolean isAction = "action".equals(e.type);
+            // 같은 구역에서 ★소리 내어 말한 것(@근처 발화)★도 NPC가 듣는다 — 행동만 보고 말은 못 듣던 공백 보완.
+            boolean isSpeech = "comm".equals(e.type) && e.content != null && e.content.startsWith("[근처]");
+            if (!isAction && !isSpeech) continue;
             PlayerData pd = playerOf(e.player);
             if (pd == null || !zoneFilter.equals(pd.zone)) continue;
-            lines.add("[" + resolveDisplayName(e.player) + "] " + e.content);
+            if (isSpeech) {
+                String said = e.content.substring("[근처]".length()).trim();
+                lines.add("[" + resolveDisplayName(e.player) + " 말함] " + said);
+            } else {
+                lines.add("[" + resolveDisplayName(e.player) + "] " + e.content);
+            }
         }
         int from = Math.max(0, lines.size() - limit);
         StringBuilder sb = new StringBuilder();
