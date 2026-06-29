@@ -594,6 +594,21 @@ public class AiManager {
         }
     }
 
+    /** GM 컨텍스트(=GM의 기억)를 JSON 배열로 내보낸다(세이브용). */
+    public com.google.gson.JsonArray exportGmContext() {
+        com.google.gson.JsonArray a = new com.google.gson.JsonArray();
+        synchronized (gmLock) { for (JsonObject m : gmContext) a.add(m); }
+        return a;
+    }
+
+    /** 저장된 GM 컨텍스트를 복원한다(이어하기). */
+    public void importGmContext(com.google.gson.JsonArray a) {
+        synchronized (gmLock) {
+            gmContext.clear();
+            if (a != null) for (com.google.gson.JsonElement e : a) if (e.isJsonObject()) gmContext.add(e.getAsJsonObject());
+        }
+    }
+
     /**
      * 재도전 직전, NPC별 최근 assistant 발화를 스냅샷으로 반환.
      * maxPerNpc: 각 NPC에서 가져올 최대 메시지 수.
