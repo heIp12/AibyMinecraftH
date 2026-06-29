@@ -90,6 +90,8 @@ public class GameStateManager {
     /** 아이템 Phase II: 열쇠·도구 등으로 해제된 구역 zone_id 집합 (재도전·다음 방에서 초기화) */
     private final java.util.Set<String> unlockedZones = new java.util.HashSet<>();
     private final List<EventLogEntry>            eventLog   = Collections.synchronizedList(new ArrayList<>());
+    // 캠페인(전 스테이지) 로그 — eventLog는 스테이지마다 비워지므로, 게임 종료 '전 스테이지 총평'용으로 따로 누적(최근 300개 캡). 새 게임 시작 시만 비운다.
+    private final List<EventLogEntry>            campaignLog = Collections.synchronizedList(new ArrayList<>());
     /** 등장(spawn) 여부 판별 — TRPGGameManager의 spawnedPlayers를 단일 출처로 주입. 미설정이면 전원 등장으로 간주. */
     private java.util.function.Predicate<UUID> spawnedCheck = u -> true;
     public void setSpawnedCheck(java.util.function.Predicate<UUID> c) { if (c != null) spawnedCheck = c; }
@@ -114,6 +116,7 @@ public class GameStateManager {
         discoveredFacts.clear();
         unlockedZones.clear();
         eventLog.clear();
+        campaignLog.clear(); // 새 게임 시작 — 캠페인(전 스테이지) 로그도 초기화
         loadTimelineConfig(gdam);
     }
 
@@ -135,6 +138,7 @@ public class GameStateManager {
         foundItems.clear();
         discoveredFacts.clear();
         unlockedZones.clear();
+        archiveStageLog();   // 스테이지 전환 — 이번 스테이지 로그를 캠페인 로그에 보관 후 비움
         eventLog.clear();
         loadTimelineConfig(gdam);
     }
@@ -150,6 +154,7 @@ public class GameStateManager {
         foundItems.clear();
         discoveredFacts.clear();
         unlockedZones.clear();
+        archiveStageLog();   // 재도전 — 이번 시도 로그도 캠페인 로그에 보관
         eventLog.clear();
         loadTimelineConfig(gdamData);
         players.values().forEach(PlayerData::resetToBase);
@@ -774,10 +779,18 @@ public class GameStateManager {
         if (zoneFilter == null || zoneFilter.isEmpty()) return buildEntityLog(limit);
         List<String> lines = new ArrayList<>();
         for (EventLogEntry e : getRecentLog(Math.max(limit * 4, 12))) {
-            if (!"action".equals(e.type)) continue;
+            boolean isAction = "action".equals(e.type);
+            // 같은 구역에서 ★소리 내어 말한 것(@근처 발화)★도 NPC가 듣는다 — 행동만 보고 말은 못 듣던 공백 보완.
+            boolean isSpeech = "comm".equals(e.type) && e.content != null && e.content.startsWith("[근처]");
+            if (!isAction && !isSpeech) continue;
             PlayerData pd = playerOf(e.player);
             if (pd == null || !zoneFilter.equals(pd.zone)) continue;
-            lines.add("[" + resolveDisplayName(e.player) + "] " + e.content);
+            if (isSpeech) {
+                String said = e.content.substring("[근처]".length()).trim();
+                lines.add("[" + resolveDisplayName(e.player) + " 말함] " + said);
+            } else {
+                lines.add("[" + resolveDisplayName(e.player) + "] " + e.content);
+            }
         }
         int from = Math.max(0, lines.size() - limit);
         StringBuilder sb = new StringBuilder();
@@ -802,6 +815,29 @@ public class GameStateManager {
         return sb.toString();
     }
 
+    /** 스테이지 전환·재도전 시: 이번 스테이지의 로그를 캠페인 로그에 보관(최근 300개 캡). eventLog는 호출부에서 비운다. */
+    private void archiveStageLog() {
+        synchronized (eventLog)    { campaignLog.addAll(eventLog); }
+        synchronized (campaignLog) { while (campaignLog.size() > 300) campaignLog.remove(0); }
+    }
+
+    /** 게임 종료 '전 스테이지 총평'용 — 이전 스테이지(campaignLog) + 현재 스테이지(eventLog)를 합쳐 평가 로그 생성. */
+    public String buildCampaignEvalLog() {
+        List<EventLogEntry> all = new ArrayList<>();
+        synchronized (campaignLog) { all.addAll(campaignLog); }
+        synchronized (eventLog)    { all.addAll(eventLog); }
+        StringBuilder sb = new StringBuilder();
+        for (EventLogEntry e : all) {
+            if ("action".equals(e.type) || "damage".equals(e.type)
+                    || "clue".equals(e.type) || "system".equals(e.type)
+                    || "comm".equals(e.type)) {
+                String tag = "comm".equals(e.type) ? "[통신] " : "";
+                sb.append(tag).append(e.toLogString(this::resolveDisplayName)).append("\n");
+            }
+        }
+        return sb.toString();
+    }
+
     // ──────────────────────────────────────────────────────────────
     //  접근자
     // ──────────────────────────────────────────────────────────────
@@ -810,6 +846,8 @@ public class GameStateManager {
     public int         getRoomNumber()      { return roomNumber; }
     public int         getTimelineStage()   { return timelineStage; }
     public int         getMinutesPerTurn()  { return minutesPerTurn; }
+    /** 제한 시각까지 남은 인게임 분. 시계·종료시각 없으면 -1, 이미 지났으면 0. (무행동 가속이 마감을 넘지 못하게 캡할 때 사용) */
+    public int         getMinutesUntilEnd()  { return (clockMinutes < 0 || clockEnd < 0) ? -1 : Math.max(0, clockEnd - clockMinutes); }
     public int         getDailyTurnsLeft()  { return dailyTurnsLeft; }
     public boolean     isDailyPhase()       { return dailyPhase; }
     public String      getCurrentSeed()     { return currentSeed; }
