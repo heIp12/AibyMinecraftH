@@ -689,6 +689,7 @@ public class AiManager {
             .replaceAll("<DICE>[\\s\\S]*?</DICE>", "")
             .replaceAll("<CLEAR>[\\s\\S]*?</CLEAR>", "")
             .replaceAll("<WITNESS[^>]*>[\\s\\S]*?</WITNESS>", "")
+            .replaceAll("<NPC_CALL[^>]*>[\\s\\S]*?</NPC_CALL>", "")
             .replaceAll("<SPAWN[^/]*/?>", "")
             .replaceAll("<COMM [^/]*/?>", "")
             .replaceAll("<COMM_CLOSE [^/]*/?>", "")
@@ -737,6 +738,25 @@ public class AiManager {
             if (close == -1) break;
             result.put(name, response.substring(nameEnd + 2, close).trim());
             from = close + "</WITNESS>".length();
+        }
+        return result;
+    }
+
+    /** <NPC_CALL player="name">말</NPC_CALL> 태그 파싱 → {playerName: 전할 말}. NPC가 먼저 연락하는 용도. */
+    public Map<String, String> parseNpcCallTags(String response) {
+        Map<String, String> result = new java.util.LinkedHashMap<>();
+        final String PREFIX = "<NPC_CALL player=\"";
+        int from = 0;
+        while (true) {
+            int open = response.indexOf(PREFIX, from);
+            if (open == -1) break;
+            int nameEnd = response.indexOf("\">", open + PREFIX.length());
+            if (nameEnd == -1) break;
+            String name = response.substring(open + PREFIX.length(), nameEnd);
+            int close = response.indexOf("</NPC_CALL>", nameEnd + 2);
+            if (close == -1) break;
+            result.put(name, response.substring(nameEnd + 2, close).trim());
+            from = close + "</NPC_CALL>".length();
         }
         return result;
     }
