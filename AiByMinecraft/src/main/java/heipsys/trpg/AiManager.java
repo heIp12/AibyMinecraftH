@@ -674,6 +674,11 @@ public class AiManager {
         return parseTag(response, "<ITEM_USE>", "</ITEM_USE>");
     }
 
+    /** &lt;DICE&gt;{"roll":N,"dc":D,"outcome":"성공/부분성공/실패"}&lt;/DICE&gt; — d20 판정 결과(연출용). 없으면 null. */
+    public JsonObject parseDiceTag(String response) {
+        return parseTag(response, "<DICE>", "</DICE>");
+    }
+
     /** 태그를 제거한 순수 서술 텍스트 반환 */
     public String stripTags(String response) {
         return response
@@ -681,6 +686,7 @@ public class AiManager {
             .replaceAll("<STATE_UPDATE>[\\s\\S]*?</STATE_UPDATE>", "")
             .replaceAll("<ITEM_GRANT>[\\s\\S]*?</ITEM_GRANT>", "")
             .replaceAll("<ITEM_USE>[\\s\\S]*?</ITEM_USE>", "")
+            .replaceAll("<DICE>[\\s\\S]*?</DICE>", "")
             .replaceAll("<CLEAR>[\\s\\S]*?</CLEAR>", "")
             .replaceAll("<WITNESS[^>]*>[\\s\\S]*?</WITNESS>", "")
             .replaceAll("<SPAWN[^/]*/?>", "")
