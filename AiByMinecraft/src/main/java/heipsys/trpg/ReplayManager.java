@@ -73,10 +73,11 @@ public class ReplayManager {
     }
 
     public List<String> listReplays() {
-        String[] files = dir.list((d, n) -> n.startsWith("S") && n.endsWith(".replay"));
+        File[] files = dir.listFiles((d, n) -> n.startsWith("S") && n.endsWith(".replay"));
         if (files == null) return List.of();
-        List<String> out = new ArrayList<>(Arrays.asList(files));
-        Collections.sort(out);
+        Arrays.sort(files, (a, b) -> Long.compare(b.lastModified(), a.lastModified())); // 최근 기록 순(최신 먼저)
+        List<String> out = new ArrayList<>();
+        for (File f : files) out.add(f.getName());
         return out;
     }
 
