@@ -190,6 +190,10 @@ public class GameStateManager {
         for (Map.Entry<UUID, PlayerData> e : players.entrySet())
             ps.add(e.getKey().toString(), SNAP_GSON.toJsonTree(e.getValue()));
         o.add("players", ps);
+        synchronized (eventLog) { o.add("eventLog", SNAP_GSON.toJsonTree(eventLog)); } // 종료 평가·최근 장면 맥락
+        JsonObject tko = new JsonObject();
+        timeKnownOverride.forEach((u, b) -> tko.addProperty(u.toString(), b));
+        o.add("timeKnownOverride", tko); // 플레이어별 시간 인지 토글(GM TIME_VISIBLE)
         return o;
     }
 
@@ -235,6 +239,19 @@ public class GameStateManager {
                 } catch (Exception ignore) {}
             }
         }
+        synchronized (eventLog) {
+            eventLog.clear();
+            if (o.has("eventLog") && o.get("eventLog").isJsonArray()) {
+                EventLogEntry[] arr = SNAP_GSON.fromJson(o.get("eventLog"), EventLogEntry[].class);
+                if (arr != null) for (EventLogEntry el : arr) if (el != null) eventLog.add(el);
+            }
+        }
+        timeKnownOverride.clear();
+        if (o.has("timeKnownOverride") && o.get("timeKnownOverride").isJsonObject()) {
+            for (Map.Entry<String, JsonElement> e : o.getAsJsonObject("timeKnownOverride").entrySet()) {
+                try { timeKnownOverride.put(UUID.fromString(e.getKey()), e.getValue().getAsBoolean()); } catch (Exception ignore) {}
+            }
+        }
     }
 
     private static boolean snapB(JsonObject o, String k, boolean d) { return o.has(k) && !o.get(k).isJsonNull() ? o.get(k).getAsBoolean() : d; }
@@ -257,7 +274,9 @@ public class GameStateManager {
     public Collection<PlayerData> getAllPlayers()   { return players.values(); }
 
     public int getAliveCount() {
-        return (int) players.values().stream().filter(p -> !p.isDead).count();
+        // 동물 형태(revive_as_animal)는 정상 행동·해결이 불가하므로 생존자로 세지 않는다
+        // (동물만 남으면 사실상 패배 → 배드엔딩·워치독이 정상 작동하도록).
+        return (int) players.values().stream().filter(p -> !p.isDead && !"animal".equals(p.status)).count();
     }
     public int getTotalCount() { return players.size(); }
 

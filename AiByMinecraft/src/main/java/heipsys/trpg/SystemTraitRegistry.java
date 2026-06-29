@@ -75,8 +75,8 @@ public class SystemTraitRegistry {
             "발동 시 N턴간 괴담의 감지(perception 양식 전부 — 청각·시각·통신·전지 등)에서 벗어난다. 그동안 괴담은 자신을 직접 표적·추적하지 못한다.",
             "turns=지속 턴수(1~3), uses=스테이지당 횟수(1~2)"),
         OBSERVER_SIGHT("observer_sight", true,
-            "발동 시 '무대 뒤(연출자)의 현재 사고'를 엿본다 — 지금 이 순간 무슨 의도로 일이 굴러가는지. 전체 각본·정답은 제외, 현재 사고만.",
-            "uses=스테이지당 횟수(1~2)"),
+            "발동 시 '무대 뒤(연출자)의 현재 사고'를 엿본다 — 지금 이 순간 무슨 의도로 일이 굴러가는지. 전체 각본·정답은 제외, 현재 사고만. turns>1이면 그 턴 수만큼 매 턴 자동으로 엿본다.",
+            "uses=스테이지당 횟수(1~2), turns=지속 턴 수(1=즉시 1회, 2~3=N턴 지속)"),
         PACT("pact", true,
             "발동 시 괴담과 1회 거래를 시도한다 — 대가(체력·정신력·단서 등)를 치르고 양보 1개를 얻는다. 고위험. GM이 거래를 판정·서술한다.",
             "uses=스테이지당 횟수(1)"),
@@ -410,7 +410,8 @@ public class SystemTraitRegistry {
             }
             case OBSERVER_SIGHT -> {
                 td.effectParams.putIfAbsent("uses", 1);
-                clamp(td, "uses", 1, 2);
+                td.effectParams.putIfAbsent("turns", 1);
+                clamp(td, "uses", 1, 2); clamp(td, "turns", 1, 3);
             }
             case PACT, PAST_EDIT, POSSESS_NPC, NPC_BIND -> {
                 td.effectParams.putIfAbsent("uses", 1);
@@ -611,10 +612,10 @@ public class SystemTraitRegistry {
             case FORESIGHT        -> td.param("depth", 2) >= 3 ? 5 : 3;
             case SOCIAL           -> td.param("power", 2) >= 3 ? 5 : 3;
             case SCENARIO_INSIGHT, ENTITY_SENSE, ALLY_SENSE, LORE_RECORD, ENCOUNTER_SCAN -> td.param("depth", 1) >= 2 ? 3 : 1;
-            case OBSERVER_SIGHT   -> 5;
+            case OBSERVER_SIGHT   -> td.param("turns", 1) >= 2 ? 10 : 5; // 지속(N턴)이면 강력 → S급
             case PACT             -> 5;
             case PAST_EDIT        -> 5;
-            case GDAM_MORPH       -> 5;
+            case GDAM_MORPH       -> td.param("turns", 2) >= 2 ? 10 : 5; // 2턴+ 변신(통제 상실·적대 괴물)은 S급으로 게이팅
             case PHASE_OUT        -> td.param("turns", 2) >= 3 ? 10 : 5;
             case REVIVE_AS_ANIMAL -> 3; // 5→3: B등급부터 생성돼도 무력화되지 않게
             case POSSESS_NPC      -> 10;
