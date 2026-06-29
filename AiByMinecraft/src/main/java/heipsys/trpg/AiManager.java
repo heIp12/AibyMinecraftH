@@ -586,6 +586,14 @@ public class AiManager {
 
     public int getGmContextSize() { synchronized (gmLock) { return gmContext.size(); } }
 
+    /** GM 컨텍스트(대화 기록)를 mark 길이로 되돌린다(시간 회귀용). LLM은 무상태라 이 리스트가 곧 GM의 기억이다. */
+    public void truncateGmContext(int mark) {
+        synchronized (gmLock) {
+            if (mark < 0 || mark >= gmContext.size()) return;
+            gmContext.subList(mark, gmContext.size()).clear();
+        }
+    }
+
     /**
      * 재도전 직전, NPC별 최근 assistant 발화를 스냅샷으로 반환.
      * maxPerNpc: 각 NPC에서 가져올 최대 메시지 수.

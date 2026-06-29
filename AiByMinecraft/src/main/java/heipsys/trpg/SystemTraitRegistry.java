@@ -98,6 +98,9 @@ public class SystemTraitRegistry {
         NPC_BIND("npc_bind", true,
             "발동 시 대상 NPC를 '인연'으로 저장한다 — 다음 스테이지에 그 NPC가 아군으로 소환된다(1회).",
             "uses=스테이지당 횟수(1)"),
+        TIME_REWIND("time_rewind", true,
+            "발동 시 파티 전원의 핵심 상태(체력·정신력·상태·위치·사망)를 N턴 전으로 되돌리고 GM의 기억도 그 시점으로 되감는다(단기 과거회귀).",
+            "turns=되돌릴 턴 수(1~5), uses=스테이지당 횟수(1)"),
         GUARANTEED("guaranteed", true,
             "발동 시 다음 행동 1회를 확정 성공으로 처리한다(주사위·실패를 무시하고 GM이 성공으로 서술). 회피가 아니라 '반드시 성공'하는 결과 보장이다.",
             "uses=스테이지당 횟수(1~2), scope=확정 범위(1=단일 행동, 2=연관 행동 묶음, 3=상황 전체 국면)"),
@@ -417,6 +420,11 @@ public class SystemTraitRegistry {
                 td.effectParams.putIfAbsent("uses", 1);
                 clamp(td, "turns", 1, 3); clamp(td, "uses", 1, 1);
             }
+            case TIME_REWIND -> {
+                td.effectParams.putIfAbsent("turns", 3);
+                td.effectParams.putIfAbsent("uses", 1);
+                clamp(td, "turns", 1, 5); clamp(td, "uses", 1, 1);
+            }
             case AREA_SCAN -> {
                 td.effectParams.putIfAbsent("scope", 2);
                 td.effectParams.putIfAbsent("uses", 1);
@@ -572,6 +580,7 @@ public class SystemTraitRegistry {
             case REVIVE_AS_ANIMAL -> 3; // 5→3: B등급부터 생성돼도 무력화되지 않게
             case POSSESS_NPC      -> 10;
             case NPC_BIND         -> 5;
+            case TIME_REWIND      -> 10;
             default               -> 3; // passive_gm·show_progress 등 텍스트 의존 = 기본 B
         };
         int discount = 0;
@@ -650,7 +659,8 @@ public class SystemTraitRegistry {
                  SOCIAL, DOMINATE, FATE, GROUP_REWIND,
                  GET_CONTACTS, FORCE_ENCOUNTER, DECOY, DELAY, ONE_WAY_CALL,
                  TELEPORT, RALLY, EVADE_SENSE,
-                 OBSERVER_SIGHT, PACT, PAST_EDIT, GDAM_MORPH, PHASE_OUT, POSSESS_NPC, MIMIC, NPC_BIND -> td.param("uses", 1);
+                 OBSERVER_SIGHT, PACT, PAST_EDIT, GDAM_MORPH, PHASE_OUT, POSSESS_NPC, MIMIC, NPC_BIND,
+                 TIME_REWIND -> td.param("uses", 1);
             default -> 0;
         };
     }
