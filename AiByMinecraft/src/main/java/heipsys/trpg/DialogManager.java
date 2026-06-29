@@ -40,7 +40,7 @@ public class DialogManager {
     // ──────────────────────────────────────────────────────────────
 
     public void showCharacterSheet(Player player, PlayerData pd, int roomNumber, int attempt,
-                                    Runnable onConfirm, Runnable onReroll) {
+                                    String jobDesc, Runnable onConfirm, Runnable onReroll) {
         activeDialog.put(player.getUniqueId(), DialogState.DICE_CONFIRM);
 
         // 스탯을 수정 불가 body Component로 구성 (마우스 오버레이 포함)
@@ -57,7 +57,12 @@ public class DialogManager {
         }
         bodyBuilder
             .append(Component.text("나이 · 직업  ", NamedTextColor.GOLD))
-            .append(Component.text(pd.age + "세  ·  " + pd.job, NamedTextColor.WHITE))
+            .append(Component.text(pd.age + "세  ·  ", NamedTextColor.WHITE))
+            .append(Component.text(pd.job, NamedTextColor.WHITE)
+                .hoverEvent(Component.text(
+                    (jobDesc != null && !jobDesc.isBlank()) ? pd.job + "\n" + jobDesc
+                                                            : pd.job + "\n이 인물의 직업입니다.",
+                    NamedTextColor.GRAY)))
             .appendNewline()
             // 체력 — 라벨: 설명, 값: 원본 수치
             .append(Component.text("체력  ", NamedTextColor.RED)
@@ -147,19 +152,15 @@ public class DialogManager {
             ));
         }
 
-        ActionButton cancelBtn = ActionButton.create(
-            Component.text("닫기", TextColor.color(0xAAAAAA)),
-            Component.text("확정하지 않으면 게임이 진행되지 않습니다."),
-            100,
-            null
-        );
-
+        // 닫기 버튼·ESC로 종료 불가 — 확정/재굴림만 가능(닫아서 진행 불가가 되던 문제 방지).
+        // 그래도 닫혔다면 /trpg me 로 다시 열 수 있다(2중 안전장치).
         Dialog dialog = Dialog.create(b -> b.empty()
             .base(DialogBase.builder(
                     Component.text("캐릭터 생성  |  스테이지 " + roomNumber + " · " + attempt + "회차"))
                 .body(List.of(DialogBody.plainMessage(body)))
+                .canCloseWithEscape(false)
                 .build())
-            .type(DialogType.multiAction(buttons, cancelBtn, 2))
+            .type(DialogType.multiAction(buttons, null, 2))
         );
         player.showDialog(dialog);
     }
@@ -315,7 +316,7 @@ public class DialogManager {
      * 기본 능력치 + 배역 보정(증감)을 분리 표기하고, 특성을 기본/배역으로 나눠 표시한다.
      * 능동(active) 특성은 버튼으로 눌러 발동할 수 있다.
      */
-    public void showCharacterInfo(Player player, PlayerData pd, Consumer<String> onUseTrait) {
+    public void showCharacterInfo(Player player, PlayerData pd, String jobDesc, Consumer<String> onUseTrait) {
         var bodyBuilder = Component.text();
         // 이름·성별이 있을 때만 표시
         if (!pd.charName.isEmpty() || !pd.gender.isEmpty()) {
@@ -329,7 +330,12 @@ public class DialogManager {
         }
         bodyBuilder
             .append(Component.text("나이 · 직업  ", NamedTextColor.GOLD))
-            .append(Component.text(pd.age + "세  ·  " + pd.job, NamedTextColor.WHITE))
+            .append(Component.text(pd.age + "세  ·  ", NamedTextColor.WHITE))
+            .append(Component.text(pd.job, NamedTextColor.WHITE)
+                .hoverEvent(Component.text(
+                    (jobDesc != null && !jobDesc.isBlank()) ? pd.job + "\n" + jobDesc
+                                                            : pd.job + "\n이 인물의 직업입니다.",
+                    NamedTextColor.GRAY)))
             .appendNewline()
             .append(Component.text("체력  ", NamedTextColor.RED)
                 .hoverEvent(Component.text("체력 (HP)\n현재: " + pd.hp[0] + " / 최대: " + pd.hp[1], NamedTextColor.GRAY)))

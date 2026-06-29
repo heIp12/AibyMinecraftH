@@ -87,6 +87,15 @@ public class CharacterGenerator {
     // 플레이어별 이미 나온 직업 추적 (재굴림 포함, 파일에 영속됨)
     private final Map<UUID, Set<String>> usedJobs = new ConcurrentHashMap<>();
 
+    // 직업명 → 한 줄 설명 (AI 풀 갱신 시 함께 생성, 캐시에 영속). 마우스 오버레이용.
+    private final Map<String, String> jobDesc = new ConcurrentHashMap<>();
+
+    /** 직업의 한 줄 설명(없으면 빈 문자열). 마우스 오버레이용 — 낯선 직업 안내. */
+    public String describeJob(String job) {
+        if (job == null) return "";
+        return jobDesc.getOrDefault(job.trim(), "");
+    }
+
     public CharacterGenerator(AiManager aiManager, File dataFolder) {
         this.aiManager = aiManager;
         this.cacheFile = new File(dataFolder, "job_cache.json");
@@ -102,26 +111,26 @@ public class CharacterGenerator {
         Set<String> globalUsed = new HashSet<>();
         usedJobs.values().forEach(globalUsed::addAll);
 
-        String sys = "한국어 직업 이름만 JSON 문자열 배열로 응답. 설명·마크다운 없음. [\"직업1\",\"직업2\",...]";
+        String sys = "각 직업을 {\"n\":\"직업명\",\"d\":\"한 줄 설명(공백 포함 20자 내외, 무슨 일을 하는지)\"} 객체로, JSON 배열로만 응답. 마크다운 없음.";
         List<CompletableFuture<Void>> futures = new ArrayList<>();
 
         if (needsRefresh(dynCommon, globalUsed, COMMON_JOB_POOL.length)) {
             futures.add(callAndFillPool(sys,
-                "TRPG 배경의 평범한 일상 직업 150개를 JSON 배열로. " +
+                "TRPG 배경의 평범한 일상 직업 150개를 위 형식 JSON 배열로. " +
                 "학생·의료·교육·사무·서비스·예술·IT·기술직·농축수산업 등 최대한 다양하게. " +
-                "직업명은 한국어 2~10자, 중복 없이.", dynCommon));
+                "직업명은 한국어 2~10자, 중복 없이. 각 직업에 무슨 일을 하는지 한 줄 설명을 단다.", dynCommon));
         }
         if (needsRefresh(dynStrong, globalUsed, STRONG_JOB_POOL.length)) {
             futures.add(callAndFillPool(sys,
-                "TRPG 배경의 해결사·전투·수사·초자연 전문가 직업 100개를 JSON 배열로. " +
+                "TRPG 배경의 해결사·전투·수사·초자연 전문가 직업 100개를 위 형식 JSON 배열로. " +
                 "엑소시스트·SCP요원·용병·형사·특수부대원·봉마사 등 전문 능력자 위주. " +
-                "직업명은 한국어 2~15자, 중복 없이.", dynStrong));
+                "직업명은 한국어 2~15자, 중복 없이. 각 직업에 무슨 일을 하는지 한 줄 설명을 단다.", dynStrong));
         }
         if (needsRefresh(dynRare, globalUsed, RARE_JOB_POOL.length)) {
             futures.add(callAndFillPool(sys,
-                "TRPG 배경의 초자연적·변수가 큰 특이 직업 50개를 JSON 배열로. " +
+                "TRPG 배경의 초자연적·변수가 큰 특이 직업 50개를 위 형식 JSON 배열로. " +
                 "뱀파이어·흑마법사·시간여행자·랩틸리언 등 강력하지만 대가가 큰 존재 위주. " +
-                "직업명은 한국어 2~15자, 중복 없이.", dynRare));
+                "직업명은 한국어 2~15자, 중복 없이. 각 직업에 무슨 일을 하는지 한 줄 설명을 단다.", dynRare));
         }
 
         if (futures.isEmpty()) return CompletableFuture.completedFuture(null);
@@ -147,8 +156,18 @@ public class CharacterGenerator {
                 JsonArray arr = GSON.fromJson(cleaned.substring(s, e + 1), JsonArray.class);
                 List<String> jobs = new ArrayList<>();
                 for (JsonElement el : arr) {
-                    String j = el.getAsString().trim();
-                    if (!j.isBlank()) jobs.add(j);
+                    String j, d = "";
+                    if (el.isJsonObject()) { // {"n":직업,"d":설명} 형식
+                        JsonObject o = el.getAsJsonObject();
+                        j = o.has("n") ? o.get("n").getAsString().trim() : (o.has("name") ? o.get("name").getAsString().trim() : "");
+                        if (o.has("d")) d = o.get("d").getAsString().trim();
+                        else if (o.has("desc")) d = o.get("desc").getAsString().trim();
+                    } else { // 문자열만 온 경우 폴백(설명 없음)
+                        j = el.getAsString().trim();
+                    }
+                    if (j.isBlank()) continue;
+                    jobs.add(j);
+                    if (!d.isBlank()) jobDesc.put(j, d);
                 }
                 if (jobs.size() >= 20) {
                     synchronized (target) { target.clear(); target.addAll(jobs); }
@@ -179,6 +198,11 @@ public class CharacterGenerator {
                     } catch (Exception ignored) {}
                 });
             }
+            if (root.has("desc") && root.get("desc").isJsonObject()) { // 직업 설명 복구
+                root.getAsJsonObject("desc").entrySet().forEach(en -> {
+                    try { jobDesc.put(en.getKey(), en.getValue().getAsString()); } catch (Exception ignored) {}
+                });
+            }
         } catch (Exception ignored) {}
     }
 
@@ -206,6 +230,9 @@ public class CharacterGenerator {
                         byPlayer.add(uuid.toString(), arr);
                     });
                     root.add("usedByPlayer", byPlayer);
+                    JsonObject descObj = new JsonObject(); // 직업 설명 영속화
+                    jobDesc.forEach(descObj::addProperty);
+                    root.add("desc", descObj);
                     if (!cacheFile.getParentFile().exists()) cacheFile.getParentFile().mkdirs();
                     Files.write(cacheFile.toPath(),
                         GSON.toJson(root).getBytes(StandardCharsets.UTF_8));
