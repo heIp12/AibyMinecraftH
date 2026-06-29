@@ -190,7 +190,8 @@ public class SystemTraitRegistry {
         sb.append("## 시스템 효과(effect_type) — 선택적 기계 효과\n");
         sb.append("특성에 아래 기계 효과 중 하나를 부여할 수 있다(없어도 됨; 없으면 GM 서술로만 처리).\n");
         sb.append("부여하려면 effect_type에 키를, effect_params에 수치를 넣는다.\n");
-        sb.append("같은 effect_type이라도 이름·등급·설명·쿨다운·파라미터로 다양한 변형을 만들 수 있다.\n\n");
+        sb.append("같은 effect_type이라도 이름·등급·설명·쿨다운·파라미터로 다양한 변형을 만들 수 있다.\n");
+        sb.append("★ 대가 명시 규칙: 사용에 대가(체력·정신력 소모, 행동 제약, 통제 상실, 위험 등)가 있는 특성은 그 대가를 description에 반드시 적어라(예: '사용 시 정신력 2 소모'). 정확한 수치형 대가는 시스템이 자동 표기하므로, 너는 대가의 '존재와 성격'을 자연스럽게 설명에 녹이면 된다.\n\n");
 
         sb.append("=== 능동 효과 (active=true) ===\n");
         for (Effect e : Effect.values()) {
@@ -379,7 +380,7 @@ public class SystemTraitRegistry {
     public static void applyDefaults(TraitData td) {
         if (td == null) return;
         Effect e = Effect.byKey(td.effectType);
-        if (e == null) { td.effectType = ""; enforcePowerBudget(td); return; } // 순수 스텟도 예산 적용
+        if (e == null) { td.effectType = ""; enforcePowerBudget(td); annotateCost(td); return; } // 순수 스텟도 예산 적용(낡은 대가 표기 제거)
         td.active = e.active;
         if (td.effectParams == null) td.effectParams = new HashMap<>();
         switch (e) {
@@ -518,6 +519,44 @@ public class SystemTraitRegistry {
             default -> {}
         }
         enforcePowerBudget(td); // 파라미터 확정 후: 능력 코스트 + 스텟 합을 등급 예산에 맞춰 강제
+        annotateCost(td);       // 대가/비용이 있으면 description에 명시(플레이어가 사용 전 비용 인지)
+    }
+
+    /** 자동 대가 표기 마커 — 이 뒤는 시스템이 붙인 대가 문구(재실행 시 갱신용). */
+    private static final String COST_MARK = "\n▸대가: ";
+
+    /**
+     * 대가(체력·정신력 소모, 행동 제약, 통제 상실 등)가 있는 능력은 그 대가를 description에
+     * 한국어로 반드시 명시한다 — 플레이어가 사용 전에 비용을 알 수 있어야 한다.
+     * 최종 파라미터(예산 보정 후) 기준으로 계산하며, 업그레이드 등 재실행 시 기존 표기를 갱신한다.
+     */
+    private static void annotateCost(TraitData td) {
+        if (td == null) return;
+        if (td.description != null) { // 이전 자동 표기 제거(중복·낡은 값 방지)
+            int idx = td.description.indexOf(COST_MARK);
+            if (idx >= 0) td.description = td.description.substring(0, idx);
+        }
+        Effect e = Effect.byKey(td.effectType);
+        if (e == null) return; // 효과 없음(순수 스탯/예산초과 제거) — 스탯 증감은 별도 표시되므로 표기 안 함
+        String cost = switch (e) {
+            case SACRIFICE     -> "사용 시 " + (td.param("use_san", 0) == 1 ? "정신력" : "체력")
+                                  + " " + td.param("cost", 10) + " 소모";
+            case PACT          -> "거래 대가로 체력·정신력·단서 등을 잃을 수 있음 (GM 판정, 고위험)";
+            case GDAM_MORPH    -> "변신 중 직접 조작 불가·피아 식별 없음 (통제 상실이 대가)";
+            case PHASE_OUT     -> td.param("turns", 2) + "턴간 행동 불가 (턴 건너뜀)";
+            case POSSESS_NPC   -> "빙의 중 본체는 무방비 — 본체가 죽으면 본인도 사망";
+            case CHOICE_ACTION -> "오답 선택 시 큰 패널티";
+            case INSTANT_CLEAR -> "평가 등급이 최하로 고정됨";
+            case TIME_REWIND   -> "되돌린 턴 동안의 진전·발견도 함께 사라짐";
+            case GROUP_REWIND  -> "직전 국면으로 되감김 — 그 사이의 진전이 사라짐";
+            case PAST_EDIT     -> "GM이 개연성을 판정 — 무리한 개찬은 무효";
+            case DOMINATE      -> "괴담 본체·핵심 존재에는 통하지 않음";
+            default            -> "";
+        };
+        if (!cost.isEmpty()) {
+            if (td.description == null) td.description = "";
+            td.description += COST_MARK + cost;
+        }
     }
 
     private static void clamp(TraitData td, String key, int lo, int hi) {
