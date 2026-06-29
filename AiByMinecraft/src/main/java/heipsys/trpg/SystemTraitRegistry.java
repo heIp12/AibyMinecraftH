@@ -192,6 +192,7 @@ public class SystemTraitRegistry {
         sb.append("부여하려면 effect_type에 키를, effect_params에 수치를 넣는다.\n");
         sb.append("같은 effect_type이라도 이름·등급·설명·쿨다운·파라미터로 다양한 변형을 만들 수 있다.\n");
         sb.append("★ 대가 명시 규칙: 사용에 대가(체력·정신력 소모, 행동 제약, 통제 상실, 위험 등)가 있는 특성은 그 대가를 description에 반드시 적어라(예: '사용 시 정신력 2 소모'). 정확한 수치형 대가는 시스템이 자동 표기하므로, 너는 대가의 '존재와 성격'을 자연스럽게 설명에 녹이면 된다.\n");
+        sb.append("★★ 소모 수치화 필수: 효과에 '정신/체력 소모'가 있으면 ★반드시★ effect_params에 cost_san(정신력) 또는 cost_hp(체력)에 ★구체 수치(1~30)★를 넣어라. (예: '정신 소모가 크다'→cost_san:5, '약간의 체력을 바친다'→cost_hp:2) 수치가 없으면 '소모가 크다' 같은 모호한 말만 남고 실제로 깎이지도, 정확한 양이 표시되지도 않는다 — 절대 말로만 쓰지 마라. 어떤 effect_type이든(sacrifice가 아니어도) 붙일 수 있다.\n");
         sb.append("★ 강한 발동형 능력엔 '실제로 강제되는 대가'를 effect_params로 붙일 수 있다(권장): cost_stun=사용 후 N턴 행동불능(0~3) · cost_threat=1이면 그 대가로 괴담/위협이 한 단계 진행. 시스템이 이 대가를 실제로 적용하고 GM에게 명시해 판정에 반영시킨다(예: 강력한 발동형 S/A급에 cost_stun=1 또는 cost_threat=1).\n\n");
 
         sb.append("=== 능동 효과 (active=true) ===\n");
@@ -555,6 +556,10 @@ public class SystemTraitRegistry {
             if (!c.isEmpty()) parts.add(c);
         }
         // AI가 강한 능력에 붙이는 선언적 대가(어떤 active 특성에도 가능) — 시스템이 실제로 강제한다
+        int cs = Math.max(0, Math.min(30, td.param("cost_san", 0)));
+        int ch = Math.max(0, Math.min(30, td.param("cost_hp", 0)));
+        if (cs > 0) parts.add("사용 시 정신력 " + cs + " 소모");
+        if (ch > 0) parts.add("사용 시 체력 " + ch + " 소모");
         int stun = Math.max(0, Math.min(3, td.param("cost_stun", 0)));
         if (stun > 0) parts.add("사용 후 " + stun + "턴 행동 불가");
         if (td.param("cost_threat", 0) > 0) parts.add("그 대가로 괴담이 한 단계 진행");
