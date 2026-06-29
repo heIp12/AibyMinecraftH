@@ -1179,6 +1179,28 @@ public class DialogManager {
         player.showDialog(dialog);
     }
 
+    /** 선택지 특성용: 후보 선택지를 ★다이얼로그 버튼★으로 제시하고 고른 인덱스를 콜백한다. */
+    public void showActionChoices(Player player, Component title, Component body,
+                                  List<String> choiceTexts, java.util.function.IntConsumer onPick) {
+        List<ActionButton> buttons = new ArrayList<>();
+        for (int i = 0; i < choiceTexts.size(); i++) {
+            final int idx = i;
+            buttons.add(ActionButton.create(
+                Component.text(choiceTexts.get(i), NamedTextColor.AQUA), null, 300,
+                DialogAction.customClick((v, a) -> onPick.accept(idx),
+                    ClickCallback.Options.builder().uses(1).build())));
+        }
+        ActionButton cancelBtn = ActionButton.create(
+            Component.text("취소", TextColor.color(0xAAAAAA)), null, 100, null);
+        Dialog dialog = Dialog.create(b -> b.empty()
+            .base(DialogBase.builder(title)
+                .body(List.of(DialogBody.plainMessage(body)))
+                .build())
+            .type(DialogType.multiAction(buttons, cancelBtn, 1))
+        );
+        player.showDialog(dialog);
+    }
+
     // ──────────────────────────────────────────────────────────────
     //  특성 오버레이 컴포넌트 빌더
     // ──────────────────────────────────────────────────────────────
