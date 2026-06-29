@@ -56,6 +56,10 @@ public class CMDTrpg implements CommandExecutor, TabCompleter {
                 if (!player.isOp()) { player.sendMessage("§c권한이 없습니다."); return true; }
                 trpg.nextSession(player);
             }
+            case "resume" -> {
+                if (!player.isOp()) { player.sendMessage("§c권한이 없습니다."); return true; }
+                trpg.resumeSession(player);
+            }
             case "load"   -> {
                 if (!player.isOp()) { player.sendMessage("§c권한이 없습니다."); return true; }
                 if (args.length < 2) { player.sendMessage("§c사용법: /trpg load <씨드>"); return true; }
@@ -105,7 +109,7 @@ public class CMDTrpg implements CommandExecutor, TabCompleter {
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (args.length == 1) {
-            List<String> subs = List.of("start", "stop", "retry", "next", "load", "read", "replay", "replaylist", "list", "status", "me", "log", "info", "추천", "map", "trait", "ending", "givetrait", "help");
+            List<String> subs = List.of("start", "stop", "retry", "next", "resume", "load", "read", "replay", "replaylist", "list", "status", "me", "log", "info", "추천", "map", "trait", "ending", "givetrait", "help");
             String partial = args[0].toLowerCase();
             return subs.stream()
                 .filter(s -> s.startsWith(partial))
@@ -161,6 +165,7 @@ public class CMDTrpg implements CommandExecutor, TabCompleter {
         player.sendMessage("§f/trpg stop  §7— 세션 종료 (OP)");
         player.sendMessage("§f/trpg retry §7— 재도전 (OP)");
         player.sendMessage("§f/trpg next  §7— 다음 스테이지로 이동 (OP) — 클리어 후 새 시나리오 시작");
+        player.sendMessage("§f/trpg resume §7— 예기치 못하게 끊긴 게임을 자동 저장에서 이어하기 (OP)");
         player.sendMessage("§f/trpg status §7— 현재 상태 확인");
         player.sendMessage("§f/trpg me §7— 내 캐릭터 정보·특성 보기 (핫바 아이템 우클릭도 가능)");
         player.sendMessage("§f/trpg log §7— 전체 대화 기록 열람 (다이얼로그, '기록' 아이템 우클릭도 가능)");

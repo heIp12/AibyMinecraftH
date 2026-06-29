@@ -156,6 +156,114 @@ public class GameStateManager {
     }
 
     // ──────────────────────────────────────────────────────────────
+    //  세이브 / 로드 (전체 상태 스냅샷 — 자동 저장·이어하기용)
+    // ──────────────────────────────────────────────────────────────
+    private static final com.google.gson.Gson SNAP_GSON = new com.google.gson.Gson();
+
+    /** 현재 게임 상태 전체를 JSON으로 직렬화(시나리오·진행도·오염도·플레이어 전부). */
+    public JsonObject snapshot() {
+        JsonObject o = new JsonObject();
+        o.addProperty("sessionActive", sessionActive);
+        o.addProperty("roomNumber", roomNumber);
+        o.addProperty("timelineStage", timelineStage);
+        o.addProperty("turnsSinceAdvance", turnsSinceAdvance);
+        o.addProperty("dailyTurnsLeft", dailyTurnsLeft);
+        o.addProperty("currentTurn", currentTurn);
+        o.addProperty("dailyPhase", dailyPhase);
+        o.addProperty("currentSeed", currentSeed);
+        o.addProperty("clockStart", clockStart);
+        o.addProperty("clockMinutes", clockMinutes);
+        o.addProperty("clockEnd", clockEnd);
+        o.addProperty("minutesPerTurn", minutesPerTurn);
+        o.addProperty("timeVisibleDefault", timeVisibleDefault);
+        o.addProperty("endEventFired", endEventFired);
+        if (gdamData != null) o.add("gdam", gdamData);
+        o.add("firedEvents", SNAP_GSON.toJsonTree(firedEvents));
+        o.add("blockedEvents", SNAP_GSON.toJsonTree(blockedEvents));
+        o.add("discoveredClues", SNAP_GSON.toJsonTree(discoveredClues));
+        o.add("foundItems", SNAP_GSON.toJsonTree(foundItems));
+        o.add("discoveredFacts", SNAP_GSON.toJsonTree(discoveredFacts));
+        o.add("unlockedZones", SNAP_GSON.toJsonTree(unlockedZones));
+        o.add("activeNpcs", SNAP_GSON.toJsonTree(activeNpcs));
+        o.add("corruption", SNAP_GSON.toJsonTree(corruption));
+        JsonObject ps = new JsonObject();
+        for (Map.Entry<UUID, PlayerData> e : players.entrySet())
+            ps.add(e.getKey().toString(), SNAP_GSON.toJsonTree(e.getValue()));
+        o.add("players", ps);
+        synchronized (eventLog) { o.add("eventLog", SNAP_GSON.toJsonTree(eventLog)); } // 종료 평가·최근 장면 맥락
+        JsonObject tko = new JsonObject();
+        timeKnownOverride.forEach((u, b) -> tko.addProperty(u.toString(), b));
+        o.add("timeKnownOverride", tko); // 플레이어별 시간 인지 토글(GM TIME_VISIBLE)
+        return o;
+    }
+
+    /** snapshot()으로 저장한 상태를 복원(이어하기). */
+    public void restore(JsonObject o) {
+        if (o == null) return;
+        sessionActive     = snapB(o, "sessionActive", true);
+        roomNumber        = snapI(o, "roomNumber", 1);
+        timelineStage     = snapI(o, "timelineStage", 0);
+        turnsSinceAdvance = snapI(o, "turnsSinceAdvance", 0);
+        dailyTurnsLeft    = snapI(o, "dailyTurnsLeft", 5);
+        currentTurn       = snapI(o, "currentTurn", 0);
+        dailyPhase        = snapB(o, "dailyPhase", true);
+        currentSeed       = snapS(o, "currentSeed", "");
+        clockStart        = snapI(o, "clockStart", -1);
+        clockMinutes      = snapI(o, "clockMinutes", -1);
+        clockEnd          = snapI(o, "clockEnd", -1);
+        minutesPerTurn    = snapI(o, "minutesPerTurn", 15);
+        timeVisibleDefault = snapB(o, "timeVisibleDefault", true);
+        endEventFired     = snapB(o, "endEventFired", false);
+        if (o.has("gdam") && o.get("gdam").isJsonObject()) gdamData = o.getAsJsonObject("gdam");
+        snapStrInto(firedEvents, o, "firedEvents");
+        snapStrInto(blockedEvents, o, "blockedEvents");
+        snapStrInto(discoveredClues, o, "discoveredClues");
+        snapStrInto(foundItems, o, "foundItems");
+        snapStrInto(discoveredFacts, o, "discoveredFacts");
+        snapStrInto(unlockedZones, o, "unlockedZones");
+        snapStrInto(activeNpcs, o, "activeNpcs");
+        if (o.has("corruption")) {
+            CorruptionData c = SNAP_GSON.fromJson(o.get("corruption"), CorruptionData.class);
+            if (c != null) {
+                corruption.level = c.level; corruption.attempts = c.attempts;
+                if (c.entityMemory != null)   corruption.entityMemory = c.entityMemory;
+                if (c.playerProfiles != null) corruption.playerProfiles = c.playerProfiles;
+            }
+        }
+        players.clear();
+        if (o.has("players") && o.get("players").isJsonObject()) {
+            for (Map.Entry<String, JsonElement> e : o.getAsJsonObject("players").entrySet()) {
+                try {
+                    PlayerData pd = SNAP_GSON.fromJson(e.getValue(), PlayerData.class);
+                    if (pd != null && pd.uuid != null) players.put(pd.uuid, pd);
+                } catch (Exception ignore) {}
+            }
+        }
+        synchronized (eventLog) {
+            eventLog.clear();
+            if (o.has("eventLog") && o.get("eventLog").isJsonArray()) {
+                EventLogEntry[] arr = SNAP_GSON.fromJson(o.get("eventLog"), EventLogEntry[].class);
+                if (arr != null) for (EventLogEntry el : arr) if (el != null) eventLog.add(el);
+            }
+        }
+        timeKnownOverride.clear();
+        if (o.has("timeKnownOverride") && o.get("timeKnownOverride").isJsonObject()) {
+            for (Map.Entry<String, JsonElement> e : o.getAsJsonObject("timeKnownOverride").entrySet()) {
+                try { timeKnownOverride.put(UUID.fromString(e.getKey()), e.getValue().getAsBoolean()); } catch (Exception ignore) {}
+            }
+        }
+    }
+
+    private static boolean snapB(JsonObject o, String k, boolean d) { return o.has(k) && !o.get(k).isJsonNull() ? o.get(k).getAsBoolean() : d; }
+    private static int     snapI(JsonObject o, String k, int d)     { return o.has(k) && !o.get(k).isJsonNull() ? o.get(k).getAsInt() : d; }
+    private static String  snapS(JsonObject o, String k, String d)  { return o.has(k) && !o.get(k).isJsonNull() ? o.get(k).getAsString() : d; }
+    private static void snapStrInto(Collection<String> col, JsonObject o, String k) {
+        if (!o.has(k) || !o.get(k).isJsonArray()) return;
+        col.clear();
+        for (JsonElement el : o.getAsJsonArray(k)) if (!el.isJsonNull()) col.add(el.getAsString());
+    }
+
+    // ──────────────────────────────────────────────────────────────
     //  플레이어
     // ──────────────────────────────────────────────────────────────
 
@@ -166,7 +274,9 @@ public class GameStateManager {
     public Collection<PlayerData> getAllPlayers()   { return players.values(); }
 
     public int getAliveCount() {
-        return (int) players.values().stream().filter(p -> !p.isDead).count();
+        // 동물 형태(revive_as_animal)는 정상 행동·해결이 불가하므로 생존자로 세지 않는다
+        // (동물만 남으면 사실상 패배 → 배드엔딩·워치독이 정상 작동하도록).
+        return (int) players.values().stream().filter(p -> !p.isDead && !"animal".equals(p.status)).count();
     }
     public int getTotalCount() { return players.size(); }
 

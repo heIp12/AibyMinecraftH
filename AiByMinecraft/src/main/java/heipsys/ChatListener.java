@@ -15,6 +15,7 @@ import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerToggleSneakEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
@@ -113,6 +114,20 @@ public class ChatListener implements Listener {
         if (trpgManager == null || !trpgManager.isActive()) return;
         var dropped = event.getItemDrop().getItemStack();
         if (trpgManager.isInfoItem(dropped) || trpgManager.isRecordItem(dropped) || trpgManager.isMapItem(dropped)) event.setCancelled(true);
+    }
+
+    /** OP 접속 시, 진행 중 세션이 없는데 이어할 자동 저장이 있으면 안내(예기치 못한 중단 후 복구 유도). */
+    @EventHandler
+    public void onJoin(PlayerJoinEvent event) {
+        Player player = event.getPlayer();
+        if (!player.isOp()) return;
+        TRPGGameManager trpgManager = trpg();
+        if (trpgManager == null || trpgManager.isActive()) return;
+        if (!trpgManager.hasAutoSave()) return;
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            if (!player.isOnline()) return;
+            player.sendMessage("§e[TRPG] 중단된 게임의 자동 저장 기록이 있습니다. §f/trpg resume §e으로 이어서 진행할 수 있습니다.");
+        }, 40L);
     }
 
     @EventHandler
