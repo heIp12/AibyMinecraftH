@@ -36,8 +36,8 @@ public class SystemTraitRegistry {
             "발동 시 현재 괴담의 진행 단계·상태를 본인만 확인한다.",
             "(별도 파라미터 없음. 제약은 cooldown으로 조절)"),
         CHOICE_ACTION("choice_action", true,
-            "발동 시 다음 행동을 직접 입력 대신 선택지로 제시한다. 정답엔 큰 보정, 오답엔 큰 패널티.",
-            "uses=사용 횟수, choices=선택지 개수(2~4)"),
+            "발동 시 다음 행동을 직접 입력 대신 선택지로 제시한다(다이얼로그 버튼). 정답엔 큰 보정, 오답엔 큰 패널티.",
+            "uses=사용 횟수, choices=선택지 개수(2~4), auto_choice=0이면 무엇을 할지 먼저 물어보고 그에 맞는 선택지를, 1이면 현재 상황에 맞는 선택지를 자동 제시"),
         GM_DIRECTIVE("gm_directive", true,
             "발동 시 effect에 적힌 지시를 GM에게 전달해 사건 전개에 반영시킨다. ★기억회상·직관·예지·환각·내면경험(캐릭터가 자동으로 정보를 경험하는 효과) 특성에 반드시 사용. effect 텍스트에 '무엇을 떠올리는지/경험하는지' 서술하면 AI가 그 장면을 생생하게 묘사한다.",
             "uses=사용 횟수"),
@@ -406,7 +406,8 @@ public class SystemTraitRegistry {
             case CHOICE_ACTION -> {
                 td.effectParams.putIfAbsent("uses", 1);
                 td.effectParams.putIfAbsent("choices", 3);
-                clamp(td, "uses", 1, 3); clamp(td, "choices", 2, 4);
+                td.effectParams.putIfAbsent("auto_choice", 0); // 0=행동을 물어본 뒤 선택지 / 1=현재 상황 선택지 자동 제시
+                clamp(td, "uses", 1, 3); clamp(td, "choices", 2, 4); clamp(td, "auto_choice", 0, 1);
             }
             case SCENARIO_INSIGHT, ENTITY_SENSE, ALLY_SENSE, LORE_RECORD, ENCOUNTER_SCAN -> {
                 td.effectParams.putIfAbsent("depth", 2);
