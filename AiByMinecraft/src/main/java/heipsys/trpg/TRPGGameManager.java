@@ -1891,6 +1891,9 @@ public class TRPGGameManager {
                 boolean cadence  = curTurn % 3 == 0;
                 boolean watchdog = (curTurn - lastNpcBeatTurn) >= 4;
                 if (cadence || watchdog) fireNpcAiForTurn();
+                // 단일 주체 캐릭터 괴담(절망의 기사류)만 자율 AI로 캐릭터를 살린다 — NPC와 다른 박자(% 3 == 2)로,
+                //   내부 게이트로 대상 시나리오에서만 실제 호출(그 외엔 값싼 no-op).
+                if (curTurn % 3 == 2) fireEntityActorForTurn();
             }
 
             // 12. 스테이지 기반 자동 등장 체크 (STATE_UPDATE 외부에서 stage 이미 변경된 경우 보정)
@@ -6017,6 +6020,85 @@ public class TRPGGameManager {
             if (here || phone) return true;
         }
         return false;
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  단일 주체 캐릭터 괴담 전용 AI (절망의 기사류) — 기능5
+    //  ※ 과거 '엔티티 앰비언트 AI'는 매 2턴 ★플레이어 수만큼★ 호출해 비용만 먹어 제거됐다.
+    //    이 버전은 그 실수를 피한다: ①단일 주체·캐릭터성 괴담만 ②턴당 1회(플레이어 수 무관)
+    //    ③닿는 플레이어 없으면 생략 ④결과는 GM 컨텍스트에만 주입(직접 출력 X). 대상 시나리오만 비용 발생.
+    // ──────────────────────────────────────────────────────────────
+
+    /** 독립 AI로 행동하는 ★캐릭터성 있는 단일 주체 괴담★인가(절망의 기사처럼 '그 존재 자체'가 사건). */
+    private boolean isCharacterfulSingleEntity(JsonObject entity) {
+        if (entity == null) return false;
+        if (!entity.has("independent_ai") || !entity.get("independent_ai").getAsBoolean()) return false;
+        if (!entity.has("ai_context") || !entity.get("ai_context").isJsonObject()) return false;
+        JsonObject ctx = entity.getAsJsonObject("ai_context");
+        boolean characterful = !getStr(ctx, "personality").isBlank() || !getStr(ctx, "disposition").isBlank();
+        if (!characterful) return false;
+        // 단일 주체 한정(절망의 기사류) — 생성기는 단일 주체를 npc_dependency=low로 표식한다.
+        //   mid/high(규칙·NPC 의존형)는 GM이 직접 서술(추가 호출 없음)해 비용을 대상 시나리오로 한정한다.
+        JsonObject gdam = state.getGdamData();
+        if (gdam != null && gdam.has("world_rules") && gdam.get("world_rules").isJsonObject()) {
+            String dep = getStr(gdam.getAsJsonObject("world_rules"), "npc_dependency");
+            if (!dep.isBlank() && !"low".equalsIgnoreCase(dep)) return false;
+        }
+        return true;
+    }
+
+    /** 괴담이 닿는 플레이어가 있나 — zone이 비면 '편재'로 보고 살아있는 등장 플레이어가 있으면 참. */
+    private boolean entityCanReachAnyPlayer(String zone) {
+        for (PlayerData pd : state.getAllPlayers()) {
+            if (pd.isDead || !spawnedPlayers.contains(pd.uuid)) continue;
+            if (zone == null || zone.isEmpty()) return true;
+            if (zone.equals(pd.zone)) return true;
+        }
+        return false;
+    }
+
+    /** 캐릭터 괴담 행동 결정용 시스템 프롬프트 — 출력은 GM만 보므로 1인칭·정체 노출 허용(앰비언트 프롬프트와 다름). */
+    private String buildEntityActorPrompt(JsonObject entity) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("너는 지금부터 이 괴담 ★그 자체★로서 행동한다. 이 출력은 GM만 읽고 GM이 서술에 녹인다(플레이어에게 직접 보이지 않는다).\n");
+        sb.append("괴담 이름: ").append(getEntityName()).append("\n");
+        if (entity.has("ai_context") && entity.get("ai_context").isJsonObject()) {
+            JsonObject ctx = entity.getAsJsonObject("ai_context");
+            String dis = getStr(ctx, "disposition");
+            String per = getStr(ctx, "personality");
+            String pat = getStr(ctx, "initial_pattern");
+            if (!dis.isBlank()) sb.append("성향: ").append(dis).append("\n");
+            if (!per.isBlank()) sb.append("성격: ").append(per).append("\n");
+            if (!pat.isBlank()) sb.append("행동 패턴: ").append(pat).append("\n");
+        }
+        if (entity.has("rules") && entity.get("rules").isJsonArray())
+            sb.append("지켜야 할 규칙(능력 한계): ").append(entity.get("rules").toString()).append("\n");
+        sb.append("\n지시: 위 성격·성향을 ★캐릭터로서★ 살려, 지금 이 순간 네가 하는 행동·반응을 1~2문장으로 ");
+        sb.append("★너 자신의 의도★로 적어라(귀엽든 처연하든 잔혹하든 그 캐릭터답게 일관되게). ");
+        sb.append("최근 플레이어 동향에 능동적으로 반응하되 ★플레이어의 행동·대사·이동을 대신 정하지 마라★. ");
+        sb.append("네 규칙 밖의 새 능력을 지어내지 마라. 한국어, 따옴표·머리기호·제목 금지. 정보를 요청하지 말 것.\n");
+        return sb.toString();
+    }
+
+    /** 단일 주체 캐릭터 괴담의 자율 행동 1회 — 대상 괴담·도달 플레이어가 있을 때만 호출(GM 컨텍스트 주입). */
+    private void fireEntityActorForTurn() {
+        JsonObject gdam = state.getGdamData();
+        if (gdam == null || !gdam.has("entity") || !gdam.get("entity").isJsonObject()) return;
+        JsonObject entity = gdam.getAsJsonObject("entity");
+        if (!isCharacterfulSingleEntity(entity)) return;       // 그 외 괴담은 GM이 직접 서술(추가 호출 없음)
+        String ezone = getStr(entity, "zone");                 // 없으면 편재(전역)
+        if (!entityCanReachAnyPlayer(ezone)) return;           // 닿는 플레이어 없으면 호출 생략(비용 절약)
+        String log = state.buildEntityLog(4, ezone);
+        if (log == null || log.isBlank())
+            log = "(최근 이 위치에서 관측된 플레이어 행동이 없다. 네 성격·목표에 따라 지금 네가 ★스스로★ 하는 행동을 1~2문장으로 서술하라.)";
+        String sys = buildEntityActorPrompt(entity);
+        ai.callEntityAi(sys, log).thenAccept(resp -> {
+            if (resp == null || resp.startsWith("§c")) return;
+            String trimmed = ai.stripThought(ai.stripTags(resp)).trim();
+            if (trimmed.isEmpty() || looksLikeMetaRequest(trimmed)) return;
+            ai.injectGmSystem("[괴담 자율 행동 — GM만 인지] " + getEntityName() + ": " + trimmed
+                + "\n→ GM은 다음 서술에서 이 괴담의 행동·존재감을 그 성격대로 자연스럽게 녹여 내라(직접 출력 금지, 플레이어 조종 금지).");
+        });
     }
 
     /** 자율 NPC가 '먼저 연락'하게 — 닿는 상대(같은 곳/번호 아는 사이) 목록 + NPC_CALL 사용법. 닿을 사람 없으면 "". */
