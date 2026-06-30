@@ -1,10 +1,12 @@
 C:\Users\dlwhr\git\AibyMinecraftH\AiByMinecraft\src\main\java\heipsys\trpg\AiManager.java
 C:\Users\dlwhr\git\AibyMinecraftH\AiByMinecraft\src\main\java\heipsys\trpg\NarrativeDelivery.java
+C:\Users\dlwhr\git\AibyMinecraftH\AiByMinecraft\src\main\java\heipsys\trpg\model\ItemInstance.java
 C:\Users\dlwhr\git\AibyMinecraftH\AiByMinecraft\src\main\java\heipsys\trpg\CharacterGenerator.java
 C:\Users\dlwhr\git\AibyMinecraftH\AiByMinecraft\src\main\java\heipsys\trpg\cmd\CMDTrpg.java
 C:\Users\dlwhr\git\AibyMinecraftH\AiByMinecraft\src\main\java\heipsys\trpg\TurnManager.java
 C:\Users\dlwhr\git\AibyMinecraftH\AiByMinecraft\src\main\java\heipsys\trpg\CorruptionManager.java
 C:\Users\dlwhr\git\AibyMinecraftH\AiByMinecraft\src\main\java\heipsys\trpg\GdamGenerator.java
+C:\Users\dlwhr\git\AibyMinecraftH\AiByMinecraft\src\main\java\heipsys\trpg\MapManager.java
 C:\Users\dlwhr\git\AibyMinecraftH\AiByMinecraft\src\main\java\heipsys\trpg\DialogManager.java
 C:\Users\dlwhr\git\AibyMinecraftH\AiByMinecraft\src\main\java\heipsys\trpg\GameStateManager.java
 C:\Users\dlwhr\git\AibyMinecraftH\AiByMinecraft\src\main\java\heipsys\trpg\cmd\CMDReload.java
@@ -13,8 +15,10 @@ C:\Users\dlwhr\git\AibyMinecraftH\AiByMinecraft\src\main\java\heipsys\trpg\model
 C:\Users\dlwhr\git\AibyMinecraftH\AiByMinecraft\src\main\java\heipsys\trpg\ItemManager.java
 C:\Users\dlwhr\git\AibyMinecraftH\AiByMinecraft\src\main\java\heipsys\trpg\TraitButtonManager.java
 C:\Users\dlwhr\git\AibyMinecraftH\AiByMinecraft\src\main\java\heipsys\trpg\GameLogger.java
+C:\Users\dlwhr\git\AibyMinecraftH\AiByMinecraft\src\main\java\heipsys\trpg\ReplayManager.java
 C:\Users\dlwhr\git\AibyMinecraftH\AiByMinecraft\src\main\java\heipsys\trpg\SystemTraitRegistry.java
 C:\Users\dlwhr\git\AibyMinecraftH\AiByMinecraft\src\main\java\heipsys\ChatListener.java
+C:\Users\dlwhr\git\AibyMinecraftH\AiByMinecraft\src\main\java\heipsys\trpg\ScenarioArchetypes.java
 C:\Users\dlwhr\git\AibyMinecraftH\AiByMinecraft\src\main\java\heipsys\trpg\RoleManager.java
 C:\Users\dlwhr\git\AibyMinecraftH\AiByMinecraft\src\main\java\heipsys\trpg\ContextCompressor.java
 C:\Users\dlwhr\git\AibyMinecraftH\AiByMinecraft\src\main\java\heipsys\trpg\ScoreboardManager.java
