@@ -2863,10 +2863,49 @@ public class TRPGGameManager {
         String charDisplay = pd.gmDisplayName();
         String directive = (td.effect != null && !td.effect.isBlank())
             ? td.effect : "이 특성의 효과를 사건 전개에 자연스럽게 반영하라.";
+        // ★방송형 directive★(효과가 '모든 아군 방송/경고'류) — GM 생성 멘트를 전원에게 [방송]으로 확정 전달.
+        //   기존엔 handleAction(일반 턴)으로 처리돼 발동자에게만 가고 다른 플레이어에겐 누락됐다(버그6).
+        if (directive.contains("방송") || directive.contains("전원") || directive.contains("모든 아군")
+                || directive.contains("모두에게") || directive.contains("전 직원") || directive.contains("전체에게")
+                || directive.contains("전체 경고") || directive.contains("전체 공지")) {
+            String bctx = "\n## " + td.name + " — 전체 경고 방송 생성\n"
+                + charDisplay + "이(가) '" + td.name + "' 능력으로 모든 아군에게 보낼 ★긴급 경고/행동 지시 방송★을 만든다. 효과: " + directive + "\n"
+                + "- 지금 상황·괴담 정황에 근거한 ★1~2문장 방송 멘트★만 출력(메타·지문 없이 멘트 그대로).\n"
+                + "- 핵심 해결법을 통째로 누설하지는 말되, 생존에 필요한 경고는 분명히.";
+            String bprompt = charDisplay + "이(가) '" + td.name + "'으로 전체 경고 방송을 보낸다. 방송 멘트를 생성해줘.";
+            player.sendMessage("§d[" + td.name + " 발동 — 전체 방송 송출 중...]");
+            ai.callGmAiOnce(gmSystemPrompt, bctx + "\n\n" + bprompt).thenAccept(resp ->
+                plugin.getServer().getScheduler().runTask(plugin, () -> {
+                    String msg = ai.stripThought(ai.stripTags(resp)).trim();
+                    if (!msg.isEmpty()) deliverAbilityBroadcast(pd, td.name, msg);
+                }));
+            return;
+        }
         String gmMsg = "[시스템 특성: " + td.name + " 발동] " + charDisplay
             + "이(가) '" + td.name + "' 특성을 발동했다. GM 지시: " + directive;
         boolean accepted = turnMan.handleAction(player, gmMsg, gmSystemPrompt);
         player.sendMessage(accepted ? "§7[" + td.name + " 발동 중...]" : "§7행동 처리 중입니다. 잠시 후 다시 시도하세요.");
+    }
+
+    /** 능력으로 생성된 전체 경고 방송을 모든 등장 플레이어(발신자 포함)에게 [방송]으로 확정 전달(버그6: gm_directive 방송형 누락 수정). */
+    private void deliverAbilityBroadcast(PlayerData senderPd, String abilityName, String content) {
+        if (content == null || content.isBlank()) return;
+        String disp = senderPd.gmDisplayName();
+        int heard = 0;
+        for (PlayerData op : state.getAllPlayers()) {
+            if (op.isDead || !spawnedPlayers.contains(op.uuid)) continue;
+            Player op2 = Bukkit.getPlayer(op.uuid);
+            if (op2 != null && op2.isOnline()) {
+                op2.sendMessage("§b[📢 " + abilityName + "] §f" + disp + ": " + content);
+                appendNarrativeLog(op, "[방송:" + abilityName + "] " + disp + ": " + content);
+                heard++;
+            }
+        }
+        state.log("comm", senderPd.name, "[방송:" + abilityName + "] " + content);
+        gameLogger.logGmOutput("능력방송(" + abilityName + ")", disp + ": " + content);
+        ai.injectGmSystem("[능력 전체 방송] " + disp + "이(가) '" + abilityName
+            + "' 능력으로 전원에게 경고를 방송했다: \"" + content
+            + "\". 시스템이 이미 모든 등장 인원에게 전달했으니 같은 내용을 중복 전달 말고 정황·반응만 다뤄라.");
     }
 
     private void activateAreaScan(Player player, PlayerData pd, TraitData td) {
