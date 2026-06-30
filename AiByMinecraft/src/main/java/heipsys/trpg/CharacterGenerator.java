@@ -497,7 +497,7 @@ public class CharacterGenerator {
 - 개수: 2개 이상 (강점 + 약점/부작용)
 """;
             default -> """
-- grade: C 또는 D/F 만 사용 (초기 캐릭터이므로 강한 특성 없음)
+- grade: C·D·F 중 ★하나만★ 사용 (초기 캐릭터이므로 강한 특성 없음. 'D/F'처럼 여러 글자로 쓰지 말고 한 등급만)
 - 개수: 1~2개
 """;
         };
@@ -537,7 +537,7 @@ public class CharacterGenerator {
                                      ? obj.get("id").getAsString()
                                      : "init_" + UUID.randomUUID().toString().substring(0, 6);
                     td.name        = obj.has("name")        ? obj.get("name").getAsString()        : "초기 특성";
-                    td.grade       = obj.has("grade")       ? obj.get("grade").getAsString()       : "C";
+                    td.grade       = TraitData.normGrade(obj.has("grade") ? obj.get("grade").getAsString() : null, "C");
                     td.description = obj.has("description") ? obj.get("description").getAsString() : "";
                     td.active        = obj.has("active")       && obj.get("active").getAsBoolean();
                     td.effect        = obj.has("effect")       ? obj.get("effect").getAsString()       : "";

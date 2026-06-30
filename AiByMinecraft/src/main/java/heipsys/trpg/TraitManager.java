@@ -130,7 +130,7 @@ effect: 효과를 한 문장으로 간결하게.
                     // 여러 특성의 id가 충돌해 '아무 버튼이나 눌러도 첫 특성만 발동'되는 버그가 생긴다. (AI id는 외부 미참조)
                     td.id          = UUID.randomUUID().toString().substring(0, 8);
                     td.name        = obj.has("name")        ? obj.get("name").getAsString()        : "알 수 없는 특성";
-                    td.grade       = obj.has("grade")       ? obj.get("grade").getAsString()       : "C";
+                    td.grade       = TraitData.normGrade(obj.has("grade") ? obj.get("grade").getAsString() : null, "C");
                     td.description = obj.has("description") ? obj.get("description").getAsString() : "";
                     td.active      = obj.has("active")      && obj.get("active").getAsBoolean();
                     td.effect      = obj.has("effect")      ? obj.get("effect").getAsString()      : "";
@@ -223,7 +223,7 @@ cooldown_turns: B~D급이므로 능동이면 0~2, 수동이면 반드시 0.
                     // id는 항상 고유 생성 (AI가 빈/중복 id를 주면 특성 발동이 첫 특성으로 쏠리는 버그 방지)
                     td.id          = UUID.randomUUID().toString().substring(0, 8);
                     td.name        = obj.has("name")        ? obj.get("name").getAsString()        : "알 수 없는 특성";
-                    td.grade       = obj.has("grade")       ? obj.get("grade").getAsString()       : "C";
+                    td.grade       = TraitData.normGrade(obj.has("grade") ? obj.get("grade").getAsString() : null, "C");
                     td.description = obj.has("description") ? obj.get("description").getAsString() : "";
                     td.active      = obj.has("active")      && obj.get("active").getAsBoolean();
                     td.effect      = obj.has("effect")      ? obj.get("effect").getAsString()      : "";
