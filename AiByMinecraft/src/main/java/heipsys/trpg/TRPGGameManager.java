@@ -6048,7 +6048,15 @@ public class TRPGGameManager {
         if (msg == null) return false;
         boolean device = msg.contains("방송") || msg.contains("확성") || msg.contains("메가폰")
             || msg.contains("마이크") || msg.contains("스피커") || msg.contains("인터컴")
-            || msg.contains("구내방송") || msg.contains("교내방송") || msg.contains("안내방송");
+            || msg.contains("구내방송") || msg.contains("교내방송") || msg.contains("안내방송")
+            // 전체 범위 호출 표현도 방송으로 인정(번호 없이 다수에게)
+            || msg.contains("전체 채널") || msg.contains("전체채널") || msg.contains("전 직원")
+            || msg.contains("전원에게") || msg.contains("모두에게") || msg.contains("다들에게")
+            || msg.contains("전체에게") || msg.contains("전체 공지") || msg.contains("단체 무전");
+        // 무전/인터컴은 ★전체 범위일 때만★ 방송 — 1:1 무전(@번호)과 구분
+        if (!device && msg.contains("무전")
+                && (msg.contains("전체") || msg.contains("전원") || msg.contains("모두") || msg.contains("다들") || msg.contains("전 직원")))
+            device = true;
         if (!device) return false;
         boolean utter = msg.indexOf('"') >= 0 || msg.indexOf('“') >= 0 || msg.indexOf('”') >= 0
             || msg.indexOf('\'') >= 0 || msg.indexOf('「') >= 0
