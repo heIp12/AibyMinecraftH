@@ -23,6 +23,12 @@ public class TraitManager {
     /** 보상 특성 테마 지침 설정(프로젝트 문→전투표상/E.G.O. 기프트 위주, 게임→게임 메커니즘 능력). */
     public void setScenarioFlavor(String s) { this.scenarioFlavor = (s == null) ? "" : s; }
 
+    /** 배역 전용(시작) 특성 테마 지침 — 배역도 자신의 E.G.O.를 '가끔' 지닐 수 있다(스포일러 금지·범용성은 유지). */
+    private volatile String roleFlavor = "";
+
+    /** 배역 전용 특성 테마 지침 설정. */
+    public void setRoleFlavor(String s) { this.roleFlavor = (s == null) ? "" : s; }
+
     // 클리어 등급 → 특성 등급 풀 매핑
     private static final Map<String, String[]> GRADE_POOL = Map.of(
         "S", new String[]{"S","A"},
@@ -197,7 +203,8 @@ cooldown_turns: B~D급이므로 능동이면 0~2, 수동이면 반드시 0.
   영구 능력치를 올리지 않는다 — 능력치 대신 ★상황 효과(effect/effect_type)★에 가치를 담아라.
 한국어로 작성.
 
-""" + SystemTraitRegistry.buildAiCatalog();
+""" + SystemTraitRegistry.buildAiCatalog()
+            + (roleFlavor.isBlank() ? "" : "\n\n" + roleFlavor);
 
         String prompt = "직업: " + pd.job + "\n나이: " + pd.age + "세\n"
             + "기존 특성(중복 금지): " + existingTraits + "\n"
