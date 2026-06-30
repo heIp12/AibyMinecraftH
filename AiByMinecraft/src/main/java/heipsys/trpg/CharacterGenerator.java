@@ -122,21 +122,21 @@ public class CharacterGenerator {
 
         if (needsRefresh(dynCommon, globalUsed, COMMON_JOB_POOL.length)) {
             futures.add(callAndFillPool(sys,
-                "TRPG 배경의 평범한 일상 직업 150개를 위 형식 JSON 배열로. " +
+                "TRPG 배경의 평범한 일상 직업 60개를 위 형식 JSON 배열로. " +
                 "학생·의료·교육·사무·서비스·예술·IT·기술직·농축수산업 등 최대한 다양하게. " +
-                "직업명은 한국어 2~10자, 중복 없이. 각 직업에 무슨 일을 하는지 한 줄 설명을 단다.", dynCommon));
+                "직업명은 한국어 2~10자, 중복 없이. 각 직업에 무슨 일을 하는지 한 줄 설명을 단다.", dynCommon, 4096));
         }
         if (needsRefresh(dynStrong, globalUsed, STRONG_JOB_POOL.length)) {
             futures.add(callAndFillPool(sys,
-                "TRPG 배경의 해결사·전투·수사·초자연 전문가 직업 100개를 위 형식 JSON 배열로. " +
+                "TRPG 배경의 해결사·전투·수사·초자연 전문가 직업 40개를 위 형식 JSON 배열로. " +
                 "엑소시스트·SCP요원·용병·형사·특수부대원·봉마사 등 전문 능력자 위주. " +
-                "직업명은 한국어 2~15자, 중복 없이. 각 직업에 무슨 일을 하는지 한 줄 설명을 단다.", dynStrong));
+                "직업명은 한국어 2~15자, 중복 없이. 각 직업에 무슨 일을 하는지 한 줄 설명을 단다.", dynStrong, 4096));
         }
         if (needsRefresh(dynRare, globalUsed, RARE_JOB_POOL.length)) {
             futures.add(callAndFillPool(sys,
-                "TRPG 배경의 초자연적·변수가 큰 특이 직업 50개를 위 형식 JSON 배열로. " +
+                "TRPG 배경의 초자연적·변수가 큰 특이 직업 25개를 위 형식 JSON 배열로. " +
                 "뱀파이어·흑마법사·시간여행자·랩틸리언 등 강력하지만 대가가 큰 존재 위주. " +
-                "직업명은 한국어 2~15자, 중복 없이. 각 직업에 무슨 일을 하는지 한 줄 설명을 단다.", dynRare));
+                "직업명은 한국어 2~15자, 중복 없이. 각 직업에 무슨 일을 하는지 한 줄 설명을 단다.", dynRare, 4096));
         }
 
         if (futures.isEmpty()) return CompletableFuture.completedFuture(null);
@@ -168,16 +168,29 @@ public class CharacterGenerator {
         }
     }
 
-    private CompletableFuture<Void> callAndFillPool(String system, String prompt, List<String> target) {
-        return aiManager.callAssistant(system, prompt).thenAccept(raw -> {
+    private CompletableFuture<Void> callAndFillPool(String system, String prompt, List<String> target, int maxTokens) {
+        return aiManager.callAssistant(system, prompt, maxTokens).thenAccept(raw -> {
             try {
                 String cleaned = raw == null ? "" : raw.replaceAll("```json", "").replaceAll("```", "").trim();
                 int s = cleaned.indexOf('['), e = cleaned.lastIndexOf(']');
-                if (s == -1 || e == -1) {
+                String jsonArr;
+                if (s == -1) {
                     org.bukkit.Bukkit.getLogger().warning("[직업풀] AI 응답에 JSON 배열이 없어 정적 풀 유지. 앞부분: " + snippet(raw));
                     return;
                 }
-                JsonArray arr = GSON.fromJson(cleaned.substring(s, e + 1), JsonArray.class);
+                if (e > s) {
+                    jsonArr = cleaned.substring(s, e + 1);
+                } else {
+                    // 응답이 토큰 한도로 잘려 ']'가 없을 때: 마지막 완성된 '}'까지 취해 배열을 닫아 구제한다.
+                    int lastObj = cleaned.lastIndexOf('}');
+                    if (lastObj <= s) {
+                        org.bukkit.Bukkit.getLogger().warning("[직업풀] AI 응답에 JSON 배열이 없어 정적 풀 유지. 앞부분: " + snippet(raw));
+                        return;
+                    }
+                    jsonArr = cleaned.substring(s, lastObj + 1) + "]";
+                    org.bukkit.Bukkit.getLogger().info("[직업풀] 응답이 잘려 마지막 완성 객체까지 구제 파싱");
+                }
+                JsonArray arr = GSON.fromJson(jsonArr, JsonArray.class);
                 List<String> jobs = new ArrayList<>();
                 for (JsonElement el : arr) {
                     String j, d = "";

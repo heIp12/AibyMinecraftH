@@ -552,12 +552,17 @@ public class AiManager {
     // ======================================================
 
     public CompletableFuture<String> callAssistant(String task, String data) {
+        return callAssistant(task, data, ASST_MAX_TOKENS);
+    }
+
+    /** 출력 토큰 상한을 지정하는 보조 호출 — 긴 목록(직업 풀 등)이 잘리지 않도록. */
+    public CompletableFuture<String> callAssistant(String task, String data, int maxTokens) {
         return CompletableFuture.supplyAsync(() -> {
             try {
                 List<JsonObject> messages = List.of(msg("user", task + "\n\n" + data));
                 return send(assistantModel(),
                     "너는 간단한 데이터 처리 도우미야. 요청받은 작업만 수행해.",
-                    messages, ASST_MAX_TOKENS);
+                    messages, maxTokens);
             } catch (Exception e) {
                 return "§c[보조 AI 오류] " + e.getMessage();
             }
