@@ -267,7 +267,7 @@ public class DialogManager {
         player.showDialog(dialog);
     }
 
-    /** 친숙한 친구들 모드 — 괴담 범위(필터) 8종 선택. onPick에 필터 키 전달. */
+    /** 친숙한 친구들 모드 — 괴담 범위(필터) 선택. onPick에 필터 키 전달. */
     public void showFamiliarFilter(Player player, java.util.function.Consumer<String> onPick) {
         String[][] opts = {
             {"common", "흔한 괴담",     "누구나 아는 가장 유명한 괴담"},
@@ -277,6 +277,8 @@ public class DialogManager {
             {"scp",    "SCP만",         "SCP 재단 항목만"},
             {"korean", "한국 괴담만",    "한국 전설·괴담만"},
             {"japan",  "일본 괴담만",    "일본 요괴·유령·학교괴담·도시전설만"},
+            {"projectmoon", "환상체만",  "프로젝트 문(로보토미·라오루) 환상체"},
+            {"game",   "게임 괴담만",   "게임 도시전설·게임 속 괴물·공포게임 주인공"},
             {"rule",   "규칙 괴담만",    "규칙을 어기면 화를 입는 류"},
             {"random", "모두 무작위",    "위 전부를 섞어 무작위"}
         };
