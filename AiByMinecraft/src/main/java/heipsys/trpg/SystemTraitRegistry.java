@@ -195,7 +195,8 @@ public class SystemTraitRegistry {
         sb.append("★★ 소모 수치화 필수: 효과에 '정신/체력 소모'가 있으면 ★반드시★ effect_params의 cost_san(정신력)/cost_hp(체력)에 ★구체 수치★를 넣어라(말로만 쓰면 실제로 깎이지도, 정확히 표시되지도 않는다).\n");
         sb.append("  · ★sacrifice 효과는 예외★ — 자원 소모를 고유 파라미터 cost/use_san으로 표현하므로 cost_san/cost_hp를 ★중복으로 달지 마라★(이중 차감·이중 표기됨). sacrifice가 아닌 능동 효과에만 cost_san/cost_hp를 붙여라.\n");
         sb.append("  · ★소모량 보정★: 능력치 평균은 5, 정신/체력 풀은 100이고 능력은 자주 쓰인다 — ★과하게 책정하지 마라★. 사소한 효과=1~3, 보통=4~8, 무거운 대가=10~20(고등급·강효과 한정). (예: '불쾌한 이미지를 떨쳐낸다'→cost_san:1 / '정신을 크게 깎는 의식'→cost_san:12) 같은 자원을 두 번(고유 cost와 cost_san) 적지 마라.\n");
-        sb.append("★ 강한 발동형 능력엔 '실제로 강제되는 대가'를 effect_params로 붙일 수 있다(권장): cost_stun=사용 후 N턴 행동불능(0~3) · cost_threat=1이면 그 대가로 괴담/위협이 한 단계 진행. 시스템이 이 대가를 실제로 적용하고 GM에게 명시해 판정에 반영시킨다(예: 강력한 발동형 S/A급에 cost_stun=1 또는 cost_threat=1).\n\n");
+        sb.append("★ 강한 발동형 능력엔 '실제로 강제되는 대가'를 effect_params로 붙일 수 있다(권장): cost_stun=사용 후 N턴 행동불능(0~3) · cost_threat=1이면 그 대가로 괴담/위협이 한 단계 진행. 시스템이 이 대가를 실제로 적용하고 GM에게 명시해 판정에 반영시킨다(예: 강력한 발동형 S/A급에 cost_stun=1 또는 cost_threat=1).\n");
+        sb.append("★ 쿨다운·횟수 제약 규칙(중요): 사용 빈도 제한은 ★cooldown_turns 필드로만★ 표현하라 — description/effect 본문에 '쿨다운 N턴'·'스테이지당 N회' 같은 말을 ★다시 적지 마라★(중복·모순). 스테이지당 1회면 cooldown_turns=-1 ★하나만★ 쓰고 거기에 턴 쿨다운(3턴 등)을 겹쳐 두지 마라(무의미한 이중 제약). 의미 없는 제약을 위해 쿨다운을 남발하지 말고, 정말 강력해 빈도 제한이 필요한 발동형에만 둬라(수동·약효과는 cooldown_turns=0).\n\n");
 
         sb.append("=== 능동 효과 (active=true) ===\n");
         for (Effect e : Effect.values()) {
