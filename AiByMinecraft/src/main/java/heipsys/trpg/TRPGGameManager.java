@@ -151,6 +151,8 @@ public class TRPGGameManager {
     private final Map<String, Integer> npcIntel = new ConcurrentHashMap<>();
     /** NPC가 플레이 중 새로 보고 알게 된 정보(npc_id → 목록). 자율 AI가 <NPC_LEARN>로 누적 → 이후 떠올려 쓰거나 플레이어에게 전한다. */
     private final Map<String, List<String>> npcAcquired = new ConcurrentHashMap<>();
+    /** NPC id → 그 NPC와 직접 대화(통화 포함)가 있었던 마지막 턴. 대화 중인 NPC를 자율 AI가 중복 구동해 맥락을 오염(되묻기·모순)시키지 않도록 게이트. */
+    private final Map<String, Integer> npcLastDirectTurn = new ConcurrentHashMap<>();
     /** 금지워드형 괴담: 입에 올리면(입력) 즉시 파국이 되는 단어. 빈 값이면 이 메커니즘 비활성. 재시도 시 변경. */
     private volatile String forbiddenWord = "";
 
@@ -576,6 +578,7 @@ public class TRPGGameManager {
         npcContactNumbers.clear();
         npcIntel.clear();
         npcAcquired.clear();
+        npcLastDirectTurn.clear();
         forbiddenWord = "";
         rewindBuffer.clear();
         lastRewindCaptureTurn = -1;
@@ -5580,6 +5583,7 @@ public class TRPGGameManager {
         npcZones.clear();
         npcIntel.clear(); // 새 시나리오의 NPC 지능을 새로 굴리도록 초기화
         npcAcquired.clear(); // NPC가 수집한 정보도 새 시나리오에서 초기화
+        npcLastDirectTurn.clear(); // 대화 추적도 새 시나리오에서 초기화
         if (gdam == null || !gdam.has("npcs")) return;
         for (JsonElement el : gdam.getAsJsonArray("npcs")) {
             if (!el.isJsonObject()) continue;
@@ -5854,6 +5858,10 @@ public class TRPGGameManager {
             // ★비용 절약★: 같은 구역에 플레이어도 없고 전화로도 닿지 않는 NPC는 자율 AI 호출 생략 —
             //   그 출력은 GM 컨텍스트로만 들어가 아무도 못 보므로 크레딧만 쓴다. 플레이어가 다가오면 다음 주기에 다시 활동.
             if (!npcCanReachAnyPlayer(npcId, npcZone)) continue;
+            // ★대화 중 중복 구동 방지★: 방금(이번~직전 턴) 플레이어와 직접 대화한 NPC는 자율 AI를 돌리지 않는다 —
+            //   대화 맥락에 없는 '플레이어 행동 로그' 기반 자율 출력이 같은 NPC 컨텍스트에 섞여 되묻기·모순을 유발한다.
+            int lastDirect = npcLastDirectTurn.getOrDefault(npcId, Integer.MIN_VALUE);
+            if (lastDirect >= 0 && lastDirect <= state.getCurrentTurn() && state.getCurrentTurn() - lastDirect <= 1) continue;
             // ★그 NPC가 있는 위치(zone)에서 일어난 행동만 — 다른 장면의 플레이어 행동이 NPC 서술에 섞이지 않게.
             String actionLog = state.buildEntityLog(4, npcZone);
             // 빈 로그를 그대로 주면 모델이 '입력을 달라'는 메타 응답을 내놓는다 → 자율 행동 지시로 대체한다.
@@ -6463,6 +6471,7 @@ public class TRPGGameManager {
         // 대면이든 통화든 ★접촉하면 연락처를 기억★ — 이후 다른 곳에서도 전화로 부를 수 있다(다회차 이월).
         senderPd.everKnownNpcContacts.add(npcId);
         refreshCommItems(senderPd);
+        npcLastDirectTurn.put(npcId, state.getCurrentTurn()); // 대화 중 — 자율 AI 중복 구동 방지(맥락 오염 차단)
 
         // ③ 엿보기 특성 여부 확인
         boolean hasEavesdrop = senderPd.traits.stream()
@@ -6800,6 +6809,9 @@ public class TRPGGameManager {
                  + "  · 적대·불신·낯선 상대: 무뚝뚝·경계·비협조. 떠보거나 정보를 숨기고, 도움도 인색하다.\n"
                  + "  관계가 좋을수록 같은 설득력이라도 더 잘 통한다(관계와 설득력은 함께 작용한다). 단 관계가 좋아도 핵심 비밀·금기는 쉽게 깨지 않는다.\n");
         sb.append("- 2~4문장 이내.\n");
+        sb.append("- ★대화는 앞으로 나아가야 한다(반복 금지)★: 지금까지의 대화가 ★네 기억★이다 — 이미 들은 답·이미 던진 질문을 ★되묻지 마라★. "
+                 + "상대가 이름·소속·용건을 한 번 밝혔으면 그것을 ★받아들이고★ 다음으로 넘어가라(동의하든 거절하든, 구체적으로 답하거나 행동하거나 네 입장을 정하라). "
+                 + "같은 확인(\"누구세요\"·\"그게 뭐죠\"·\"왜 그래요\")을 ★두 번 이상 반복하지 마라★ — 낯선 상대라도 경계·의심은 ★처음 한두 마디★로만 표하고, 그 뒤엔 반드시 대화를 진전시켜라.\n");
         // G2: 통화 vs 대면 — 보이는 것과 가능한 상호작용이 다르다
         if (viaCall) {
             sb.append("\n### 통화 모드 — 목소리만\n");
@@ -7740,6 +7752,12 @@ public class TRPGGameManager {
         "남궁성","문재이","유다온","홍시현"
     };
 
+    /** 휘말림(외부인) 배역의 평범한 민간인 직업 풀 — 원년 캐릭터가 환상/괴담풍 직업이어도 휘말림 배역엔 새지 않도록 코드에서 부여. */
+    private static final String[] EXTRA_BYSTANDER_JOBS = {
+        "회사원","택배 기사","편의점 점원","대학생","청소 노동자","경비원","간병인","배달원",
+        "주부","공장 노동자","택시 기사","자영업자","학원 강사","간호조무사","마트 직원","공무원"
+    };
+
     /** EXTRA_CHAR_NAMES 중 아직 안 쓴 이름 1개 반환(used에 추가). 풀 소진 시 숫자 접미사. */
     private String pickExtraName(java.util.Set<String> used) {
         for (String n : EXTRA_CHAR_NAMES) if (used.add(n)) return n;
@@ -7782,6 +7800,13 @@ public class TRPGGameManager {
             // ★char_name/gender를 코드에서 부여 — AI 생성 배역이 아니라 누락되면 계정명이 노출되고 이름이 안 정해진다.
             r.addProperty("char_name", pickExtraName(usedNames));
             r.addProperty("gender", ThreadLocalRandom.current().nextBoolean() ? "남성" : "여성");
+            // ★평범한 민간인 직업·성인 나이를 코드에서 부여★ — job_pool/age_range가 없으면 배역 배정(applyRoleJob)이
+            //   원년(기본) 직업·나이를 그대로 둬, 원년 캐릭터가 환상/괴담풍이면 휘말림 배역까지 그 값(예: 12세 '환영의 엮음이')이 노출된다.
+            JsonArray jobPool = new JsonArray();
+            for (String j : EXTRA_BYSTANDER_JOBS) jobPool.add(j);
+            r.add("job_pool", jobPool);
+            JsonArray ageRange = new JsonArray(); ageRange.add(20); ageRange.add(55);
+            r.add("age_range", ageRange);
             if (!zones.isEmpty()) r.addProperty("zone", zones.get(i % zones.size())); // 사건 현장(또는 그 일대)에 분산 배치
             r.addProperty("role_type", "bystander");
             JsonArray info = new JsonArray();
