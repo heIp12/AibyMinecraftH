@@ -564,6 +564,24 @@ public class AiManager {
         });
     }
 
+    /**
+     * 충실도가 중요한 1회성 호출(친숙 모드 실존 괴담·환상체 정전 선정)용 — 최고 품질 모델 사용.
+     * 저품질 모델은 실존 원전을 그럴듯하게 ★창작(환각)★하는 경향이 강해 정전 충실도가 깨진다.
+     * 시나리오당 1회뿐이라 비용 영향이 작다.
+     */
+    public CompletableFuture<String> callAssistantHiFi(String task, String data) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                List<JsonObject> messages = List.of(msg("user", task + "\n\n" + data));
+                return send(highModel(),
+                    "너는 정확한 자료 큐레이터다. ★검증된 실존 사실만★ 다루고, 불확실하면 가장 확실하고 유명한 것을 택하며, 그럴듯한 이름을 ★새로 지어내지 않는다★.",
+                    messages, ASST_MAX_TOKENS);
+            } catch (Exception e) {
+                return "§c[보조 AI 오류] " + e.getMessage();
+            }
+        });
+    }
+
     // ======================================================
     //  컨텍스트 관리
     // ======================================================
