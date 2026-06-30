@@ -2794,7 +2794,7 @@ public class TRPGGameManager {
             + "이 순간의 내면 경험을 GM 서술로 묘사해줘.";
 
         player.sendMessage("§d[" + td.name + " 발동 중...]");
-        ai.callGmAiOnce(gmSystemPrompt + autoCtx, prompt).thenAccept(response ->
+        ai.callGmAiOnce(gmSystemPrompt, autoCtx + "\n\n" + prompt).thenAccept(response ->
             plugin.getServer().getScheduler().runTask(plugin, () -> {
                 String stripped = ai.stripTags(response).trim();
                 if (!stripped.isBlank()) {
@@ -3378,12 +3378,12 @@ public class TRPGGameManager {
 
     /** 관조자의 눈 — '무대 뒤(연출자)의 현재 사고'를 한 번 보여준다(전체 각본·정답 제외). 1회성·지속형 공통 사용. */
     private void fireObserverGlimpse(Player player, PlayerData pd, String label) {
-        String sys = gmSystemPrompt + "\n\n## 관조자 시점(메타) 노출\n"
+        String metaCtx = "## 관조자 시점(메타) 노출\n"
             + "플레이어가 '무대 뒤'를 잠깐 들여다본다. 지금 이 순간 ★연출자(GM)의 현재 사고·의도★를 1~3문장으로 보여줘라:\n"
             + "- 지금 무엇을·왜 굴리고 있는가, 곧 무엇이 닥치려 하는가, 이 존재가 지금 원하는 것.\n"
             + "- ★현재 사고에 한정★ — 전체 각본·정답·해결법·붕괴조건은 절대 통째로 노출 금지.\n"
             + "- 관조자 톤(담담한 해설). 마크다운·태그 금지.";
-        ai.callGmAiOnce(sys, pd.gmDisplayName() + "이(가) 관조자의 눈으로 지금 이 순간의 '무대 뒤'를 들여다본다. 현재 사고를 보여줘.")
+        ai.callGmAiOnce(gmSystemPrompt, metaCtx + "\n\n" + pd.gmDisplayName() + "이(가) 관조자의 눈으로 지금 이 순간의 '무대 뒤'를 들여다본다. 현재 사고를 보여줘.")
           .thenAccept(resp -> {
             String t = ai.stripTags(resp).trim();
             if (t.isEmpty()) return;
@@ -3679,7 +3679,7 @@ public class TRPGGameManager {
         String charDisplay = pd.gmDisplayName();
         String prompt = charDisplay + "이(가) '" + traitName + "' 특성으로 " + rangeStr
             + "에 있는 '" + target + "'을(를) 원격으로 감지한다. 위 규칙에 맞춰 GM 서술로 묘사해줘.";
-        ai.callGmAiOnce(gmSystemPrompt + senseCtx, prompt).thenAccept(response ->
+        ai.callGmAiOnce(gmSystemPrompt, senseCtx + "\n\n" + prompt).thenAccept(response ->
             plugin.getServer().getScheduler().runTask(plugin, () -> {
                 String stripped = ai.stripTags(response).trim();
                 if (!stripped.isBlank())
@@ -3707,7 +3707,7 @@ public class TRPGGameManager {
         String charDisplay = pd.gmDisplayName();
         String prompt = charDisplay + "이(가) '" + traitName + "' 특성으로 다음 행동의 결과를 미리 본다. 의도한 행동: \""
             + action + "\". 위 규칙에 맞춰 예상 결과·분기를 전망해줘.";
-        ai.callGmAiOnce(gmSystemPrompt + foresightCtx, prompt).thenAccept(response ->
+        ai.callGmAiOnce(gmSystemPrompt, foresightCtx + "\n\n" + prompt).thenAccept(response ->
             plugin.getServer().getScheduler().runTask(plugin, () -> {
                 String stripped = ai.stripTags(response).trim();
                 if (!stripped.isBlank())
@@ -3734,7 +3734,7 @@ public class TRPGGameManager {
         String charDisplay = pd.gmDisplayName();
         String prompt = charDisplay + "이(가) '" + traitName + "' 특성으로 " + scopeStr
             + " 범위에서 '" + target + "'을(를) 탐색한다.";
-        boolean accepted = turnMan.handleAction(player, prompt, gmSystemPrompt + scanCtx);
+        boolean accepted = turnMan.handleAction(player, prompt, gmSystemPrompt, scanCtx);
         if (!accepted) player.sendMessage("§7행동 처리 중입니다. 잠시 후 다시 시도하세요.");
     }
 
@@ -3759,7 +3759,7 @@ public class TRPGGameManager {
             + "- 직접 통신 채널을 여는 것은 불가. 감각적 인지·이야기 서술로만 표현한다.\n";
         String charDisplay = pd.gmDisplayName();
         String prompt = charDisplay + "이(가) '" + traitName + "' 특성으로 아군을 탐지한다. 탐지 목표: \"" + query + "\"";
-        ai.callGmAiOnce(gmSystemPrompt + linkCtx, prompt).thenAccept(response ->
+        ai.callGmAiOnce(gmSystemPrompt, linkCtx + "\n\n" + prompt).thenAccept(response ->
             plugin.getServer().getScheduler().runTask(plugin, () -> {
                 String stripped = ai.stripTags(response).trim();
                 if (!stripped.isBlank())
@@ -3787,7 +3787,7 @@ public class TRPGGameManager {
         String prompt = charDisplay + "이(가) '" + name + "' 특성으로 질문한다: \"" + question + "\" "
             + "위 규칙에 맞춰 답해줘.";
 
-        ai.callGmAiOnce(gmSystemPrompt + prayerCtx, prompt).thenAccept(response ->
+        ai.callGmAiOnce(gmSystemPrompt, prayerCtx + "\n\n" + prompt).thenAccept(response ->
             plugin.getServer().getScheduler().runTask(plugin, () -> {
                 String stripped = ai.stripTags(response).trim();
                 if (!stripped.isBlank())
@@ -3815,7 +3815,7 @@ public class TRPGGameManager {
             ? "현재 상황에서 취할 만한 " + numChoices + "가지 선택지를 JSON으로."
             : "플레이어 행동 의도: \"" + action + "\". " + numChoices + "가지 선택지를 JSON으로.";
 
-        ai.callGmAiOnce(gmSystemPrompt + oracleCtx, prompt).thenAccept(raw ->
+        ai.callGmAiOnce(gmSystemPrompt, oracleCtx + "\n\n" + prompt).thenAccept(raw ->
             plugin.getServer().getScheduler().runTask(plugin, () -> {
                 try {
                     String cleaned = raw.replaceAll("```json", "").replaceAll("```", "").trim();
