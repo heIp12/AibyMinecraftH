@@ -5846,6 +5846,9 @@ public class TRPGGameManager {
             String npcName = npcObj.has("name") ? npcObj.get("name").getAsString() : "NPC";
             String npcZone = npcZones.getOrDefault(npcId,
                 npcObj.has("zone") ? npcObj.get("zone").getAsString() : "");
+            // ★비용 절약★: 같은 구역에 플레이어도 없고 전화로도 닿지 않는 NPC는 자율 AI 호출 생략 —
+            //   그 출력은 GM 컨텍스트로만 들어가 아무도 못 보므로 크레딧만 쓴다. 플레이어가 다가오면 다음 주기에 다시 활동.
+            if (!npcCanReachAnyPlayer(npcId, npcZone)) continue;
             // ★그 NPC가 있는 위치(zone)에서 일어난 행동만 — 다른 장면의 플레이어 행동이 NPC 서술에 섞이지 않게.
             String actionLog = state.buildEntityLog(4, npcZone);
             // 빈 로그를 그대로 주면 모델이 '입력을 달라'는 메타 응답을 내놓는다 → 자율 행동 지시로 대체한다.
@@ -5913,6 +5916,17 @@ public class TRPGGameManager {
                 gameLogger.logGmOutput("NPC(" + npcName + ")", trimmed);
             });
         }
+    }
+
+    /** 이 NPC가 만나거나(같은 zone) 전화로 닿을 수 있는 살아있는 등장 플레이어가 하나라도 있는가. 자율 AI 호출 여부 판단용(비용 절약). */
+    private boolean npcCanReachAnyPlayer(String npcId, String npcZone) {
+        for (PlayerData pd : state.getAllPlayers()) {
+            if (pd.isDead || !spawnedPlayers.contains(pd.uuid)) continue;
+            boolean here  = !npcZone.isEmpty() && npcZone.equals(pd.zone);
+            boolean phone = isPhoneUsable() && pd.everKnownNpcContacts.contains(npcId);
+            if (here || phone) return true;
+        }
+        return false;
     }
 
     /** 자율 NPC가 '먼저 연락'하게 — 닿는 상대(같은 곳/번호 아는 사이) 목록 + NPC_CALL 사용법. 닿을 사람 없으면 "". */
