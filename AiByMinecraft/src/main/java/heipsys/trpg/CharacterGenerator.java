@@ -90,6 +90,12 @@ public class CharacterGenerator {
     // 직업명 → 한 줄 설명 (AI 풀 갱신 시 함께 생성, 캐시에 영속). 마우스 오버레이용.
     private final Map<String, String> jobDesc = new ConcurrentHashMap<>();
 
+    /** 친숙 모드(프로젝트 문·게임) 시작 특성 테마 지침. 일반 시나리오면 빈 문자열. TRPGGameManager가 스테이지 시작 시 주입. */
+    private volatile String scenarioFlavor = "";
+
+    /** 시작 특성 테마 지침 설정(프로젝트 문→전투표상/E.G.O. 기프트, 게임→게임 메커니즘 능력). */
+    public void setScenarioFlavor(String s) { this.scenarioFlavor = (s == null) ? "" : s; }
+
     /** 직업의 한 줄 설명(없으면 빈 문자열). 마우스 오버레이용 — 낯선 직업 안내. */
     public String describeJob(String job) {
         if (job == null) return "";
@@ -495,7 +501,8 @@ public class CharacterGenerator {
             + "- effect: 한 문장으로 간결하게 (수동이면 판정에서 발휘되는 식, 능동이면 사용 효과)\n"
             + "- 직업명을 그대로 쓰지 말고 구체적 능력으로 작성\n"
             + "- 한국어, 창의적\n\n"
-            + "직업 등급별 규칙:\n" + tierRules;
+            + "직업 등급별 규칙:\n" + tierRules
+            + (scenarioFlavor.isBlank() ? "" : "\n" + scenarioFlavor);
 
         String prompt = "나이: " + pd.age + "세, 직업: " + pd.job
             + "\nHP=" + pd.hp[1] + " STR=" + pd.str + " SAN=" + pd.san[1]
