@@ -7734,6 +7734,20 @@ public class TRPGGameManager {
             .filter(p -> p.getGameMode() == GameMode.SURVIVAL).count();
     }
 
+    /** 휘말림(외부인) 배역에 줄 한글 실명 풀 — AI 생성 배역이 아니라 코드에서 이름을 부여해야 계정명 노출이 없다. */
+    private static final String[] EXTRA_CHAR_NAMES = {
+        "김도현","이서연","박지훈","최유나","정민재","강수빈","조현우","윤가람",
+        "장태경","임하늘","오세진","한지원","신동욱","서아름","권민호","배소율",
+        "남궁성","문재이","유다온","홍시현"
+    };
+
+    /** EXTRA_CHAR_NAMES 중 아직 안 쓴 이름 1개 반환(used에 추가). 풀 소진 시 숫자 접미사. */
+    private String pickExtraName(java.util.Set<String> used) {
+        for (String n : EXTRA_CHAR_NAMES) if (used.add(n)) return n;
+        for (int k = 2; ; k++)
+            for (String n : EXTRA_CHAR_NAMES) { String c = n + k; if (used.add(c)) return c; }
+    }
+
     /**
      * 플레이어 수가 .gdam 배역 수보다 많으면, 부족한 만큼 '사건에 휘말리는 주변 인물' 배역을 gdam.roles에 추가한다.
      * → 남는 플레이어도 관전이 아니라 평범한 외부인으로 등장해 사건에 휘말린다.
@@ -7751,12 +7765,24 @@ public class TRPGGameManager {
             JsonObject r = el.getAsJsonObject();
             if (r.has("zone") && !r.get("zone").getAsString().isBlank()) zones.add(r.get("zone").getAsString());
         }
+        // 이미 쓰인 이름(배역 char_name + NPC명) 수집 — 휘말림 배역 이름이 겹치지 않게
+        java.util.Set<String> usedNames = new java.util.HashSet<>();
+        for (JsonElement el : roles)
+            if (el.isJsonObject() && el.getAsJsonObject().has("char_name"))
+                usedNames.add(el.getAsJsonObject().get("char_name").getAsString());
+        if (gdam.has("npcs") && gdam.get("npcs").isJsonArray())
+            for (JsonElement el : gdam.getAsJsonArray("npcs"))
+                if (el.isJsonObject()) { String nm = getStr(el.getAsJsonObject(), "name"); if (!nm.isBlank()) usedNames.add(nm); }
+
         int need = playerCount - have;
         for (int i = 0; i < need; i++) {
             JsonObject r = new JsonObject();
             r.addProperty("role_id", "role_extra" + (i + 1));
             r.addProperty("name", "휘말린 외부인");
             r.addProperty("is_core", false);
+            // ★char_name/gender를 코드에서 부여 — AI 생성 배역이 아니라 누락되면 계정명이 노출되고 이름이 안 정해진다.
+            r.addProperty("char_name", pickExtraName(usedNames));
+            r.addProperty("gender", ThreadLocalRandom.current().nextBoolean() ? "남성" : "여성");
             if (!zones.isEmpty()) r.addProperty("zone", zones.get(i % zones.size())); // 사건 현장(또는 그 일대)에 분산 배치
             r.addProperty("role_type", "bystander");
             JsonArray info = new JsonArray();
