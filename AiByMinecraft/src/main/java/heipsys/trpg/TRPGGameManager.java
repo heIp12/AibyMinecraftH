@@ -828,7 +828,12 @@ public class TRPGGameManager {
     private void startPregenNext() {
         if (replayLock) return;            // 재현 세션은 다음 스테이지가 없음
         if (!nextStageUnlocked) return;    // 진출 불가(단순 생존 등) — 미리 만들 필요 없음
-        int target = state.getRoomNumber() + 1;
+        int current = state.getRoomNumber();
+        // 최종 스테이지면 다음이 없다 — nextSession의 종료 조건과 동일하게 사전 생성 차단.
+        // (6=무리트라이 보너스 끝, 또는 리트라이한 채 FINAL_STAGE 도달 → concludeWholeGame)
+        // 이 가드가 없으면 6스테이지 클리어 후 쓰지도 않을 7스테이지를 백그라운드 생성해 비용을 낭비한다.
+        if (current >= 6 || (current >= FINAL_STAGE && retriedThisRun)) return;
+        int target = current + 1;
         if (pregenFuture != null && pregenRoom == target) return; // 이미 진행/완료된 것이 있음
         pregenRoom   = target;
         pregenFuture = gdamGen.generate(target, familiarMode, familiarFilter, step -> {}, castHintFor(target)) // 진행 콜백 없음(조용히), 피날레면 복귀 캐스트 시드
