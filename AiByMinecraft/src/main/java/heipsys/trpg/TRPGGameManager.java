@@ -2679,6 +2679,10 @@ public class TRPGGameManager {
     private void handleSystemTraitActivation(Player player, PlayerData pd, TraitData td) {
         SystemTraitRegistry.Effect e = SystemTraitRegistry.Effect.byKey(td.effectType);
         if (e == null) { player.sendMessage("§7이 특성은 자동으로 효과가 적용됩니다."); return; }
+        // ★능력 이벤트 로깅★: 모든 능동 능력 발동을 단일 분기점에서 구조화 기록(로그 뷰어 '능력' 필터·시점용).
+        //   세부 결과는 각 activateXxx가 별도로 남기므로 여기선 '발동' 사실만 남긴다.
+        gameLogger.logAbility(pd != null ? pd.gmDisplayName() : player.getName(),
+            td.name, "", td.effectType, "발동");
         switch (e) {
             case INSTANT_CLEAR -> activateInstantClear(player, pd, td);
             case REVIVE_ALLY   -> activateRevive(player, pd, td);
