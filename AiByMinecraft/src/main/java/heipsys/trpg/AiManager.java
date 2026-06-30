@@ -564,6 +564,24 @@ public class AiManager {
         });
     }
 
+    /**
+     * 충실도가 중요한 1회성 호출(친숙 모드 실존 괴담·환상체 정전 선정)용 — 최고 품질 모델 사용.
+     * 저품질 모델은 실존 원전을 그럴듯하게 ★창작(환각)★하는 경향이 강해 정전 충실도가 깨진다.
+     * 시나리오당 1회뿐이라 비용 영향이 작다.
+     */
+    public CompletableFuture<String> callAssistantHiFi(String task, String data) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                List<JsonObject> messages = List.of(msg("user", task + "\n\n" + data));
+                return send(highModel(),
+                    "너는 정확한 자료 큐레이터다. ★검증된 실존 사실만★ 다루고, 불확실하면 가장 확실하고 유명한 것을 택하며, 그럴듯한 이름을 ★새로 지어내지 않는다★.",
+                    messages, ASST_MAX_TOKENS);
+            } catch (Exception e) {
+                return "§c[보조 AI 오류] " + e.getMessage();
+            }
+        });
+    }
+
     // ======================================================
     //  컨텍스트 관리
     // ======================================================
@@ -689,6 +707,8 @@ public class AiManager {
             .replaceAll("<DICE>[\\s\\S]*?</DICE>", "")
             .replaceAll("<CLEAR>[\\s\\S]*?</CLEAR>", "")
             .replaceAll("<WITNESS[^>]*>[\\s\\S]*?</WITNESS>", "")
+            .replaceAll("<NPC_CALL[^>]*>[\\s\\S]*?</NPC_CALL>", "")
+            .replaceAll("<NPC_LEARN[^>]*>[\\s\\S]*?</NPC_LEARN>", "")
             .replaceAll("<SPAWN[^/]*/?>", "")
             .replaceAll("<COMM [^/]*/?>", "")
             .replaceAll("<COMM_CLOSE [^/]*/?>", "")
@@ -739,6 +759,42 @@ public class AiManager {
             from = close + "</WITNESS>".length();
         }
         return result;
+    }
+
+    /** <NPC_CALL player="name">말</NPC_CALL> 태그 파싱 → {playerName: 전할 말}. NPC가 먼저 연락하는 용도. */
+    public Map<String, String> parseNpcCallTags(String response) {
+        Map<String, String> result = new java.util.LinkedHashMap<>();
+        final String PREFIX = "<NPC_CALL player=\"";
+        int from = 0;
+        while (true) {
+            int open = response.indexOf(PREFIX, from);
+            if (open == -1) break;
+            int nameEnd = response.indexOf("\">", open + PREFIX.length());
+            if (nameEnd == -1) break;
+            String name = response.substring(open + PREFIX.length(), nameEnd);
+            int close = response.indexOf("</NPC_CALL>", nameEnd + 2);
+            if (close == -1) break;
+            result.put(name, response.substring(nameEnd + 2, close).trim());
+            from = close + "</NPC_CALL>".length();
+        }
+        return result;
+    }
+
+    /** <NPC_LEARN>새로 알게 된 것</NPC_LEARN> 태그 내용 목록 추출 — NPC가 플레이 중 수집한 정보. */
+    public java.util.List<String> parseNpcLearnTags(String response) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        final String OPEN = "<NPC_LEARN>", CLOSE = "</NPC_LEARN>";
+        int from = 0;
+        while (true) {
+            int o = response.indexOf(OPEN, from);
+            if (o == -1) break;
+            int c = response.indexOf(CLOSE, o + OPEN.length());
+            if (c == -1) break;
+            String v = response.substring(o + OPEN.length(), c).trim();
+            if (!v.isEmpty()) out.add(v);
+            from = c + CLOSE.length();
+        }
+        return out;
     }
 
     /** <MAP_GRANT player="name"/> 태그들에서 플레이어명 목록 추출 (지도 전체 입수) */
