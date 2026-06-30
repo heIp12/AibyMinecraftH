@@ -19,10 +19,10 @@ public class NarrativeDelivery {
     private static final long MAX_DELAY_TICKS   = 100L; // 5초
     private static final long FIRST_DELAY_TICKS = 12L;  // 첫 블록은 빠르게(0.6초)
     // 세그먼트(문장 묶음) 목표 글자 — 이 근처에서 ★문장 경계로만★ 끊는다(문장 도중 분할 금지).
-    // 약간 남으면 다음 문장도 같이 묶어 한 줄을 꽉 채운다(최대 MAX_CHAT_CHARS=50자까지).
-    private static final int SEGMENT_TARGET = 48;
+    // 약간 남으면 다음 문장도 같이 묶어 한 줄을 꽉 채운다(최대 MAX_CHAT_CHARS자까지).
+    private static final int SEGMENT_TARGET = 60;
     // 한 라인(MC 채팅 한 줄) 최대 표시 길이(한글 기준). 클라 채팅 폭에 맞춰 — 너무 크면 MC가 임의로 줄바꿈.
-    private static final int MAX_CHAT_CHARS = 50;
+    private static final int MAX_CHAT_CHARS = 80;
 
     private final Plugin plugin;
     private final Map<UUID, ArrayDeque<Block>>  queues  = new ConcurrentHashMap<>();
@@ -41,7 +41,7 @@ public class NarrativeDelivery {
         UUID uuid = player.getUniqueId();
         ArrayDeque<Block> q = queues.computeIfAbsent(uuid, k -> new ArrayDeque<>());
 
-        // 문단(\n) → 문장 경계로 세그먼트(≤SEGMENT_TARGET자, 가로는 50자까지 채움)로 묶는다. ★문장 도중에는 절대 끊지 않는다.★
+        // 문단(\n) → 문장 경계로 세그먼트(≤SEGMENT_TARGET자, 가로는 MAX_CHAT_CHARS자까지 채움)로 묶는다. ★문장 도중에는 절대 끊지 않는다.★
         // 각 세그먼트(블록)는 한 줄(들)로 출력하고 ★뒤에 빈 줄 한 줄★을 둬 세로로 띄운다 → 벽처럼 뭉쳐 보이지 않게.
         for (String para : format(raw).split("\n")) {
             if (para.isBlank()) continue;

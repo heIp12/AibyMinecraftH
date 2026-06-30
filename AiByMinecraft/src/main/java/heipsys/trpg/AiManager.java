@@ -689,6 +689,8 @@ public class AiManager {
             .replaceAll("<DICE>[\\s\\S]*?</DICE>", "")
             .replaceAll("<CLEAR>[\\s\\S]*?</CLEAR>", "")
             .replaceAll("<WITNESS[^>]*>[\\s\\S]*?</WITNESS>", "")
+            .replaceAll("<NPC_CALL[^>]*>[\\s\\S]*?</NPC_CALL>", "")
+            .replaceAll("<NPC_LEARN[^>]*>[\\s\\S]*?</NPC_LEARN>", "")
             .replaceAll("<SPAWN[^/]*/?>", "")
             .replaceAll("<COMM [^/]*/?>", "")
             .replaceAll("<COMM_CLOSE [^/]*/?>", "")
@@ -739,6 +741,42 @@ public class AiManager {
             from = close + "</WITNESS>".length();
         }
         return result;
+    }
+
+    /** <NPC_CALL player="name">말</NPC_CALL> 태그 파싱 → {playerName: 전할 말}. NPC가 먼저 연락하는 용도. */
+    public Map<String, String> parseNpcCallTags(String response) {
+        Map<String, String> result = new java.util.LinkedHashMap<>();
+        final String PREFIX = "<NPC_CALL player=\"";
+        int from = 0;
+        while (true) {
+            int open = response.indexOf(PREFIX, from);
+            if (open == -1) break;
+            int nameEnd = response.indexOf("\">", open + PREFIX.length());
+            if (nameEnd == -1) break;
+            String name = response.substring(open + PREFIX.length(), nameEnd);
+            int close = response.indexOf("</NPC_CALL>", nameEnd + 2);
+            if (close == -1) break;
+            result.put(name, response.substring(nameEnd + 2, close).trim());
+            from = close + "</NPC_CALL>".length();
+        }
+        return result;
+    }
+
+    /** <NPC_LEARN>새로 알게 된 것</NPC_LEARN> 태그 내용 목록 추출 — NPC가 플레이 중 수집한 정보. */
+    public java.util.List<String> parseNpcLearnTags(String response) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        final String OPEN = "<NPC_LEARN>", CLOSE = "</NPC_LEARN>";
+        int from = 0;
+        while (true) {
+            int o = response.indexOf(OPEN, from);
+            if (o == -1) break;
+            int c = response.indexOf(CLOSE, o + OPEN.length());
+            if (c == -1) break;
+            String v = response.substring(o + OPEN.length(), c).trim();
+            if (!v.isEmpty()) out.add(v);
+            from = c + CLOSE.length();
+        }
+        return out;
     }
 
     /** <MAP_GRANT player="name"/> 태그들에서 플레이어명 목록 추출 (지도 전체 입수) */

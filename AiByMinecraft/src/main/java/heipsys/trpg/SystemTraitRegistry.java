@@ -36,8 +36,8 @@ public class SystemTraitRegistry {
             "발동 시 현재 괴담의 진행 단계·상태를 본인만 확인한다.",
             "(별도 파라미터 없음. 제약은 cooldown으로 조절)"),
         CHOICE_ACTION("choice_action", true,
-            "발동 시 다음 행동을 직접 입력 대신 선택지로 제시한다. 정답엔 큰 보정, 오답엔 큰 패널티.",
-            "uses=사용 횟수, choices=선택지 개수(2~4)"),
+            "발동 시 다음 행동을 직접 입력 대신 선택지로 제시한다(다이얼로그 버튼). 정답엔 큰 보정, 오답엔 큰 패널티.",
+            "uses=사용 횟수, choices=선택지 개수(2~4), auto_choice=0이면 무엇을 할지 먼저 물어보고 그에 맞는 선택지를, 1이면 현재 상황에 맞는 선택지를 자동 제시"),
         GM_DIRECTIVE("gm_directive", true,
             "발동 시 effect에 적힌 지시를 GM에게 전달해 사건 전개에 반영시킨다. ★기억회상·직관·예지·환각·내면경험(캐릭터가 자동으로 정보를 경험하는 효과) 특성에 반드시 사용. effect 텍스트에 '무엇을 떠올리는지/경험하는지' 서술하면 AI가 그 장면을 생생하게 묘사한다.",
             "uses=사용 횟수"),
@@ -191,8 +191,10 @@ public class SystemTraitRegistry {
         sb.append("특성에 아래 기계 효과 중 하나를 부여할 수 있다(없어도 됨; 없으면 GM 서술로만 처리).\n");
         sb.append("부여하려면 effect_type에 키를, effect_params에 수치를 넣는다.\n");
         sb.append("같은 effect_type이라도 이름·등급·설명·쿨다운·파라미터로 다양한 변형을 만들 수 있다.\n");
-        sb.append("★ 대가 명시 규칙: 사용에 대가(체력·정신력 소모, 행동 제약, 통제 상실, 위험 등)가 있는 특성은 그 대가를 description에 반드시 적어라(예: '사용 시 정신력 2 소모'). 정확한 수치형 대가는 시스템이 자동 표기하므로, 너는 대가의 '존재와 성격'을 자연스럽게 설명에 녹이면 된다.\n");
-        sb.append("★★ 소모 수치화 필수: 효과에 '정신/체력 소모'가 있으면 ★반드시★ effect_params에 cost_san(정신력) 또는 cost_hp(체력)에 ★구체 수치(1~30)★를 넣어라. (예: '정신 소모가 크다'→cost_san:5, '약간의 체력을 바친다'→cost_hp:2) 수치가 없으면 '소모가 크다' 같은 모호한 말만 남고 실제로 깎이지도, 정확한 양이 표시되지도 않는다 — 절대 말로만 쓰지 마라. 어떤 effect_type이든(sacrifice가 아니어도) 붙일 수 있다.\n");
+        sb.append("★ 대가 명시 규칙: 사용에 대가(체력·정신력 소모, 행동 제약, 통제 상실, 위험 등)가 있으면, 정확한 수치는 effect_params(cost_san/cost_hp 등)에 넣어라 — 시스템이 description 끝에 '▸대가: …'로 자동 표기한다. description 본문에는 ★숫자를 다시 적지 말고★ 대가의 '성격'만 자연스럽게 녹여라(예: 본문 '불쾌한 이미지를 밀어낸다' + cost_san:1 → 시스템이 '▸대가: 사용 시 정신력 1 소모' 자동 추가). 본문에 '(정신 소모 1)'처럼 숫자를 또 쓰면 중복 표기된다.\n");
+        sb.append("★★ 소모 수치화 필수: 효과에 '정신/체력 소모'가 있으면 ★반드시★ effect_params의 cost_san(정신력)/cost_hp(체력)에 ★구체 수치★를 넣어라(말로만 쓰면 실제로 깎이지도, 정확히 표시되지도 않는다).\n");
+        sb.append("  · ★sacrifice 효과는 예외★ — 자원 소모를 고유 파라미터 cost/use_san으로 표현하므로 cost_san/cost_hp를 ★중복으로 달지 마라★(이중 차감·이중 표기됨). sacrifice가 아닌 능동 효과에만 cost_san/cost_hp를 붙여라.\n");
+        sb.append("  · ★소모량 보정★: 능력치 평균은 5, 정신/체력 풀은 100이고 능력은 자주 쓰인다 — ★과하게 책정하지 마라★. 사소한 효과=1~3, 보통=4~8, 무거운 대가=10~20(고등급·강효과 한정). (예: '불쾌한 이미지를 떨쳐낸다'→cost_san:1 / '정신을 크게 깎는 의식'→cost_san:12) 같은 자원을 두 번(고유 cost와 cost_san) 적지 마라.\n");
         sb.append("★ 강한 발동형 능력엔 '실제로 강제되는 대가'를 effect_params로 붙일 수 있다(권장): cost_stun=사용 후 N턴 행동불능(0~3) · cost_threat=1이면 그 대가로 괴담/위협이 한 단계 진행. 시스템이 이 대가를 실제로 적용하고 GM에게 명시해 판정에 반영시킨다(예: 강력한 발동형 S/A급에 cost_stun=1 또는 cost_threat=1).\n\n");
 
         sb.append("=== 능동 효과 (active=true) ===\n");
@@ -404,7 +406,8 @@ public class SystemTraitRegistry {
             case CHOICE_ACTION -> {
                 td.effectParams.putIfAbsent("uses", 1);
                 td.effectParams.putIfAbsent("choices", 3);
-                clamp(td, "uses", 1, 3); clamp(td, "choices", 2, 4);
+                td.effectParams.putIfAbsent("auto_choice", 0); // 0=행동을 물어본 뒤 선택지 / 1=현재 상황 선택지 자동 제시
+                clamp(td, "uses", 1, 3); clamp(td, "choices", 2, 4); clamp(td, "auto_choice", 0, 1);
             }
             case SCENARIO_INSIGHT, ENTITY_SENSE, ALLY_SENSE, LORE_RECORD, ENCOUNTER_SCAN -> {
                 td.effectParams.putIfAbsent("depth", 2);
@@ -435,6 +438,16 @@ public class SystemTraitRegistry {
                 clamp(td, "scope", 1, 3); clamp(td, "uses", 1, 3);
             }
             case SACRIFICE -> {
+                // SACRIFICE는 고유 cost/use_san으로 자원 소모를 '단일' 표현한다.
+                // AI가 범용 대가(cost_san/cost_hp)까지 같이 적으면 이중 차감·이중 표기가 되므로 흡수·제거한다.
+                int gSan = Math.max(0, td.param("cost_san", 0));
+                int gHp  = Math.max(0, td.param("cost_hp", 0));
+                if (!td.effectParams.containsKey("cost")) {        // 고유 cost 미지정 시 범용 대가에서 유도(기본 10 남발 방지)
+                    if (gSan > 0)     { td.effectParams.put("cost", gSan); td.effectParams.put("use_san", 1); }
+                    else if (gHp > 0) { td.effectParams.put("cost", gHp);  td.effectParams.put("use_san", 0); }
+                }
+                td.effectParams.remove("cost_san");                 // 단일화: applyActivationCost의 추가 차감·중복 표기 차단
+                td.effectParams.remove("cost_hp");
                 td.effectParams.putIfAbsent("cost", 10);
                 td.effectParams.putIfAbsent("use_san", 0);
                 td.effectParams.putIfAbsent("scale", 2);

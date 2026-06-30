@@ -138,6 +138,21 @@ public class CharacterGenerator {
                                 .thenRun(this::saveCache);
     }
 
+    /**
+     * 강제 초기화 후 무조건 AI 재생성 — 캐시 파일 삭제+서버 재시작 없이 런타임에서 직업 풀을 새로 뽑는다.
+     * 동적 풀을 정적값으로 되돌리고(→ needsRefresh가 참이 됨) 사용 기록·설명·캐시 파일을 비운 뒤 refreshJobPools를 돈다.
+     */
+    public CompletableFuture<Void> forceRefreshJobPools() {
+        synchronized (dynCommon) { dynCommon.clear(); dynCommon.addAll(Arrays.asList(COMMON_JOB_POOL)); }
+        synchronized (dynStrong) { dynStrong.clear(); dynStrong.addAll(Arrays.asList(STRONG_JOB_POOL)); }
+        synchronized (dynRare)   { dynRare.clear();   dynRare.addAll(Arrays.asList(RARE_JOB_POOL)); }
+        usedJobs.clear();
+        jobDesc.clear();
+        try { if (cacheFile.exists()) cacheFile.delete(); } catch (Exception ignored) {}
+        org.bukkit.Bukkit.getLogger().info("[직업풀] 강제 초기화 — AI로 직업 풀 재생성 시작");
+        return refreshJobPools();
+    }
+
     /** 풀에서 절반 이상 직업이 이미 사용됐으면 true (AI 재호출 필요). staticSize=정적 폴백 크기 */
     private boolean needsRefresh(List<String> pool, Set<String> globalUsed, int staticSize) {
         if (pool.size() <= staticSize) return true; // 아직 AI 갱신 없음 → 무조건 갱신
@@ -150,9 +165,12 @@ public class CharacterGenerator {
     private CompletableFuture<Void> callAndFillPool(String system, String prompt, List<String> target) {
         return aiManager.callAssistant(system, prompt).thenAccept(raw -> {
             try {
-                String cleaned = raw.replaceAll("```json", "").replaceAll("```", "").trim();
+                String cleaned = raw == null ? "" : raw.replaceAll("```json", "").replaceAll("```", "").trim();
                 int s = cleaned.indexOf('['), e = cleaned.lastIndexOf(']');
-                if (s == -1 || e == -1) return;
+                if (s == -1 || e == -1) {
+                    org.bukkit.Bukkit.getLogger().warning("[직업풀] AI 응답에 JSON 배열이 없어 정적 풀 유지. 앞부분: " + snippet(raw));
+                    return;
+                }
                 JsonArray arr = GSON.fromJson(cleaned.substring(s, e + 1), JsonArray.class);
                 List<String> jobs = new ArrayList<>();
                 for (JsonElement el : arr) {
@@ -171,9 +189,23 @@ public class CharacterGenerator {
                 }
                 if (jobs.size() >= 20) {
                     synchronized (target) { target.clear(); target.addAll(jobs); }
+                    org.bukkit.Bukkit.getLogger().info("[직업풀] AI 직업 " + jobs.size() + "개 갱신 완료");
+                } else {
+                    org.bukkit.Bukkit.getLogger().warning("[직업풀] AI 직업 " + jobs.size() + "개만 파싱(20개 미만) → 정적 풀 유지");
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception ex) {
+                org.bukkit.Bukkit.getLogger().warning("[직업풀] AI 직업 파싱 실패 → 정적 풀 유지: " + ex.getMessage());
+            }
+        }).exceptionally(ex -> {
+            org.bukkit.Bukkit.getLogger().warning("[직업풀] AI 호출 실패 → 정적 풀 유지: " + ex.getMessage());
+            return null;
         });
+    }
+
+    private static String snippet(String s) {
+        if (s == null) return "null";
+        String t = s.replace("\n", " ").trim();
+        return t.length() > 120 ? t.substring(0, 120) + "…" : t;
     }
 
     // ──────────────────────────────────────────────────────────────
