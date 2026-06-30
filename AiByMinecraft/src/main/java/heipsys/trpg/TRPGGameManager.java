@@ -383,6 +383,8 @@ public class TRPGGameManager {
             case "korean" -> "한국 괴담만";
             case "japan"  -> "일본 괴담만";
             case "rule"   -> "규칙 괴담만";
+            case "projectmoon" -> "환상체(프로젝트 문)";
+            case "game"        -> "게임 괴담";
             default        -> "모두 무작위";
         };
     }
