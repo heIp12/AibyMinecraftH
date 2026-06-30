@@ -5944,21 +5944,28 @@ public class TRPGGameManager {
 
     /** 자율 NPC가 '먼저 연락'하게 — 닿는 상대(같은 곳/번호 아는 사이) 목록 + NPC_CALL 사용법. 닿을 사람 없으면 "". */
     private String buildNpcCallInstruction(String npcId, String npcZone) {
+        boolean phoneUp = isPhoneUsable();
         StringBuilder reach = new StringBuilder();
         for (PlayerData pd : state.getAllPlayers()) {
             if (pd.isDead || !spawnedPlayers.contains(pd.uuid)) continue;
             boolean here  = !npcZone.isEmpty() && npcZone.equals(pd.zone);
-            boolean phone = isPhoneUsable() && pd.everKnownNpcContacts.contains(npcId);
+            boolean phone = phoneUp && pd.everKnownNpcContacts.contains(npcId);
             if (here || phone)
                 reach.append("· ").append(pd.gmDisplayName()).append(here ? " (같은 곳—직접) " : " (전화 가능) ");
         }
-        if (reach.length() == 0) return "";
+        // ★통신 두절 인지★: 전화가 안 되는 상황이면 NPC에게 명시 — 안 그러면 닿지도 않을 원격 연락을 계속 헛되이 시도한다(버그).
+        if (reach.length() == 0) {
+            return phoneUp ? "" :
+                "\n\n## 연락 상태 — 통신 두절\n지금 ★전화·원격 연락이 불가능★하다(통신 두절). 멀리 있는 사람에게 연락을 시도하지 마라 — 닿지 않는다. "
+                + "지금은 ★같은 공간에 있는 상대에게 직접 말하는 것만★ 가능하다.\n";
+        }
         return "\n\n## 먼저 연락하기 (선택 — 남발 금지)\n"
             + "너는 ★먼저★ 아래 사람에게 연락할 수 있다. 급한 정보·경고·도움 요청·관계상 자연스러운 안부 등 ★분명한 이유가 있을 때만★(매 턴 금지).\n"
             + "닿는 상대: " + reach.toString().trim() + "\n"
             + "연락하려면 응답에 태그를 넣어라(목소리만, 행동 묘사 금지):\n"
             + "<NPC_CALL player=\"상대 이름\">전할 말 1~2문장</NPC_CALL>\n"
             + "- '전화 가능'은 통화로, '같은 곳'은 직접 말로 닿는다. 목록에 없는 사람에겐 닿지 않는다.\n"
+            + (phoneUp ? "" : "- ★통신 두절★: 전화·원격 연락은 ★불가능★하다. 위 목록의 ‘같은 곳’ 상대에게 직접 말하는 것만 가능 — 멀리 있는 사람에게 전화 시도하지 마라(헛수고).\n")
             + "- 정체·해결법을 직접 누설하지 마라(괴담측이면 기만·유도만).";
     }
 
