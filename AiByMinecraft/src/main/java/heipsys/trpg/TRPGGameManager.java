@@ -1872,37 +1872,9 @@ public class TRPGGameManager {
                 }
             }
 
-            // 11. Entity AI (괴담 파트, 2턴마다) — ★별도 메세지로 따로 터뜨리지 않는다.
-            //   초기 지침(급발진 금지 · 플레이어가 '슬슬' 위화감을 느끼게 · 직접 제공 금지)에 따라,
-            //   괴담 현상 단서를 GM 컨텍스트에만 주입해 GM이 다음 서술 본문에 아주 옅게 녹여 내게 한다
-            //   (중요 NPC AI와 동일 방식). 플레이어 채팅에 따로 출력하지 않는다 → '따로 뜨는 이상한 이야기' 제거.
-            //   ★각 플레이어의 '같은 위치(zone)'에서 일어난 행동만 반영 — 장면 혼선 방지.
-            if (currentPhase == Phase.HORROR && state.getCurrentTurn() % 2 == 1) {
-                String entityPrompt = buildEntitySystemPrompt();
-                spawnedPlayers.forEach(uid -> {
-                    Player sp = Bukkit.getPlayer(uid);
-                    if (sp == null) return;
-                    PlayerData spd = state.getPlayer(uid);
-                    String entityLog = state.buildEntityLog(5, spd != null ? spd.zone : "");
-                    ai.callEntityAi(entityPrompt, entityLog).thenAccept(entityResp -> {
-                        if (entityResp == null || entityResp.startsWith("§c")) return;
-                        String trimmed = ai.stripTags(entityResp).trim();
-                        if (trimmed.isEmpty()) return;
-                        // 모델이 길게 늘어놓아도 한 문장만 취한다(옅은 위화감 1가닥).
-                        final String ambient = clampAmbient(trimmed);
-                        if (ambient.isEmpty()) return;
-                        plugin.getServer().getScheduler().runTask(plugin, () -> {
-                            if (corruptMan.getLevel() >= 2) corruptMan.addEntityMemory(ambient);
-                            // ★플레이어에게 직접 출력하지 않는다 — GM이 다음 서술에 자연스럽게(옅게) 녹여 낸다.
-                            String who = (spd != null) ? spd.gmDisplayName() : sp.getName();
-                            String zoneLabel = (spd != null && spd.zone != null && !spd.zone.isEmpty()) ? spd.zone : "현장";
-                            ai.injectGmSystem("[괴담 현상 — GM만 인지] " + who + "(" + zoneLabel + ") 주변에서: " + ambient
-                                + " — 다음 서술에 ★아주 옅은 위화감 한 가닥★으로만 녹여라(별도 단락·돌발 전개·직접 설명 금지).");
-                            gameLogger.logGmOutput("괴담현상(" + zoneLabel + ")", ambient);
-                        });
-                    });
-                });
-            }
+            // 11. (제거됨) 괴담 현상 Entity AI 앰비언트 — 연출만 만들고 매 2턴 ★플레이어 수만큼★ 별도 AI를
+            //   호출해 크레딧만 소모하던 블록을 제거했다. 괴담의 능동성·존재감은 GM이 entity 규칙·
+            //   corruption_behavior·disposition·main_events를 바탕으로 본 서술에서 직접 표현한다(별도 AI 호출 없음).
 
             // 11b. 중요 NPC 자율 AI (괴담 파트) — 기본 3턴마다 + 무행동 워치독
             //   플레이어가 많아 NPC가 묻히는 것을 막기 위해, 4턴 이상 NPC 행동이 없으면 강제로 등장시킨다.
