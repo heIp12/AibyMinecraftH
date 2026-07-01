@@ -1,4 +1,4 @@
-package heipsys.trpg;
+package heipsys.trpg.projectmoon;
 
 import java.util.LinkedHashSet;
 import java.util.Set;

@@ -1,5 +1,6 @@
 package heipsys.trpg;
 
+import heipsys.trpg.projectmoon.ProjectMoonLore;
 import com.google.gson.*;
 import org.bukkit.plugin.Plugin;
 
