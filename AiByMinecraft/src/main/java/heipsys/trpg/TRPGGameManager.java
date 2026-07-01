@@ -5861,6 +5861,38 @@ public class TRPGGameManager {
     }
 
     /** CORE 뒤에 얹는 캐릭터 데이터 블록(성격·동기·기억·역할·관계). 대화·자율 모드 공통. */
+    /** B: 코드가 확실히 아는 세계 현황을 '사실'로 요약 — NPC가 무효화된 계획을 고집하지 않게. 없으면 "". */
+    private String worldStateFacts(JsonObject npcObj) {
+        // 이 NPC가 ★신경 쓰는 것★(목표·계획·기억)만 대상 — 무관한 물품 나열(원격 NPC 메타 누출) 방지 + 재계획 타겟팅.
+        StringBuilder concern = new StringBuilder();
+        if (npcObj.has("schedule") && npcObj.get("schedule").isJsonArray())
+            for (JsonElement el : npcObj.getAsJsonArray("schedule"))
+                if (el.isJsonObject()) { JsonObject s = el.getAsJsonObject();
+                    concern.append(getStr(s, "goal")).append(' ').append(getStr(s, "action")).append(' '); }
+        if (npcObj.has("knowledge") && npcObj.get("knowledge").isJsonArray())
+            for (JsonElement k : npcObj.getAsJsonArray("knowledge")) concern.append(k.getAsString()).append(' ');
+        String c = concern.toString();
+        if (c.isBlank()) return "";
+        // 이미 플레이어가 확보한 ★핵심 물품★(key_items 정의된 것만) 중 이 NPC의 관심사와 겹치는 것 — '찾으러 감' 무효화 신호.
+        java.util.LinkedHashMap<String, String> held = new java.util.LinkedHashMap<>(); // 물품명 → 소지자 표시명
+        for (PlayerData pd : state.getAllPlayers()) {
+            if (pd == null || pd.heldItemIds == null) continue;
+            for (String id : pd.heldItemIds) {
+                JsonObject def = itemMan.findDef(id);
+                if (def == null) continue; // 일반 소지품 제외(핵심 물품만)
+                String nm = def.has("name") ? def.get("name").getAsString() : id;
+                if (relevanceScore(nm, c) == 0) continue; // 이 NPC가 언급·추구하는 물품만
+                held.putIfAbsent(nm, pd.gmDisplayName());
+            }
+        }
+        StringBuilder f = new StringBuilder();
+        if (!held.isEmpty()) {
+            f.append("이미 누군가 확보한, ★네가 신경 쓰는 물품★(찾으러 갈 필요 없음 — 이미 손에 있다):\n");
+            for (java.util.Map.Entry<String, String> e : held.entrySet())
+                f.append("  · ").append(e.getKey()).append(" — ").append(e.getValue()).append("이(가) 이미 가지고 있다\n");
+        }
+        return f.toString();
+    }
     /** 지식 항목이 현재 문맥과 얼마나 관련되는지 — 항목의 2글자 이상 토큰이 문맥에 등장한 수. */
     private static int relevanceScore(String info, String ctx) {
         if (info == null || ctx == null || ctx.isEmpty()) return 0;
@@ -5878,7 +5910,10 @@ public class TRPGGameManager {
             for (JsonElement el : npcObj.getAsJsonArray("schedule")) {
                 if (!el.isJsonObject()) continue;
                 JsonObject s = el.getAsJsonObject();
-                sb.append("  · [").append(getStr(s, "time")).append("] ").append(getStr(s, "action"));
+                String goal = getStr(s, "goal"); // A: 의도(안정). action은 그 목표를 향한 '지금 계획'(가변).
+                sb.append("  · [").append(getStr(s, "time")).append("] ");
+                if (!goal.isBlank()) sb.append("목표: ").append(goal).append(" · 지금 계획: ").append(getStr(s, "action"));
+                else sb.append(getStr(s, "action"));
                 String will = getStr(s, "will");
                 if (!will.isBlank()) sb.append(" (의지:").append(will).append(")");
                 String cond = getStr(s, "condition");
@@ -5886,7 +5921,11 @@ public class TRPGGameManager {
                 sb.append("\n");
             }
             sb.append("- 의지 '강함'이면 막혀도 다른 방법으로 재시도, '약함'이면 제지·설득에 포기. 조건부 반응은 그 조건이 실제 일어났을 때만.\n");
+            sb.append("- ★목표(의도)는 유지하되, 지금 상황·아래 세계 현황상 계획이 이미 이뤄졌거나 불가능해졌으면 방법을 바꿔라 — 무의미해진 행동을 고집하지 마라(예: 이미 부서진 문을 계속 잠그려 하지 말고 다른 출입구를 막거나 사람을 말려라 / 찾던 물건을 이미 누가 가졌으면 찾으러 가는 대신 그에게 물어라).\n");
         }
+        // B(핵심): 코드가 확실히 아는 '세계 현황' 사실 주입 — NPC가 무효화된 계획을 고집하지 않도록(재계획 판단은 AI, 사실은 코드).
+        String facts = worldStateFacts(npcObj);
+        if (!facts.isEmpty()) sb.append("[지금 세계 현황 — 네 계획이 이미 무의미해졌는지 참고할 ★사실★]\n").append(facts);
         if (npcObj.has("personality"))
             sb.append("성격(말투에 반영): ").append(npcObj.get("personality").getAsString()).append("\n");
         if (npcObj.has("motivation"))
