@@ -58,6 +58,17 @@
   #info h3{font-size:13px;margin:14px 0 6px;color:var(--accent)}
   #info .card{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:7px;font-size:12px;line-height:1.5}
   #info .st{display:inline-block;min-width:58px;color:var(--dim)} #info .tr{color:#ffd27a}
+  #info .sub{color:var(--dim);font-size:11px;margin:5px 0 2px;text-transform:uppercase;letter-spacing:.04em}
+  #info .dim2{color:var(--dim);font-size:11px}
+  #info .trait{border-top:1px solid var(--line);padding:4px 0 3px}
+  #info .trait:first-of-type{border-top:0}
+  #info .grd{color:#ffd27a;font-weight:600}
+  #info .act{font-size:10px;color:var(--accent);border:1px solid var(--line);border-radius:10px;padding:0 5px}
+  #info .tdesc{margin:2px 0;color:var(--txt)}
+  #info .teff{color:var(--dim);font-size:11px}
+  #info .tboost{color:#8fe0a0;font-size:11px}
+  #info .spoiler{border:1px dashed #7a4a4a;border-radius:8px;padding:0 8px 6px;margin:6px 0;background:rgba(150,70,70,.08)}
+  #info .spoiler h3{color:#ff9a8f}
   .infoClose{float:right;cursor:pointer;color:var(--dim)}
 </style>
 </head>
@@ -104,9 +115,17 @@ function colorFor(name){ if(!name)return "#cdbbff"; let h=0; for(let i=0;i<name.
 
 function normalize(ev){
   let kind=ev.kind||"", actor=ev.actor||"", to=Array.isArray(ev.to)?ev.to.slice():[];
-  const cat=ev.cat||"", who=ev.who||"", text=ev.text||""; let target="";
+  const cat=ev.cat||"", who=ev.who||"", text=ev.text||""; let target="", bodyText=text;
   if(!kind||!actor){
-    if(cat==="입력"){kind=kind||"input";actor=actor||who;}
+    if(cat==="입력"){kind=kind||"input";if(!actor)actor=who;
+      // 구형 txt '[입력] <계정> <내용>' — 첫 토큰=발화자(계정명은 본문에서 제거해 메타 노출 차단)
+      if(!actor){const mm=text.match(/^(\S+)(?:\s+([\s\S]*))?$/);if(mm){actor=mm[1];bodyText=mm[2]||"";}}
+      // @전체/@근처/@<대상> → 통신(방송/근처/통화)으로 분류(통화내역 필터·가시성에 반영)
+      const mc=bodyText.match(/^@(\S+)\s*([\s\S]*)$/);
+      if(mc){const tg=mc[1];
+        if(/^(전체|전원|모두|all)$/i.test(tg))kind="broadcast";
+        else if(/^(근처|주변|주위)$/.test(tg))kind="nearby";
+        else if(!/^(GM|시스템|SYSTEM)$/i.test(tg)){kind="call";if(!target)target=tg;}}}
     else if(cat==="GM입력"){kind=kind||"gm_input";actor=actor||who;}
     else if(cat.startsWith("GM→")){let x=cat.slice(3);
       if(isGlobal(x)||x.startsWith("능력방송")){kind=kind||"broadcast";actor=actor||"GM";}
@@ -121,9 +140,9 @@ function normalize(ev){
   }
   if(target&&!to.length)to=[target];
   actor=canon(actor); to=to.map(canon);
-  return {seq:ev.seq||0,t:ev.t||"",kind,actor,to,ability:ev.ability||"",detail:ev.detail||"",text,cat};
+  return {seq:ev.seq||0,t:ev.t||"",kind,actor,to,ability:ev.ability||"",detail:ev.detail||"",text:bodyText,cat};
 }
-function visibleTo(e,vp){ if(vp==="__all__")return true; if(e.kind==="system"||e.kind==="broadcast")return true;
+function visibleTo(e,vp){ if(vp==="__all__")return true; if(e.kind==="system"||e.kind==="broadcast"||e.kind==="nearby")return true;
   if(e.actor===vp)return true; if(e.to.includes(vp))return true; if(e.to.some(isGlobal))return true; return false; }
 function buildViewpoints(){ const m=new Map();
   for(const e of EVENTS){ if(e.kind==="alias")continue; for(const c of [e.actor,...e.to])if(isPerson(c))m.set(c,(m.get(c)||0)+1); }
@@ -283,6 +302,10 @@ function buildAlias(){
     else if(ev.cat==="배역"&&ev.who){const m=(ev.text||"").match(/=\s*(.+)$/);if(m){const c=m[1].trim();ALIAS[ev.who]=c;ALIAS[c]=c;}}
     // '배역 배정 → 이름 (…)' 개인 로그에서 계정→표시명을 유추(별칭 이벤트가 없을 때의 폴백). 명시적 별칭이 우선.
     else if(ev.cat==="개인"&&ev.who){const m=(ev.text||"").match(/배역 배정 →\s*([^(（]+?)\s*[(（]/);if(m){const c=m[1].trim();if(c&&c!=="이름 모를 인물"){if(!ALIAS[ev.who])ALIAS[ev.who]=c;ALIAS[c]=c;}}}
+    // 구형 '[이벤트] 배역 배정: <계정> → <role_id> (<나이>세 <직업>, zone <zone>)' → 계정·role_id를 직업(배역명)으로 매핑. 명시적 별칭이 우선.
+    const am=(ev.text||"").match(/배역 배정:\s*(\S+)\s*→\s*(\S+)\s*[(（]\s*(?:\d+\s*세\s*)?([^,，()）]+?)\s*[,，)）]/);
+    if(am){const acct=am[1],role=am[2],job=am[3].trim();
+      if(job&&job!=="이름 모를 인물"){if(!ALIAS[acct])ALIAS[acct]=job;if(!ALIAS[role])ALIAS[role]=job;ALIAS[job]=job;}}
   }
   if(REPLAY&&Array.isArray(REPLAY.players))for(const p of REPLAY.players){const d=(p.charName&&p.charName.trim())?p.charName.trim():(p.name||"");if(p.name)ALIAS[p.name]=d;if(p.charName)ALIAS[p.charName]=d;}
 }
@@ -338,19 +361,39 @@ function loadLogText(name,text){
 }
 function renderInfo(){
   const b=document.getElementById("infoBody");let h="";
+  const S=v=>v==null?"":String(v).trim();
+  const row=(label,val)=>{const s=S(val);return s?`<br><span class="st">${esc(label)}</span>${esc(s)}`:"";};
+  const rowArr=(label,val)=>{if(!Array.isArray(val))return "";const it=val.map(S).filter(Boolean);return it.length?`<br><span class="st">${esc(label)}</span>${it.map(esc).join(" · ")}`:"";};
   if(REPLAY){h+=`<h3>플레이어 ${REPLAY.stage!=null?"(스테이지 "+REPLAY.stage+")":""}</h3>`;
     for(const p of (REPLAY.players||[])){const hp=Array.isArray(p.hp)?p.hp.join("/"):p.hp,san=Array.isArray(p.san)?p.san.join("/"):p.san;
+      const stat=(cur,base)=>base!=null&&base!==cur?`${cur??"?"}<span class="dim2">(${base})</span>`:`${cur??"?"}`;
       h+=`<div class="card"><b style="color:${colorFor(p.charName||p.name)}">${esc(p.charName||p.name||"?")}</b> <span style="color:var(--dim)">${esc(p.job||"")} · ${p.age??"?"}세 · ${esc(p.zone||"")}</span><br>
         <span class="st">체력</span>${esc(hp)} <span class="st">정신</span>${esc(san)}<br>
-        <span class="st">근력</span>${p.str??"?"} <span class="st">매력</span>${p.cha??"?"} <span class="st">행운</span>${p.luk??"?"} <span class="st">영감</span>${p.spr??"?"}`;
-      if(Array.isArray(p.traits)&&p.traits.length)h+=`<br>`+p.traits.map(t=>`<span class="tr">✦ ${esc(t.name)}${t.grade?"("+esc(t.grade)+")":""}</span>`).join(" ");
+        <span class="st">근력</span>${stat(p.str,p.baseStr)} <span class="st">매력</span>${stat(p.cha,p.baseCha)} <span class="st">행운</span>${stat(p.luk,p.baseLuk)} <span class="st">영감</span>${stat(p.spr,p.baseSpr)}
+        <div class="dim2">스탯 5=평균 · 범위 1~20 · 괄호=기본값</div>`;
+      if(Array.isArray(p.traits)&&p.traits.length){h+=`<div class="sub">능력 · 특성</div>`;
+        for(const t of p.traits){
+          const boosts=[["근",t.str_add],["매",t.cha_add],["행",t.luk_add],["영",t.spr_add],["체력",t.hp_max_add],["정신",t.san_max_add]].filter(x=>x[1]).map(x=>x[0]+(x[1]>0?"+":"")+x[1]).join(" ");
+          h+=`<div class="trait"><span class="tr">✦ ${esc(t.name||"?")}</span>${t.grade?` <span class="grd">${esc(t.grade)}</span>`:""}${t.active?` <span class="act">발동</span>`:""}${t.level>1?` <span class="dim2">Lv.${t.level}</span>`:""}`;
+          if(S(t.description))h+=`<div class="tdesc">${esc(t.description)}</div>`;
+          if(boosts)h+=`<div class="tboost">스탯 ${esc(boosts)}</div>`;
+          if(S(t.effect))h+=`<div class="teff">⚙ ${esc(t.effect)}</div>`;
+          h+=`</div>`;}}
       h+=`</div>`;}}
-  if(SCENARIO){const e=SCENARIO.entity||{};
-    h+=`<h3>시나리오</h3><div class="card"><b>${esc(e.name||"?")}</b> <span style="color:var(--dim)">${esc(SCENARIO.scale||"")}</span>`;
-    if(SCENARIO.world_rules&&SCENARIO.world_rules.core)h+=`<br><span class="st">규칙</span>${esc(SCENARIO.world_rules.core)}`;
-    if(e.weakness)h+=`<br><span class="st">약점</span>${esc(e.weakness)}`; h+=`</div>`;
+  if(SCENARIO){const e=SCENARIO.entity||{},ai=e.ai_context||{},ph=e.physical||{};
+    h+=`<h3>괴담 개요</h3><div class="card"><b>${esc(e.name||"?")}</b> <span style="color:var(--dim)">${esc(S(SCENARIO.scale))}${e.type?" · "+esc(e.type):""}</span>`;
+    h+=row("성격",ai.personality||ai.disposition);
+    h+=(SCENARIO.world_rules&&SCENARIO.world_rules.core)?row("세계규칙",SCENARIO.world_rules.core):"";
+    h+=rowArr("규칙",e.rules);
+    h+=rowArr("숨은규칙",e.hidden_rules);
+    h+=row("물리 피해",ph.harm);
+    h+=row("금지어",e.forbidden_word);
+    h+=`</div>`;
+    const sol=[["약점",e.weakness],["해결책",e.solution],["공략",e.exploit_path],["탈출",e.escape],["제압",ph.defeat]]
+      .map(x=>{const s=S(x[1]);return s?`<span class="st">${x[0]}</span>${esc(s)}`:"";}).filter(Boolean);
+    if(sol.length)h+=`<div class="spoiler"><h3>대처법 · GM 전용(스포일러)</h3><div class="card" style="margin:0;background:transparent;border:0;padding:2px 0">${sol.join("<br>")}</div></div>`;
     if(Array.isArray(SCENARIO.npcs)&&SCENARIO.npcs.length){h+=`<h3>NPC</h3>`;for(const n of SCENARIO.npcs)h+=`<div class="card"><b>${esc(n.name||n.id||"?")}</b> <span style="color:var(--dim)">${esc(n.role_type||"")}${n.zone?" · "+esc(n.zone):""}</span>${n.motivation?"<br>"+esc(n.motivation):""}</div>`;}}
-  b.innerHTML=h||`<div class="empty">.replay(스탯)·.json(시나리오)을 함께 불러오면 표시됩니다.</div>`;
+  b.innerHTML=h||`<div class="empty">.replay(스탯)·.json/.gdam(시나리오)을 함께 불러오면 표시됩니다.</div>`;
   document.getElementById("toggleInfo").style.display=(REPLAY||SCENARIO)?"":"none";
 }
 function ingest(file){const nm=file.name.toLowerCase();
