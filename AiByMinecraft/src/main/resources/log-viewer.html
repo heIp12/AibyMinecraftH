@@ -7,7 +7,7 @@
 <style>
   :root{ --bg:#14161c; --panel:#1c1f27; --panel2:#232733; --line:#2e3340;
     --txt:#e7e9ee; --dim:#9aa1b1; --accent:#7aa2ff;
-    --input:#9ad27a; --gm:#cdbbff; --npc:#ffd27a; --ability:#ff8a8a; --system:#6f7686; --broadcast:#7adfff; }
+    --input:#9ad27a; --gm:#cdbbff; --npc:#ffd27a; --ability:#ff8a8a; --system:#6f7686; --broadcast:#7adfff; --vital:#ff6b8a; }
   *{box-sizing:border-box}
   body{margin:0;font-family:"Segoe UI","Malgun Gothic",system-ui,sans-serif;background:var(--bg);color:var(--txt);font-size:14px}
   header{padding:10px 16px;background:var(--panel);border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:center;flex-wrap:wrap;position:sticky;top:0;z-index:5}
@@ -46,7 +46,9 @@
   .ev.k-ability{border-left-color:var(--ability);background:#251c22} .ev.k-system{border-left-color:var(--system);opacity:.85}
   .ev.k-broadcast{border-left-color:var(--broadcast)} .ev.k-gm_input{border-left-color:#444b5a;opacity:.72}
   .ev.k-private{border-left-color:#8f9bb0}
+  .ev.k-vital{border-left-color:var(--vital);background:#2a1820}
   .ev.k-ability .badge{background:var(--ability);color:#2a0f0f}
+  .ev.k-vital .badge{background:var(--vital);color:#2a0f14}
   .pill{font-size:11px;padding:1px 7px;border-radius:20px;border:1px solid var(--line);color:var(--dim)}
   .drop{margin:50px auto;max-width:600px;border:2px dashed var(--line);border-radius:14px;padding:44px 24px;text-align:center;color:var(--dim);background:var(--panel)}
   .drop.drag{border-color:var(--accent);color:var(--txt);background:var(--panel2)}
@@ -149,7 +151,7 @@ function normalize(ev){
   if(target&&!to.length)to=[target];
   actor=canon(actor); to=to.map(canon);
   if(kind==="assign")bodyText="배역 배정: "+(actor||"?"); // 계정→role_id·zone_id 메타 노출 제거 + 당사자 표시명으로
-  return {seq:ev.seq||0,t:ev.t||"",kind,actor,to,ability:ev.ability||"",detail:ev.detail||"",text:bodyText,cat};
+  return {seq:ev.seq||0,t:ev.t||"",kind,actor,to,ability:ev.ability||"",detail:ev.detail||"",phase:ev.phase||"",cause:ev.cause||"",text:bodyText,cat};
 }
 function visibleTo(e,vp){ if(vp==="__all__")return true; if(e.kind==="system"||e.kind==="broadcast"||e.kind==="nearby")return true;
   if(e.actor===vp)return true; if(e.to.includes(vp))return true; if(e.to.some(isGlobal))return true; return false; }
@@ -224,7 +226,8 @@ function renderSide(){
     for(const f of FILES.logs){const d=document.createElement("div");d.className="fl"+(f.__on?" on":"");d.textContent="📄 "+(f.__title||f.name);d.title=f.name+(f.__title?" — 괴담: "+f.__title:"");d.onclick=()=>openFolderLog(f);wrap.appendChild(d);}
     side.appendChild(wrap);}
 }
-function badgeFor(e){ return e.kind==="ability"?(e.ability?"✨ "+e.ability:"✨ 능력")
+function badgeFor(e){ return e.kind==="ability"?(e.phase==="result"?"✨ "+(e.ability||"능력")+" 결과":(e.ability?"✨ "+e.ability:"✨ 능력"))
+  :e.kind==="vital"?"❤ 상태"
   :e.kind==="input"?"입력":e.kind==="call"?"📞 통화":e.kind==="nearby"?"👥 근처":e.kind==="gm"?"GM 서술":e.kind==="broadcast"?"📢 방송":e.kind==="npc"?"☎ NPC"
   :e.kind==="assign"?"🎭 배역":e.kind==="system"?"시스템":e.kind==="private"?"개인":e.kind==="gm_input"?"GM입력(상세)":(e.cat||"이벤트"); }
 const COMM_KINDS=new Set(["call","nearby","broadcast"]);
@@ -233,11 +236,13 @@ function filtered(){
   const q=(document.getElementById("q")?.value||"").trim().toLowerCase();
   const onlyAbil=document.getElementById("onlyAbil")?.checked;
   const onlyComm=document.getElementById("onlyComm")?.checked;
+  const onlyVital=document.getElementById("onlyVital")?.checked;
   const showVerbose=document.getElementById("verbose")?.checked;
   return EVENTS.filter(e=>{
     if(!visibleTo(e,curVP))return false;
     if(onlyAbil&&e.kind!=="ability")return false;
     if(onlyComm&&!COMM_KINDS.has(e.kind))return false;
+    if(onlyVital&&e.kind!=="vital")return false;
     if(!showVerbose&&HIDE_KIND_DEFAULT.has(e.kind))return false;
     if(q){const hay=(e.actor+" "+e.to.join(" ")+" "+e.ability+" "+e.text+" "+e.cat).toLowerCase();if(!hay.includes(q))return false;}
     return true;
@@ -247,11 +252,13 @@ function toolbarHtml(list){
   const q=(document.getElementById("q")?.value||"");
   const onlyAbil=document.getElementById("onlyAbil")?.checked?"checked":"";
   const onlyComm=document.getElementById("onlyComm")?.checked?"checked":"";
+  const onlyVital=document.getElementById("onlyVital")?.checked?"checked":"";
   const showVerbose=document.getElementById("verbose")?.checked?"checked":"";
   return `<div class="toolbar">
     <input type="text" id="q" placeholder="🔎 검색" value="${escAttr(q)}">
     <label><input type="checkbox" id="onlyAbil" ${onlyAbil}> ✨ 능력만</label>
     <label><input type="checkbox" id="onlyComm" ${onlyComm}> ☎ 통화내역</label>
+    <label><input type="checkbox" id="onlyVital" ${onlyVital}> ❤ 상태만</label>
     <label><input type="checkbox" id="verbose" ${showVerbose}> GM입력</label>
     <button id="playBtn" class="${playing?"on":""}">${playing?"⏸ 멈춤":"▶ 재생"}</button>
     <label>속도 <input type="range" id="spd" min="0.4" max="3" step="0.2" value="${speed}"></label>
@@ -263,6 +270,7 @@ function bindToolbar(){
   const q2=document.getElementById("q"); if(q2){q2.oninput=()=>{stopPlay();renderMain();};}
   const a=document.getElementById("onlyAbil"); if(a)a.onchange=()=>{stopPlay();renderMain();};
   const cm=document.getElementById("onlyComm"); if(cm)cm.onchange=()=>{stopPlay();renderMain();};
+  const vt=document.getElementById("onlyVital"); if(vt)vt.onchange=()=>{stopPlay();renderMain();};
   const v=document.getElementById("verbose"); if(v)v.onchange=()=>{stopPlay();renderMain();};
   const pb=document.getElementById("playBtn"); if(pb)pb.onclick=togglePlay;
   const sp=document.getElementById("spd"); if(sp)sp.oninput=e=>{speed=parseFloat(e.target.value)||1;};
