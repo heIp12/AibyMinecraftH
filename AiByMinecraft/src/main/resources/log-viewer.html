@@ -82,6 +82,8 @@
   #info .tboost{color:#8fe0a0;font-size:11px}
   #info .spoiler{border:1px dashed #7a4a4a;border-radius:8px;padding:0 8px 6px;margin:6px 0;background:rgba(150,70,70,.08)}
   #info .spoiler h3{color:#ff9a8f}
+  #info h3.sech{cursor:pointer;user-select:none} #info h3.sech:hover{filter:brightness(1.15)}
+  #info h3.sech .secarrow{color:var(--dim);font-size:11px;margin-right:2px}
   .infoClose{float:right;cursor:pointer;color:var(--dim)}
 </style>
 </head>
@@ -115,6 +117,7 @@ let EVENTS=[], VIEWPOINTS=[], curVP="__all__";
 let ALIAS={}, REPLAY=null, SCENARIO=null, RAWCACHE=[], KNOWN=new Set(), CONTACTS={};
 let FILES={logs:[],replays:[],scenarios:[],gdams:[]};
 let playing=false, speed=1, queue=[], qi=0, qtimer=null, curBodyEl=null;
+let COLLAPSED=new Set(); // 정보 패널에서 접어둔 섹션 id — 재렌더(실시간 갱신 포함)에도 상태 유지
 
 const GLOBAL_RE=/전체|전원|모두|모든|방송|broadcast|^\*$|all/i;
 const PHASE_SUFFIX=/\s*\((프롤로그|전환|목격|대기|뒷이야기|에필로그|배드엔딩|시간\s*경과)\)\s*$/;
@@ -381,19 +384,19 @@ function stateAt(vp,seq){
   return {hp,hpMax,san,sanMax,abil,items,clues};
 }
 function livePanelHtml(vp,st){
-  let h=`<h3>재생 시점 — 아는 만큼만 <span class="live">● LIVE</span></h3>`;
+  let h=sh('live-state','재생 시점 — 아는 만큼만 <span class="live">● LIVE</span>');
   h+=`<div class="know"><div class="khead" style="color:${colorFor(vp)}">${esc(vp)}</div>`;
   h+=`<span class="hp">체력 ${st.hp??"?"}${st.hpMax!=null?"/"+st.hpMax:""}</span> &nbsp; <span class="san">정신 ${st.san??"?"}${st.sanMax!=null?"/"+st.sanMax:""}</span><br>`;
   h+=`<span class="st">능력 발동</span>${st.abil}회</div>`;
-  const list=(arr,cls,label,icon)=>{ if(!arr.length)return ""; const uq=[...new Set(arr.filter(Boolean))]; if(!uq.length)return "";
-    return `<div class="know"><div class="khead ${cls}">${icon} ${esc(label)} (${uq.length})</div>`+uq.map(x=>`<div>· ${esc(x)}</div>`).join("")+`</div>`;};
-  h+=list(st.clues,"kclue","알아낸 단서","🔍");
-  h+=list(st.items,"kitem","가진 아이템","🎒");
+  const list=(arr,cls,id,label,icon)=>{ const uq=[...new Set((arr||[]).filter(Boolean))]; if(!uq.length)return "";
+    return sh(id,`${icon} ${esc(label)} (${uq.length})`)+`<div class="know ${cls}">`+uq.map(x=>`<div>· ${esc(x)}</div>`).join("")+`</div>`;};
+  h+=list(st.clues,"kclue","live-clue","알아낸 단서","🔍");
+  h+=list(st.items,"kitem","live-item","가진 아이템","🎒");
   return h;
 }
 function updateLive(seq){
   if(curVP==="__all__")return;
-  const body=document.getElementById("infoBody"); if(body)body.innerHTML=livePanelHtml(curVP,stateAt(curVP,seq));
+  const body=document.getElementById("infoBody"); if(body){body.innerHTML=livePanelHtml(curVP,stateAt(curVP,seq));applyCollapsed();} // 접힘 상태 유지
   const info=document.getElementById("info"); if(info)info.classList.add("open");
   const tb=document.getElementById("toggleInfo"); if(tb)tb.style.display="";
 }
@@ -495,6 +498,19 @@ function loadLogText(name,text){
   document.getElementById("meta").textContent=`${name} · ${EVENTS.length}개 · 시점 ${VIEWPOINTS.length}`+(REPLAY?" · .replay":"")+(sess?` · ${sess.text}`:"");
   renderSide(); renderMain();
 }
+// ── 정보 패널 섹션 접기 ── 헤더(h3.sech) 클릭 → 다음 h3.sech 전까지의 형제 요소를 접는다.
+//  COLLAPSED(전역)에 접힌 id를 저장하고, 재렌더(실시간 상태 갱신 포함) 후 applyCollapsed()로 상태를 그대로 복원 → 마음대로 펴지지 않음.
+function sh(id,title){ return `<h3 class="sech" data-sid="${id}" onclick="toggleSec(this)"><span class="secarrow">▾</span> ${title}</h3>`; }
+function applyCollapsed(){
+  const body=document.getElementById("infoBody"); if(!body)return;
+  for(const h of body.querySelectorAll("h3.sech")){
+    const collapsed=COLLAPSED.has(h.dataset.sid);
+    const ar=h.querySelector(".secarrow"); if(ar)ar.textContent=collapsed?"▸":"▾";
+    let el=h.nextElementSibling;
+    while(el && !(el.tagName==="H3"&&el.classList.contains("sech"))){ el.style.display=collapsed?"none":""; el=el.nextElementSibling; }
+  }
+}
+function toggleSec(h){ const id=h.dataset.sid; if(COLLAPSED.has(id))COLLAPSED.delete(id); else COLLAPSED.add(id); applyCollapsed(); }
 // role_id/npc_id → 표시 이름 (배역 char_name → NPC 이름 → replay → 원본 id)
 function scNameOf(rid){
   if(!rid) return rid;
@@ -528,7 +544,7 @@ function scenarioExtraHtml(){
   let h="";
   const rels=SCENARIO.relationships;
   if(Array.isArray(rels)&&rels.length){
-    h+=`<h3>관계도</h3>`; const svg=scRelSvg(rels); if(svg)h+=svg;
+    h+=sh('rel','관계도'); const svg=scRelSvg(rels); if(svg)h+=svg;
     for(const r of rels){const names=(r.roles||[]).map(scNameOf).filter(Boolean).join(" ↔ ");
       h+=`<div class="card"><b>${esc(names||"?")}</b> <span class="dim2">${esc(S(r.type))}</span>`
         +(S(r.description)?`<br>${esc(r.description)}`:"")
@@ -536,7 +552,7 @@ function scenarioExtraHtml(){
         +`</div>`;}
   }
   if(Array.isArray(SCENARIO.npcs)&&SCENARIO.npcs.length){
-    h+=`<h3>NPC 상세</h3>`;
+    h+=sh('npc','NPC 상세');
     for(const n of SCENARIO.npcs){
       h+=`<div class="card"><b>${esc(n.name||n.id||"?")}</b> <span class="dim2">${esc(S(n.role_type))}${n.zone?" · "+esc(n.zone):""}${n.critical?" · ★핵심":""}${n.communicable===false?" · 대화불가":""}</span>`;
       if(S(n.motivation))  h+=`<br><span class="st">동기</span>${esc(n.motivation)}`;
@@ -558,7 +574,7 @@ function scenarioExtraHtml(){
     }
   }
   if(Array.isArray(SCENARIO.roles)&&SCENARIO.roles.length){
-    h+=`<h3>배역</h3>`;
+    h+=sh('roles','배역');
     for(const r of SCENARIO.roles){
       h+=`<div class="card"><b>${esc(r.char_name||r.name||r.role_id||"?")}</b> <span class="dim2">${esc(S(r.name))}${r.zone?" · "+esc(r.zone):""}${r.is_core?" · ★핵심":""}</span>`;
       if(S(r.spawn_location)) h+=`<br><span class="st">등장</span>${esc(r.spawn_location)}`;
@@ -569,7 +585,7 @@ function scenarioExtraHtml(){
   }
   const tl=SCENARIO.timeline;
   if(tl&&typeof tl==="object"){
-    h+=`<h3>사건 타임라인</h3><div class="card"><span class="dim2">${esc(S(tl.start_time))}~${esc(S(tl.end_time))} · 1턴 ${esc(S(tl.minutes_per_turn))}분 · 일상 ${esc(S(tl.daily_turns))}턴</span>`;
+    h+=sh('timeline','사건 타임라인')+`<div class="card"><span class="dim2">${esc(S(tl.start_time))}~${esc(S(tl.end_time))} · 1턴 ${esc(S(tl.minutes_per_turn))}분 · 일상 ${esc(S(tl.daily_turns))}턴</span>`;
     if(Array.isArray(tl.main_events))for(const ev of tl.main_events){
       if(typeof ev==="string"){h+=`<br>· ${esc(ev)}`;continue;}
       h+=`<br>· ${S(ev.time)?`<span class="dim2">[${esc(S(ev.time))}]</span> `:""}<b>${esc(S(ev.label||ev.id))}</b>${S(ev.effect)?` — ${esc(S(ev.effect))}`:""}${ev.blockable?` <span class="dim2">(막을수있음)</span>`:""}`;
@@ -579,7 +595,7 @@ function scenarioExtraHtml(){
     h+=`</div>`;
   }
   if(Array.isArray(SCENARIO.clues)&&SCENARIO.clues.length){
-    h+=`<div class="spoiler"><h3>배치 단서 · GM 전용</h3>`;
+    h+=`<div class="spoiler">`+sh('clues','배치 단서 · GM 전용');
     for(const c of SCENARIO.clues){const mis=c.type==="mislead"||c.mislead;
       h+=`<div class="card" style="margin:4px 0"><b>${esc(S(c.clue_subject)||S(c.id))}</b>${mis?` <span class="dim2" style="color:#ff9a8f">거짓 단서</span>`:` <span class="dim2">진짜</span>`}`
         +(S(c.location)?`<br><span class="st">위치</span>${esc(c.location)}`:"")
@@ -587,7 +603,7 @@ function scenarioExtraHtml(){
     h+=`</div>`;
   }
   if(Array.isArray(SCENARIO.key_items)&&SCENARIO.key_items.length){
-    h+=`<h3>핵심 아이템</h3>`;
+    h+=sh('items','핵심 아이템');
     for(const it of SCENARIO.key_items){
       h+=`<div class="card"><b>${esc(it.name||it.id||"?")}</b> <span class="dim2">${esc(S(it.item_type||it.type))}</span>`
         +(S(it.description)?`<br>${esc(it.description)}`:"")
@@ -602,7 +618,7 @@ function scenarioExtraHtml(){
   }
   const cons=SCENARIO.constraints;
   if(cons&&typeof cons==="object"){
-    h+=`<h3>배경 · 제약</h3><div class="card">`;
+    h+=sh('cons','배경 · 제약')+`<div class="card">`;
     const flags=[];
     if(cons.era)flags.push("시대 "+S(cons.era));
     flags.push("휴대폰 "+(cons.phone_usable?"가능":"불가")); flags.push("외부연락 "+(cons.outside_contact?"가능":"두절"));
@@ -619,7 +635,7 @@ function renderInfo(){
   const S=v=>v==null?"":String(v).trim();
   const row=(label,val)=>{const s=S(val);return s?`<br><span class="st">${esc(label)}</span>${esc(s)}`:"";};
   const rowArr=(label,val)=>{if(!Array.isArray(val))return "";const it=val.map(S).filter(Boolean);return it.length?`<br><span class="st">${esc(label)}</span>${it.map(esc).join(" · ")}`:"";};
-  if(REPLAY){h+=`<h3>플레이어 ${REPLAY.stage!=null?"(스테이지 "+REPLAY.stage+")":""}</h3>`;
+  if(REPLAY){h+=sh('players',`플레이어 ${REPLAY.stage!=null?"(스테이지 "+REPLAY.stage+")":""}`);
     for(const p of (REPLAY.players||[])){const hp=Array.isArray(p.hp)?p.hp.join("/"):p.hp,san=Array.isArray(p.san)?p.san.join("/"):p.san;
       const stat=(cur,base)=>base!=null&&base!==cur?`${cur??"?"}<span class="dim2">(${base})</span>`:`${cur??"?"}`;
       h+=`<div class="card"><b style="color:${colorFor(p.charName||p.name)}">${esc(p.charName||p.name||"?")}</b> <span style="color:var(--dim)">${esc(p.job||"")} · ${p.age??"?"}세 · ${esc(p.zone||"")}</span><br>
@@ -636,7 +652,7 @@ function renderInfo(){
           h+=`</div>`;}}
       h+=`</div>`;}}
   if(SCENARIO){const e=SCENARIO.entity||{},ai=e.ai_context||{},ph=e.physical||{};
-    h+=`<h3>괴담 개요</h3><div class="card"><b>${esc(e.name||"?")}</b> <span style="color:var(--dim)">${esc(S(SCENARIO.scale))}${e.type?" · "+esc(e.type):""}</span>`;
+    h+=sh('entity','괴담 개요')+`<div class="card"><b>${esc(e.name||"?")}</b> <span style="color:var(--dim)">${esc(S(SCENARIO.scale))}${e.type?" · "+esc(e.type):""}</span>`;
     h+=row("성격",ai.personality||ai.disposition);
     h+=(SCENARIO.world_rules&&SCENARIO.world_rules.core)?row("세계규칙",SCENARIO.world_rules.core):"";
     h+=rowArr("규칙",e.rules);
@@ -646,11 +662,11 @@ function renderInfo(){
     h+=`</div>`;
     const sol=[["약점",e.weakness],["해결책",e.solution],["공략",e.exploit_path],["탈출",e.escape],["제압",ph.defeat]]
       .map(x=>{const s=S(x[1]);return s?`<span class="st">${x[0]}</span>${esc(s)}`:"";}).filter(Boolean);
-    if(sol.length)h+=`<div class="spoiler"><h3>대처법 · GM 전용(스포일러)</h3><div class="card" style="margin:0;background:transparent;border:0;padding:2px 0">${sol.join("<br>")}</div></div>`;
+    if(sol.length)h+=`<div class="spoiler">`+sh('solution','대처법 · GM 전용(스포일러)')+`<div class="card" style="margin:0;background:transparent;border:0;padding:2px 0">${sol.join("<br>")}</div></div>`;
     if(Array.isArray(SCENARIO.zones)&&SCENARIO.zones.length){ // 구역(맵) — 이름·구역명 해석
       const zname={}; for(const z of SCENARIO.zones)if(z&&z.zone_id)zname[z.zone_id]=z.name||z.zone_id;
       const roleName={}; if(REPLAY&&Array.isArray(REPLAY.players))for(const p of REPLAY.players)if(p.roleId)roleName[p.roleId]=p.charName||p.roleId;
-      h+=`<h3>구역 (맵)</h3>`;
+      h+=sh('zones','구역 (맵)');
       for(const z of SCENARIO.zones){
         const conns=(z.connections||[]).map(c=>zname[c]||c).filter(Boolean).join(" · ");
         const who=(z.accessible_by||[]).map(r=>roleName[r]||r).filter(Boolean).join(", ");
@@ -663,6 +679,7 @@ function renderInfo(){
     h+=scenarioExtraHtml(); // 관계도·NPC 상세(할일)·배역·타임라인·단서·아이템·제약
   }
   b.innerHTML=h||`<div class="empty">.replay(스탯)·.json/.gdam(시나리오)을 함께 불러오면 표시됩니다.</div>`;
+  applyCollapsed(); // 접힌 섹션 상태 복원
   document.getElementById("toggleInfo").style.display=(REPLAY||SCENARIO)?"":"none";
 }
 function ingest(file){const nm=file.name.toLowerCase();
