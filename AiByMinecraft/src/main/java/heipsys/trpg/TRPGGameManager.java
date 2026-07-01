@@ -1238,7 +1238,8 @@ public class TRPGGameManager {
                 // (적용만 하고 채팅 출력은 하지 않음. 캐릭터 정보 GUI/스코어보드에서 기본/배역 분리 표시)
                 applyRoleStats(myPd, roleData);
             }
-            if (state.getRoomNumber() == 1) captureOrigChar(myPd); // 1스테이지 정체성 스냅샷(피날레 복귀용)
+            // 원년 배역 스냅샷: 이 판이 시작된 스테이지(=startStage, 기본 1)의 배역을 '원년'으로 1회 기록 → 피날레 복귀·중간 시작 대응.
+            if (!myPd.hasOrigChar && state.getRoomNumber() == startStage) captureOrigChar(myPd);
 
             p.sendMessage("§e§l[배역 배정]");
             p.sendMessage(roleMan.getRoleBriefing(asgn.roleId(), corruptMan.getLevel()));
@@ -7343,10 +7344,13 @@ public class TRPGGameManager {
 
             String visible = ai.stripThought(ai.stripTags(npcResp)).trim();
             if (visible.isEmpty()) return;
+            // ★통신 변조★: 통화 답신을 소리·모방 괴담이 가로채 바꿔 전달(통화 30%). 대면(sameZone)은 변조 안 함.
+            final boolean tamperedR = viaCallF && entityTampersVoice() && new java.util.Random().nextInt(100) < 30;
+            final String heardR = tamperedR ? tamperText(visible, new java.util.Random()) : visible;
 
             plugin.getServer().getScheduler().runTask(plugin, () -> {
                 if (sender.isOnline())
-                    sender.sendMessage("§e[" + npcName + "] §f" + visible);
+                    sender.sendMessage("§e[" + npcName + "] §f" + heardR);
             });
 
             // GM 컨텍스트에 요약만 주입 (전체 대화 노출 방지)
@@ -7357,8 +7361,11 @@ public class TRPGGameManager {
 
             // 뷰어: NPC 답신을 '발신자에게 온 통신'으로 기록(수신자=발신자) → ★발신자 시점에서도 대화가 보이게★ 양방향 연결.
             //   (기존 logGmOutput은 to가 없어 발신자 개별 시점에 답이 안 떠 대화 흐름을 못 따라가던 문제 해결)
-            gameLogger.logComm(viaCallF ? "call" : "nearby", npcName,
-                java.util.List.of(senderPd.gmDisplayName()), visible);
+            //   변조되면 원본+변형본을 함께 기록(뷰어 원본/변형됨 대조).
+            if (tamperedR) gameLogger.logCommTampered(viaCallF ? "call" : "nearby", npcName,
+                    java.util.List.of(senderPd.gmDisplayName()), visible, heardR, "괴담의 음성 변조");
+            else gameLogger.logComm(viaCallF ? "call" : "nearby", npcName,
+                    java.util.List.of(senderPd.gmDisplayName()), visible);
         });
     }
 
@@ -7808,6 +7815,55 @@ public class TRPGGameManager {
         return false;
     }
 
+    /** 괴담이 통신(목소리)을 ★변조★할 수 있는가 — 음성 모방 가능하거나 소리·목소리·전파 계열 괴담. */
+    private boolean entityTampersVoice() {
+        if (entityCanImpersonate()) return true;
+        JsonObject g = state.getGdamData();
+        if (g == null || !g.has("entity") || !g.get("entity").isJsonObject()) return false;
+        JsonObject e = g.getAsJsonObject("entity");
+        StringBuilder sb = new StringBuilder();
+        if (e.has("name")) sb.append(e.get("name").getAsString()).append(' ');
+        if (e.has("type")) sb.append(e.get("type").getAsString()).append(' ');
+        if (e.has("rules") && e.get("rules").isJsonArray())
+            e.getAsJsonArray("rules").forEach(x -> sb.append(x.getAsString()).append(' '));
+        if (e.has("ai_context") && e.get("ai_context").isJsonObject()) {
+            JsonObject ai = e.getAsJsonObject("ai_context");
+            if (ai.has("personality")) sb.append(ai.get("personality").getAsString()).append(' ');
+            if (ai.has("disposition")) sb.append(ai.get("disposition").getAsString()).append(' ');
+        }
+        String s = sb.toString();
+        for (String kw : new String[]{"소리","목소리","음성","전파","메아리","방송","울림","주파수","모방","흉내","녹음","성대","말소리"})
+            if (s.contains(kw)) return true;
+        return false;
+    }
+
+    /** 통신 변조 텍스트 — 숫자·핵심어를 뒤집어 '잘못 전달'되게 한다(전파 왜곡 연출). */
+    private static String tamperText(String msg, java.util.Random rng) {
+        if (msg == null || msg.isBlank()) return msg;
+        String t = msg; boolean changed = false;
+        String[][] flips = {
+            {"안전","위험"},{"위험","안전"},{"괜찮","위험"},
+            {"가지 마","가"},{"가지마","가"},{"오지 마","와"},{"오지마","와"},
+            {"열지 마","열어"},{"열지마","열어"},{"믿지 마","믿어"},{"믿지마","믿어"},
+            {"도망쳐","기다려"},{"멈춰","계속 가"},{"살았","죽었"},{"맞아","아니야"}
+        };
+        for (String[] f : flips) {
+            if (t.contains(f[0])) {
+                t = t.replaceFirst(java.util.regex.Pattern.quote(f[0]), java.util.regex.Matcher.quoteReplacement(f[1]));
+                changed = true; break;
+            }
+        }
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\d+").matcher(t);
+        if (m.find()) {
+            int v = 0; try { v = Integer.parseInt(m.group()); } catch (Exception ignore) {}
+            int nv = (v == 0) ? (1 + rng.nextInt(4)) : (rng.nextBoolean() ? 0 : v + 1 + rng.nextInt(3));
+            t = t.substring(0, m.start()) + nv + t.substring(m.end());
+            changed = true;
+        }
+        if (!changed) t = t + " ...아니, 반대로.";
+        return t;
+    }
+
     /** 괴담이 플레이어를 제거하고 정체를 차지 — 본인에게만 통보, 타인에게는 비공개 */
     private void startImpersonation(String name) {
         if (!entityCanImpersonate()) return;
@@ -7877,17 +7933,27 @@ public class TRPGGameManager {
                                       String message, boolean viaDevice) {
         String tag     = viaDevice ? "§a[통신]" : "§a[근처]";
         String outLine = tag + " §f" + commDisplayName(senderPd) + " → " + commDisplayName(targetPd) + ": " + message;
-        String inLine  = tag + " §f" + commDisplayName(senderPd) + ": " + message;
 
-        sender.sendMessage(outLine);
+        sender.sendMessage(outLine); // 발신자는 자기가 한 말 그대로 본다
         Player target = Bukkit.getPlayer(targetPd.uuid);
+        // ★통신 변조★: 음성 모방/소리 괴담이 기기 통신을 가로채 수신 내용을 바꾼다(기기 통신 30% 확률).
+        boolean tampered = viaDevice && entityTampersVoice() && new java.util.Random().nextInt(100) < 30;
+        String heard = tampered ? tamperText(message, new java.util.Random()) : message;
+        String inLine = tag + " §f" + commDisplayName(senderPd) + ": " + heard;
         if (target != null && target.isOnline()) target.sendMessage(inLine);
 
         state.log("comm", commDisplayName(senderPd),
             "→ " + commDisplayName(targetPd) + " (" + (viaDevice ? "장치" : "근거리") + "): " + message);
-        // 뷰어 통화내역: 발신자·★수신자★를 함께 구조화 기록(수신자 시점에도 보이게)
-        gameLogger.logComm(viaDevice ? "call" : "nearby", commDisplayName(senderPd),
-            java.util.List.of(commDisplayName(targetPd)), message);
+        // 뷰어 통화내역: 발신자·★수신자★를 함께 구조화 기록(수신자 시점에도 보이게). 변조되면 원본+변형본 대조 기록.
+        if (tampered) {
+            gameLogger.logCommTampered("call", commDisplayName(senderPd),
+                java.util.List.of(commDisplayName(targetPd)), message, heard, "괴담의 음성 변조");
+            ai.injectGmSystem("[통신 변조] 괴담이 " + commDisplayName(senderPd) + "→" + commDisplayName(targetPd)
+                + " 통신을 가로채 \"" + message + "\"를 \"" + heard + "\"로 바꿔 전했다. 이후 정황·오해에 반영.");
+        } else {
+            gameLogger.logComm(viaDevice ? "call" : "nearby", commDisplayName(senderPd),
+                java.util.List.of(commDisplayName(targetPd)), message);
+        }
 
         // 시나리오상 괴담이 통신을 엿보면, 기기 통신 내용을 GM/괴담 컨텍스트에 주입(모방·간파·역이용 활용)
         if (viaDevice && isCommsMonitored()) {
