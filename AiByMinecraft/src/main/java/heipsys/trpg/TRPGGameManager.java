@@ -170,8 +170,9 @@ public class TRPGGameManager {
     private String scenarioOverviewFull = "";
     private String scenarioOverviewNow  = "";
     private int    overviewNowStage     = -999; // NOW를 생성한 timelineStage. 이 값과 현재 단계가 다르면 재생성.
-    /** 상태창 RECENT — 최근 발화한 핵심 사건 라벨(코드가 사건 발화 시 갱신). */
-    private String recentKeyEvent       = "";
+    private volatile boolean overviewFullPending = false; // 중복 생성 방지(비동기 in-flight)
+    private volatile boolean overviewNowPending  = false;
+    // (상태창 RECENT는 GameStateManager.getLastFiredEventLabel()에서 직접 읽는다 — 별도 캐시 불필요)
     /** 동물 소생(revive_as_animal)으로 동물 형태가 된 플레이어 (uuid). 제한 행동만 가능(능력·통신 불가), 피해 시 진짜 소멸. */
     private final Set<UUID> animalForm = ConcurrentHashMap.newKeySet();
     /** 능력 대가(cost_stun)로 행동불능 상태인 플레이어의 남은 턴 수 (uuid → turns). 0 이하면 정상. */
@@ -601,6 +602,7 @@ public class TRPGGameManager {
         animalForm.clear();
         stunTurns.clear();
         possessingNpc.clear();
+        resetOverviewCache();
         preSpawnCallCounts.clear();
         lastEndingPages = null;
         concludingEnding = false;
@@ -1470,6 +1472,7 @@ public class TRPGGameManager {
 
         morphTurns.clear(); observerTurns.clear(); animalForm.clear(); stunTurns.clear(); possessingNpc.clear(); // 변신·관조·동물형태·행동불능·빙의는 스테이지 넘어 유지되지 않음
         commBypassTurn.clear(); commBypassStealth.clear(); // 통신 개방도 스테이지 넘어 유지 안 됨(턴 번호 재사용 오작동 방지)
+        resetOverviewCache(); // 새 스테이지 = 새 괴담 → 시나리오 개요 캐시 초기화(다음 사용 시 재생성)
         loadForbiddenWord(); // 금지워드형 괴담의 금지어 로드(entity.forbidden_word)
         lastPlayerActionMs = System.currentTimeMillis(); lastIdleAccelMs = 0L; // 무행동 가속 기준점 초기화
         lastAutoSaveTurn = -1; // 새 스테이지 시작 — 첫 턴부터 다시 저장되도록
@@ -2937,7 +2940,12 @@ public class TRPGGameManager {
         applyTraitUsed(pd, td.id, state.getCurrentTurn());
         // ★상태창(코드·실시간, GM 콜 없음)★: 하나의 만능 창이 아니라 능력 '성능(등급)'에 따라 ★단편적으로★ 보여준다.
         //   등급이 낮으면 조각 하나, 높으면 여러 조각. OVERVIEW는 캐시 텍스트(있을 때만).
-        String panel = buildStatusPanel(pd, statusPanelsOf(td));
+        java.util.List<String> panels = statusPanelsOf(td);
+        // OVERVIEW 패널을 쓰는 능력만 개요 캐시를 준비한다(FULL=시작 1회, NOW=국면 바뀔 때 1회. 값싼 Haiku·중복 방지).
+        //   첫 사용 땐 아직 생성 중일 수 있어 다음 사용부터 표시된다. 진행도·동료 등 코드 패널은 즉시.
+        if (panels.contains("overview_full")) ensureOverviewFull();
+        if (panels.contains("overview_now"))  ensureOverviewNow();
+        String panel = buildStatusPanel(pd, panels);
         player.sendMessage("§b[" + td.name + "]");
         if (panel.isBlank()) { player.sendMessage("§8 (지금은 잡히는 정보가 없다.)"); return; }
         for (String line : panel.split("\n")) if (!line.isEmpty()) player.sendMessage(line);
@@ -2967,7 +2975,7 @@ public class TRPGGameManager {
                 case "start"    -> sb.append(panelStart());
                 case "ally"     -> sb.append(panelAlly(pd));
                 case "progress" -> sb.append(panelProgress());
-                case "recent"        -> { if (!recentKeyEvent.isBlank())      sb.append("§7▪ 최근: §f").append(recentKeyEvent).append("\n"); }
+                case "recent"        -> { String rk = state.getLastFiredEventLabel(); if (rk != null && !rk.isBlank()) sb.append("§7▪ 최근: §f").append(oneLineTrim(rk, 46)).append("\n"); }
                 case "overview_full" -> { if (!overviewShown && !scenarioOverviewFull.isBlank()) { sb.append("§7▪ 개요: §f").append(scenarioOverviewFull).append("\n"); overviewShown = true; } }
                 case "overview_now"  -> { if (!overviewShown && !scenarioOverviewNow.isBlank())  { sb.append("§7▪ 지금: §f").append(scenarioOverviewNow).append("\n"); overviewShown = true; } }
                 default -> {}
@@ -3028,6 +3036,93 @@ public class TRPGGameManager {
         if (pct <= 70) return "위기가 정점으로 치닫는 중반~후반";
         if (pct <= 90) return "파국 직전의 절정";
         return "결말이 코앞 — 마지막 국면";
+    }
+
+    /** 시나리오 전체 개요(영화 예고편·스포일러 금지)를 1회 생성해 캐시한다(비어 있을 때만, 값싼 Haiku·중복 방지). */
+    private void ensureOverviewFull() {
+        if (!scenarioOverviewFull.isBlank() || overviewFullPending) return;
+        JsonObject gdam = state.getGdamData();
+        if (gdam == null) return;
+        overviewFullPending = true;
+        StringBuilder src = new StringBuilder();
+        if (!getStr(gdam, "scale").isBlank()) src.append("사건 규모: ").append(getStr(gdam, "scale")).append("\n");
+        if (gdam.has("constraints") && gdam.get("constraints").isJsonObject()) {
+            String era = getStr(gdam.getAsJsonObject("constraints"), "era");
+            if (!era.isBlank()) src.append("시대·배경: ").append(era).append("\n");
+        }
+        if (gdam.has("entity") && gdam.get("entity").isJsonObject()) {
+            String type = getStr(gdam.getAsJsonObject("entity"), "type");
+            if (!type.isBlank()) src.append("(참고) 존재 유형: ").append(type).append("\n");
+        }
+        if (src.length() == 0) src.append("(재료가 흐릿하다 — 분위기 위주로.)\n");
+        String system = GAME_FICTION_FRAME
+            + "너는 괴담 TRPG의 '시나리오 개요(예고편)'를 쓴다. ★영화 예고편처럼★ 큰 줄기와 분위기만 전하라.\n"
+            + "- ★스포일러 절대 금지★: 정답·해결법·정체·반전은 담지 마라.\n"
+            + "- 1~2문장으로 짧게. 배경·상황·긴장의 결만.\n"
+            + "- 마크다운·머리표·메타 설명 없이 서술만.\n";
+        String prompt = "## 시나리오 재료(아래에서 분위기만 추출, 스포일러 금지)\n" + src
+            + "\n위 재료로 '이 이야기가 대략 어떤 줄거리인지' 스포일러 없는 예고편 개요를 1~2문장으로 써라.";
+        ai.callAssistant(system, prompt).whenComplete((raw, ex) ->
+            plugin.getServer().getScheduler().runTask(plugin, () -> {
+                String t = oneLine(raw);
+                if (!t.isBlank()) scenarioOverviewFull = t;
+                overviewFullPending = false;
+            }));
+    }
+
+    /** 지금 국면(눈앞의 시나리오) 요약을 생성해 캐시한다 — 단계(timelineStage)가 바뀌면 갱신. 스포일러 금지. */
+    private void ensureOverviewNow() {
+        if (state.isDailyPhase()) return; // 일상 파트엔 '지금 국면' 없음
+        int stage = state.getTimelineStage();
+        if (overviewNowStage == stage && !scenarioOverviewNow.isBlank()) return; // 이미 이 국면 것이 있음
+        if (overviewNowPending) return;
+        JsonObject gdam = state.getGdamData();
+        if (gdam == null) return;
+        overviewNowPending = true;
+        final int genStage = stage;
+        StringBuilder src = new StringBuilder();
+        src.append("현재 국면: ").append(scenarioProgressDescriptor()).append("\n");
+        String recent = state.getLastFiredEventLabel();
+        if (recent != null && !recent.isBlank()) src.append("최근 사건: ").append(recent).append("\n");
+        if (gdam.has("entity") && gdam.get("entity").isJsonObject()) {
+            String type = getStr(gdam.getAsJsonObject("entity"), "type");
+            if (!type.isBlank()) src.append("(참고) 존재 유형: ").append(type).append("\n");
+        }
+        String system = GAME_FICTION_FRAME
+            + "너는 괴담 TRPG의 '지금 이 국면 요약'을 쓴다. 눈앞의 상황이 어떤 국면인지 ★영화 한 장면처럼★ 짧게 전하라.\n"
+            + "- ★스포일러 절대 금지★: 정답·정체·해결법은 담지 마라.\n"
+            + "- 1문장(길어도 2문장). 지금의 분위기·긴박도만.\n"
+            + "- 마크다운·메타 없이 서술만.\n";
+        String prompt = "## 지금 상황 재료(스포일러 금지)\n" + src
+            + "\n위 재료로 '지금 눈앞의 국면'을 1문장으로 써라.";
+        ai.callAssistant(system, prompt).whenComplete((raw, ex) ->
+            plugin.getServer().getScheduler().runTask(plugin, () -> {
+                String t = oneLine(raw);
+                if (!t.isBlank()) { scenarioOverviewNow = t; overviewNowStage = genStage; }
+                overviewNowPending = false;
+            }));
+    }
+
+    /** AI 결과를 한 줄로(개행·중복 공백 접기, 색코드·마크다운 머리표 제거). */
+    private static String oneLine(String raw) {
+        if (raw == null) return "";
+        return raw.replaceAll("```", "").replaceAll("(?m)^#+\\s*", "")
+                  .replace("\n", " ").replaceAll("§.", "").replaceAll("\\s+", " ").trim();
+    }
+
+    /** 한 줄 + 길이 제한(넘치면 …). 상태창 '최근' 패널용. */
+    private static String oneLineTrim(String s, int max) {
+        String t = oneLine(s);
+        return t.length() <= max ? t : t.substring(0, Math.max(0, max)) + "…";
+    }
+
+    /** 시나리오 개요 캐시 초기화 — 새 스테이지/세션/로드 시 호출(다음 사용 때 현재 시나리오로 재생성). */
+    private void resetOverviewCache() {
+        scenarioOverviewFull = "";
+        scenarioOverviewNow  = "";
+        overviewNowStage     = -999;
+        overviewFullPending  = false;
+        overviewNowPending   = false;
     }
 
     private void activateGmDirective(Player player, PlayerData pd, TraitData td) {
@@ -8736,6 +8831,7 @@ public class TRPGGameManager {
         // 동물 형태(revive_as_animal)는 PlayerData.status="animal"에서 재구성(변신·관조·행동불능·빙의 지속은 일시 상태라 복원 안 함 — 본체로 복귀)
         morphTurns.clear(); observerTurns.clear(); animalForm.clear(); stunTurns.clear(); possessingNpc.clear();
         commBypassTurn.clear(); commBypassStealth.clear();
+        resetOverviewCache(); // 로드 시엔 개요 캐시를 비워 현재 시나리오로 재생성(lastFiredEventLabel은 GSM 스냅샷에서 복원)
         loadForbiddenWord(); // 금지워드형 괴담의 금지어 복원
         for (PlayerData pd : state.getAllPlayers())
             if ("animal".equals(pd.status) && !pd.isDead) animalForm.add(pd.uuid);
