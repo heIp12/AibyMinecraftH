@@ -5633,18 +5633,22 @@ public class TRPGGameManager {
         return t.replaceAll("\\s+", "").toLowerCase();
     }
 
-    /** 그 이름을 ★살아있는 등장 플레이어가 직접 연기 중인가★ — AI가 반전("사실 동일인물")을 만들며
+    /** 그 NPC를 ★살아있는 등장 플레이어가 직접 연기 중인가★ — AI가 반전("사실 동일인물")을 만들며
      *  같은 이름의 critical NPC를 따로 두면, 자율 NPC AI가 별도의 '두 번째 몸'을 운영해 페르소나가
      *  두 갈래로 갈라지고 NPC가 자기 자신(=플레이어)을 못 알아본다(버그3, 특히 피날레 원년 복귀).
      *  등장(spawn)한 플레이어의 charName과 일치하면 그 인물은 플레이어가 체현하므로 NPC 자율 운영을 멈춘다.
-     *  (미등장 배역은 제외 — 등장 전이라면 그 인물은 아직 NPC로 활동할 수 있다.) */
-    private boolean isNameEmbodiedByPlayer(String npcName) {
-        return embodyingPlayerLabel(npcName) != null;
+     *  ★단 거울·도플갱어·위장형 '의도된 분신'은 예외 — 그런 괴담은 같은 이름의 별개 존재가 정상이다(억제하면 오히려 붕괴). */
+    private boolean isNameEmbodiedByPlayer(JsonObject npc) {
+        return embodyingPlayerLabel(npc) != null;
     }
 
-    /** 위 조건이 참이면 GM 안내용 라벨(예: "김보라(=플레이어 배역)")을, 아니면 null을 돌려준다. */
-    private String embodyingPlayerLabel(String npcName) {
-        String key = normCharName(npcName);
+    /** 위 조건이 참이면 GM 안내용 라벨(플레이어 charName)을, 아니면 null을 돌려준다(미등장/불일치/의도된 분신). */
+    private String embodyingPlayerLabel(JsonObject npc) {
+        if (npc == null) return null;
+        // ★거울·도플갱어·위장·흉내형 NPC는 '의도적으로 같은 인물'이라 억제 대상이 아니다.
+        //   (거울 속의 나, 도플갱어, 흉내내는 괴담 등 — 같은 이름의 적대적 별개 존재가 시나리오의 핵심)
+        if (isHostileNpc(npc) || isIntentionalDoubleNpc(npc)) return null;
+        String key = normCharName(getStr(npc, "name"));
         if (key.isEmpty()) return null;
         for (PlayerData pd : state.getAllPlayers()) {
             if (pd.isDead) continue;
@@ -5653,6 +5657,16 @@ public class TRPGGameManager {
             if (normCharName(pd.charName).equals(key)) return pd.charName;
         }
         return null;
+    }
+
+    /** 거울·분신·복제형 '의도된 도플갱어' NPC인가 — 같은 이름을 공유하는 것이 설계 의도인 경우(억제 예외). */
+    private boolean isIntentionalDoubleNpc(JsonObject npc) {
+        String h = (getStr(npc, "role_type") + " " + getStr(npc, "true_role") + " " + getStr(npc, "name")
+                  + " " + getStr(npc, "description") + " " + getStr(npc, "personality")
+                  + " " + getStr(npc, "motivation")).toLowerCase();
+        return h.contains("거울") || h.contains("분신") || h.contains("그림자") || h.contains("복제")
+            || h.contains("반사") || h.contains("쌍둥이") || h.contains("도플") || h.contains("복사")
+            || h.contains("mirror") || h.contains("double") || h.contains("clone") || h.contains("twin");
     }
 
     /** .gdam npcs[].zone을 npcZones 맵에 초기화 (세션·재현 시작 시 호출) */
@@ -5934,7 +5948,8 @@ public class TRPGGameManager {
                 npcObj.has("zone") ? npcObj.get("zone").getAsString() : "");
             // ★페르소나 분리 방지(버그3)★: 그 인물을 살아있는 등장 플레이어가 직접 연기 중이면
             //   자율 NPC AI를 돌리지 않는다 — 돌리면 같은 인물의 '두 번째 몸'이 생겨 시나리오가 붕괴한다.
-            if (isNameEmbodiedByPlayer(npcName)) continue;
+            //   (거울·도플갱어형 의도된 분신은 예외로 계속 구동 — embodyingPlayerLabel 내부에서 판별)
+            if (isNameEmbodiedByPlayer(npcObj)) continue;
             // ★비용 절약★: 같은 구역에 플레이어도 없고 전화로도 닿지 않는 NPC는 자율 AI 호출 생략 —
             //   그 출력은 GM 컨텍스트로만 들어가 아무도 못 보므로 크레딧만 쓴다. 플레이어가 다가오면 다음 주기에 다시 활동.
             if (!npcCanReachAnyPlayer(npcId, npcZone)) continue;
@@ -7767,8 +7782,7 @@ public class TRPGGameManager {
         List<JsonObject> autoNpcs = new ArrayList<>();
         java.util.LinkedHashSet<String> embodiedNames = new java.util.LinkedHashSet<>();
         for (JsonObject npc : critNpcs) {
-            String nm = npc.has("name") ? npc.get("name").getAsString() : "";
-            String lab = embodyingPlayerLabel(nm);
+            String lab = embodyingPlayerLabel(npc); // 거울·도플갱어형 분신은 내부에서 예외 처리(자율 NPC로 유지)
             if (lab != null) embodiedNames.add(lab); else autoNpcs.add(npc);
         }
         if (!autoNpcs.isEmpty()) {
