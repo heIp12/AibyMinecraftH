@@ -168,6 +168,16 @@ public class GameLogger {
         record(cat, caster, body, extra);
     }
 
+    /** 로그 뷰어용 계정명↔캐릭터명 별칭 기록 — 같은 인물의 입력·서술 시점을 하나로 통합하게 한다. */
+    public void logAlias(String account, String charName) {
+        if (account == null || charName == null || account.isEmpty() || charName.isEmpty()) return;
+        JsonObject extra = new JsonObject();
+        extra.addProperty("kind", "alias");
+        extra.addProperty("account", account);
+        extra.addProperty("char", charName);
+        record("배역", account, "= " + charName, extra);
+    }
+
     /** .txt 기록 + JSONL 이벤트를 한 번에. extra가 있으면 이벤트에 구조화 필드를 합친다. */
     private void record(String category, String who, String content, JsonObject extra) {
         synchronized (lock) {
