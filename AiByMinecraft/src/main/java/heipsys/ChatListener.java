@@ -83,7 +83,13 @@ public class ChatListener implements Listener {
         TRPGGameManager trpgManager = trpg();
         if (trpgManager == null || !trpgManager.isActive()) return;
         if (!event.isSneaking()) return;
-        trpgManager.getNarrativeDelivery().onSneak(event.getPlayer());
+        Player p = event.getPlayer();
+        // 관전자(스펙테이터): 웅크리기 → 보고 있는 대상의 소지품 미러(책·기록·정보 열람)
+        if (p.getGameMode() == GameMode.SPECTATOR) {
+            Bukkit.getScheduler().runTask(plugin, () -> trpgManager.openSpectatorMirror(p));
+            return;
+        }
+        trpgManager.getNarrativeDelivery().onSneak(p);
     }
 
     /** 캐릭터 정보 / 기록 아이템 우클릭 → 해당 GUI 열기 */
@@ -130,15 +136,21 @@ public class ChatListener implements Listener {
         }, 40L);
     }
 
+    /** 관전 인벤(대상 소지품 미러)은 읽기 전용 — 책=읽기, 정보★/기록책=대상 GUI(보기 전용)로 라우팅. */
     @EventHandler
     public void onSpectatorClickBook(InventoryClickEvent event) {
         if (!(event.getWhoClicked() instanceof Player player)) return;
         if (player.getGameMode() != GameMode.SPECTATOR) return;
-
+        event.setCancelled(true); // 관전 중 인벤 클릭은 아이템 이동 불가(열람 전용)
         ItemStack clicked = event.getCurrentItem();
-        if (clicked != null && clicked.getType() == Material.WRITTEN_BOOK) {
-            event.setCancelled(true);
+        if (clicked == null || clicked.getType() == Material.AIR) return;
+        TRPGGameManager trpgManager = trpg();
+        if (clicked.getType() == Material.WRITTEN_BOOK) {
             player.openBook(clicked);
+        } else if (trpgManager != null && trpgManager.isInfoItem(clicked)) {
+            Bukkit.getScheduler().runTask(plugin, () -> trpgManager.openSpectatorInfo(player));
+        } else if (trpgManager != null && trpgManager.isRecordItem(clicked)) {
+            Bukkit.getScheduler().runTask(plugin, () -> trpgManager.openSpectatorRecords(player));
         }
     }
 }
