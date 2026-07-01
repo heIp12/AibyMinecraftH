@@ -69,7 +69,7 @@
   <button class="file" id="pick">파일 열기</button>
   <button class="file alt" id="pickDir">📁 폴더 열기</button>
   <button class="file alt" id="toggleInfo" style="display:none">📊 스탯·시나리오</button>
-  <input type="file" id="file" accept=".jsonl,.json,.txt,.replay" multiple style="display:none">
+  <input type="file" id="file" accept=".jsonl,.json,.txt,.replay,.gdam" multiple style="display:none">
   <input type="file" id="dir" webkitdirectory directory multiple style="display:none">
 </header>
 <div class="layout">
@@ -77,7 +77,7 @@
   <main id="main">
     <div class="drop" id="drop">
       <p>📂 <b>로그 파일을 여기에 끌어다 놓으세요</b></p>
-      <p>권장: <code>씨드#n.events.jsonl</code> · 또는 <code>씨드#n.txt</code> · 함께 <code>.replay</code>/<code>.json</code></p>
+      <p>권장: <code>씨드#n.events.jsonl</code> · 또는 <code>씨드#n.txt</code> · 함께 <code>.replay</code>/<code>.json</code>/<code>.gdam</code></p>
       <p><b>📁 폴더 열기</b> — <code>logs</code> 폴더째 선택하면 목록에서 고르고 스탯·시나리오까지 표시</p>
     </div>
   </main>
@@ -176,7 +176,7 @@ function renderSide(){
   for(const v of VIEWPOINTS) side.appendChild(mk(v.name,v.name,v.count,colorFor(v.name)));
   if(FILES.logs.length){ side.appendChild(Object.assign(document.createElement("h2"),{textContent:"폴더 로그"}));
     const wrap=document.createElement("div");wrap.className="filelist";
-    for(const f of FILES.logs){const d=document.createElement("div");d.className="fl"+(f.__on?" on":"");d.textContent="📄 "+f.name;d.onclick=()=>openFolderLog(f);wrap.appendChild(d);}
+    for(const f of FILES.logs){const d=document.createElement("div");d.className="fl"+(f.__on?" on":"");d.textContent="📄 "+(f.__title||f.name);d.title=f.name+(f.__title?" — 괴담: "+f.__title:"");d.onclick=()=>openFolderLog(f);wrap.appendChild(d);}
     side.appendChild(wrap);}
 }
 function badgeFor(e){ return e.kind==="ability"?(e.ability?"✨ "+e.ability:"✨ 능력")
@@ -287,6 +287,47 @@ function buildAlias(){
   if(REPLAY&&Array.isArray(REPLAY.players))for(const p of REPLAY.players){const d=(p.charName&&p.charName.trim())?p.charName.trim():(p.name||"");if(p.name)ALIAS[p.name]=d;if(p.charName)ALIAS[p.charName]=d;}
 }
 function rebuild(raw){ EVENTS=raw.map(normalize).sort((a,b)=>(a.seq||0)-(b.seq||0)); buildViewpoints(); curVP="__all__"; stopPlay(); }
+// 로그에서 괴담(시나리오) 이름 파싱 — 세션 이벤트의 title 필드(JSONL) 또는 '괴담: X' 라인(.txt)
+function parseScenarioTitle(text){
+  const m=(text||"").match(/"title"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+  if(m){try{return JSON.parse('"'+m[1]+'"');}catch(_){return m[1];}}
+  const t=(text||"").match(/괴담:\s*([^\n"]+)/);
+  return t?t[1].trim():"";
+}
+// ── .gdam 복호화 (AES-256-GCM · 모든 설치 공유 고정키) ──
+// 게임과 동일: key = SHA-256("AiByMinecraft::gdam::shared-scenario-key::v1"),
+// 파일 = "seed\n<base64(IV[12]+ciphertext+GCM태그[16])>". 시나리오 공유용 고정키라 뷰어도 그대로 복호화 가능.
+const GDAM_KEYSTR="AiByMinecraft::gdam::shared-scenario-key::v1";
+let _gdamKey=null;
+function gdamKey(){
+  if(!_gdamKey){const data=new TextEncoder().encode(GDAM_KEYSTR);
+    _gdamKey=crypto.subtle.digest("SHA-256",data).then(h=>crypto.subtle.importKey("raw",h,{name:"AES-GCM"},false,["decrypt"]));}
+  return _gdamKey;
+}
+function b64ToBytes(b64){const s=atob(String(b64).trim());const u=new Uint8Array(s.length);for(let i=0;i<s.length;i++)u[i]=s.charCodeAt(i);return u;}
+async function decryptGdamText(text){
+  const t=(text||"").trim(); if(!t)return null;
+  if(t.startsWith("{"))return JSON.parse(t); // ② 평문 .gdam(사용자 작성) — 복호화 없이 파싱
+  const lines=t.split(/\r?\n/); if(lines.length<2)return null; // ① 암호화 .gdam — 둘째 줄 base64
+  if(!(window.crypto&&crypto.subtle))throw new Error("이 브라우저/컨텍스트에서 복호화(SubtleCrypto) 불가");
+  const combined=b64ToBytes(lines[1]),iv=combined.slice(0,12),ct=combined.slice(12);
+  const pt=await crypto.subtle.decrypt({name:"AES-GCM",iv,tagLength:128},await gdamKey(),ct);
+  return JSON.parse(new TextDecoder().decode(pt));
+}
+function decryptGdamFile(file){return file.text().then(decryptGdamText);}
+function gdamTitleOf(j){return (j&&j.entity&&j.entity.name)?String(j.entity.name):"";}
+// 폴더 로그 각각의 괴담 이름 확정: 씨드 매칭 .gdam 복호화 우선 → 실패 시 로그 텍스트('괴담: X'/title)에서 파싱
+async function resolveFolderTitles(){
+  const bySeed={};
+  for(const g of (FILES.gdams||[])){
+    try{const nm=gdamTitleOf(await decryptGdamFile(g)); if(nm)bySeed[seedOf(g.name)]=nm;}catch(_){}
+  }
+  for(const f of FILES.logs){
+    let title=bySeed[seedOf(f.name)]||"";
+    if(!title){try{title=parseScenarioTitle(await f.slice(0,8192).text());}catch(_){}}
+    f.__title=title;
+  }
+}
 function loadLogText(name,text){
   const looksJson=/\.jsonl?$/i.test(name)||/^\s*\{/.test(text);
   let raw=looksJson?parseJSONL(text):parseTXT(text); if(!raw.length&&looksJson)raw=parseTXT(text);
@@ -312,22 +353,28 @@ function renderInfo(){
   b.innerHTML=h||`<div class="empty">.replay(스탯)·.json(시나리오)을 함께 불러오면 표시됩니다.</div>`;
   document.getElementById("toggleInfo").style.display=(REPLAY||SCENARIO)?"":"none";
 }
-function ingest(file){const nm=file.name.toLowerCase();return file.text().then(t=>{
+function ingest(file){const nm=file.name.toLowerCase();
+  if(nm.endsWith(".gdam")){return decryptGdamFile(file).then(j=>{if(j&&(j.entity||j.world_rules||j.npcs))SCENARIO=j;renderInfo();}).catch(()=>{renderInfo();});}
+  return file.text().then(t=>{
   if(nm.endsWith(".replay")){try{REPLAY=JSON.parse(t);}catch(_){}if(RAWCACHE.length){buildAlias();rebuild(RAWCACHE);renderSide();renderMain();}renderInfo();return;}
   if(nm.endsWith(".json")){try{const j=JSON.parse(t);if(j.entity||j.world_rules||j.npcs)SCENARIO=j;else if(j.players)REPLAY=j;}catch(_){}if(REPLAY&&RAWCACHE.length){buildAlias();rebuild(RAWCACHE);renderSide();renderMain();}renderInfo();return;}
   loadLogText(file.name,t);renderInfo();});}
-function ingestAll(fl){const files=[...fl];const meta=files.filter(f=>/\.(replay|json)$/i.test(f.name));const logs=files.filter(f=>/\.(jsonl|txt)$/i.test(f.name));
+function ingestAll(fl){const files=[...fl];const meta=files.filter(f=>/\.(replay|json|gdam)$/i.test(f.name));const logs=files.filter(f=>/\.(jsonl|txt)$/i.test(f.name));
   Promise.all(meta.map(ingest)).then(()=>{if(logs[0])ingest(logs[0]);});}
-function ingestFolder(fl){FILES={logs:[],replays:[],scenarios:[]};
-  for(const f of fl){if(/\.(jsonl|txt)$/i.test(f.name))FILES.logs.push(f);else if(/\.replay$/i.test(f.name))FILES.replays.push(f);else if(/\.json$/i.test(f.name))FILES.scenarios.push(f);}
+function ingestFolder(fl){FILES={logs:[],replays:[],scenarios:[],gdams:[]};
+  for(const f of fl){if(/\.(jsonl|txt)$/i.test(f.name))FILES.logs.push(f);else if(/\.replay$/i.test(f.name))FILES.replays.push(f);else if(/\.gdam$/i.test(f.name))FILES.gdams.push(f);else if(/\.json$/i.test(f.name))FILES.scenarios.push(f);}
   FILES.logs.sort((a,b)=>a.name.localeCompare(b.name));
-  if(FILES.logs.length)openFolderLog(FILES.logs.find(f=>/\.events\.jsonl$/i.test(f.name))||FILES.logs[0]);
-  else document.getElementById("meta").textContent="폴더에 .jsonl/.txt 로그가 없습니다.";}
+  if(!FILES.logs.length){document.getElementById("meta").textContent="폴더에 .jsonl/.txt 로그가 없습니다.";return;}
+  openFolderLog(FILES.logs.find(f=>/\.events\.jsonl$/i.test(f.name))||FILES.logs[0]);
+  resolveFolderTitles().then(renderSide); // 파일 목록에 괴담 이름 표시(.gdam 복호화 우선)
+}
 function seedOf(n){const m=n.match(/([A-Za-z0-9]{6,8})[#_.]/);return m?m[1]:n.replace(/\.[^.]+$/,"");}
 function openFolderLog(f){FILES.logs.forEach(x=>x.__on=false);f.__on=true;const seed=seedOf(f.name);REPLAY=null;SCENARIO=null;
-  const rep=FILES.replays.find(x=>x.name.includes(seed)),sc=FILES.scenarios.find(x=>x.name.includes(seed));const jobs=[];
+  const rep=FILES.replays.find(x=>x.name.includes(seed)),sc=FILES.scenarios.find(x=>x.name.includes(seed));
+  const gd=(FILES.gdams||[]).find(x=>x.name.includes(seed));const jobs=[];
   if(rep)jobs.push(rep.text().then(t=>{try{REPLAY=JSON.parse(t);}catch(_){}}));
   if(sc)jobs.push(sc.text().then(t=>{try{const j=JSON.parse(t);if(j.entity||j.world_rules||j.npcs)SCENARIO=j;else if(j.players&&!REPLAY)REPLAY=j;}catch(_){}}));
+  else if(gd)jobs.push(decryptGdamFile(gd).then(j=>{if(j&&(j.entity||j.world_rules||j.npcs))SCENARIO=j;}).catch(()=>{})); // .json 없으면 원본 .gdam 복호화로 시나리오 표시
   Promise.all(jobs).then(()=>f.text()).then(t=>{loadLogText(f.name,t);renderInfo();});}
 
 const fileEl=document.getElementById("file"),dirEl=document.getElementById("dir");

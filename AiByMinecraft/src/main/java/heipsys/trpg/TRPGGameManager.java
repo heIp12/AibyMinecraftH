@@ -435,7 +435,7 @@ public class TRPGGameManager {
             String seed = gdam.get("seed").getAsString();
             state.startSession(room, seed, gdam);
             applyScenarioFlavor(); // 친숙(프로젝트 문·게임) 테마 특성 지침 주입 — 캐릭터 생성 전에
-            gameLogger.startNewLog(seed, room);
+            gameLogger.startNewLog(seed, room, getEntityName());
 
             // 서바이벌 모드 플레이어 전원 캐릭터 생성
             List<Player> survivors = Bukkit.getOnlinePlayers().stream()
@@ -786,7 +786,7 @@ public class TRPGGameManager {
             state.advanceToNextRoom(nextRoom, seed, gdam);
             // 새 맵 = 새 시작. 이전 맵의 재도전 오염도·entity 메모리 초기화.
             state.getCorruption().resetForNewStage();
-            gameLogger.startNewLog(seed, nextRoom);
+            gameLogger.startNewLog(seed, nextRoom, getEntityName());
             ensureEnoughRoles(gdam, activeSurvivorCount()); // 플레이어 수 > 배역 수면 휘말림 배역 보강(프롬프트 전에)
             gmSystemPrompt = buildGmPrompt(gdam);
 
@@ -8415,7 +8415,7 @@ public class TRPGGameManager {
         lastAutoSaveTurn = -1;
         ai.markSessionStart(); // 비용 집계 기준점(이어하기 = 새 세션처럼 0부터)
         mapMan.loadScenario(state.getGdamData());
-        gameLogger.startNewLog(state.getCurrentSeed(), state.getRoomNumber());
+        gameLogger.startNewLog(state.getCurrentSeed(), state.getRoomNumber(), getEntityName());
         gameLogger.section("게임 이어하기 — 스테이지 " + state.getRoomNumber() + " / 턴 " + state.getCurrentTurn());
 
         broadcast("§e§l═══ 게임 이어하기 (스테이지 " + state.getRoomNumber() + ") ═══");
@@ -8543,7 +8543,7 @@ public class TRPGGameManager {
         currentPhase = Phase.DAILY;
         state.startSession(stage, seed, gdam); // players.clear() 포함 — 복원 배정은 이 이후
         applyScenarioFlavor(); // 친숙(프로젝트 문·게임) 테마 특성 지침 주입 (재개·이어하기 포함)
-        gameLogger.startNewLog(seed, stage);
+        gameLogger.startNewLog(seed, stage, getEntityName());
         ai.clearAll();
         ai.markSessionStart(); // 비용 집계 시작점(재현 = 새 세션 시작)
 

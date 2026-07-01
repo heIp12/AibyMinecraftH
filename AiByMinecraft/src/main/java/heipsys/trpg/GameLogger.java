@@ -65,8 +65,8 @@ public class GameLogger {
     //  세션 라이프사이클
     // ──────────────────────────────────────────────────────────────
 
-    /** 새 세션 시작 시 호출 — 씨드 기준 실행 횟수를 매겨 새 로그 파일 생성. */
-    public void startNewLog(String seed, int room) {
+    /** 새 세션 시작 시 호출 — 씨드 기준 실행 횟수를 매겨 새 로그 파일 생성. title=괴담(시나리오) 이름(뷰어 파일목록 표시용). */
+    public void startNewLog(String seed, int room, String title) {
         synchronized (lock) {
             ensureDir();                       // 폴더가 사라졌어도 재생성 시도
             writeWarned = false;               // 새 세션마다 경고 1회 재허용
@@ -85,7 +85,9 @@ public class GameLogger {
             meta.addProperty("seed", seed == null ? "" : seed);
             meta.addProperty("stage", room);
             meta.addProperty("run", count);
-            appendEvent("세션", "", "세션 시작 (스테이지 " + room + ")", meta);
+            boolean hasTitle = title != null && !title.isEmpty() && !"???".equals(title);
+            if (hasTitle) meta.addProperty("title", title);   // 뷰어가 파일목록·헤더에 표시할 괴담 이름
+            appendEvent("세션", "", "세션 시작 (스테이지 " + room + ")" + (hasTitle ? " — 괴담: " + title : ""), meta);
             // 파일 생성 여부를 콘솔에 절대경로로 알려, "logs 파일이 안 보인다"를 즉시 진단 가능하게 한다.
             if (currentFile.exists())
                 plugin.getLogger().info("[gamelog] 플레이 로그 기록 시작 → " + currentFile.getAbsolutePath());
