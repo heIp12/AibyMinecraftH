@@ -82,6 +82,8 @@
   #info .tboost{color:#8fe0a0;font-size:11px}
   #info .spoiler{border:1px dashed #7a4a4a;border-radius:8px;padding:0 8px 6px;margin:6px 0;background:rgba(150,70,70,.08)}
   #info .spoiler h3{color:#ff9a8f}
+  #info h3.sech{cursor:pointer;user-select:none} #info h3.sech:hover{filter:brightness(1.15)}
+  #info h3.sech .secarrow{color:var(--dim);font-size:11px;margin-right:2px}
   .infoClose{float:right;cursor:pointer;color:var(--dim)}
 </style>
 </head>
@@ -115,6 +117,7 @@ let EVENTS=[], VIEWPOINTS=[], curVP="__all__";
 let ALIAS={}, REPLAY=null, SCENARIO=null, RAWCACHE=[], KNOWN=new Set(), CONTACTS={};
 let FILES={logs:[],replays:[],scenarios:[],gdams:[]};
 let playing=false, speed=1, queue=[], qi=0, qtimer=null, curBodyEl=null;
+let COLLAPSED=new Set(); // 정보 패널에서 접어둔 섹션 id — 재렌더(실시간 갱신 포함)에도 상태 유지
 
 const GLOBAL_RE=/전체|전원|모두|모든|방송|broadcast|^\*$|all/i;
 const PHASE_SUFFIX=/\s*\((프롤로그|전환|목격|대기|뒷이야기|에필로그|배드엔딩|시간\s*경과)\)\s*$/;
@@ -130,7 +133,7 @@ function colorFor(name){ if(!name)return "#cdbbff"; let h=0; for(let i=0;i<name.
 
 function normalize(ev){
   let kind=ev.kind||"", actor=ev.actor||"", to=Array.isArray(ev.to)?ev.to.slice():[];
-  const cat=ev.cat||"", who=ev.who||"", text=ev.text||""; let target="", bodyText=text;
+  const cat=ev.cat||"", who=ev.who||"", text=ev.text||""; let target="", bodyText=text; let viaName=ev.via||"";
   if(!kind||!actor){
     if(cat==="입력"){kind=kind||"input";if(!actor)actor=who;
       // 구형 txt '[입력] <계정> <내용>' — 첫 토큰=발화자(계정명은 본문에서 제거해 메타 노출 차단)
@@ -151,6 +154,17 @@ function normalize(ev){
       else{kind=kind||"gm";actor=actor||"GM";target=x;}}
     else if(cat.startsWith("NPC")){kind=kind||"npc";const m=cat.match(/\(([^)]*)\)/);if(m)actor=actor||m[1];const a=cat.indexOf("→");if(a>=0)target=cat.slice(a+1);}
     else if(cat.startsWith("능력")){kind=kind||"ability";actor=actor||who;}
+    else if(cat==="통신"){
+      // 통신 이벤트 — 본문 앞 [통화]/[근처]/[방송]/[외침]/[편지]/[귓속말](+·구체매체명) 라벨로 ★대화방식(매체)★을 인식.
+      //  JSONL은 kind가 이미 있어 라벨은 중복 제거용 / 구형 .txt는 라벨에서 kind·매체명을 유추한다. 예: [편지·전서구]
+      const cm=text.match(/^(.*?)\s*\[(통화|근처|방송|외침|편지|귓속말|수신호|정신감응)(?:·([^\]]+))?\]\s*([\s\S]*)$/);
+      if(cm){
+        if(!actor)actor=who||cm[1].trim(); // JSONL: who=발신자 / txt: 라벨 앞 토큰=발신자
+        if(!kind){const l=cm[2];kind=l==="통화"?"call":l==="근처"?"nearby":l==="방송"?"broadcast":l==="외침"?"shout":l==="편지"?"letter":l==="귓속말"?"whisper":l==="수신호"?"signal":l==="정신감응"?"psychic":"call";}
+        if(!viaName&&cm[3])viaName=cm[3].trim(); // 구체 매체명(전서구·통신구·서찰·필담…)
+        bodyText=cm[4]; // 중복 라벨 제거 — 매체는 뱃지로만 표시
+      } else { if(!actor)actor=who; if(!kind)kind="call"; }
+    }
     else if(cat==="아이템"){kind=kind||"item";actor=actor||who;}
     else if(cat==="단서"){kind=kind||"clue";actor=actor||who;}
     else if(cat==="배역"){kind=kind||"alias";}
@@ -169,14 +183,19 @@ function normalize(ev){
   actor=canon(actor); to=to.map(canon);
   if(kind==="assign")bodyText=(/등장/.test(text)?"배역 등장: ":"배역 배정: ")+(actor||"?"); // 계정→role_id·zone_id 메타 제거 + 표시명으로
   return {seq:ev.seq||0,t:ev.t||"",kind,actor,to,ability:ev.ability||"",detail:ev.detail||"",phase:ev.phase||"",cause:ev.cause||"",
-          text:bodyText,cat,orig:ev.orig||"",via:ev.via||"",item:ev.item||"",
+          text:bodyText,cat,orig:ev.orig||"",via:viaName,item:ev.item||"",
           hpAfter:ev.hpAfter,hpMax:ev.hpMax,sanAfter:ev.sanAfter,sanMax:ev.sanMax,hpDelta:ev.hpDelta,sanDelta:ev.sanDelta};
 }
 function visibleTo(e,vp){ if(vp==="__all__")return true; if(e.kind==="system"||e.kind==="broadcast"||e.kind==="nearby")return true;
   if(e.actor===vp)return true; if(e.to.includes(vp))return true; if(e.to.some(isGlobal))return true; return false; }
 function buildViewpoints(){ const m=new Map();
   for(const e of EVENTS){ if(e.kind==="alias")continue; for(const c of [e.actor,...e.to])if(isPerson(c))m.set(c,(m.get(c)||0)+1); }
-  VIEWPOINTS=[...m.entries()].map(([name,count])=>({name,count})).sort((a,b)=>b.count-a.count); }
+  // 플레이어 판별: replay 표시명 + input(입력) 이벤트 발화자(=플레이어만 입력함). 나머지는 NPC·괴담.
+  const players=new Set();
+  const uni=(nm,jb)=>{nm=(nm||"").trim();jb=(jb||"").trim();return (nm&&jb)?nm+"("+jb+")":(nm||jb);};
+  if(REPLAY&&Array.isArray(REPLAY.players))for(const p of REPLAY.players){if(p.charName){players.add(canon(p.charName));players.add(uni(p.charName,p.job));}}
+  for(const e of EVENTS){ if(e.kind==="input"&&isPerson(e.actor))players.add(e.actor); }
+  VIEWPOINTS=[...m.entries()].map(([name,count])=>({name,count,isPlayer:players.has(name)})).sort((a,b)=>b.count-a.count); }
 
 // ── 본문 파싱: 방송/독백/대사/서술 + 문단(빈 줄) 분리 ──
 function parseBody(text){
@@ -246,9 +265,12 @@ function renderSide(){
     d.onclick=()=>{curVP=name;stopPlay();renderSide();renderMain();};return d;};
   side.appendChild(Object.assign(document.createElement("h2"),{textContent:"전체"}));
   side.appendChild(mk("__all__","🗂 전체 타임라인",EVENTS.length,""));
-  side.appendChild(Object.assign(document.createElement("h2"),{textContent:"시점 (플레이어·NPC)"}));
+  const playersV=VIEWPOINTS.filter(v=>v.isPlayer), othersV=VIEWPOINTS.filter(v=>!v.isPlayer);
   if(!VIEWPOINTS.length){const e=document.createElement("div");e.className="empty";e.style.padding="10px";e.textContent="(.jsonl 권장 · .replay/배역 별칭이면 이름 통합)";side.appendChild(e);}
-  for(const v of VIEWPOINTS) side.appendChild(mk(v.name,v.name,v.count,colorFor(v.name)));
+  if(playersV.length){ side.appendChild(Object.assign(document.createElement("h2"),{textContent:"🙂 플레이어"}));
+    for(const v of playersV) side.appendChild(mk(v.name,v.name,v.count,colorFor(v.name))); }
+  if(othersV.length){ side.appendChild(Object.assign(document.createElement("h2"),{textContent:"👤 NPC · 괴담"}));
+    for(const v of othersV) side.appendChild(mk(v.name,v.name,v.count,colorFor(v.name))); }
   if(FILES.logs.length){ side.appendChild(Object.assign(document.createElement("h2"),{textContent:"폴더 로그"}));
     const wrap=document.createElement("div");wrap.className="filelist";
     for(const f of FILES.logs){const d=document.createElement("div");d.className="fl"+(f.__on?" on":"");d.textContent="📄 "+(f.__title||f.name);d.title=f.name+(f.__title?" — 괴담: "+f.__title:"");d.onclick=()=>openFolderLog(f);wrap.appendChild(d);}
@@ -257,10 +279,11 @@ function renderSide(){
 function badgeFor(e){ return e.kind==="ability"?(e.phase==="result"?"✨ "+(e.ability||"능력")+" 결과":(e.ability?"✨ "+e.ability:"✨ 능력"))
   :e.kind==="vital"?"❤ 상태"
   :e.kind==="item"?"🎒 아이템":e.kind==="clue"?"🔍 단서"
-  :e.kind==="input"?"입력":e.kind==="call"?"📞 통화":e.kind==="nearby"?"👥 근처":e.kind==="shout"?"📣 외침":e.kind==="letter"?"✉ 편지":e.kind==="whisper"?"🤫 귓속말"
+  :e.kind==="input"?"입력":e.kind==="call"?("📞 "+(e.via||"통화")):e.kind==="nearby"?"👥 근처":e.kind==="shout"?"📣 외침":e.kind==="letter"?("✉ "+(e.via||"편지")):e.kind==="whisper"?"🤫 귓속말"
+  :e.kind==="signal"?("🚩 "+(e.via||"수신호")):e.kind==="psychic"?("🧠 "+(e.via||"정신감응"))
   :e.kind==="gm"?"GM 서술":e.kind==="broadcast"?"📢 방송":e.kind==="npc"?"☎ NPC"
   :e.kind==="assign"?"🎭 배역":e.kind==="system"?"시스템":e.kind==="private"?"개인":e.kind==="gm_input"?"GM입력(상세)":(e.cat||"이벤트"); }
-const COMM_KINDS=new Set(["call","nearby","broadcast","shout","letter","whisper"]);
+const COMM_KINDS=new Set(["call","nearby","broadcast","shout","letter","whisper","signal","psychic"]);
 
 function filtered(){
   const q=(document.getElementById("q")?.value||"").trim().toLowerCase();
@@ -373,19 +396,19 @@ function stateAt(vp,seq){
   return {hp,hpMax,san,sanMax,abil,items,clues};
 }
 function livePanelHtml(vp,st){
-  let h=`<h3>재생 시점 — 아는 만큼만 <span class="live">● LIVE</span></h3>`;
+  let h=sh('live-state','재생 시점 — 아는 만큼만 <span class="live">● LIVE</span>');
   h+=`<div class="know"><div class="khead" style="color:${colorFor(vp)}">${esc(vp)}</div>`;
   h+=`<span class="hp">체력 ${st.hp??"?"}${st.hpMax!=null?"/"+st.hpMax:""}</span> &nbsp; <span class="san">정신 ${st.san??"?"}${st.sanMax!=null?"/"+st.sanMax:""}</span><br>`;
   h+=`<span class="st">능력 발동</span>${st.abil}회</div>`;
-  const list=(arr,cls,label,icon)=>{ if(!arr.length)return ""; const uq=[...new Set(arr.filter(Boolean))]; if(!uq.length)return "";
-    return `<div class="know"><div class="khead ${cls}">${icon} ${esc(label)} (${uq.length})</div>`+uq.map(x=>`<div>· ${esc(x)}</div>`).join("")+`</div>`;};
-  h+=list(st.clues,"kclue","알아낸 단서","🔍");
-  h+=list(st.items,"kitem","가진 아이템","🎒");
+  const list=(arr,cls,id,label,icon)=>{ const uq=[...new Set((arr||[]).filter(Boolean))]; if(!uq.length)return "";
+    return sh(id,`${icon} ${esc(label)} (${uq.length})`)+`<div class="know ${cls}">`+uq.map(x=>`<div>· ${esc(x)}</div>`).join("")+`</div>`;};
+  h+=list(st.clues,"kclue","live-clue","알아낸 단서","🔍");
+  h+=list(st.items,"kitem","live-item","가진 아이템","🎒");
   return h;
 }
 function updateLive(seq){
   if(curVP==="__all__")return;
-  const body=document.getElementById("infoBody"); if(body)body.innerHTML=livePanelHtml(curVP,stateAt(curVP,seq));
+  const body=document.getElementById("infoBody"); if(body){body.innerHTML=livePanelHtml(curVP,stateAt(curVP,seq));applyCollapsed();} // 접힘 상태 유지
   const info=document.getElementById("info"); if(info)info.classList.add("open");
   const tb=document.getElementById("toggleInfo"); if(tb)tb.style.display="";
 }
@@ -487,12 +510,144 @@ function loadLogText(name,text){
   document.getElementById("meta").textContent=`${name} · ${EVENTS.length}개 · 시점 ${VIEWPOINTS.length}`+(REPLAY?" · .replay":"")+(sess?` · ${sess.text}`:"");
   renderSide(); renderMain();
 }
+// ── 정보 패널 섹션 접기 ── 헤더(h3.sech) 클릭 → 다음 h3.sech 전까지의 형제 요소를 접는다.
+//  COLLAPSED(전역)에 접힌 id를 저장하고, 재렌더(실시간 상태 갱신 포함) 후 applyCollapsed()로 상태를 그대로 복원 → 마음대로 펴지지 않음.
+function sh(id,title){ return `<h3 class="sech" data-sid="${id}" onclick="toggleSec(this)"><span class="secarrow">▾</span> ${title}</h3>`; }
+function applyCollapsed(){
+  const body=document.getElementById("infoBody"); if(!body)return;
+  for(const h of body.querySelectorAll("h3.sech")){
+    const collapsed=COLLAPSED.has(h.dataset.sid);
+    const ar=h.querySelector(".secarrow"); if(ar)ar.textContent=collapsed?"▸":"▾";
+    let el=h.nextElementSibling;
+    while(el && !(el.tagName==="H3"&&el.classList.contains("sech"))){ el.style.display=collapsed?"none":""; el=el.nextElementSibling; }
+  }
+}
+function toggleSec(h){ const id=h.dataset.sid; if(COLLAPSED.has(id))COLLAPSED.delete(id); else COLLAPSED.add(id); applyCollapsed(); }
+// role_id/npc_id → 표시 이름 (배역 char_name → NPC 이름 → replay → 원본 id)
+function scNameOf(rid){
+  if(!rid) return rid;
+  if(SCENARIO&&Array.isArray(SCENARIO.roles)) for(const r of SCENARIO.roles) if(r.role_id===rid) return r.char_name||r.name||rid;
+  if(SCENARIO&&Array.isArray(SCENARIO.npcs))  for(const n of SCENARIO.npcs)  if(n.id===rid)      return n.name||rid;
+  if(REPLAY&&Array.isArray(REPLAY.players))   for(const p of REPLAY.players) if(p.roleId===rid)  return p.charName||rid;
+  return rid;
+}
+// 관계도 SVG — 인물 노드를 원형 배치하고 관계를 선+라벨로 잇는다.
+function scRelSvg(rels){
+  const ids=[]; for(const rr of rels) for(const rid of (rr.roles||[])) if(rid&&!ids.includes(rid)) ids.push(rid);
+  if(ids.length<2) return "";
+  const W=310, H=Math.max(210,70+ids.length*24), cx=W/2, cy=H/2, R=Math.min(cx,cy)-48;
+  const pos={}; ids.forEach((id,i)=>{const a=-Math.PI/2+2*Math.PI*i/ids.length; pos[id]=[cx+R*Math.cos(a), cy+R*Math.sin(a)];});
+  let s=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="background:var(--panel2);border:1px solid var(--line);border-radius:8px;margin-bottom:6px">`;
+  for(const rr of rels){const rs=rr.roles||[]; if(rs.length<2)continue; const a=pos[rs[0]],b2=pos[rs[1]]; if(!a||!b2)continue;
+    const mx=(a[0]+b2[0])/2, my=(a[1]+b2[1])/2;
+    s+=`<line x1="${a[0].toFixed(0)}" y1="${a[1].toFixed(0)}" x2="${b2[0].toFixed(0)}" y2="${b2[1].toFixed(0)}" stroke="#4a5266" stroke-width="1.5"/>`;
+    s+=`<text x="${mx.toFixed(0)}" y="${my.toFixed(0)}" fill="#9aa1b1" font-size="10" text-anchor="middle">${esc(rr.type||"")}</text>`;
+  }
+  for(const id of ids){const p=pos[id], nm=scNameOf(id);
+    s+=`<circle cx="${p[0].toFixed(0)}" cy="${p[1].toFixed(0)}" r="6" fill="${colorFor(nm)}"/>`;
+    s+=`<text x="${p[0].toFixed(0)}" y="${(p[1]-10).toFixed(0)}" fill="#e7e9ee" font-size="11" text-anchor="middle">${esc(nm)}</text>`;
+  }
+  return s+`</svg>`;
+}
+// 시나리오의 나머지 표시 가능한 모든 것: 관계도·NPC 상세(할일)·배역·타임라인·단서·아이템·제약.
+function scenarioExtraHtml(){
+  if(!SCENARIO) return "";
+  const S=v=>v==null?"":String(v).trim(), J=a=>a.map(x=>esc(S(x))).filter(Boolean).join("<br>　");
+  let h="";
+  const rels=SCENARIO.relationships;
+  if(Array.isArray(rels)&&rels.length){
+    h+=sh('rel','관계도'); const svg=scRelSvg(rels); if(svg)h+=svg;
+    for(const r of rels){const names=(r.roles||[]).map(scNameOf).filter(Boolean).join(" ↔ ");
+      h+=`<div class="card"><b>${esc(names||"?")}</b> <span class="dim2">${esc(S(r.type))}</span>`
+        +(S(r.description)?`<br>${esc(r.description)}`:"")
+        +((r.mutual_contact||r.same_start_zone)?`<br><span class="dim2">${[r.mutual_contact?"서로 연락처 앎":"",r.same_start_zone?"같은 시작 구역":""].filter(Boolean).join(" · ")}</span>`:"")
+        +`</div>`;}
+  }
+  if(Array.isArray(SCENARIO.npcs)&&SCENARIO.npcs.length){
+    h+=sh('npc','NPC 상세');
+    for(const n of SCENARIO.npcs){
+      h+=`<div class="card"><b>${esc(n.name||n.id||"?")}</b> <span class="dim2">${esc(S(n.role_type))}${n.zone?" · "+esc(n.zone):""}${n.critical?" · ★핵심":""}${n.communicable===false?" · 대화불가":""}</span>`;
+      if(S(n.motivation))  h+=`<br><span class="st">동기</span>${esc(n.motivation)}`;
+      if(S(n.personality)) h+=`<br><span class="st">성격</span>${esc(n.personality)}`;
+      const sched=n.schedule;
+      if(Array.isArray(sched)&&sched.length){
+        h+=`<div class="sub">할 일 · 일정</div>`;
+        for(const s of sched){
+          if(typeof s==="string"){h+=`<div class="tdesc">· ${esc(s)}</div>`;continue;}
+          const when=S(s.time||s.when||s.turn||s.condition), what=S(s.action||s.goal||s.intent||s.what||s.plan), will=S(s.will);
+          h+=`<div class="tdesc">· ${when?`<span class="dim2">[${esc(when)}]</span> `:""}${esc(what)}${will?` <span class="dim2">(의지:${esc(will)})</span>`:""}</div>`;
+        }
+      }
+      const sp=[];
+      if(S(n.true_role)) sp.push(`<span class="st">진짜역할</span>${esc(n.true_role)}`);
+      if(Array.isArray(n.knowledge)&&n.knowledge.length) sp.push(`<span class="st">아는것</span>${J(n.knowledge)}`);
+      if(sp.length)h+=`<div class="spoiler" style="margin-top:5px"><div class="teff" style="color:#ff9a8f">GM 전용</div>${sp.join("<br>")}</div>`;
+      h+=`</div>`;
+    }
+  }
+  if(Array.isArray(SCENARIO.roles)&&SCENARIO.roles.length){
+    h+=sh('roles','배역');
+    for(const r of SCENARIO.roles){
+      h+=`<div class="card"><b>${esc(r.char_name||r.name||r.role_id||"?")}</b> <span class="dim2">${esc(S(r.name))}${r.zone?" · "+esc(r.zone):""}${r.is_core?" · ★핵심":""}</span>`;
+      if(S(r.spawn_location)) h+=`<br><span class="st">등장</span>${esc(r.spawn_location)}`;
+      if(Array.isArray(r.initial_info)&&r.initial_info.length) h+=`<br><span class="st">초기정보</span>${J(r.initial_info)}`;
+      if(Array.isArray(r.hidden_info)&&r.hidden_info.length) h+=`<div class="spoiler" style="margin-top:5px"><span class="st" style="color:#ff9a8f">숨은정보</span>${J(r.hidden_info)}</div>`;
+      h+=`</div>`;
+    }
+  }
+  const tl=SCENARIO.timeline;
+  if(tl&&typeof tl==="object"){
+    h+=sh('timeline','사건 타임라인')+`<div class="card"><span class="dim2">${esc(S(tl.start_time))}~${esc(S(tl.end_time))} · 1턴 ${esc(S(tl.minutes_per_turn))}분 · 일상 ${esc(S(tl.daily_turns))}턴</span>`;
+    if(Array.isArray(tl.main_events))for(const ev of tl.main_events){
+      if(typeof ev==="string"){h+=`<br>· ${esc(ev)}`;continue;}
+      h+=`<br>· ${S(ev.time)?`<span class="dim2">[${esc(S(ev.time))}]</span> `:""}<b>${esc(S(ev.label||ev.id))}</b>${S(ev.effect)?` — ${esc(S(ev.effect))}`:""}${ev.blockable?` <span class="dim2">(막을수있음)</span>`:""}`;
+    }
+    for(const k of ["1","2","3","4","5","6"]){const st=tl[k]; if(st&&(st.condition||st.effect))
+      h+=`<br><span class="st">${k}단계</span>${esc(S(st.condition))}${S(st.effect)?" → "+esc(S(st.effect)):""}`;}
+    h+=`</div>`;
+  }
+  if(Array.isArray(SCENARIO.clues)&&SCENARIO.clues.length){
+    h+=`<div class="spoiler">`+sh('clues','배치 단서 · GM 전용');
+    for(const c of SCENARIO.clues){const mis=c.type==="mislead"||c.mislead;
+      h+=`<div class="card" style="margin:4px 0"><b>${esc(S(c.clue_subject)||S(c.id))}</b>${mis?` <span class="dim2" style="color:#ff9a8f">거짓 단서</span>`:` <span class="dim2">진짜</span>`}`
+        +(S(c.location)?`<br><span class="st">위치</span>${esc(c.location)}`:"")
+        +(S(c.content)?`<br>${esc(c.content)}`:"")+`</div>`;}
+    h+=`</div>`;
+  }
+  if(Array.isArray(SCENARIO.key_items)&&SCENARIO.key_items.length){
+    h+=sh('items','핵심 아이템');
+    for(const it of SCENARIO.key_items){
+      h+=`<div class="card"><b>${esc(it.name||it.id||"?")}</b> <span class="dim2">${esc(S(it.item_type||it.type))}</span>`
+        +(S(it.description)?`<br>${esc(it.description)}`:"")
+        +(S(it.location)?`<br><span class="st">위치</span>${esc(it.location)}`:"");
+      const sp=[];
+      if(S(it.clue_value)) sp.push(`<span class="st">단서가치</span>${esc(it.clue_value)}`);
+      if(S(it.lore_info))  sp.push(`<span class="st">내막</span>${esc(it.lore_info)}`);
+      if(Array.isArray(it.content)&&it.content.length) sp.push(`<span class="st">내용</span>${J(it.content)}`);
+      if(sp.length)h+=`<div class="spoiler" style="margin-top:5px">${sp.join("<br>")}</div>`;
+      h+=`</div>`;
+    }
+  }
+  const cons=SCENARIO.constraints;
+  if(cons&&typeof cons==="object"){
+    h+=sh('cons','배경 · 제약')+`<div class="card">`;
+    const flags=[];
+    if(cons.era)flags.push("시대 "+S(cons.era));
+    flags.push("휴대폰 "+(cons.phone_usable?"가능":"불가")); flags.push("외부연락 "+(cons.outside_contact?"가능":"두절"));
+    flags.push("현장이탈 "+(cons.can_leave_scene?"가능":"불가"));
+    if(cons.comms_monitored)flags.push("★통신 감청"); if(cons.comms_dangerous)flags.push("★통신 위험");
+    h+=flags.map(esc).join(" · ");
+    if(Array.isArray(cons.notes))for(const nt of cons.notes)h+=`<br>· ${esc(S(nt))}`;
+    h+=`</div>`;
+  }
+  return h;
+}
 function renderInfo(){
   const b=document.getElementById("infoBody");let h="";
   const S=v=>v==null?"":String(v).trim();
   const row=(label,val)=>{const s=S(val);return s?`<br><span class="st">${esc(label)}</span>${esc(s)}`:"";};
   const rowArr=(label,val)=>{if(!Array.isArray(val))return "";const it=val.map(S).filter(Boolean);return it.length?`<br><span class="st">${esc(label)}</span>${it.map(esc).join(" · ")}`:"";};
-  if(REPLAY){h+=`<h3>플레이어 ${REPLAY.stage!=null?"(스테이지 "+REPLAY.stage+")":""}</h3>`;
+  if(REPLAY){h+=sh('players',`플레이어 ${REPLAY.stage!=null?"(스테이지 "+REPLAY.stage+")":""}`);
     for(const p of (REPLAY.players||[])){const hp=Array.isArray(p.hp)?p.hp.join("/"):p.hp,san=Array.isArray(p.san)?p.san.join("/"):p.san;
       const stat=(cur,base)=>base!=null&&base!==cur?`${cur??"?"}<span class="dim2">(${base})</span>`:`${cur??"?"}`;
       h+=`<div class="card"><b style="color:${colorFor(p.charName||p.name)}">${esc(p.charName||p.name||"?")}</b> <span style="color:var(--dim)">${esc(p.job||"")} · ${p.age??"?"}세 · ${esc(p.zone||"")}</span><br>
@@ -509,7 +664,7 @@ function renderInfo(){
           h+=`</div>`;}}
       h+=`</div>`;}}
   if(SCENARIO){const e=SCENARIO.entity||{},ai=e.ai_context||{},ph=e.physical||{};
-    h+=`<h3>괴담 개요</h3><div class="card"><b>${esc(e.name||"?")}</b> <span style="color:var(--dim)">${esc(S(SCENARIO.scale))}${e.type?" · "+esc(e.type):""}</span>`;
+    h+=sh('entity','괴담 개요')+`<div class="card"><b>${esc(e.name||"?")}</b> <span style="color:var(--dim)">${esc(S(SCENARIO.scale))}${e.type?" · "+esc(e.type):""}</span>`;
     h+=row("성격",ai.personality||ai.disposition);
     h+=(SCENARIO.world_rules&&SCENARIO.world_rules.core)?row("세계규칙",SCENARIO.world_rules.core):"";
     h+=rowArr("규칙",e.rules);
@@ -519,12 +674,11 @@ function renderInfo(){
     h+=`</div>`;
     const sol=[["약점",e.weakness],["해결책",e.solution],["공략",e.exploit_path],["탈출",e.escape],["제압",ph.defeat]]
       .map(x=>{const s=S(x[1]);return s?`<span class="st">${x[0]}</span>${esc(s)}`:"";}).filter(Boolean);
-    if(sol.length)h+=`<div class="spoiler"><h3>대처법 · GM 전용(스포일러)</h3><div class="card" style="margin:0;background:transparent;border:0;padding:2px 0">${sol.join("<br>")}</div></div>`;
-    if(Array.isArray(SCENARIO.npcs)&&SCENARIO.npcs.length){h+=`<h3>NPC</h3>`;for(const n of SCENARIO.npcs)h+=`<div class="card"><b>${esc(n.name||n.id||"?")}</b> <span style="color:var(--dim)">${esc(n.role_type||"")}${n.zone?" · "+esc(n.zone):""}</span>${n.motivation?"<br>"+esc(n.motivation):""}</div>`;}
+    if(sol.length)h+=`<div class="spoiler">`+sh('solution','대처법 · GM 전용(스포일러)')+`<div class="card" style="margin:0;background:transparent;border:0;padding:2px 0">${sol.join("<br>")}</div></div>`;
     if(Array.isArray(SCENARIO.zones)&&SCENARIO.zones.length){ // 구역(맵) — 이름·구역명 해석
       const zname={}; for(const z of SCENARIO.zones)if(z&&z.zone_id)zname[z.zone_id]=z.name||z.zone_id;
       const roleName={}; if(REPLAY&&Array.isArray(REPLAY.players))for(const p of REPLAY.players)if(p.roleId)roleName[p.roleId]=p.charName||p.roleId;
-      h+=`<h3>구역 (맵)</h3>`;
+      h+=sh('zones','구역 (맵)');
       for(const z of SCENARIO.zones){
         const conns=(z.connections||[]).map(c=>zname[c]||c).filter(Boolean).join(" · ");
         const who=(z.accessible_by||[]).map(r=>roleName[r]||r).filter(Boolean).join(", ");
@@ -533,8 +687,11 @@ function renderInfo(){
           +(who?`<br><span class="st">출입</span>${esc(who)}`:"")
           +(z.exclusive?` <span class="dim2">· 전용</span>`:"")+`</div>`;
       }
-    }}
+    }
+    h+=scenarioExtraHtml(); // 관계도·NPC 상세(할일)·배역·타임라인·단서·아이템·제약
+  }
   b.innerHTML=h||`<div class="empty">.replay(스탯)·.json/.gdam(시나리오)을 함께 불러오면 표시됩니다.</div>`;
+  applyCollapsed(); // 접힌 섹션 상태 복원
   document.getElementById("toggleInfo").style.display=(REPLAY||SCENARIO)?"":"none";
 }
 function ingest(file){const nm=file.name.toLowerCase();

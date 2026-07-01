@@ -218,18 +218,27 @@ public class GameLogger {
      *  @param actor 발신자 표시명, to 수신자 표시명 목록(계정명 금지 — gmDisplayName 등), text 발화 내용
      */
     public void logComm(String kind, String actor, java.util.List<String> to, String text) {
+        logComm(kind, actor, to, text, null);
+    }
+
+    /**
+     * 통신 이벤트 + ★구체 매체 이름(via)★ — 개입 판정은 class(kind)로 하되, 표시 이름은 시대·기기에 따라 다양하게.
+     *  @param via 매체의 구체 표시 이름(전화·무전·통신구·서찰·전서구·필담 등). null/빈값이면 기본 라벨만.
+     */
+    public void logComm(String kind, String actor, java.util.List<String> to, String text, String via) {
         String k = (kind == null || kind.isEmpty()) ? "call" : kind;
         JsonObject extra = new JsonObject();
         extra.addProperty("kind", k);
+        if (via != null && !via.isBlank()) extra.addProperty("via", via.trim());
         if (to != null && !to.isEmpty()) {
             JsonArray arr = new JsonArray();
             for (String t : to) if (t != null && !t.isEmpty()) arr.add(t);
             if (arr.size() > 0) extra.add("to", arr);
         }
-        record("통신", actor, "[" + commLabel(k) + "] " + (text == null ? "" : text), extra);
+        record("통신", actor, "[" + mediumLabel(k, via) + "] " + (text == null ? "" : text), extra);
     }
 
-    /** 통신 수단 라벨 — 통화·근처(외침)·방송뿐 아니라 외침·편지·귓속말 등 가변 수단을 지원. */
+    /** 통신 수단 라벨 — 통화·근처·방송·외침·편지·귓속말·수신호 등 가변 수단을 지원(모달리티: 음성/문서/신호). */
     private static String commLabel(String k) {
         if (k == null) return "통화";
         switch (k) {
@@ -238,8 +247,16 @@ public class GameLogger {
             case "shout":     return "외침";
             case "letter":    return "편지";
             case "whisper":   return "귓속말";
+            case "signal":    return "수신호"; // 시각·신호형(손짓·봉화·깃발) — 소리도 글도 아닌 제3의 매체
+            case "psychic":   return "정신감응"; // 정신·사이킥형(텔레파시·뇌파·신경망) — 물리 감각 밖의 매체
             case "call": default: return "통화";
         }
+    }
+
+    /** .txt 라벨 — class(통화/편지…)에 구체 매체명을 ·로 덧붙인다: [편지·전서구]. 뷰어가 class로 인식하고 매체명도 표시. */
+    private static String mediumLabel(String k, String via) {
+        String base = commLabel(k);
+        return (via != null && !via.isBlank() && !via.trim().equals(base)) ? base + "·" + via.trim() : base;
     }
 
     /**
@@ -249,9 +266,16 @@ public class GameLogger {
      */
     public void logCommTampered(String kind, String actor, java.util.List<String> to,
                                 String orig, String altered, String cause) {
+        logCommTampered(kind, actor, to, orig, altered, cause, null);
+    }
+
+    /** 변형된 통신 + ★구체 매체 이름(via)★. */
+    public void logCommTampered(String kind, String actor, java.util.List<String> to,
+                                String orig, String altered, String cause, String via) {
         String k = (kind == null || kind.isEmpty()) ? "call" : kind;
         JsonObject extra = new JsonObject();
         extra.addProperty("kind", k);
+        if (via != null && !via.isBlank()) extra.addProperty("via", via.trim());
         if (to != null && !to.isEmpty()) {
             JsonArray arr = new JsonArray();
             for (String t : to) if (t != null && !t.isEmpty()) arr.add(t);
@@ -259,7 +283,7 @@ public class GameLogger {
         }
         extra.addProperty("orig", orig == null ? "" : strip(orig).trim());  // 뷰어: 원본 줄
         if (cause != null && !cause.isEmpty()) extra.addProperty("cause", cause);
-        record("통신", actor, "[" + commLabel(k) + "] " + (altered == null ? "" : altered), extra);
+        record("통신", actor, "[" + mediumLabel(k, via) + "] " + (altered == null ? "" : altered), extra);
     }
 
     /**
