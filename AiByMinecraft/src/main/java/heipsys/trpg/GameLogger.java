@@ -170,6 +170,38 @@ public class GameLogger {
         record(cat, caster, body, extra);
     }
 
+    /** 능력 결과/설명(능력으로 드러난 정보·서술) — 발동(logAbility)과 구분되는 '결과' 이벤트로 남긴다. */
+    public void logAbilityResult(String caster, String ability, String text) {
+        if (text == null || text.isBlank()) return;
+        JsonObject extra = new JsonObject();
+        extra.addProperty("kind", "ability");
+        extra.addProperty("phase", "result");
+        if (caster  != null && !caster.isEmpty())  extra.addProperty("actor", caster);
+        if (ability != null && !ability.isEmpty()) extra.addProperty("ability", ability);
+        String cat = "능력" + (ability != null && !ability.isEmpty() ? "(" + ability + ")" : "");
+        record(cat, caster, text, extra);
+    }
+
+    /** 체력·정신력 변화 + 상태 전이(기절·완전잠식·조종·사망·회복·대가). 로그 뷰어 '상태' 필터·타임라인 진단용.
+     *  @param cause 원인/전이 라벨(예: "사망","기절","완전 잠식(관전)","조종(홀림)","행운 구제","회복","능력 대가"). 없으면 "". */
+    public void logVital(String actor, int hpDelta, int hpAfter, int hpMax,
+                         int sanDelta, int sanAfter, int sanMax, String cause) {
+        JsonObject extra = new JsonObject();
+        extra.addProperty("kind", "vital");
+        if (actor != null && !actor.isEmpty()) extra.addProperty("actor", actor);
+        extra.addProperty("hpDelta", hpDelta);   extra.addProperty("hpAfter", hpAfter);   extra.addProperty("hpMax", hpMax);
+        extra.addProperty("sanDelta", sanDelta); extra.addProperty("sanAfter", sanAfter); extra.addProperty("sanMax", sanMax);
+        if (cause != null && !cause.isEmpty()) extra.addProperty("cause", cause);
+        StringBuilder b = new StringBuilder();
+        if (hpDelta != 0) b.append("체력 ").append(hpDelta > 0 ? "+" : "").append(hpDelta)
+                           .append("(→").append(hpAfter).append("/").append(hpMax).append(") ");
+        if (sanDelta != 0) b.append("정신력 ").append(sanDelta > 0 ? "+" : "").append(sanDelta)
+                            .append("(→").append(sanAfter).append("/").append(sanMax).append(") ");
+        if (cause != null && !cause.isEmpty()) b.append("· ").append(cause);
+        if (b.length() == 0) return;
+        record("상태", actor, b.toString().trim(), extra);
+    }
+
     /** 개인 전용 시스템 메시지(배역 배정·등장 등) — 로그 뷰어에서 ★그 플레이어 시점에만★ 보이게(NPC·타인 시점 제외). */
     public void logPrivate(String player, String content) {
         if (player == null || player.isEmpty()) { logEvent(content); return; }

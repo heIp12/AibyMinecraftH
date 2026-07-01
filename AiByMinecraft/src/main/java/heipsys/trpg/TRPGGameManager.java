@@ -1975,6 +1975,9 @@ public class TRPGGameManager {
                 // 일상 파트에서는 스탯 변화는 허용하되 사망 전환은 불가
                 boolean horrorActive = (currentPhase == Phase.HORROR);
                 boolean phased = phaseOutTurns.getOrDefault(pd.uuid, 0) > 0; // 위상 이탈 중이면 피해 무효
+                // ★로깅용 스냅샷★: 이 업데이트 전후 체력·정신력·상태를 비교해 '받은 피해·상태 전이'를 로그로 남긴다.
+                final int hpBefore0 = pd.hp[0]; final int sanBefore0 = pd.san[0];
+                final String statusBefore = pd.status; final boolean deadBefore = pd.isDead;
                 if (update.has("hp_change")) {
                     int delta = update.get("hp_change").getAsInt();
                     if (phased && delta < 0) delta = 0; // 무적: 피해 차단
@@ -1984,37 +1987,27 @@ public class TRPGGameManager {
                     // 빙의 중 큰 피해 → 무방비 본체가 공격받은 것 → 본체로 강제 복귀(치명상이면 아래에서 사망 처리)
                     if (delta <= -2 && pd.hp[0] > 0 && possessingNpc.containsKey(pd.uuid))
                         endPossession(Bukkit.getPlayer(pd.uuid), pd, "본체가 공격받아 끌려 돌아옴");
-                    // 체력 0 → 즉사 대신 기절(설계 문서 기준). 1HP 캐릭터가 한 대 맞고 즉시 탈락하는 것을 막는다.
-                    // ★delta<0(실제 추가 피해)일 때만★ 전환한다 — hp_change=0 같은 무피해 업데이트로는
-                    //   이미 0인 기절자가 죽거나 멀쩡한 사람이 기절하지 않게(스키마 기본값 hp_change:0 오작동 방지).
-                    if (horrorActive && delta < 0 && pd.hp[0] <= 0 && !pd.isDead) {
+                    // ★사망 모델★: 체력 1 → 행동불가(기절, 회복 가능) / 체력 0 → 사망(부활 능력으로만 복구).
+                    //   큰 피해로 2→0이면 기절 없이 즉시 사망(피해규모가 곧 치명성). delta<0(실제 피해)일 때만 전환.
+                    if (horrorActive && delta < 0 && !pd.isDead && pd.hp[0] <= 1) {
                         Player target = Bukkit.getPlayer(pd.uuid);
-                        possessingNpc.remove(pd.uuid); // 본체가 죽으면 빙의도 끝(설계: 본체 사망 시 사망)
-                        if (animalForm.contains(pd.uuid)) {
-                            // 동물 형태에서 치명상 → 진짜 소멸(소생 1회 이미 소진). 행운·기절 없음.
-                            animalForm.remove(pd.uuid);
+                        possessingNpc.remove(pd.uuid); // 본체가 위태로우면 빙의 종료
+                        if (pd.hp[0] <= 0) {
+                            // 체력 0 → 사망. 동물 형태면 소멸, (동물 아니고) 소생 특성 보유 시 동물로 전환.
+                            boolean wasAnimal = animalForm.remove(pd.uuid);
                             pd.isDead = true;
-                            pd.status = "dead";
-                            fireDeathRelay(pd);
-                            if (target != null) target.sendMessage("§4동물의 몸마저 스러집니다. 이번엔 정말 끝입니다...");
-                            ai.injectGmSystem("[탈락] " + commDisplayName(pd) + "의 의식이 깃든 동물이 끝내 소멸했다(완전 사망). 서술에 반영하라.");
-                        } else if (luckSaves(pd)) {
-                            // ★위기 구제(행운): LUK 비례 확률로 기절·사망 직전 가까스로 버틴다.
-                            pd.hp[0] = 1;
-                            if (target != null) target.sendMessage("§e[행운!] 쓰러지기 직전, 운 좋게 가까스로 버텨냈다.");
-                            ai.injectGmSystem("[행운] " + commDisplayName(pd) + "이(가) 치명타 직전 운 좋게 버텼다 — '간신히/가까스로'로 자연스럽게 반영(과장 금지).");
-                        } else if ("faint".equals(pd.status)) {
-                            // 기절 상태에서 재차 치명상 → 탈락. 단 동물 소생 보유 시 죽음 대신 동물로 전환.
-                            pd.isDead = true;
-                            boolean asAnimal = fireAnimalRevival(pd); // 소생 시 isDead=false로 되돌리고 동물 형태로
+                            boolean asAnimal = !wasAnimal && fireAnimalRevival(pd); // 소생 시 isDead=false로 되돌리고 동물 형태로
                             if (!asAnimal) {
-                                fireDeathRelay(pd);   // 사후 전언: 진짜 사망일 때만(밝힌 사실을 아군에게)
-                                if (target != null) target.sendMessage("§4쓰러진 채 다시 일격을 맞았다. 끝내 일어나지 못합니다...");
-                                ai.injectGmSystem("[탈락] " + commDisplayName(pd) + "이(가) 기절 중 치명상으로 쓰러졌다. 서술에 반영하라.");
+                                pd.status = "dead";
+                                fireDeathRelay(pd);   // 사후 전언: 밝힌 사실을 아군에게
+                                if (target != null) target.sendMessage(wasAnimal
+                                    ? "§4동물의 몸마저 스러집니다. 이번엔 정말 끝입니다..."
+                                    : "§4치명상으로 목숨을 잃었습니다... §7(부활 능력으로만 되살아날 수 있습니다)");
+                                ai.injectGmSystem("[사망] " + commDisplayName(pd) + "이(가) 체력이 다해 사망했다. 서술에 반영하라(부활 능력 외엔 복구 불가).");
                             }
-                        } else if (!"puppet".equals(pd.status)) {
-                            // 일반 상태 → 기절(회복 가능). 홀림는 이미 조종 중이라 기절시키지 않음.
-                            applyFaint(pd);
+                        } else if (!"puppet".equals(pd.status) && !"faint".equals(pd.status)) {
+                            // 체력 1 → 행동불가(기절). ★피해가 클수록 오래 쓰러져 있다(2~5턴).★
+                            applyFaint(pd, Math.min(5, 2 + Math.abs(delta)));
                         }
                     }
                 }
@@ -2046,12 +2039,7 @@ public class TRPGGameManager {
                     }
                     if (horrorActive && pd.san[0] <= 0 && !pd.isDead) {
                         Player target = Bukkit.getPlayer(pd.uuid);
-                        if (luckSaves(pd) && !"puppet".equals(pd.status)) {
-                            // ★위기 구제(행운): 홀림 직전 가까스로 정신을 붙든다. (이미 홀림 상태면 구제 없이 완전 잠식 처리)
-                            pd.san[0] = 1;
-                            if (target != null) target.sendMessage("§e[행운!] 정신이 무너지기 직전, 가까스로 붙들었다.");
-                            ai.injectGmSystem("[행운] " + commDisplayName(pd) + "이(가) 정신 붕괴 직전 가까스로 버텼다 — 서술에 자연스럽게 반영(과장 금지).");
-                        } else if ("puppet".equals(pd.status) || "faint".equals(pd.status)) {
+                        if ("puppet".equals(pd.status) || "faint".equals(pd.status)) {
                             // 홀림·기절 상태에서 SAN=0 재도달 → 완전 잠식(관전). 탈락하지 않음.
                             pd.faintTurnsRemaining = 0; // 기절 타이머 리셋 (완전 잠식이 우선)
                             pd.status = "puppet";
@@ -2132,6 +2120,20 @@ public class TRPGGameManager {
                 if (update.has("item_remove") && !update.get("item_remove").isJsonNull()) {
                     pd.heldItemIds.remove(update.get("item_remove").getAsString());
                 }
+                // ★상태 로깅★: 이번 업데이트로 생긴 체력·정신력 변화 + 상태 전이(기절·조종·사망·회복)를 한 줄로 기록.
+                int hpD = pd.hp[0] - hpBefore0, sanD = pd.san[0] - sanBefore0;
+                String vcause = "";
+                if (pd.isDead && !deadBefore) vcause = "사망";
+                else if (!statusBefore.equals(pd.status)) vcause = switch (pd.status) {
+                    case "faint"  -> "행동불가(기절)";
+                    case "puppet" -> (pd.puppetRecoveryTurns > 0 ? "완전 잠식(관전)" : "조종(홀림)");
+                    case "animal" -> "동물화";
+                    case "normal" -> "회복";
+                    case "dead"   -> "사망";
+                    default        -> pd.status;
+                };
+                if (hpD != 0 || sanD != 0 || !vcause.isEmpty())
+                    gameLogger.logVital(pd.gmDisplayName(), hpD, pd.hp[0], pd.hp[1], sanD, pd.san[0], pd.san[1], vcause);
             });
     }
 
@@ -2644,10 +2646,12 @@ public class TRPGGameManager {
                 if (cs > 0) p.sendMessage("§c[대가] 정신력 " + cs + " 소모.");
                 if (ch > 0) p.sendMessage("§c[대가] 체력 " + ch + " 소모.");
             }
+            gameLogger.logVital(commDisplayName(pd), -ch, pd.hp[0], pd.hp[1], -cs, pd.san[0], pd.san[1], "능력 대가: " + td.name);
         }
         if (stun > 0) {
             stunTurns.merge(pd.uuid, stun, Math::max); // 행동불능 강제(입력 차단)
             if (p != null && p.isOnline()) p.sendMessage("§c[대가] 다음 " + stun + "턴간 스스로 행동할 수 없습니다.");
+            gameLogger.logAbilityResult(commDisplayName(pd), td.name, "대가: 행동불능 " + stun + "턴");
         }
         StringBuilder sb = new StringBuilder("[능력 대가] " + commDisplayName(pd) + "의 '" + td.name + "' 발동 대가");
         sb.append(cost.isEmpty() ? "가 발생했다. " : ": " + cost + ". ");
@@ -2896,6 +2900,7 @@ public class TRPGGameManager {
                 if (!stripped.isBlank()) {
                     narrativeDelivery.deliver(player, stripped); // 페이스드 서술 유지(긴 회상 장면)
                     pd.addKeyFact("[" + td.name + "] " + stripped.replaceAll("§.", "")); // 중요 정보에도 기록
+                    gameLogger.logAbilityResult(pd.gmDisplayName(), td.name, stripped);
                 }
             })
         );
@@ -2949,6 +2954,7 @@ public class TRPGGameManager {
         player.sendMessage("§b[" + td.name + "]");
         if (panel.isBlank()) { player.sendMessage("§8 (지금은 잡히는 정보가 없다.)"); return; }
         for (String line : panel.split("\n")) if (!line.isEmpty()) player.sendMessage(line);
+        gameLogger.logAbilityResult(pd.gmDisplayName(), td.name, oneLine(panel));
     }
 
     /** 능력 성능(등급)에 따라 보여줄 상태창 패널을 ★단편적으로★ 고른다. effectParams "panels"(CSV)가 풀,
@@ -3681,6 +3687,7 @@ public class TRPGGameManager {
                 // ★가독성 = 등급★: 낮으면 글자가 깨지고(□) 뒤죽박죽 섞여 판독이 어렵고, 높으면 또렷.
                 String shown = garbleByGrade(t, gi);
                 player.sendMessage("§5[" + label + " — 관조] §7" + shown);
+                gameLogger.logAbilityResult(pd.gmDisplayName(), label, shown);
                 // 또렷이 읽힌 등급(B+)에서만 기록에 남긴다 — 판독 불가 조각은 오라클 문맥을 오염시키므로 기록하지 않는다.
                 if (gi >= 4) pd.addKeyFact("[" + label + "] " + t.replaceAll("§.", ""));
                 else player.sendMessage("§8 (형상이 깨져 온전히 새겨두지 못했다.)");
@@ -4389,6 +4396,7 @@ public class TRPGGameManager {
                     if (!l.isEmpty()) player.sendMessage("§7  " + l);
                 }
                 if (pd != null) pd.addKeyFact("[" + traitName + "] " + text.replace("\n", " ").replaceAll("§.", ""));
+                gameLogger.logAbilityResult(pd != null ? pd.gmDisplayName() : player.getName(), traitName, text.replace("\n", " "));
             });
         });
     }
@@ -5648,13 +5656,14 @@ public class TRPGGameManager {
         if (text == null) return;
         String clean = text.replaceAll("§.", "").trim();
         if (clean.isEmpty()) return;
+        // 헤더([능력명])와 본문 분리 — 표시·로깅 공통.
+        String header = "능력 결과", body = clean;
+        if (clean.startsWith("[")) {
+            int end = clean.indexOf(']');
+            if (end > 0) { header = clean.substring(1, end).trim(); body = clean.substring(end + 1).trim(); }
+        }
         if (p != null && p.isOnline()) {
-            // 헤더([능력명])와 본문을 분리해 색·서식으로 강조 — 일반 서술과 확실히 구분되게 표시
-            String header = "능력 결과", body = clean;
-            if (clean.startsWith("[")) {
-                int end = clean.indexOf(']');
-                if (end > 0) { header = clean.substring(1, end).trim(); body = clean.substring(end + 1).trim(); }
-            }
+            // 색·서식으로 강조 — 일반 서술과 확실히 구분되게 표시
             p.sendMessage("§6§m                                        §r");
             p.sendMessage("§6§l✦ " + header + " §6✦");
             p.sendMessage("§e" + body);
@@ -5662,6 +5671,7 @@ public class TRPGGameManager {
             p.sendMessage("§6§m                                        §r");
         }
         if (record && pd != null) pd.addKeyFact(clean);
+        gameLogger.logAbilityResult(pd != null ? pd.gmDisplayName() : (p != null ? p.getName() : ""), header, body);
     }
 
     /**
@@ -7727,12 +7737,16 @@ public class TRPGGameManager {
         return pd.gmDisplayName();
     }
 
-    private void applyFaint(PlayerData pd) {
+    private void applyFaint(PlayerData pd) { applyFaint(pd, 3); }
+
+    /** 행동불가(기절) — 체력 1 도달 시. turns = 피해규모에 비례한 지속(회복 시 체력 1). */
+    private void applyFaint(PlayerData pd, int turns) {
+        int t = Math.max(1, turns);
         pd.status = "faint";
-        pd.faintTurnsRemaining = 3;
+        pd.faintTurnsRemaining = t;
         Player p = Bukkit.getPlayer(pd.uuid);
-        if (p != null) p.sendMessage("§c정신을 잃었다... §7(3턴 후 의식이 돌아옵니다)");
-        ai.injectGmSystem("[기절] " + commDisplayName(pd) + "이(가) 기절했다. 3턴 후 회복 예정.");
+        if (p != null) p.sendMessage("§c쓰러져 움직일 수 없다... §7(" + t + "턴 후 의식이 돌아옵니다)");
+        ai.injectGmSystem("[행동불가] " + commDisplayName(pd) + "이(가) 쓰러져 " + t + "턴간 스스로 행동할 수 없다(회복 시 체력 1). 서술에 반영하라.");
     }
 
     /**

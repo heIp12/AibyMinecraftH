@@ -439,7 +439,7 @@ public class CharacterGenerator {
      * 총합은 보존한다 — 부족분은 HP·SAN을 제외한 가장 높은 스탯에서 끌어온다.
      */
     private void ensureSurvivalFloor(PlayerData pd) {
-        final int FLOOR = 3;
+        final int FLOOR = 2; // 시작 체력·정신력 최소 2(1/1 즉사 방지, 단 취약하게 — 큰 피해엔 즉사 가능)
         raiseToFloor(pd, 0, FLOOR); // HP
         raiseToFloor(pd, 2, FLOOR); // SAN
     }
