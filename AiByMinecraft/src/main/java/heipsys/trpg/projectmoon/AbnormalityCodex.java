@@ -387,13 +387,21 @@ public final class AbnormalityCodex {
      * 등급이 곧 위력이므로 등급이 높을수록 위협도가 반드시 커진다(백야·종말새 등 최상위 초과 = 6).
      */
     private static String threatTier(String power) {
+        String p = (power == null ? "" : power.trim());
         int t; String label;
-        if (power.contains("이상급") || power.contains("종말급")) { t = 6; label = "종말급(단일 알레프 초월)"; }
-        else if (power.contains("ALEPH")) { t = 5; label = "최상위"; }
-        else if (power.contains("WAW"))   { t = 4; label = "매우 강함"; }
-        else if (power.contains("HE"))    { t = 3; label = "강함"; }
-        else if (power.contains("TETH"))  { t = 2; label = "보통"; }
-        else                              { t = 1; label = "약함"; }
+        // 종말급 초월(백야·종말새)은 프로즈 어디에 있든 6.
+        if (p.contains("이상급") || p.contains("종말급")) { t = 6; label = "종말급(단일 알레프 초월)"; }
+        else {
+            // ★선두 등급 토큰만★ 본다 — 프로즈에 섞인 다른 등급명(예: '원래 WAW에서 강등', '정체는 ALEPH로 화')이
+            //   위협도를 부풀리던 오분류(TETH→4, ZAYIN→5)를 막는다. 표기 등급이 곧 위협도.
+            String head = p.toUpperCase().split("[\\s.,()·]", 2)[0]; // 선두 토큰(예: "ALEPH급", "TETH", "ZAYIN(사칭)"→"ZAYIN")
+            if      (head.startsWith("ALEPH")) { t = 5; label = "최상위";   }
+            else if (head.startsWith("WAW"))   { t = 4; label = "매우 강함"; }
+            else if (head.startsWith("HE"))    { t = 3; label = "강함";     }
+            else if (head.startsWith("TETH"))  { t = 2; label = "보통";     }
+            else if (head.startsWith("ZAYIN")) { t = 1; label = "약함";     }
+            else                               { t = 1; label = "약함";     } // 등급 토큰으로 시작 안 하면 최하(안전측)
+        }
         return "위협도 " + t + "/6(" + label + ")";
     }
 }
