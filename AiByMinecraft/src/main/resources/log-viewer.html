@@ -176,7 +176,12 @@ function visibleTo(e,vp){ if(vp==="__all__")return true; if(e.kind==="system"||e
   if(e.actor===vp)return true; if(e.to.includes(vp))return true; if(e.to.some(isGlobal))return true; return false; }
 function buildViewpoints(){ const m=new Map();
   for(const e of EVENTS){ if(e.kind==="alias")continue; for(const c of [e.actor,...e.to])if(isPerson(c))m.set(c,(m.get(c)||0)+1); }
-  VIEWPOINTS=[...m.entries()].map(([name,count])=>({name,count})).sort((a,b)=>b.count-a.count); }
+  // 플레이어 판별: replay 표시명 + input(입력) 이벤트 발화자(=플레이어만 입력함). 나머지는 NPC·괴담.
+  const players=new Set();
+  const uni=(nm,jb)=>{nm=(nm||"").trim();jb=(jb||"").trim();return (nm&&jb)?nm+"("+jb+")":(nm||jb);};
+  if(REPLAY&&Array.isArray(REPLAY.players))for(const p of REPLAY.players){if(p.charName){players.add(canon(p.charName));players.add(uni(p.charName,p.job));}}
+  for(const e of EVENTS){ if(e.kind==="input"&&isPerson(e.actor))players.add(e.actor); }
+  VIEWPOINTS=[...m.entries()].map(([name,count])=>({name,count,isPlayer:players.has(name)})).sort((a,b)=>b.count-a.count); }
 
 // ── 본문 파싱: 방송/독백/대사/서술 + 문단(빈 줄) 분리 ──
 function parseBody(text){
@@ -246,9 +251,12 @@ function renderSide(){
     d.onclick=()=>{curVP=name;stopPlay();renderSide();renderMain();};return d;};
   side.appendChild(Object.assign(document.createElement("h2"),{textContent:"전체"}));
   side.appendChild(mk("__all__","🗂 전체 타임라인",EVENTS.length,""));
-  side.appendChild(Object.assign(document.createElement("h2"),{textContent:"시점 (플레이어·NPC)"}));
+  const playersV=VIEWPOINTS.filter(v=>v.isPlayer), othersV=VIEWPOINTS.filter(v=>!v.isPlayer);
   if(!VIEWPOINTS.length){const e=document.createElement("div");e.className="empty";e.style.padding="10px";e.textContent="(.jsonl 권장 · .replay/배역 별칭이면 이름 통합)";side.appendChild(e);}
-  for(const v of VIEWPOINTS) side.appendChild(mk(v.name,v.name,v.count,colorFor(v.name)));
+  if(playersV.length){ side.appendChild(Object.assign(document.createElement("h2"),{textContent:"🙂 플레이어"}));
+    for(const v of playersV) side.appendChild(mk(v.name,v.name,v.count,colorFor(v.name))); }
+  if(othersV.length){ side.appendChild(Object.assign(document.createElement("h2"),{textContent:"👤 NPC · 괴담"}));
+    for(const v of othersV) side.appendChild(mk(v.name,v.name,v.count,colorFor(v.name))); }
   if(FILES.logs.length){ side.appendChild(Object.assign(document.createElement("h2"),{textContent:"폴더 로그"}));
     const wrap=document.createElement("div");wrap.className="filelist";
     for(const f of FILES.logs){const d=document.createElement("div");d.className="fl"+(f.__on?" on":"");d.textContent="📄 "+(f.__title||f.name);d.title=f.name+(f.__title?" — 괴담: "+f.__title:"");d.onclick=()=>openFolderLog(f);wrap.appendChild(d);}
@@ -487,6 +495,125 @@ function loadLogText(name,text){
   document.getElementById("meta").textContent=`${name} · ${EVENTS.length}개 · 시점 ${VIEWPOINTS.length}`+(REPLAY?" · .replay":"")+(sess?` · ${sess.text}`:"");
   renderSide(); renderMain();
 }
+// role_id/npc_id → 표시 이름 (배역 char_name → NPC 이름 → replay → 원본 id)
+function scNameOf(rid){
+  if(!rid) return rid;
+  if(SCENARIO&&Array.isArray(SCENARIO.roles)) for(const r of SCENARIO.roles) if(r.role_id===rid) return r.char_name||r.name||rid;
+  if(SCENARIO&&Array.isArray(SCENARIO.npcs))  for(const n of SCENARIO.npcs)  if(n.id===rid)      return n.name||rid;
+  if(REPLAY&&Array.isArray(REPLAY.players))   for(const p of REPLAY.players) if(p.roleId===rid)  return p.charName||rid;
+  return rid;
+}
+// 관계도 SVG — 인물 노드를 원형 배치하고 관계를 선+라벨로 잇는다.
+function scRelSvg(rels){
+  const ids=[]; for(const rr of rels) for(const rid of (rr.roles||[])) if(rid&&!ids.includes(rid)) ids.push(rid);
+  if(ids.length<2) return "";
+  const W=310, H=Math.max(210,70+ids.length*24), cx=W/2, cy=H/2, R=Math.min(cx,cy)-48;
+  const pos={}; ids.forEach((id,i)=>{const a=-Math.PI/2+2*Math.PI*i/ids.length; pos[id]=[cx+R*Math.cos(a), cy+R*Math.sin(a)];});
+  let s=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="background:var(--panel2);border:1px solid var(--line);border-radius:8px;margin-bottom:6px">`;
+  for(const rr of rels){const rs=rr.roles||[]; if(rs.length<2)continue; const a=pos[rs[0]],b2=pos[rs[1]]; if(!a||!b2)continue;
+    const mx=(a[0]+b2[0])/2, my=(a[1]+b2[1])/2;
+    s+=`<line x1="${a[0].toFixed(0)}" y1="${a[1].toFixed(0)}" x2="${b2[0].toFixed(0)}" y2="${b2[1].toFixed(0)}" stroke="#4a5266" stroke-width="1.5"/>`;
+    s+=`<text x="${mx.toFixed(0)}" y="${my.toFixed(0)}" fill="#9aa1b1" font-size="10" text-anchor="middle">${esc(rr.type||"")}</text>`;
+  }
+  for(const id of ids){const p=pos[id], nm=scNameOf(id);
+    s+=`<circle cx="${p[0].toFixed(0)}" cy="${p[1].toFixed(0)}" r="6" fill="${colorFor(nm)}"/>`;
+    s+=`<text x="${p[0].toFixed(0)}" y="${(p[1]-10).toFixed(0)}" fill="#e7e9ee" font-size="11" text-anchor="middle">${esc(nm)}</text>`;
+  }
+  return s+`</svg>`;
+}
+// 시나리오의 나머지 표시 가능한 모든 것: 관계도·NPC 상세(할일)·배역·타임라인·단서·아이템·제약.
+function scenarioExtraHtml(){
+  if(!SCENARIO) return "";
+  const S=v=>v==null?"":String(v).trim(), J=a=>a.map(x=>esc(S(x))).filter(Boolean).join("<br>　");
+  let h="";
+  const rels=SCENARIO.relationships;
+  if(Array.isArray(rels)&&rels.length){
+    h+=`<h3>관계도</h3>`; const svg=scRelSvg(rels); if(svg)h+=svg;
+    for(const r of rels){const names=(r.roles||[]).map(scNameOf).filter(Boolean).join(" ↔ ");
+      h+=`<div class="card"><b>${esc(names||"?")}</b> <span class="dim2">${esc(S(r.type))}</span>`
+        +(S(r.description)?`<br>${esc(r.description)}`:"")
+        +((r.mutual_contact||r.same_start_zone)?`<br><span class="dim2">${[r.mutual_contact?"서로 연락처 앎":"",r.same_start_zone?"같은 시작 구역":""].filter(Boolean).join(" · ")}</span>`:"")
+        +`</div>`;}
+  }
+  if(Array.isArray(SCENARIO.npcs)&&SCENARIO.npcs.length){
+    h+=`<h3>NPC 상세</h3>`;
+    for(const n of SCENARIO.npcs){
+      h+=`<div class="card"><b>${esc(n.name||n.id||"?")}</b> <span class="dim2">${esc(S(n.role_type))}${n.zone?" · "+esc(n.zone):""}${n.critical?" · ★핵심":""}${n.communicable===false?" · 대화불가":""}</span>`;
+      if(S(n.motivation))  h+=`<br><span class="st">동기</span>${esc(n.motivation)}`;
+      if(S(n.personality)) h+=`<br><span class="st">성격</span>${esc(n.personality)}`;
+      const sched=n.schedule;
+      if(Array.isArray(sched)&&sched.length){
+        h+=`<div class="sub">할 일 · 일정</div>`;
+        for(const s of sched){
+          if(typeof s==="string"){h+=`<div class="tdesc">· ${esc(s)}</div>`;continue;}
+          const when=S(s.time||s.when||s.turn||s.condition), what=S(s.action||s.goal||s.intent||s.what||s.plan), will=S(s.will);
+          h+=`<div class="tdesc">· ${when?`<span class="dim2">[${esc(when)}]</span> `:""}${esc(what)}${will?` <span class="dim2">(의지:${esc(will)})</span>`:""}</div>`;
+        }
+      }
+      const sp=[];
+      if(S(n.true_role)) sp.push(`<span class="st">진짜역할</span>${esc(n.true_role)}`);
+      if(Array.isArray(n.knowledge)&&n.knowledge.length) sp.push(`<span class="st">아는것</span>${J(n.knowledge)}`);
+      if(sp.length)h+=`<div class="spoiler" style="margin-top:5px"><div class="teff" style="color:#ff9a8f">GM 전용</div>${sp.join("<br>")}</div>`;
+      h+=`</div>`;
+    }
+  }
+  if(Array.isArray(SCENARIO.roles)&&SCENARIO.roles.length){
+    h+=`<h3>배역</h3>`;
+    for(const r of SCENARIO.roles){
+      h+=`<div class="card"><b>${esc(r.char_name||r.name||r.role_id||"?")}</b> <span class="dim2">${esc(S(r.name))}${r.zone?" · "+esc(r.zone):""}${r.is_core?" · ★핵심":""}</span>`;
+      if(S(r.spawn_location)) h+=`<br><span class="st">등장</span>${esc(r.spawn_location)}`;
+      if(Array.isArray(r.initial_info)&&r.initial_info.length) h+=`<br><span class="st">초기정보</span>${J(r.initial_info)}`;
+      if(Array.isArray(r.hidden_info)&&r.hidden_info.length) h+=`<div class="spoiler" style="margin-top:5px"><span class="st" style="color:#ff9a8f">숨은정보</span>${J(r.hidden_info)}</div>`;
+      h+=`</div>`;
+    }
+  }
+  const tl=SCENARIO.timeline;
+  if(tl&&typeof tl==="object"){
+    h+=`<h3>사건 타임라인</h3><div class="card"><span class="dim2">${esc(S(tl.start_time))}~${esc(S(tl.end_time))} · 1턴 ${esc(S(tl.minutes_per_turn))}분 · 일상 ${esc(S(tl.daily_turns))}턴</span>`;
+    if(Array.isArray(tl.main_events))for(const ev of tl.main_events){
+      if(typeof ev==="string"){h+=`<br>· ${esc(ev)}`;continue;}
+      h+=`<br>· ${S(ev.time)?`<span class="dim2">[${esc(S(ev.time))}]</span> `:""}<b>${esc(S(ev.label||ev.id))}</b>${S(ev.effect)?` — ${esc(S(ev.effect))}`:""}${ev.blockable?` <span class="dim2">(막을수있음)</span>`:""}`;
+    }
+    for(const k of ["1","2","3","4","5","6"]){const st=tl[k]; if(st&&(st.condition||st.effect))
+      h+=`<br><span class="st">${k}단계</span>${esc(S(st.condition))}${S(st.effect)?" → "+esc(S(st.effect)):""}`;}
+    h+=`</div>`;
+  }
+  if(Array.isArray(SCENARIO.clues)&&SCENARIO.clues.length){
+    h+=`<div class="spoiler"><h3>배치 단서 · GM 전용</h3>`;
+    for(const c of SCENARIO.clues){const mis=c.type==="mislead"||c.mislead;
+      h+=`<div class="card" style="margin:4px 0"><b>${esc(S(c.clue_subject)||S(c.id))}</b>${mis?` <span class="dim2" style="color:#ff9a8f">거짓 단서</span>`:` <span class="dim2">진짜</span>`}`
+        +(S(c.location)?`<br><span class="st">위치</span>${esc(c.location)}`:"")
+        +(S(c.content)?`<br>${esc(c.content)}`:"")+`</div>`;}
+    h+=`</div>`;
+  }
+  if(Array.isArray(SCENARIO.key_items)&&SCENARIO.key_items.length){
+    h+=`<h3>핵심 아이템</h3>`;
+    for(const it of SCENARIO.key_items){
+      h+=`<div class="card"><b>${esc(it.name||it.id||"?")}</b> <span class="dim2">${esc(S(it.item_type||it.type))}</span>`
+        +(S(it.description)?`<br>${esc(it.description)}`:"")
+        +(S(it.location)?`<br><span class="st">위치</span>${esc(it.location)}`:"");
+      const sp=[];
+      if(S(it.clue_value)) sp.push(`<span class="st">단서가치</span>${esc(it.clue_value)}`);
+      if(S(it.lore_info))  sp.push(`<span class="st">내막</span>${esc(it.lore_info)}`);
+      if(Array.isArray(it.content)&&it.content.length) sp.push(`<span class="st">내용</span>${J(it.content)}`);
+      if(sp.length)h+=`<div class="spoiler" style="margin-top:5px">${sp.join("<br>")}</div>`;
+      h+=`</div>`;
+    }
+  }
+  const cons=SCENARIO.constraints;
+  if(cons&&typeof cons==="object"){
+    h+=`<h3>배경 · 제약</h3><div class="card">`;
+    const flags=[];
+    if(cons.era)flags.push("시대 "+S(cons.era));
+    flags.push("휴대폰 "+(cons.phone_usable?"가능":"불가")); flags.push("외부연락 "+(cons.outside_contact?"가능":"두절"));
+    flags.push("현장이탈 "+(cons.can_leave_scene?"가능":"불가"));
+    if(cons.comms_monitored)flags.push("★통신 감청"); if(cons.comms_dangerous)flags.push("★통신 위험");
+    h+=flags.map(esc).join(" · ");
+    if(Array.isArray(cons.notes))for(const nt of cons.notes)h+=`<br>· ${esc(S(nt))}`;
+    h+=`</div>`;
+  }
+  return h;
+}
 function renderInfo(){
   const b=document.getElementById("infoBody");let h="";
   const S=v=>v==null?"":String(v).trim();
@@ -520,7 +647,6 @@ function renderInfo(){
     const sol=[["약점",e.weakness],["해결책",e.solution],["공략",e.exploit_path],["탈출",e.escape],["제압",ph.defeat]]
       .map(x=>{const s=S(x[1]);return s?`<span class="st">${x[0]}</span>${esc(s)}`:"";}).filter(Boolean);
     if(sol.length)h+=`<div class="spoiler"><h3>대처법 · GM 전용(스포일러)</h3><div class="card" style="margin:0;background:transparent;border:0;padding:2px 0">${sol.join("<br>")}</div></div>`;
-    if(Array.isArray(SCENARIO.npcs)&&SCENARIO.npcs.length){h+=`<h3>NPC</h3>`;for(const n of SCENARIO.npcs)h+=`<div class="card"><b>${esc(n.name||n.id||"?")}</b> <span style="color:var(--dim)">${esc(n.role_type||"")}${n.zone?" · "+esc(n.zone):""}</span>${n.motivation?"<br>"+esc(n.motivation):""}</div>`;}
     if(Array.isArray(SCENARIO.zones)&&SCENARIO.zones.length){ // 구역(맵) — 이름·구역명 해석
       const zname={}; for(const z of SCENARIO.zones)if(z&&z.zone_id)zname[z.zone_id]=z.name||z.zone_id;
       const roleName={}; if(REPLAY&&Array.isArray(REPLAY.players))for(const p of REPLAY.players)if(p.roleId)roleName[p.roleId]=p.charName||p.roleId;
@@ -533,7 +659,9 @@ function renderInfo(){
           +(who?`<br><span class="st">출입</span>${esc(who)}`:"")
           +(z.exclusive?` <span class="dim2">· 전용</span>`:"")+`</div>`;
       }
-    }}
+    }
+    h+=scenarioExtraHtml(); // 관계도·NPC 상세(할일)·배역·타임라인·단서·아이템·제약
+  }
   b.innerHTML=h||`<div class="empty">.replay(스탯)·.json/.gdam(시나리오)을 함께 불러오면 표시됩니다.</div>`;
   document.getElementById("toggleInfo").style.display=(REPLAY||SCENARIO)?"":"none";
 }
