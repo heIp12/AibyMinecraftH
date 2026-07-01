@@ -61,13 +61,28 @@ public class TRPGGameManager {
     private static final Set<String> COMM_ITEM_KEYWORDS = Set.of(
         "전화", "phone", "폰", "무전", "walkie", "radio", "라디오", "휴대폰", "핸드폰", "스마트폰", "통신", "intercom", "인터콤"
     );
-    /** 문서형(글) 통신 수단·기기 키워드 — 이 매체는 ★문서형 괴담★이 개입. 표시 이름 유추에도 쓴다. */
+    // ── 통신 매체 모달리티(어떤 감각/매체냐 → 어떤 괴담이 가로채나) 키워드 ──
+    //  이름은 무한히 다양(편지·우편·이메일·비둘기·수신호·무전·모스·사이킥…)하되, ★모달리티(음성/문서/신호/전자/정신)★로 묶어
+    //  괴담 개입·표시·로그를 통일 처리한다. 이름→모달리티는 commModality()가 분류한다.
+    /** 문서형(물리적 글) — 편지·우편·서찰·비둘기 등. ★문서형 괴담★이 개입. */
     private static final Set<String> WRITTEN_MEDIA_KEYWORDS = Set.of(
-        "편지", "서찰", "서신", "쪽지", "전서구", "비둘기", "팩스", "전보", "봉투", "필담", "메모", "letter", "fax"
+        "편지", "우편", "우체", "우표", "서찰", "서신", "쪽지", "전서구", "비둘기", "팩스", "전보", "봉투", "필담", "메모", "letter", "fax"
     );
-    /** 음성형(소리) 통신 수단·기기 키워드(전자 기기 포함) — 이 매체는 ★음성형 괴담★이 개입. 표시 이름 유추에도 쓴다. */
+    /** 음성형(소리) — 전화·무전·라디오·통신구 등. ★음성형 괴담★이 개입. */
     private static final Set<String> VOICE_MEDIA_KEYWORDS = Set.of(
-        "전화", "phone", "폰", "무전", "walkie", "radio", "라디오", "휴대폰", "핸드폰", "스마트폰", "통신구", "intercom", "인터콤", "트랜시버", "확성기", "스피커", "헤드셋", "이어폰"
+        "전화", "phone", "폰", "무전", "walkie", "radio", "라디오", "휴대폰", "핸드폰", "스마트폰", "통신구", "intercom", "인터콤", "트랜시버", "확성기", "스피커", "헤드셋", "이어폰", "육성"
+    );
+    /** 신호·시각형 — 수신호·봉화·깃발·손짓 등. 소리도 글도 아니다. ★시각·관찰형 괴담★이 개입. */
+    private static final Set<String> SIGNAL_MEDIA_KEYWORDS = Set.of(
+        "수신호", "봉화", "봉수", "깃발", "손짓", "몸짓", "수기", "등불", "연기신호", "반사경", "신호탄"
+    );
+    /** 전자·전파형 — 이메일·문자·인트라넷·모스부호·데이터. ★전자·전파형 괴담★(해킹·감청·전파 교란)이 개입. */
+    private static final Set<String> ELECTRONIC_MEDIA_KEYWORDS = Set.of(
+        "이메일", "메일", "email", "문자", "메신저", "인트라넷", "네트워크", "모스", "전신", "데이터", "디지털", "전산", "채팅"
+    );
+    /** 정신·사이킥형 — 텔레파시·뇌파·신경망·정신감응. ★정신·영향형 괴담★이 개입(물리 감각 밖). */
+    private static final Set<String> PSYCHIC_MEDIA_KEYWORDS = Set.of(
+        "사이킥", "텔레파시", "정신감응", "뇌파", "신경망", "염화", "심상", "psychic", "telepath", "감응"
     );
     /** 이 특성을 가진 플레이어의 연락처는 모두가 안다 (공인 연락처) */
     private static final Set<String> CELEBRITY_TRAIT_KEYWORDS = Set.of(
@@ -6760,8 +6775,8 @@ public class TRPGGameManager {
         if (!(sameZone || viaCall || written)) return; // 번호·수단도 모르고 멀리 있으면 닿지 않는다(추후 GM 정황으로)
         boolean remote = viaCall || written;
         String media = remote ? commMediumName(target, written) : ""; // 구체 매체 이름(전서구·통신구·서찰·필담…)
-        // ★통신 변조★: @이름과 동일 — 매체형 괴담(음성형↔통화 / 문서형↔서면)이 원격 선연락을 가로채 바꿔 전달(30%). 대면은 변조 안 함.
-        boolean tampered = remote && entityInterferes(written) && new java.util.Random().nextInt(100) < 30;
+        // ★통신 변조★: @이름과 동일 — 매체 모달리티가 맞는 괴담이 원격 선연락을 가로채 바꿔 전달(30%). 대면은 변조 안 함.
+        boolean tampered = remote && entityInterferes(commModality(media, written)) && new java.util.Random().nextInt(100) < 30;
         String heard = tampered ? tamperText(callMsg, new java.util.Random()) : callMsg;
         String tag = sameZone ? "§a[근처] §f" : written ? ("§b[✉ " + media + "] §f") : ("§b[📞 " + media + "] §f");
         tp.sendMessage(tag + npcName + ": " + heard);
@@ -7400,8 +7415,8 @@ public class TRPGGameManager {
 
             String visible = ai.stripThought(ai.stripTags(npcResp)).trim();
             if (visible.isEmpty()) return;
-            // ★통신 변조★: 매체형 괴담(음성형↔통화 / 문서형↔서면)이 원격 답신을 가로채 바꿔 전달(30%). 대면(sameZone)은 변조 안 함.
-            final boolean tamperedR = remote && entityInterferes(writtenF) && new java.util.Random().nextInt(100) < 30;
+            // ★통신 변조★: 매체 모달리티가 맞는 괴담이 원격 답신을 가로채 바꿔 전달(30%). 대면(sameZone)은 변조 안 함.
+            final boolean tamperedR = remote && entityInterferes(commModality(media, writtenF)) && new java.util.Random().nextInt(100) < 30;
             final String heardR = tamperedR ? tamperText(visible, new java.util.Random()) : visible;
 
             plugin.getServer().getScheduler().runTask(plugin, () -> {
@@ -7951,8 +7966,58 @@ public class TRPGGameManager {
             if (s.contains(kw)) return true;
         return false;
     }
-    /** 이 매체에 괴담이 타입상 개입할 수 있는가 — written이면 문서형, 아니면 음성형. */
-    private boolean entityInterferes(boolean written) { return written ? entityTampersWritten() : entityTampersVoice(); }
+    /** 괴담 서술 텍스트(name+type+rules+weakness) 모음 — 모달리티 개입 판정용 키워드 스캔 대상. */
+    private String entityScanText() {
+        JsonObject g = state.getGdamData();
+        if (g == null || !g.has("entity") || !g.get("entity").isJsonObject()) return "";
+        JsonObject e = g.getAsJsonObject("entity");
+        StringBuilder sb = new StringBuilder();
+        if (e.has("name")) sb.append(e.get("name").getAsString()).append(' ');
+        if (e.has("type")) sb.append(e.get("type").getAsString()).append(' ');
+        if (e.has("rules") && e.get("rules").isJsonArray()) e.getAsJsonArray("rules").forEach(x -> sb.append(x.getAsString()).append(' '));
+        if (e.has("weakness")) sb.append(e.get("weakness").getAsString()).append(' ');
+        return sb.toString();
+    }
+    /** 신호·시각형 괴담인가 — 지켜보는·응시·거울·그림자·눈 계열. 수신호·봉화 등 ★시각 신호★에 개입. */
+    private boolean entityTampersSignal() {
+        String s = entityScanText();
+        for (String kw : new String[]{"시각","응시","지켜보","바라보","시선","거울","그림자","관찰","목격","눈알","눈동자","보는 것"}) if (s.contains(kw)) return true;
+        return false;
+    }
+    /** 전자·전파형 괴담인가 — 전파·전자·디지털·해킹·감청·회로 계열. 무전·이메일·인트라넷·모스 등 ★전자 채널★에 개입. */
+    private boolean entityTampersElectronic() {
+        String s = entityScanText();
+        for (String kw : new String[]{"전파","전자","디지털","해킹","감청","회로","기계","정전기","주파수","코드","데이터","전산","네트워크","송신","수신"}) if (s.contains(kw)) return true;
+        return false;
+    }
+    /** 정신·사이킥형 괴담인가 — 정신·사념·텔레파시·꿈·환각·홀림 계열. 신경망·사이킥 등 ★정신 채널★에 개입. */
+    private boolean entityTampersPsychic() {
+        String s = entityScanText();
+        for (String kw : new String[]{"정신","사념","텔레파시","뇌","꿈","환각","환청","홀림","최면","의식","무의식","심상","감응","영혼"}) if (s.contains(kw)) return true;
+        return false;
+    }
+    /** 매체 이름 → 모달리티(voice/text/signal/electronic/psychic). ★어떤 괴담이 가로채는가★를 이 축으로 판정. */
+    private String commModality(String name, boolean fallbackWritten) {
+        String s = name == null ? "" : name.toLowerCase();
+        for (String kw : PSYCHIC_MEDIA_KEYWORDS)    if (s.contains(kw.toLowerCase())) return "psychic";
+        for (String kw : SIGNAL_MEDIA_KEYWORDS)     if (s.contains(kw.toLowerCase())) return "signal";
+        for (String kw : ELECTRONIC_MEDIA_KEYWORDS) if (s.contains(kw.toLowerCase())) return "electronic";
+        for (String kw : VOICE_MEDIA_KEYWORDS)      if (s.contains(kw.toLowerCase())) return "voice";
+        for (String kw : WRITTEN_MEDIA_KEYWORDS)    if (s.contains(kw.toLowerCase())) return "text";
+        return fallbackWritten ? "text" : "voice";
+    }
+    /** 이 모달리티에 괴담이 타입상 개입(엿듣기·변조)할 수 있는가. 전자는 전파형 또는 (전자음성이면) 음성형도 포함. */
+    private boolean entityInterferes(String modality) {
+        switch (modality == null ? "voice" : modality) {
+            case "signal":     return entityTampersSignal();
+            case "electronic": return entityTampersElectronic() || entityTampersVoice();
+            case "psychic":    return entityTampersPsychic();
+            case "text":       return entityTampersWritten();
+            case "voice": default: return entityTampersVoice();
+        }
+    }
+    /** (구형 2분류) written이면 문서형, 아니면 음성형. */
+    private boolean entityInterferes(boolean written) { return entityInterferes(written ? "text" : "voice"); }
 
     /** 괴담이 소통을 ★수집해 성장·대응★할 수 있는 타입인가 — 의사소통 가능·지능/정보형·고위력(큰 스케일). */
     private boolean entityCollectsIntel() {
@@ -8004,13 +8069,19 @@ public class TRPGGameManager {
      *  우선순위: ①플레이어가 실제 소지한 (그 class의) 통신 수단 이름 → ②constraints.comm_media.{voice|written} → ③시대 기본값.
      *  @param written true=문서형(편지·서찰·전서구·필담…) / false=음성형(전화·무전·통신구…)
      */
-    private String commMediumName(PlayerData pd, boolean written) { return commMediumName(pd, written, false); }
+    private String commMediumName(PlayerData pd, boolean written) { return commMediumName(pd, written ? "text" : "voice", false); }
+    private String commMediumName(PlayerData pd, boolean written, boolean inPerson) { return commMediumName(pd, written ? "text" : "voice", inPerson); }
 
-    /** @param inPerson 같은 공간에서 주고받는가 — ★면전에서 글로 = 필담(筆談)★, 시대·기기 무관 보편 수단. */
-    private String commMediumName(PlayerData pd, boolean written, boolean inPerson) {
-        if (written && inPerson) return "필담"; // 면전 필담 — 종이·바닥·손바닥 어디든 써서 전한다(시대 불문)
-        java.util.Set<String> kws = written ? WRITTEN_MEDIA_KEYWORDS : VOICE_MEDIA_KEYWORDS;
-        // ① 소지 기기·수단 이름(그 class와 맞는 것) — 실제 손에 든 매체가 곧 이름이 된다(전서구·군용무전기·통신구 등).
+    /** 모달리티별 매체 표시 이름. ①소지 기기 이름 → ②constraints.comm_media.<modality> → ③시대 기본값.
+     *  @param modality voice/text/signal/electronic/psychic. @param inPerson 면전(문서형이면 필담). */
+    private String commMediumName(PlayerData pd, String modality, boolean inPerson) {
+        if ("text".equals(modality) && inPerson) return "필담"; // 면전 글 = 필담(시대·기기 무관)
+        java.util.Set<String> kws = "signal".equals(modality) ? SIGNAL_MEDIA_KEYWORDS
+                : "electronic".equals(modality) ? ELECTRONIC_MEDIA_KEYWORDS
+                : "psychic".equals(modality) ? PSYCHIC_MEDIA_KEYWORDS
+                : "text".equals(modality) ? WRITTEN_MEDIA_KEYWORDS
+                : VOICE_MEDIA_KEYWORDS;
+        // ① 소지 기기·수단 이름(그 모달리티와 맞는 것) — 실제 손에 든 매체가 곧 이름이 된다(전서구·군용무전기·통신구 등).
         if (pd != null) for (String id : pd.heldItemIds) {
             String nm = itemDisplayName(id);
             String low = (nm == null || nm.isEmpty() ? id : nm).toLowerCase();
@@ -8018,23 +8089,28 @@ public class TRPGGameManager {
         }
         JsonObject g = state.getGdamData();
         JsonObject c = (g != null && g.has("constraints") && g.get("constraints").isJsonObject()) ? g.getAsJsonObject("constraints") : null;
-        // ② 시나리오 명시(constraints.comm_media.{voice|written})
+        // ② 시나리오 명시(constraints.comm_media.<modality>) — text는 하위호환으로 written도 인정
         if (c != null && c.has("comm_media") && c.get("comm_media").isJsonObject()) {
             JsonObject m = c.getAsJsonObject("comm_media");
-            String key = written ? "written" : "voice";
+            String key = "text".equals(modality) ? "written" : modality;
             if (m.has(key) && !m.get(key).getAsString().isBlank()) return m.get(key).getAsString().trim();
+            if ("text".equals(modality) && m.has("text") && !m.get("text").getAsString().isBlank()) return m.get("text").getAsString().trim();
         }
         // ③ 시대 기본값
         String era = c != null && c.has("era") ? c.get("era").getAsString() : "";
-        if (written) {
-            if (era.contains("미래") || era.contains("우주") || era.contains("SF") || era.contains("사이버")) return "데이터 전송";
-            if (era.contains("조선") || era.contains("사극") || era.contains("전근대") || era.contains("근세") || era.contains("고려")) return "서찰";
-            if (era.contains("중세") || era.contains("판타지")) return "전서구";
-            if (era.contains("근대") || era.contains("개화") || era.contains("일제")) return "편지";
-            return "쪽지"; // 현대에 전자통신 두절 시 손편지·쪽지
-        } else {
-            if (era.contains("미래") || era.contains("우주") || era.contains("SF") || era.contains("사이버")) return "통신구";
-            return "전화/무전";
+        boolean fut = era.contains("미래") || era.contains("우주") || era.contains("SF") || era.contains("사이버");
+        switch (modality == null ? "voice" : modality) {
+            case "signal":     return "수신호";
+            case "psychic":    return "정신감응";
+            case "electronic": return fut ? "네트워크 통신" : "이메일";
+            case "text":
+                if (fut) return "데이터 전송";
+                if (era.contains("조선") || era.contains("사극") || era.contains("전근대") || era.contains("근세") || era.contains("고려")) return "서찰";
+                if (era.contains("중세") || era.contains("판타지")) return "전서구";
+                if (era.contains("근대") || era.contains("개화") || era.contains("일제")) return "편지";
+                return "쪽지"; // 현대에 전자통신 두절 시 손편지·쪽지
+            default: // voice
+                return fut ? "통신구" : "전화/무전";
         }
     }
 
@@ -8166,8 +8242,8 @@ public class TRPGGameManager {
 
         sender.sendMessage(outLine); // 발신자는 자기가 한 말 그대로 본다
         Player target = Bukkit.getPlayer(targetPd.uuid);
-        // ★통신 변조★: 매체 타입이 맞는 괴담(음성형↔통화 / 문서형↔필담)이 원격 전달을 가로채 수신 내용을 바꾼다(30%).
-        boolean tampered = viaDevice && entityInterferes(written) && new java.util.Random().nextInt(100) < 30;
+        // ★통신 변조★: 매체 모달리티(음성/문서/신호/전자/정신)가 맞는 괴담이 원격 전달을 가로채 수신 내용을 바꾼다(30%).
+        boolean tampered = viaDevice && entityInterferes(commModality(media, written)) && new java.util.Random().nextInt(100) < 30;
         String heard = tampered ? tamperText(message, new java.util.Random()) : message;
         String inLine = tag + " §f" + commDisplayName(senderPd) + ": " + heard;
         if (target != null && target.isOnline()) target.sendMessage(inLine);

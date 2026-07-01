@@ -157,10 +157,10 @@ function normalize(ev){
     else if(cat==="통신"){
       // 통신 이벤트 — 본문 앞 [통화]/[근처]/[방송]/[외침]/[편지]/[귓속말](+·구체매체명) 라벨로 ★대화방식(매체)★을 인식.
       //  JSONL은 kind가 이미 있어 라벨은 중복 제거용 / 구형 .txt는 라벨에서 kind·매체명을 유추한다. 예: [편지·전서구]
-      const cm=text.match(/^(.*?)\s*\[(통화|근처|방송|외침|편지|귓속말)(?:·([^\]]+))?\]\s*([\s\S]*)$/);
+      const cm=text.match(/^(.*?)\s*\[(통화|근처|방송|외침|편지|귓속말|수신호|정신감응)(?:·([^\]]+))?\]\s*([\s\S]*)$/);
       if(cm){
         if(!actor)actor=who||cm[1].trim(); // JSONL: who=발신자 / txt: 라벨 앞 토큰=발신자
-        if(!kind){const l=cm[2];kind=l==="통화"?"call":l==="근처"?"nearby":l==="방송"?"broadcast":l==="외침"?"shout":l==="편지"?"letter":"whisper";}
+        if(!kind){const l=cm[2];kind=l==="통화"?"call":l==="근처"?"nearby":l==="방송"?"broadcast":l==="외침"?"shout":l==="편지"?"letter":l==="귓속말"?"whisper":l==="수신호"?"signal":l==="정신감응"?"psychic":"call";}
         if(!viaName&&cm[3])viaName=cm[3].trim(); // 구체 매체명(전서구·통신구·서찰·필담…)
         bodyText=cm[4]; // 중복 라벨 제거 — 매체는 뱃지로만 표시
       } else { if(!actor)actor=who; if(!kind)kind="call"; }
@@ -280,9 +280,10 @@ function badgeFor(e){ return e.kind==="ability"?(e.phase==="result"?"✨ "+(e.ab
   :e.kind==="vital"?"❤ 상태"
   :e.kind==="item"?"🎒 아이템":e.kind==="clue"?"🔍 단서"
   :e.kind==="input"?"입력":e.kind==="call"?("📞 "+(e.via||"통화")):e.kind==="nearby"?"👥 근처":e.kind==="shout"?"📣 외침":e.kind==="letter"?("✉ "+(e.via||"편지")):e.kind==="whisper"?"🤫 귓속말"
+  :e.kind==="signal"?("🚩 "+(e.via||"수신호")):e.kind==="psychic"?("🧠 "+(e.via||"정신감응"))
   :e.kind==="gm"?"GM 서술":e.kind==="broadcast"?"📢 방송":e.kind==="npc"?"☎ NPC"
   :e.kind==="assign"?"🎭 배역":e.kind==="system"?"시스템":e.kind==="private"?"개인":e.kind==="gm_input"?"GM입력(상세)":(e.cat||"이벤트"); }
-const COMM_KINDS=new Set(["call","nearby","broadcast","shout","letter","whisper"]);
+const COMM_KINDS=new Set(["call","nearby","broadcast","shout","letter","whisper","signal","psychic"]);
 
 function filtered(){
   const q=(document.getElementById("q")?.value||"").trim().toLowerCase();

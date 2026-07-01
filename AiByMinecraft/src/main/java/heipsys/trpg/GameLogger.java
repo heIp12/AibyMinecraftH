@@ -238,7 +238,7 @@ public class GameLogger {
         record("통신", actor, "[" + mediumLabel(k, via) + "] " + (text == null ? "" : text), extra);
     }
 
-    /** 통신 수단 라벨 — 통화·근처(외침)·방송뿐 아니라 외침·편지·귓속말 등 가변 수단을 지원. */
+    /** 통신 수단 라벨 — 통화·근처·방송·외침·편지·귓속말·수신호 등 가변 수단을 지원(모달리티: 음성/문서/신호). */
     private static String commLabel(String k) {
         if (k == null) return "통화";
         switch (k) {
@@ -247,6 +247,8 @@ public class GameLogger {
             case "shout":     return "외침";
             case "letter":    return "편지";
             case "whisper":   return "귓속말";
+            case "signal":    return "수신호"; // 시각·신호형(손짓·봉화·깃발) — 소리도 글도 아닌 제3의 매체
+            case "psychic":   return "정신감응"; // 정신·사이킥형(텔레파시·뇌파·신경망) — 물리 감각 밖의 매체
             case "call": default: return "통화";
         }
     }
