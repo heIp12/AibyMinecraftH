@@ -7643,6 +7643,12 @@ public class TRPGGameManager {
                     ItemInstance made = pd.itemStates.get(prod);
                     if (made != null && use.has("consume") && !use.get("consume").isJsonNull())
                         made.transformedFrom = use.get("consume").getAsString();
+                } else {
+                    // pname 미지정(ALL) → 전원에게 지급됐으니 전원의 heldItemIds/itemStates도 갱신(소지품 인지·상태 등록 누락 방지)
+                    for (Player op : Bukkit.getOnlinePlayers()) {
+                        PlayerData opd = state.getPlayer(op);
+                        if (opd != null) noteHeldItem(opd, prod);
+                    }
                 }
             }
         }

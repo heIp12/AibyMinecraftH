@@ -2,6 +2,7 @@ package heipsys.trpg;
 
 import com.google.gson.*;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.entity.Player;
@@ -76,9 +77,10 @@ public class ItemManager {
         }
 
         final String boundId = id;
-        tagItemId(item, id);                    // 소모·제거 시 인벤토리에서 되찾을 수 있게 id 표식(항상)
-        if (chapBound) tagChapterBound(item);  // 타입(책/쪽지/지도/물건) 무관하게 회수 마커 부착
+        final boolean bound  = chapBound;
         plugin.getServer().getScheduler().runTask(plugin, () -> {
+            tagItemId(item, boundId);            // 소모·제거 시 인벤토리에서 되찾을 수 있게 id 표식(항상)
+            if (bound) tagChapterBound(item);    // 회수 마커 부착 — ★ItemMeta 변경은 메인 스레드에서★(replaySession 등 비동기 경로 대비)
             Map<Integer, ItemStack> leftover = player.getInventory().addItem(item);
             leftover.values().forEach(i -> player.getWorld().dropItemNaturally(player.getLocation(), i));
             state.collectItem(boundId);
@@ -128,7 +130,7 @@ public class ItemManager {
                 boolean match = (pid != null && pid.equals(id));
                 if (!match && pid == null && meta.hasDisplayName()) {
                     // 구형(표식 없는) 아이템 폴백: 표시 이름에 id/제목이 들어가면 매칭
-                    String dn = net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText().serialize(meta.displayName());
+                    String dn = PlainTextComponentSerializer.plainText().serialize(meta.displayName());
                     match = dn.contains(id) || (title != null && !title.isBlank() && dn.contains(title));
                 }
                 if (match) { player.getInventory().setItem(i, null); break; } // 한 개만 제거

@@ -297,7 +297,7 @@ public class GameLogger {
         extra.addProperty("kind", k);
         if (actor != null && !actor.isEmpty()) extra.addProperty("actor", actor);
         extra.addProperty("item", name);
-        if (note != null && !note.isEmpty()) extra.addProperty("cause", note);
+        if (note != null && !note.isEmpty()) extra.addProperty("note", note); // 부가정보는 note (cause=변형·상태 '이유' 전용과 구분)
         String cat  = "clue".equals(k) ? "단서" : "아이템";
         String body = name + (note != null && !note.isEmpty() ? " (" + note + ")" : "");
         record(cat, actor, body, extra);
