@@ -185,6 +185,14 @@ public class TRPGGameManager {
     }
     /** 편지를 옮겨줄 매개(전서구·비둘기·인편·우편) 키워드 — 있으면 전달, 없으면 두고가기(dead-drop). */
     private static final Set<String> CARRIER_KEYWORDS = Set.of("전서구", "비둘기", "인편", "전령", "파발", "우편", "우체", "택배", "배달", "우체통");
+    /** ★지연 전달 큐★: 전서구·인편·우편처럼 시간이 걸리는 전달. 도착 턴이 되면 전달(전달 중 변조 가능). */
+    private final List<PendingDelivery> pendingDeliveries = new java.util.concurrent.CopyOnWriteArrayList<>();
+    private static final class PendingDelivery {
+        final UUID targetUuid; final String senderDisp, content, kind, via; final int sentTurn, deliverTurn;
+        PendingDelivery(UUID tu, String sd, String c, String k, String v, int st, int dt) {
+            targetUuid = tu; senderDisp = sd; content = c; kind = k; via = v; sentTurn = st; deliverTurn = dt;
+        }
+    }
     /** 금지워드형 괴담: 입에 올리면(입력) 즉시 파국이 되는 단어. 빈 값이면 이 메커니즘 비활성. 재시도 시 변경. */
     private volatile String forbiddenWord = "";
 
@@ -815,6 +823,7 @@ public class TRPGGameManager {
         spawnedPlayers.clear();
         commChannels.clear();
         droppedNotes.clear();      // 편지 두고가기 — 스테이지 전환 시 남겨진 쪽지 정리
+        pendingDeliveries.clear(); // 지연 전달 큐 — 스테이지 전환 시 미도착 편지 정리
         npcLastDirectTurn.clear();
         lastEndingPages = null;
         forceRetryAllowed = false; // 새 스테이지 진입 — 동반회귀 재도전 허용 초기화
@@ -2100,6 +2109,8 @@ public class TRPGGameManager {
             }
             // ★편지 두고가기★: 문서형 괴담이 남겨진 쪽지를 발견·훼손(원본→변형). 값싼 게이트(쪽지 없거나 비문서형이면 즉시 반환).
             tamperDroppedNotes();
+            // ★지연 전달★: 전서구·인편으로 부친 편지가 도착 턴이 됐으면 전달(전달 중 변조 가능).
+            processPendingDeliveries();
 
             // 12. 스테이지 기반 자동 등장 체크 (STATE_UPDATE 외부에서 stage 이미 변경된 경우 보정)
             checkAndAutoSpawn();
@@ -7215,9 +7226,20 @@ public class TRPGGameManager {
             }
         }
 
-        // ★편지 두고가기(dead-drop)★: 서면(원격 문서)인데 옮겨줄 매개(전서구·인편·우편)가 없으면 즉시 전달되지 않고
-        //   ★현재 위치에 남겨진다★ — 그 구역에 오는 사람(엉뚱한 이·괴담 포함)이 발견한다. (매개가 있으면 아래에서 전달)
-        if (written && !hasCarrier(senderPd)) {
+        // ★서면(원격 문서) 전달★: 매개(전서구·인편·우편)가 있으면 ★지연 전달★(N턴 뒤 도착·전달 중 변조 가능),
+        //   없으면 현재 위치에 ★두고감(dead-drop)★ — 그 구역에 오는 사람(엉뚱한 이·괴담 포함)이 발견한다.
+        if (written) {
+            if (hasCarrier(senderPd)) {
+                String cvia = commMediumName(senderPd, "text", false);
+                int turns = 1 + new java.util.Random().nextInt(2); // 1~2턴
+                enqueueDelivery(targetPd, commDisplayName(senderPd), message, "letter", cvia, turns);
+                sender.sendMessage("§b[편지] §f" + commDisplayName(targetPd) + "에게 " + cvia + "(으)로 부쳤다. §7(도착까지 약 "
+                    + turns + "턴 — 전달 중 사고·훼손 가능)");
+                gameLogger.logItem("item", commDisplayName(senderPd),
+                    "편지 발송 (→" + commDisplayName(targetPd) + "): " + notePreview(message), cvia + " 발송");
+                exchangeContacts(senderPd, targetPd);
+                return;
+            }
             leaveDroppedNote(sender, senderPd, targetPd, message);
             return;
         }
@@ -8397,6 +8419,37 @@ public class TRPGGameManager {
                         + "\". 나중에 읽는 이는 훼손본을 믿게 된다.");
                 }
             }
+        }
+    }
+
+    /** ★지연 전달 큐잉★: 전서구·인편 등으로 부친 편지를 turns턴 뒤 도착하도록 예약. */
+    private void enqueueDelivery(PlayerData target, String senderDisp, String content, String kind, String via, int turns) {
+        if (target == null) return;
+        int now = state.getCurrentTurn();
+        pendingDeliveries.add(new PendingDelivery(target.uuid, senderDisp, content, kind, via, now, now + Math.max(1, turns)));
+    }
+
+    /** 도착 턴이 된 지연 전달을 처리 — 전달 중 매체형 괴담이 변조할 수 있다. 턴마다 호출(값싼 게이트). */
+    private void processPendingDeliveries() {
+        if (pendingDeliveries.isEmpty()) return;
+        int now = state.getCurrentTurn();
+        for (PendingDelivery d : new java.util.ArrayList<>(pendingDeliveries)) {
+            if (d.deliverTurn > now) continue;
+            pendingDeliveries.remove(d);
+            PlayerData tp = state.getPlayer(d.targetUuid);
+            if (tp == null || tp.isDead) continue; // 받을 사람이 없으면 유실
+            String modality = commModality(d.via, "letter".equals(d.kind));
+            boolean tampered = entityInterferes(modality) && new java.util.Random().nextInt(100) < 30; // 전달 중 변조
+            String heard = tampered ? tamperText(d.content, new java.util.Random()) : d.content;
+            String tdisp = commDisplayName(tp);
+            String viaName = d.via == null || d.via.isBlank() ? "편지" : d.via;
+            Player p = Bukkit.getPlayer(d.targetUuid);
+            if (p != null && p.isOnline()) p.sendMessage("§b[✉ " + viaName + " 도착] §f" + d.senderDisp + ": " + heard);
+            appendNarrativeLog(tp, "[" + viaName + " 도착] " + d.senderDisp + ": " + heard);
+            if (tampered) gameLogger.logCommTampered(d.kind, d.senderDisp, java.util.List.of(tdisp), d.content, heard, "전달 중 괴담 변조", d.via);
+            else gameLogger.logComm(d.kind, d.senderDisp, java.util.List.of(tdisp), d.content, d.via);
+            ai.injectGmSystem("[지연 전달 도착] " + d.senderDisp + "이(가) " + (now - d.sentTurn) + "턴 전 부친 " + viaName
+                + "이(가) " + tdisp + "에게 지금 도착했다: \"" + heard + "\"" + (tampered ? " (전달 중 훼손됨)" : "") + ". 정황에 반영.");
         }
     }
 
