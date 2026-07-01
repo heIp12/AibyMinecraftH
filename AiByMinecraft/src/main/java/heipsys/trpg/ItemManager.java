@@ -22,11 +22,14 @@ public class ItemManager {
     private final GameStateManager state;
     /** 챕터 종료 시 회수 대상 아이템에 붙는 보이지 않는 PDC 마커 키 */
     private final NamespacedKey    boundKey;
+    /** 소모·제거 시 실제 인벤토리에서 그 아이템을 찾아내기 위한 아이템 id PDC 키 */
+    private final NamespacedKey    idKey;
 
     public ItemManager(Plugin plugin, GameStateManager state) {
         this.plugin   = plugin;
         this.state    = state;
         this.boundKey = new NamespacedKey(plugin, "chapter_bound");
+        this.idKey    = new NamespacedKey(plugin, "trpg_item_id");
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -73,6 +76,7 @@ public class ItemManager {
         }
 
         final String boundId = id;
+        tagItemId(item, id);                    // 소모·제거 시 인벤토리에서 되찾을 수 있게 id 표식(항상)
         if (chapBound) tagChapterBound(item);  // 타입(책/쪽지/지도/물건) 무관하게 회수 마커 부착
         plugin.getServer().getScheduler().runTask(plugin, () -> {
             Map<Integer, ItemStack> leftover = player.getInventory().addItem(item);
@@ -93,6 +97,43 @@ public class ItemManager {
         if (meta == null) return;
         meta.getPersistentDataContainer().set(boundKey, PersistentDataType.BYTE, (byte) 1);
         item.setItemMeta(meta);
+    }
+
+    /** 아이템에 원본 id를 PDC로 심는다 — 소모(ITEM_USE consume)·제거(item_remove) 시 정확히 되찾아 없애기 위함. */
+    private void tagItemId(ItemStack item, String id) {
+        if (item == null || id == null || id.isBlank()) return;
+        var meta = item.getItemMeta();
+        if (meta == null) return;
+        meta.getPersistentDataContainer().set(idKey, PersistentDataType.STRING, id);
+        item.setItemMeta(meta);
+    }
+
+    /**
+     * ★소모·제거★: 플레이어 인벤토리에서 해당 id(또는 이름)의 아이템 실물을 제거한다.
+     *  게임 로직(heldItemIds)만 지우고 실물이 남아 있던 문제를 해소. id PDC 우선, 없으면 표시 이름 매칭.
+     */
+    public void removeById(Player player, String id) {
+        if (player == null || id == null || id.isBlank()) return;
+        JsonObject def = findItemDef(id);
+        String title = def != null ? (def.has("title") ? def.get("title").getAsString()
+                                    : def.has("name") ? def.get("name").getAsString() : id) : id;
+        plugin.getServer().getScheduler().runTask(plugin, () -> {
+            ItemStack[] contents = player.getInventory().getContents();
+            for (int i = 0; i < contents.length; i++) {
+                ItemStack it = contents[i];
+                if (it == null) continue;
+                var meta = it.getItemMeta();
+                if (meta == null) continue;
+                String pid = meta.getPersistentDataContainer().get(idKey, PersistentDataType.STRING);
+                boolean match = (pid != null && pid.equals(id));
+                if (!match && pid == null && meta.hasDisplayName()) {
+                    // 구형(표식 없는) 아이템 폴백: 표시 이름에 id/제목이 들어가면 매칭
+                    String dn = net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText().serialize(meta.displayName());
+                    match = dn.contains(id) || (title != null && !title.isBlank() && dn.contains(title));
+                }
+                if (match) { player.getInventory().setItem(i, null); break; } // 한 개만 제거
+            }
+        });
     }
 
     // ──────────────────────────────────────────────────────────────

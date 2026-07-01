@@ -1876,6 +1876,14 @@ public class TRPGGameManager {
             }
         }
 
+        // ★GM 아이템 인지★: 행동하는 플레이어의 소지품 목록을 함께 줘, GM이 상황에 반영(사용·언급·상호작용)하게 한다.
+        //   (기존엔 '사용 중인 충전식 아이템'만 알려 일반 소지품은 서술에 반영되지 않던 문제)
+        if (pd != null && !pd.heldItemIds.isEmpty()) {
+            java.util.List<String> names = new java.util.ArrayList<>();
+            for (String id : pd.heldItemIds) { String nm = itemDisplayName(id); names.add(nm == null || nm.isBlank() ? id : nm); }
+            if (!names.isEmpty()) actionMessage += " [소지품: " + String.join(", ", names) + "]";
+        }
+
         // 괴담이 이 플레이어의 말투·행동을 학습 (정체 차용/흉내에 사용)
         corruptMan.learnPlayerBehavior(player.getName(), message);
 
@@ -2302,7 +2310,10 @@ public class TRPGGameManager {
                     }
                 }
                 if (update.has("item_remove") && !update.get("item_remove").isJsonNull()) {
-                    pd.heldItemIds.remove(update.get("item_remove").getAsString());
+                    String rid = update.get("item_remove").getAsString();
+                    pd.heldItemIds.remove(rid); pd.itemStates.remove(rid);
+                    Player rp = Bukkit.getPlayer(pd.uuid);
+                    if (rp != null) itemMan.removeById(rp, rid); // 실물도 인벤토리에서 제거
                 }
                 // ★상태 로깅★: 이번 업데이트로 생긴 체력·정신력 변화 + 상태 전이(기절·조종·사망·회복)를 한 줄로 기록.
                 int hpD = pd.hp[0] - hpBefore0, sanD = pd.san[0] - sanBefore0;
@@ -7558,10 +7569,14 @@ public class TRPGGameManager {
                 state.log("system", pname == null ? "?" : pname, "[구역 해제: " + zoneDisplayName(zone) + "]");
             }
         }
-        // 부품 소모(조합/소진)
+        // 부품 소모(조합/소진) — 로직(heldItemIds/itemStates) + ★실물 인벤토리★ 둘 다 제거
         if (pd != null && use.has("consume") && !use.get("consume").isJsonNull()) {
             String c = use.get("consume").getAsString();
-            if (!c.isBlank()) { pd.heldItemIds.remove(c); pd.itemStates.remove(c); }
+            if (!c.isBlank()) {
+                pd.heldItemIds.remove(c); pd.itemStates.remove(c);
+                Player cp = Bukkit.getPlayer(pd.uuid);
+                if (cp != null) itemMan.removeById(cp, c); // 실물도 인벤토리에서 제거(소진 불일치 해소)
+            }
         }
         // 결과물 생성(조합)
         if (use.has("produce") && !use.get("produce").isJsonNull()) {
