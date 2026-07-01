@@ -867,7 +867,7 @@ public class TRPGGameManager {
             try {
                 startStage = Math.max(1, Math.min(6, Integer.parseInt(sub[1].trim())));
                 player.sendMessage("§6[설정] 시작 스테이지: §b" + startStage
-                    + (startStage > 1 ? " §7(시작 보정 " + (startStage - 1) + "단계: 단계당 올스탯+2 & D~B특성/스탯등급)" : " §7(보정 없음)"));
+                    + (startStage > 1 ? " §7(시작 보정 " + (startStage - 1) + "단계: 단계당 올스탯+2 & 특성 추가/등급↑)" : " §7(보정 없음)"));
                 player.sendMessage("§7다음 §f/trpg start §7부터 적용됩니다.");
             } catch (NumberFormatException e) { player.sendMessage("§c숫자를 입력하세요: §f/trpg setting stage <1-6>"); }
         } else {
@@ -884,48 +884,80 @@ public class TRPGGameManager {
             + (startStage > 1 ? " §7(보정 " + (startStage - 1) + "단계)" : "")
             + "  §7→ §f/trpg setting stage <1-6>");
         player.sendMessage("§7시작 스테이지 보정: 단계당 올스탯 총합 +2, 그리고 무작위로");
-        player.sendMessage("§7  [D~B 등급 특성 1개] 또는 [스탯 1단계(+2) 상승] 중 하나.");
+        player.sendMessage("§7  [특성 1개 추가 — 시작 스테이지↑일수록 높은 등급] 또는 [보유 특성 등급 1단계↑] 중 하나.");
         player.sendMessage("§7설정은 다음 §f/trpg start§7 부터 적용됩니다.");
     }
 
-    /** 시작 스테이지 비례 시작 스펙 보정(신규 캐릭터 생성 시). startStage>1이고 현재 스테이지==startStage일 때만. */
+    private static final String[] GRADE_ORDER = {"F", "E", "D", "C", "B", "A", "S"}; // gradeIdx와 동일 순서
+    /** 특성 등급을 한 단계 올린다(A 상한 — S는 시작 보정으로 자동 부여하지 않음). */
+    private String bumpGrade(String g) { return GRADE_ORDER[Math.min(gradeIdx("A"), gradeIdx(g) + 1)]; }
+
+    /**
+     * 시작 스테이지 비례 시작 스펙 보정(신규 캐릭터 생성 시). startStage>1이고 현재 스테이지==startStage일 때만.
+     * 단계(=startStage-1)마다: 올스탯 총합 +2, 그리고 무작위로
+     *   [특성 1개 추가 — 시작 스테이지가 높을수록 ★더 높은 등급★] 또는 [보유 특성 등급 1단계 상승].
+     */
     private void applyStartStageBoost(PlayerData pd) {
         if (pd == null || startStage <= 1) return;
         if (state.getRoomNumber() != startStage) return; // 시작 스테이지에서만(도중 합류·다음 스테이지엔 미적용)
         int levels = startStage - 1;
+        int ceil = startStage <= 3 ? gradeIdx("B") : gradeIdx("A"); // '적당히 높은' 상한 — 낮은 시작=최대 B, 높은 시작=최대 A
         java.util.Random rng = new java.util.Random();
-        java.util.List<String> gained = new java.util.ArrayList<>();
+        java.util.List<String> notes = new java.util.ArrayList<>();
         for (int i = 0; i < levels; i++) {
             bumpStat(pd, rng.nextInt(4), 1);
             bumpStat(pd, rng.nextInt(4), 1);                 // 단계당 올스탯 총합 +2
-            if (rng.nextBoolean()) {                          // 무작위: D~B 특성 추가
-                TraitData t = rollLowGradeTrait(pd, rng);
-                if (t != null) { pd.traits.add(t); gained.add(t.name + "(" + t.grade + ")"); }
-                else bumpStat(pd, rng.nextInt(4), 2);         // 특성 풀 소진 시 스탯으로 대체
-            } else {
-                bumpStat(pd, rng.nextInt(4), 2);              // 또는: 스탯 1단계(+2) 상승
+            boolean addNew = rng.nextBoolean();
+            if (addNew) {                                     // (a) 특성 추가 — 등급이 시작 스테이지에 비례
+                TraitData t = rollStartTrait(pd, rng, ceil);
+                if (t != null) { pd.traits.add(t); notes.add("＋" + t.name + "(" + t.grade + ")"); }
+                else if (!upgradeOneTrait(pd, notes)) bumpStat(pd, rng.nextInt(4), 2); // 풀 소진 → 등급↑ → 그래도 안 되면 스탯
+            } else {                                           // (b) 보유 특성 등급 1단계 상승
+                if (!upgradeOneTrait(pd, notes)) {             // 올릴 특성 없으면 추가로 대체
+                    TraitData t = rollStartTrait(pd, rng, ceil);
+                    if (t != null) { pd.traits.add(t); notes.add("＋" + t.name + "(" + t.grade + ")"); }
+                    else bumpStat(pd, rng.nextInt(4), 2);
+                }
             }
         }
         pd.snapshotBase(); // 보정 스탯을 base로 재확정(재도전·다음 스테이지에도 유지)
         Player p = Bukkit.getPlayer(pd.uuid);
         if (p != null) {
             p.sendMessage("§6[시작 보정] 시작 스테이지 " + startStage + " — " + levels + "단계 성장 적용");
-            if (!gained.isEmpty()) p.sendMessage("§6 추가 특성: §f" + String.join(", ", gained));
+            if (!notes.isEmpty()) p.sendMessage("§6 특성: §f" + String.join(", ", notes));
         }
     }
     private void bumpStat(PlayerData pd, int idx, int amt) {
         switch (idx) { case 0 -> pd.str += amt; case 1 -> pd.cha += amt; case 2 -> pd.luk += amt; default -> pd.spr += amt; }
     }
-    /** 보유하지 않은 D~B(현재 풀은 B·C) 프리셋 특성 1개를 무작위로 TraitData화. 없으면 null. */
-    private TraitData rollLowGradeTrait(PlayerData pd, java.util.Random rng) {
+    /** 보유 특성 중 가장 낮은 등급 하나를 한 단계 올린다(A 상한). 올릴 게 없으면 false. */
+    private boolean upgradeOneTrait(PlayerData pd, java.util.List<String> notes) {
+        TraitData low = pd.traits.stream()
+            .filter(t -> gradeIdx(t.grade) < gradeIdx("A"))
+            .min(java.util.Comparator.comparingInt(t -> gradeIdx(t.grade))).orElse(null);
+        if (low == null) return false;
+        String before = low.grade;
+        low.grade = bumpGrade(low.grade);
+        if (low.originGrade == null || low.originGrade.isBlank()) low.originGrade = before;
+        notes.add("↑" + low.name + "(" + before + "→" + low.grade + ")");
+        return true;
+    }
+    /** 미보유 프리셋 특성 1개를 무작위로(등급 C~ceil, S·즉시클리어 제외 → '적당히 높은 등급'). 없으면 null. */
+    private TraitData rollStartTrait(PlayerData pd, java.util.Random rng, int ceil) {
         java.util.List<SystemTraitRegistry.Preset> pool = new java.util.ArrayList<>();
         for (SystemTraitRegistry.Preset ps : SystemTraitRegistry.presets()) {
-            String g = ps.grade();
-            if (("B".equals(g) || "C".equals(g) || "D".equals(g))
-                && pd.traits.stream().noneMatch(t -> ps.id().equals(t.id))) pool.add(ps);
+            int gi = gradeIdx(ps.grade());
+            if (gi < gradeIdx("C") || gi > ceil) continue;                 // C~ceil 등급대만
+            if ("instant_clear".equals(ps.effectType())) continue;         // 즉시 클리어(도약자)는 시작 보정에서 제외
+            if (pd.traits.stream().anyMatch(t -> ps.id().equals(t.id))) continue; // 이미 보유 제외
+            pool.add(ps);
         }
         if (pool.isEmpty()) return null;
-        TraitData td = pool.get(rng.nextInt(pool.size())).toTraitData();
+        // '적당히 높은' — 가능한 최고 등급대에서 우선 선택
+        int top = pool.stream().mapToInt(ps -> gradeIdx(ps.grade())).max().orElse(0);
+        java.util.List<SystemTraitRegistry.Preset> best = new java.util.ArrayList<>();
+        for (SystemTraitRegistry.Preset ps : pool) if (gradeIdx(ps.grade()) == top) best.add(ps);
+        TraitData td = best.get(rng.nextInt(best.size())).toTraitData();
         td.origin = "시작 보정";
         return td;
     }
