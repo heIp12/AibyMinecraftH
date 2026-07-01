@@ -76,6 +76,7 @@ public class GameStateManager {
     private final Set<String>       firedEvents       = new HashSet<>();
     private final Set<String>       blockedEvents     = new HashSet<>();
     private final List<String>      justFiredEvents   = new ArrayList<>();
+    private String                  lastFiredEventLabel = ""; // 가장 최근 발화한 핵심 사건 이름(상태창 '최근' 패널용, 소비 안 됨)
     private final Map<UUID,Boolean> timeKnownOverride = new HashMap<>();
 
     private JsonObject gdamData = null;
@@ -182,6 +183,7 @@ public class GameStateManager {
         o.addProperty("minutesPerTurn", minutesPerTurn);
         o.addProperty("timeVisibleDefault", timeVisibleDefault);
         o.addProperty("endEventFired", endEventFired);
+        o.addProperty("lastFiredEventLabel", lastFiredEventLabel);
         if (gdamData != null) o.add("gdam", gdamData);
         o.add("firedEvents", SNAP_GSON.toJsonTree(firedEvents));
         o.add("blockedEvents", SNAP_GSON.toJsonTree(blockedEvents));
@@ -219,6 +221,7 @@ public class GameStateManager {
         minutesPerTurn    = snapI(o, "minutesPerTurn", 15);
         timeVisibleDefault = snapB(o, "timeVisibleDefault", true);
         endEventFired     = snapB(o, "endEventFired", false);
+        lastFiredEventLabel = snapS(o, "lastFiredEventLabel", "");
         if (o.has("gdam") && o.get("gdam").isJsonObject()) gdamData = o.getAsJsonObject("gdam");
         snapStrInto(firedEvents, o, "firedEvents");
         snapStrInto(blockedEvents, o, "blockedEvents");
@@ -404,6 +407,7 @@ public class GameStateManager {
         firedEvents.clear();
         blockedEvents.clear();
         justFiredEvents.clear();
+        lastFiredEventLabel = ""; // 새 시나리오/스테이지 — 최근 사건 초기화
         timeKnownOverride.clear();
         endEventFired      = false;
         clockStart         = -1;
@@ -465,6 +469,7 @@ public class GameStateManager {
             String label  = ev.has("label")  ? ev.get("label").getAsString()  : id;
             String effect = ev.has("effect") ? ev.get("effect").getAsString() : "";
             justFiredEvents.add(label + (effect.isEmpty() ? "" : " — " + effect));
+            lastFiredEventLabel = label; // 상태창 '최근' 패널용(짧은 사건 이름)
             if (ev.has("is_end") && ev.get("is_end").getAsBoolean()) {
                 endEventFired = true;
                 timelineStage = getMaxStage(); // CODE-17: 종료 사건 → 최고 단계(가변)
@@ -474,6 +479,7 @@ public class GameStateManager {
             endEventFired = true;
             timelineStage = getMaxStage();
             justFiredEvents.add("제한 시각 도달 — 상황이 종국으로 치닫는다");
+            lastFiredEventLabel = "제한 시각 도달";
         }
     }
 
@@ -534,6 +540,7 @@ public class GameStateManager {
             String label  = ev.has("label")  ? ev.get("label").getAsString()  : tid;
             String effect = ev.has("effect") ? ev.get("effect").getAsString() : "";
             justFiredEvents.add(label + (effect.isEmpty() ? "" : " — " + effect));
+            lastFiredEventLabel = label; // 상태창 '최근' 패널용
             if (ev.has("is_end") && ev.get("is_end").getAsBoolean()) { endEventFired = true; timelineStage = getMaxStage(); }
             return;
         }
@@ -549,6 +556,10 @@ public class GameStateManager {
         return currentTurn;
     }
     public int getCurrentTurn()  { return currentTurn; }
+    /** 지금까지 발화(진행)된 타임라인/분기 사건 수 — 통합 진행도 계산용. */
+    public int getFiredEventCount() { return firedEvents.size(); }
+    /** 가장 최근 발화한 핵심 사건 이름(상태창 '최근' 패널용, 없으면 ""). */
+    public String getLastFiredEventLabel() { return lastFiredEventLabel; }
 
     // ──────────────────────────────────────────────────────────────
     //  이벤트 로그

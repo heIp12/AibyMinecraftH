@@ -705,7 +705,11 @@ public class AiManager {
     /** 태그를 제거한 순수 서술 텍스트 반환 */
     public String stripTags(String response) {
         return response
-            .replaceAll("<THOUGHT>[\\s\\S]*?</THOUGHT>", "")
+            // 사고(THOUGHT/THINKING) 블록 제거 — 여는·닫는 태그가 어긋나거나(<THOUGHT>…</THINKING>)
+            // 잘려도(닫는 태그 누락) 본문에 누출되지 않게 한다. (재미나이 등 추론 블록 대응)
+            .replaceAll("(?i)<(thought|thinking)>[\\s\\S]*?</(thought|thinking)>", "")
+            .replaceAll("(?i)<(thought|thinking)>[\\s\\S]*$", "")
+            .replaceAll("(?i)</?(thought|thinking)>", "")
             .replaceAll("<STATE_UPDATE>[\\s\\S]*?</STATE_UPDATE>", "")
             .replaceAll("<ITEM_GRANT>[\\s\\S]*?</ITEM_GRANT>", "")
             .replaceAll("<ITEM_USE>[\\s\\S]*?</ITEM_USE>", "")
@@ -742,9 +746,13 @@ public class AiManager {
         return response.substring(s + "<THOUGHT>".length(), e).trim();
     }
 
-    /** <THOUGHT>...</THOUGHT> 태그를 제거한 텍스트 반환 */
+    /** <THOUGHT>/<THINKING> 사고 블록 제거 (태그 어긋남·잘림 포함) */
     public String stripThought(String response) {
-        return response.replaceAll("<THOUGHT>[\\s\\S]*?</THOUGHT>", "").trim();
+        return response
+            .replaceAll("(?i)<(thought|thinking)>[\\s\\S]*?</(thought|thinking)>", "")
+            .replaceAll("(?i)<(thought|thinking)>[\\s\\S]*$", "")
+            .replaceAll("(?i)</?(thought|thinking)>", "")
+            .trim();
     }
 
     /** <WITNESS player="name">text</WITNESS> 태그를 파싱 → {playerName: witnessText} */

@@ -33,16 +33,16 @@ public class SystemTraitRegistry {
             "발동 시 주사위를 굴려 다음 행동 1회에 행운 보정을 준다(낮으면 마이너스, 높으면 플러스).",
             "scale=보정 최대 절대값(예:10), dice=주사위 면수(기본 6)"),
         SHOW_PROGRESS("show_progress", true,
-            "발동 시 현재 괴담의 진행 단계·상태를 본인만 확인한다.",
-            "(별도 파라미터 없음. 제약은 cooldown으로 조절)"),
+            "발동 시 '상태창'(코드·실시간, AI 서술콜 없음)을 본인만 확인한다 — 등급이 높을수록 더 많은 조각을 본다. 표시 가능한 조각: progress(진행도%)·ally(동료 위치·생사·조종·등장예정)·start(시작 배경·시각)·recent(최근 핵심 사건)·overview_full(전체 시나리오 개요=영화 예고편, 스포일러 금지)·overview_now(지금 국면 요약). ★개요는 전체/지금 중 하나만★ 표시된다.",
+            "panels=보여줄 조각 CSV(예: \"progress,ally\" 또는 \"overview_now,progress\"; 비우면 기본 우선순위). 실제 표시 개수는 등급이 정함(S=6·A=3·B=2·그 외=1). 제약은 cooldown으로 조절"),
         CHOICE_ACTION("choice_action", true,
-            "발동 시 다음 행동을 직접 입력 대신 선택지로 제시한다(다이얼로그 버튼). 정답엔 큰 보정, 오답엔 큰 패널티.",
+            "발동 시 다음 행동을 직접 입력 대신 선택지로 제시한다(다이얼로그 버튼). 정답엔 큰 보정, 오답엔 큰 패널티. ★등급이 높으면(A~S) 괴담 해결로 직접 이어지는 '정답' 선택지까지 섞여 나온다.",
             "uses=사용 횟수, choices=선택지 개수(2~4), auto_choice=0이면 무엇을 할지 먼저 물어보고 그에 맞는 선택지를, 1이면 현재 상황에 맞는 선택지를 자동 제시"),
         GM_DIRECTIVE("gm_directive", true,
             "발동 시 effect에 적힌 지시를 GM에게 전달해 사건 전개에 반영시킨다. ★기억회상·직관·예지·환각·내면경험(캐릭터가 자동으로 정보를 경험하는 효과) 특성에 반드시 사용. effect 텍스트에 '무엇을 떠올리는지/경험하는지' 서술하면 AI가 그 장면을 생생하게 묘사한다.",
             "uses=사용 횟수"),
         AREA_SCAN("area_scan", true,
-            "발동 후 채팅으로 무엇을 찾는지 입력하면 현재 구역을 탐색해 숨겨진 정보·단서·위험 요소를 파악한다. 질문(ai_query)과 달리 관찰·탐색 기반이며 타임라인이 소모된다.",
+            "발동 후 채팅으로 무엇을 찾는지 입력하면 현재 구역을 탐색해 숨겨진 정보·단서·위험 요소를 파악한다. 질문(ai_query)과 달리 관찰·탐색 기반이며 타임라인이 소모된다. ★등급이 낮으면 '단서 유무'만, 높으면 즉시 내용까지 발견한다(없으면 본 것을 그대로 서술).",
             "scope=탐색 범위(1=현재위치, 2=인접구역·층, 3=광역·건물 전체), uses=스테이지당 횟수(1~3)"),
         SACRIFICE("sacrifice", true,
             "발동 시 HP 또는 SAN을 소모해 강력한 효과를 얻는다. 효과 내용은 effect 텍스트로 표현한다(예: 일시적 스탯 급등, 봉인 해제, 저주 전이 등).",
@@ -75,8 +75,8 @@ public class SystemTraitRegistry {
             "발동 시 N턴간 괴담의 감지(perception 양식 전부 — 청각·시각·통신·전지 등)에서 벗어난다. 그동안 괴담은 자신을 직접 표적·추적하지 못한다.",
             "turns=지속 턴수(1~3), uses=스테이지당 횟수(1~2)"),
         OBSERVER_SIGHT("observer_sight", true,
-            "발동 시 '무대 뒤(연출자)의 현재 사고'를 엿본다 — 지금 이 순간 무슨 의도로 일이 굴러가는지. 전체 각본·정답은 제외, 현재 사고만. turns>1이면 그 턴 수만큼 매 턴 자동으로 엿본다.",
-            "uses=스테이지당 횟수(1~2), turns=지속 턴 수(1=즉시 1회, 2~3=N턴 지속)"),
+            "발동 시 '무대 뒤(연출자)의 현재 사고'를 엿본다 — 지금 이 순간 무슨 의도로 일이 굴러가는지. 전체 각본·정답은 제외, 현재 사고만. ★사용한 그 순간 1회만★ 엿본다(지속·연장 불가). ★등급이 낮으면 글자가 깨지고 뒤죽박죽 섞여 판독이 어렵고, 높을수록 또렷하다.",
+            "uses=스테이지당 횟수(1~2)"),
         PACT("pact", true,
             "발동 시 괴담과 1회 거래를 시도한다 — 대가(체력·정신력·단서 등)를 치르고 양보 1개를 얻는다. 고위험. GM이 거래를 판정·서술한다.",
             "uses=스테이지당 횟수(1)"),
@@ -84,7 +84,7 @@ public class SystemTraitRegistry {
             "발동 시 자신이 한 과거 행동 1개를 다른 것으로 개찬한다 — 인과가 바뀐다(정답 날조 불가, GM이 개연성 판정).",
             "uses=스테이지당 횟수(1)"),
         GDAM_MORPH("gdam_morph", true,
-            "발동 시 N턴간 무작위 괴담으로 변신한다 — 그 괴담 본성대로 행동(★조작 불가, GM이 구동, 피아식별 없음). 난장판+통제 상실이 곧 대가.",
+            "발동 시 N턴간 괴담으로 변신한다 — 그 괴담 본성대로 행동(★조작 불가, GM이 구동, 피아식별 없음). 난장판+통제 상실이 곧 대가. ★effect에 특정 괴담 이름을 적으면 그 괴담으로 '고정' 변신(예: effect=\"빨간 마스크\"), 비우면 무작위.",
             "turns=변신 지속 턴수(1~3), uses=스테이지당 횟수(1)"),
         PHASE_OUT("phase_out", true,
             "발동 시 N턴간 턴을 건너뛰며 아무 간섭도 받지 않는다(위상 이탈). 종료 시 극적 탈출(건물 폭파 등)이 가능하다.",
@@ -130,16 +130,16 @@ public class SystemTraitRegistry {
         // 정보 계열 패시브 — 시작 시 '직감'으로 특정 영역의 정보를 안다. AI가 자연스럽게 가공해 전달.
         //   공통 규칙: 정답·해결법은 절대 노출 금지. 약점은 등급이 매우 높을 때(S)만 '방향'까지. depth가 클수록 양·선명도↑.
         SCENARIO_INSIGHT("scenario_insight", false,
-            "패시브(정보-시나리오 이해). 시작 시 사건의 '대략적 윤곽'(어떤 상황이고 무엇이 벌어지는지·분위기)을 직감으로 안다. 정체·정답·해결법은 제외.",
+            "패시브(정보-시나리오 이해). 시작 시 사건의 큰 줄기를 '영화 줄거리'처럼(스포일러 금지) 어렴풋이 알거나, 이야기가 지금 어디쯤 왔는지(진행도)를 안다. 정체·정답·해결법·약점은 제외.",
             "depth=파악 깊이(1=개략, 2=중간, 3=상세)"),
         ENTITY_SENSE("entity_sense", false,
-            "패시브(정보-적대자 감지). 시작 시 적대 존재의 '유형·본질'을 직감으로 안다(예: 어떤 종류의 존재인지). 정확한 정체·이름은 제외. 등급이 매우 높으면 약점의 방향까지.",
+            "패시브(정보-적대자 감지). 시작 시 경계해야 할 적대 존재에 대한 '짧은 수수께끼 단서 한 줄'을 얻는다(예: '악마는 빛을 등지고 서있다'). 정체·이름·해결법은 제외. 등급이 높을수록 은유가 실체에 더 가깝고, S급이면 약점의 방향까지.",
             "depth=감지 깊이(1=유형 암시, 2=유형·성향, 3=상세 본질)"),
         ALLY_SENSE("ally_sense", false,
-            "패시브(정보-구원자 탐지). 시작 시 도움이 될 만한 아군/조력 성향 NPC의 '이름과 현재 위치'를 직감으로 안다. 적대·위장 가능성 있는 인물은 제외.",
+            "패시브(정보-구원자 탐지=조력 NPC). 시작 시 믿고 기댈 만한 조력 NPC에 대한 '짧은 단서 한 줄'을 얻는다 — 이름을 통째로 주기보다 특징·인상으로(예: '그는 늘 긴 코트를 입고 있었지'). 등급이 높을수록 이름·위치에 더 가깝게. 적대·위장 가능성 있는 인물은 제외.",
             "depth=탐지 범위(1=가장 가까운 1명, 2=2~3명, 3=알려진 조력자 다수)"),
         LORE_RECORD("lore_record", false,
-            "패시브(정보-전지적 독자시점). 시작 시 '과거에 이 사건에 도전했다 실패한 이들의 이야기'를 안다(특히 규칙 위반·행동 제약으로 탈락한 사례 → 규칙을 간접적으로 노출). 정답 자체는 제외.",
+            "패시브(정보-전지적 독자시점). 시작 시 '이 사건을 이미 겪고 실패한 뒤 시간을 거슬러 돌아온 미래의 나(회귀자)'의 독백을 소설처럼 본다 — 규칙·금기를 범해 스러진 한 순간을 1인칭으로 회고해 규칙을 간접 노출. 정답을 '지시'하지는 않는다(실패를 서술할 뿐).",
             "depth=이야기 깊이(1=단편 일화, 2=구체 사례, 3=여러 사례·교훈)"),
         PASSIVE_GM("passive_gm", false,
             "패시브. effect에 적힌 상시 효과를 GM이 매 턴 항상 고려한다(예: 주인공 보호, 미묘한 이상 감지).",
@@ -157,7 +157,7 @@ public class SystemTraitRegistry {
             "패시브. '돌이킬 수 없는 1회성 치명 행동(즉사 규칙 위반 등)'을 저질러도 ★1회에 한해★ 그 결과를 무효화한다(아슬아슬하게 무위로). 이후엔 정상 판정.",
             "(파라미터 없음)"),
         ENCOUNTER_SCAN("encounter_scan", false,
-            "패시브(정보-첫 조우). 시작 시 처음 마주칠 적대 존재·핵심 인물에 대한 짧은 직감을 얻는다. 정답·정체·해결법은 제외.",
+            "패시브(정보-첫 조우). 시작 시 곧 처음 마주칠 인물/존재의 '성향·목표·상태'를 어렴풋한 첫인상으로 얻는다(예: '비에 젖어 있다' · '다급히 뭔가를 찾는다' · '뭔가 숨기는 듯하다'). 정체·정답·해결법은 제외.",
             "depth=파악 깊이(1=암시, 2=중간, 3=상세)"),
         REVIVE_AS_ANIMAL("revive_as_animal", false,
             "패시브. 사망 시 1회 주변 동물로 되살아난다 — 정찰·방해·몸짓 정보전달 가능(GM 서술), 능력·아이템·통신 불가, 괴담은 정체 인지 못함. 휘말리거나 공격받으면 높은 확률로 사망.",
@@ -320,6 +320,15 @@ public class SystemTraitRegistry {
         sb.append("  예) '악몽의 잔상' — 지난 악몽에서 단서 한 조각 → gm_directive\n");
         sb.append("★ 이 구분을 절대 무시하지 말 것. 회상·직관·내면 경험형 특성에 ai_query를 쓰면 치명적 버그 발생.\n\n");
 
+        sb.append("## ★★ effectType은 능력의 '컨셉(이름·설명·effect·origin)'과 반드시 일치 ★★\n");
+        sb.append("'정보를 준다'는 이유만으로 ai_query(초자연적 질문·신탁)를 붙이지 마라 — 발동 시 나오는 '행동'이 이름·컨셉과 어긋나면(예: 방송 권한인데 신비한 속삭임이 나옴) 잘못된 effectType다. 능력의 ★실제 수단★에 맞춰라:\n");
+        sb.append("  · 통신·방송·지시 전달·채널 제어·연락 개통 → gm_directive(통신형). (설득·회유면 social)\n");
+        sb.append("  · 감시·모니터링·도청·엿듣기·원격 청취/투시 → remote_sense.\n");
+        sb.append("  · 아군 위치·생사 파악 → link_ally.   · 현재 구역 수색·탐색 → area_scan.\n");
+        sb.append("  · '직접 질문해 답을 얻음 / 점술·예지·직감·계시로 앎'(초자연적 앎) → ai_query·scenario_insight 등.\n");
+        sb.append("  · ★현실 권한·장비(관제 권한·마스터키·해킹·CCTV·무전 등)는 그 장비의 실제 기능에 맞는 effectType★ — 신비한 신탁으로 바꾸지 마라.\n");
+        sb.append("  반례(★하지 마라★): '방송 지시 권한'(마이크로 지시·현장 음성 모니터링) → ai_query ✗ → gm_directive(지시 방송) 또는 remote_sense(모니터링) ○.\n\n");
+
         sb.append("## ★ 발동 방식 3분류 (자동/수동/상태조건) — 능력 표현 기준 ★\n");
         sb.append("능력의 '발동 조건'은 아래 셋 중 하나로 표현한다(소설식 '자동/수동/상태조건'과 동일):\n");
         sb.append("  · 수동(직접 발동): active=true. 플레이어가 버튼으로 발동. 예) 질문권·즉시판정.\n");
@@ -381,9 +390,31 @@ public class SystemTraitRegistry {
     //  파라미터 기본값/검증
     // ──────────────────────────────────────────────────────────────
 
+    /**
+     * effectType이 컨셉(이름·설명·effect)과 명백히 어긋나면 결정적으로 교정한다.
+     * '정보를 준다'는 이유로 ai_query(초자연 신탁)가 붙은 ★통신·방송·모니터링 권한/장비★를
+     * 실제 기능에 맞는 effectType으로 되돌린다(LLM 생성 실수·구형 세이브 보정).
+     * 보수적으로 ai_query 오용만 교정하며, 기기·제어 특화 키워드가 있을 때만 손댄다.
+     */
+    private static void correctEffectTypeByConcept(TraitData td) {
+        if (!"ai_query".equals(td.effectType)) return; // ai_query 오용만 교정(오탐 최소화)
+        String h = ((td.name == null ? "" : td.name) + " "
+                  + (td.description == null ? "" : td.description) + " "
+                  + (td.effect == null ? "" : td.effect));
+        boolean comms = h.contains("방송") || h.contains("마이크") || h.contains("무전")
+                     || h.contains("인터컴") || h.contains("스피커") || h.contains("확성")
+                     || h.contains("교신") || h.contains("채널 제어") || h.contains("방송 채널");
+        boolean monitor = h.contains("모니터링") || h.contains("감시 카메라") || h.contains("도청")
+                       || h.contains("엿듣") || h.contains("CCTV") || h.contains("관측 카메라");
+        // 통신·방송·지시가 컨셉이면 gm_directive(통신형) 우선, 순수 감시·모니터링이면 remote_sense.
+        if (comms) { td.effectType = "gm_directive"; td.effectParams = new HashMap<>(); }
+        else if (monitor) { td.effectType = "remote_sense"; td.effectParams = new HashMap<>(); }
+    }
+
     /** effectType에 맞춰 능/수동을 강제하고 누락된 파라미터에 기본값을 채운다 */
     public static void applyDefaults(TraitData td) {
         if (td == null) return;
+        correctEffectTypeByConcept(td); // ★컨셉↔effectType 불일치 자동 교정(생성 실수·구형 세이브 보정)
         Effect e = Effect.byKey(td.effectType);
         if (e == null) { td.effectType = ""; enforcePowerBudget(td); annotateCost(td); return; } // 순수 스텟도 예산 적용(낡은 대가 표기 제거)
         td.active = e.active;
@@ -416,8 +447,8 @@ public class SystemTraitRegistry {
             }
             case OBSERVER_SIGHT -> {
                 td.effectParams.putIfAbsent("uses", 1);
-                td.effectParams.putIfAbsent("turns", 1);
-                clamp(td, "uses", 1, 2); clamp(td, "turns", 1, 3);
+                td.effectParams.put("turns", 1); // ★관조자의 눈은 항상 1턴(사용 순간 1회)만 — 매 턴 자동 재발동으로 GM 콜이 누적되는 것을 차단
+                clamp(td, "uses", 1, 2);
             }
             case PACT, PAST_EDIT, POSSESS_NPC, NPC_BIND -> {
                 td.effectParams.putIfAbsent("uses", 1);
@@ -649,7 +680,7 @@ public class SystemTraitRegistry {
             case FORESIGHT        -> td.param("depth", 2) >= 3 ? 5 : 3;
             case SOCIAL           -> td.param("power", 2) >= 3 ? 5 : 3;
             case SCENARIO_INSIGHT, ENTITY_SENSE, ALLY_SENSE, LORE_RECORD, ENCOUNTER_SCAN -> td.param("depth", 1) >= 2 ? 3 : 1;
-            case OBSERVER_SIGHT   -> td.param("turns", 1) >= 2 ? 10 : 5; // 지속(N턴)이면 강력 → S급
+            case OBSERVER_SIGHT   -> 5; // 사용 순간 1회만(1턴 고정) → A급
             case PACT             -> 5;
             case PAST_EDIT        -> 5;
             case GDAM_MORPH       -> td.param("turns", 2) >= 2 ? 10 : 5; // 2턴+ 변신(통제 상실·적대 괴물)은 S급으로 게이팅
