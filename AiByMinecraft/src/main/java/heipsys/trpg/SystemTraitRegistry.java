@@ -390,9 +390,31 @@ public class SystemTraitRegistry {
     //  파라미터 기본값/검증
     // ──────────────────────────────────────────────────────────────
 
+    /**
+     * effectType이 컨셉(이름·설명·effect)과 명백히 어긋나면 결정적으로 교정한다.
+     * '정보를 준다'는 이유로 ai_query(초자연 신탁)가 붙은 ★통신·방송·모니터링 권한/장비★를
+     * 실제 기능에 맞는 effectType으로 되돌린다(LLM 생성 실수·구형 세이브 보정).
+     * 보수적으로 ai_query 오용만 교정하며, 기기·제어 특화 키워드가 있을 때만 손댄다.
+     */
+    private static void correctEffectTypeByConcept(TraitData td) {
+        if (!"ai_query".equals(td.effectType)) return; // ai_query 오용만 교정(오탐 최소화)
+        String h = ((td.name == null ? "" : td.name) + " "
+                  + (td.description == null ? "" : td.description) + " "
+                  + (td.effect == null ? "" : td.effect));
+        boolean comms = h.contains("방송") || h.contains("마이크") || h.contains("무전")
+                     || h.contains("인터컴") || h.contains("스피커") || h.contains("확성")
+                     || h.contains("교신") || h.contains("채널 제어") || h.contains("방송 채널");
+        boolean monitor = h.contains("모니터링") || h.contains("감시 카메라") || h.contains("도청")
+                       || h.contains("엿듣") || h.contains("CCTV") || h.contains("관측 카메라");
+        // 통신·방송·지시가 컨셉이면 gm_directive(통신형) 우선, 순수 감시·모니터링이면 remote_sense.
+        if (comms) { td.effectType = "gm_directive"; td.effectParams = new HashMap<>(); }
+        else if (monitor) { td.effectType = "remote_sense"; td.effectParams = new HashMap<>(); }
+    }
+
     /** effectType에 맞춰 능/수동을 강제하고 누락된 파라미터에 기본값을 채운다 */
     public static void applyDefaults(TraitData td) {
         if (td == null) return;
+        correctEffectTypeByConcept(td); // ★컨셉↔effectType 불일치 자동 교정(생성 실수·구형 세이브 보정)
         Effect e = Effect.byKey(td.effectType);
         if (e == null) { td.effectType = ""; enforcePowerBudget(td); annotateCost(td); return; } // 순수 스텟도 예산 적용(낡은 대가 표기 제거)
         td.active = e.active;
