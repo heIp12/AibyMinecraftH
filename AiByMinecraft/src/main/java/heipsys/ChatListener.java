@@ -83,13 +83,18 @@ public class ChatListener implements Listener {
         TRPGGameManager trpgManager = trpg();
         if (trpgManager == null || !trpgManager.isActive()) return;
         if (!event.isSneaking()) return;
-        Player p = event.getPlayer();
-        // 관전자(스펙테이터): 웅크리기 → 보고 있는 대상의 소지품 미러(책·기록·정보 열람)
-        if (p.getGameMode() == GameMode.SPECTATOR) {
-            Bukkit.getScheduler().runTask(plugin, () -> trpgManager.openSpectatorMirror(p));
-            return;
-        }
-        trpgManager.getNarrativeDelivery().onSneak(p);
+        trpgManager.getNarrativeDelivery().onSneak(event.getPlayer());
+    }
+
+    /** 관전자가 인물을 클릭해 그 시점으로 '들어가면' 자동으로 대상 소지품 미러를 연다(웅크리기는 관전 중 동작 안 함). */
+    @EventHandler
+    public void onStartSpectating(com.destroystokyo.paper.event.player.PlayerStartSpectatingEntityEvent event) {
+        TRPGGameManager trpgManager = trpg();
+        if (trpgManager == null || !trpgManager.isActive()) return;
+        if (!(event.getNewSpectatorTarget() instanceof Player)) return;
+        Player spectator = event.getPlayer();
+        // 이벤트 시점엔 getSpectatorTarget()이 아직 갱신 전이라 다음 틱에 연다.
+        Bukkit.getScheduler().runTask(plugin, () -> trpgManager.openSpectatorMirror(spectator));
     }
 
     /** 캐릭터 정보 / 기록 아이템 우클릭 → 해당 GUI 열기 */
@@ -101,6 +106,12 @@ public class ChatListener implements Listener {
         Action action = event.getAction();
         if (action != Action.RIGHT_CLICK_AIR && action != Action.RIGHT_CLICK_BLOCK) return;
         Player player = event.getPlayer();
+        // 관전자 우클릭 → 보고 있는 대상의 소지품 미러(책·정보·기록 열람). 스펙테이터는 아이템이 없으므로 먼저 처리.
+        if (player.getGameMode() == GameMode.SPECTATOR) {
+            event.setCancelled(true);
+            Bukkit.getScheduler().runTask(plugin, () -> trpgManager.openSpectatorMirror(player));
+            return;
+        }
         if (trpgManager.isInfoItem(event.getItem())) {
             event.setCancelled(true);
             Bukkit.getScheduler().runTask(plugin, () -> trpgManager.openCharacterInfo(player));

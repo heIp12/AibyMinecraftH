@@ -2011,7 +2011,6 @@ public class TRPGGameManager {
                                     ? "§4동물의 몸마저 스러집니다. 이번엔 정말 끝입니다..."
                                     : "§4치명상으로 목숨을 잃었습니다... §7(부활 능력으로만 되살아날 수 있습니다)");
                                 ai.injectGmSystem("[사망] " + commDisplayName(pd) + "이(가) 체력이 다해 사망했다. 서술에 반영하라(부활 능력 외엔 복구 불가).");
-                                enterSpectator(pd); // 관전 모드 전환(자유 관전 + 대상 시점·소지품 열람)
                             }
                         } else if (!"faint".equals(pd.status)) {
                             // 체력 1 → 행동불가(기절). ★피해가 클수록 오래 쓰러져 있다(2~5턴).★
@@ -7800,17 +7799,9 @@ public class TRPGGameManager {
      * 탈락(사망)한 플레이어가 행동을 시도하면 침묵하지 않고 자신의 상태를 텍스트로 안내한다.
      * (이전에는 isDead면 아무 응답 없이 무시 → "채팅이 막히고 아무것도 안 나온다"는 문제 발생)
      */
-    // ── 관전(스펙테이터) 시스템 ─────────────────────────────────────────────
-    /** 사망 등으로 탈락 시 스펙테이터 전환 — 자유 관전 + 인물 클릭 시 시점 공유, 웅크리기로 소지품·기록·정보 열람. */
-    private void enterSpectator(PlayerData pd) {
-        if (pd == null) return;
-        Player p = Bukkit.getPlayer(pd.uuid);
-        if (p != null && p.isOnline() && p.getGameMode() != GameMode.SPECTATOR) {
-            p.setGameMode(GameMode.SPECTATOR);
-            p.sendMessage("§7[관전] §f인물을 클릭§7하면 그 시점으로 들어가고, §f웅크리기(Shift)§7로 그 인물의 소지품·기록·정보를 볼 수 있습니다.");
-        }
-    }
-    /** 부활·재도전·세션 시작 시 생존 상태(서바이벌)로 복귀. */
+    // ── 관전(스펙테이터) 시스템 — 게임 전부터 관전 중인 관찰자용 ──────────────
+    //   ※ 참여자는 사망해도 스펙테이터로 바뀌지 않는다(부활·몸 유지 정합). 스펙테이터 모드인 사람이 대상을 관전하면 도구 제공.
+    /** 부활 시 (혹시 스펙테이터였다면) 생존 상태(서바이벌)로 복귀. */
     private void restorePlaying(PlayerData pd) {
         if (pd == null) return;
         Player p = Bukkit.getPlayer(pd.uuid);
@@ -8955,8 +8946,6 @@ public class TRPGGameManager {
         for (PlayerData pd : state.getAllPlayers()) {
             Player p = Bukkit.getPlayer(pd.uuid);
             if (p == null || !p.isOnline()) continue;
-            if (pd.isDead) enterSpectator(pd);                                    // 사망 상태 복원 → 관전
-            else if (p.getGameMode() == GameMode.SPECTATOR) p.setGameMode(GameMode.SURVIVAL); // 생존자는 관전 해제
             giveInfoItem(p);
             giveRecordItem(p);
             mapMan.giveStartMap(p);
