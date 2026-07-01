@@ -177,6 +177,25 @@ public class GameLogger {
         record("개인", player, content, extra);
     }
 
+    /**
+     * 통신·연락 이벤트(전화·근처발화·방송) — ★발신자(actor)와 수신자(to)를 함께 기록★해
+     * 뷰어에서 통화내역·수신자 시점 표시가 가능하게 한다.
+     *  @param kind "call"(전화) / "nearby"(근처 발화) / "broadcast"(방송)
+     *  @param actor 발신자 표시명, to 수신자 표시명 목록(계정명 금지 — gmDisplayName 등), text 발화 내용
+     */
+    public void logComm(String kind, String actor, java.util.List<String> to, String text) {
+        String k = (kind == null || kind.isEmpty()) ? "call" : kind;
+        JsonObject extra = new JsonObject();
+        extra.addProperty("kind", k);
+        if (to != null && !to.isEmpty()) {
+            JsonArray arr = new JsonArray();
+            for (String t : to) if (t != null && !t.isEmpty()) arr.add(t);
+            if (arr.size() > 0) extra.add("to", arr);
+        }
+        String label = "call".equals(k) ? "통화" : "nearby".equals(k) ? "근처" : "방송";
+        record("통신", actor, "[" + label + "] " + (text == null ? "" : text), extra);
+    }
+
     /** 로그 뷰어용 계정명↔캐릭터명 별칭 기록 — 같은 인물의 입력·서술 시점을 하나로 통합하게 한다. */
     public void logAlias(String account, String charName) {
         if (account == null || charName == null || account.isEmpty() || charName.isEmpty()) return;

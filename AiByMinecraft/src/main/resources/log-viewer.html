@@ -180,16 +180,19 @@ function renderSide(){
     side.appendChild(wrap);}
 }
 function badgeFor(e){ return e.kind==="ability"?(e.ability?"✨ "+e.ability:"✨ 능력")
-  :e.kind==="input"?"입력":e.kind==="gm"?"GM 서술":e.kind==="broadcast"?"📢 방송":e.kind==="npc"?"☎ NPC"
+  :e.kind==="input"?"입력":e.kind==="call"?"📞 통화":e.kind==="nearby"?"👥 근처":e.kind==="gm"?"GM 서술":e.kind==="broadcast"?"📢 방송":e.kind==="npc"?"☎ NPC"
   :e.kind==="system"?"시스템":e.kind==="private"?"개인":e.kind==="gm_input"?"GM입력(상세)":(e.cat||"이벤트"); }
+const COMM_KINDS=new Set(["call","nearby","broadcast"]);
 
 function filtered(){
   const q=(document.getElementById("q")?.value||"").trim().toLowerCase();
   const onlyAbil=document.getElementById("onlyAbil")?.checked;
+  const onlyComm=document.getElementById("onlyComm")?.checked;
   const showVerbose=document.getElementById("verbose")?.checked;
   return EVENTS.filter(e=>{
     if(!visibleTo(e,curVP))return false;
     if(onlyAbil&&e.kind!=="ability")return false;
+    if(onlyComm&&!COMM_KINDS.has(e.kind))return false;
     if(!showVerbose&&HIDE_KIND_DEFAULT.has(e.kind))return false;
     if(q){const hay=(e.actor+" "+e.to.join(" ")+" "+e.ability+" "+e.text+" "+e.cat).toLowerCase();if(!hay.includes(q))return false;}
     return true;
@@ -198,10 +201,12 @@ function filtered(){
 function toolbarHtml(list){
   const q=(document.getElementById("q")?.value||"");
   const onlyAbil=document.getElementById("onlyAbil")?.checked?"checked":"";
+  const onlyComm=document.getElementById("onlyComm")?.checked?"checked":"";
   const showVerbose=document.getElementById("verbose")?.checked?"checked":"";
   return `<div class="toolbar">
     <input type="text" id="q" placeholder="🔎 검색" value="${escAttr(q)}">
     <label><input type="checkbox" id="onlyAbil" ${onlyAbil}> ✨ 능력만</label>
+    <label><input type="checkbox" id="onlyComm" ${onlyComm}> ☎ 통화내역</label>
     <label><input type="checkbox" id="verbose" ${showVerbose}> GM입력</label>
     <button id="playBtn" class="${playing?"on":""}">${playing?"⏸ 멈춤":"▶ 재생"}</button>
     <label>속도 <input type="range" id="spd" min="0.4" max="3" step="0.2" value="${speed}"></label>
@@ -212,6 +217,7 @@ function toolbarHtml(list){
 function bindToolbar(){
   const q2=document.getElementById("q"); if(q2){q2.oninput=()=>{stopPlay();renderMain();};}
   const a=document.getElementById("onlyAbil"); if(a)a.onchange=()=>{stopPlay();renderMain();};
+  const cm=document.getElementById("onlyComm"); if(cm)cm.onchange=()=>{stopPlay();renderMain();};
   const v=document.getElementById("verbose"); if(v)v.onchange=()=>{stopPlay();renderMain();};
   const pb=document.getElementById("playBtn"); if(pb)pb.onclick=togglePlay;
   const sp=document.getElementById("spd"); if(sp)sp.oninput=e=>{speed=parseFloat(e.target.value)||1;};

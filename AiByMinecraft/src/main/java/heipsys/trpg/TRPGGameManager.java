@@ -6186,7 +6186,9 @@ public class TRPGGameManager {
         target.everKnownNpcContacts.add(npcId); // 연락받음 → 그 번호를 알게 됨(콜백 가능)
         appendNarrativeLog(target, (sameZone ? "[근처] " : "[수신] ") + npcName + ": " + callMsg);
         state.log("comm", npcName, "→ " + commDisplayName(target) + ": " + callMsg);
-        gameLogger.logGmOutput("NPC(" + npcName + ")→" + commDisplayName(target), callMsg);
+        // 뷰어 통화내역: NPC→플레이어 선연락도 수신자를 기록(수신자 시점·통화내역에 표시)
+        gameLogger.logComm(sameZone ? "nearby" : "call", npcName,
+            java.util.List.of(commDisplayName(target)), callMsg);
         ai.injectGmSystem("[NPC 선연락] " + npcName + "이(가) " + commDisplayName(target)
             + "에게 " + (sameZone ? "직접" : "전화로") + " 먼저 연락했다: \"" + callMsg
             + "\". 시스템이 이미 그 플레이어에게 전달했으니 중복하지 말고 이후 정황·반응만 다뤄라.");
@@ -6330,18 +6332,21 @@ public class TRPGGameManager {
         if (content.isBlank()) return;
         String disp = senderPd.gmDisplayName();
         int heard = 0;
+        java.util.List<String> heardNames = new ArrayList<>();
         for (PlayerData op : state.getAllPlayers()) {
             if (op.uuid.equals(senderPd.uuid) || op.isDead || !spawnedPlayers.contains(op.uuid)) continue;
             Player op2 = Bukkit.getPlayer(op.uuid);
             if (op2 != null && op2.isOnline()) {
                 op2.sendMessage("§b[📢 방송] §f" + disp + ": " + content);
                 appendNarrativeLog(op, "[방송] " + disp + ": " + content);
+                heardNames.add(op.gmDisplayName());
                 heard++;
             }
         }
         sender.sendMessage(heard > 0 ? "§7[방송 송출 — " + heard + "명에게 전달됨]"
                                      : "§8(방송했지만 지금 들을 다른 인원이 없습니다.)");
         state.log("comm", senderPd.name, "[방송] " + content);
+        gameLogger.logComm("broadcast", disp, heardNames, content); // 뷰어 통화내역: 방송 수신자 기록
         // GM·NPC 인지: 방송은 건물 전체로 퍼진 큰 행동. 내용은 시스템이 이미 전달했으니 중복 WITNESS 금지.
         if (currentPhase == Phase.HORROR || currentPhase == Phase.DAILY) {
             ai.injectGmSystem("[방송 송출] " + disp + "이(가) 방송 설비로 외쳤다: \"" + content
@@ -6374,6 +6379,10 @@ public class TRPGGameManager {
             exchangeContacts(senderPd, op); // 대면 성공 → 서로 번호를 알게 됨
         }
         state.log("comm", senderPd.name, "[근처] " + message);
+        // 뷰어: 근처 발화는 ★들은 사람 전원(같은 구역)을 수신자로★ 기록 → 그들 시점에도 보이게
+        java.util.List<String> nearNames = new ArrayList<>();
+        for (PlayerData op : heard) nearNames.add(op.gmDisplayName());
+        gameLogger.logComm("nearby", disp, nearNames, message);
         // (입력 로그는 onChat 진입부에서 이미 1회 기록됨 — 여기서 중복 기록하지 않는다)
         // ★입으로 낸 '소리'다(기기 통신 아님 → 도청·차단·전화판정 무관). 단, 괴담이 소리·인기척을
         //   감지하는 성질이면 들을 수 있으므로, 괴담 파트에서만 GM에 알려 그 성질일 때만 반응하게 한다.
@@ -6432,6 +6441,10 @@ public class TRPGGameManager {
                 op2.sendMessage("§b[📞 " + disp + " → 전체] §f" + message);
         }
         state.log("comm", senderPd.name, "[전체발신] " + message);
+        // 뷰어 통화내역: 전체 발신도 ★수신자 전원을 기록★(그들 시점에도 보이게)
+        java.util.List<String> callNames = new ArrayList<>();
+        for (PlayerData op : targets) callNames.add(op.gmDisplayName());
+        gameLogger.logComm("call", disp, callNames, message);
         // (입력 로그는 onChat 진입부에서 이미 1회 기록됨 — 여기서 중복 기록하지 않는다)
         noteCommUsedIfDangerous(senderPd, "전체 발신"); // 통신 유인형이면 괴담 반응 유도
     }
@@ -6680,6 +6693,9 @@ public class TRPGGameManager {
         senderPd.everKnownNpcContacts.add(npcId);
         refreshCommItems(senderPd);
         npcLastDirectTurn.put(npcId, state.getCurrentTurn()); // 대화 중 — 자율 AI 중복 구동 방지(맥락 오염 차단)
+        // 뷰어 통화내역: 플레이어→NPC 발신 기록(수신자=NPC)
+        gameLogger.logComm(viaCall ? "call" : "nearby", senderPd.gmDisplayName(),
+            java.util.List.of(npcName), message);
 
         // ③ 엿보기 특성 여부 확인
         boolean hasEavesdrop = senderPd.traits.stream()
@@ -7250,6 +7266,9 @@ public class TRPGGameManager {
 
         state.log("comm", commDisplayName(senderPd),
             "→ " + commDisplayName(targetPd) + " (" + (viaDevice ? "장치" : "근거리") + "): " + message);
+        // 뷰어 통화내역: 발신자·★수신자★를 함께 구조화 기록(수신자 시점에도 보이게)
+        gameLogger.logComm(viaDevice ? "call" : "nearby", commDisplayName(senderPd),
+            java.util.List.of(commDisplayName(targetPd)), message);
 
         // 시나리오상 괴담이 통신을 엿보면, 기기 통신 내용을 GM/괴담 컨텍스트에 주입(모방·간파·역이용 활용)
         if (viaDevice && isCommsMonitored()) {
