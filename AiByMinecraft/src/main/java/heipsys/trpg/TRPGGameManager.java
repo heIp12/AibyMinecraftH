@@ -2010,10 +2010,24 @@ public class TRPGGameManager {
                                     : "§4치명상으로 목숨을 잃었습니다... §7(부활 능력으로만 되살아날 수 있습니다)");
                                 ai.injectGmSystem("[사망] " + commDisplayName(pd) + "이(가) 체력이 다해 사망했다. 서술에 반영하라(부활 능력 외엔 복구 불가).");
                             }
-                        } else if (!"puppet".equals(pd.status) && !"faint".equals(pd.status)) {
+                        } else if (!"faint".equals(pd.status)) {
                             // 체력 1 → 행동불가(기절). ★피해가 클수록 오래 쓰러져 있다(2~5턴).★
+                            // ★홀림/완전조종 중이었다면 그 통제가 풀리고 기절로 전환된다 — 아군이 때려 눕혀 정신을 되돌리는 '부활 경로'.★
+                            if ("puppet".equals(pd.status)) {
+                                pd.puppetRecoveryTurns = 0; // 조종(완전조종 sentinel 포함) 해제
+                                ai.injectGmSystem("[통제 해제] " + commDisplayName(pd) + "이(가) 강한 충격으로 쓰러지며 괴담의 조종에서 풀려났다(기절 전환).");
+                            }
                             applyFaint(pd, Math.min(5, 2 + Math.abs(delta)));
                         }
+                    }
+                    // ★부활 경로: 기절한 이의 체력이 회복되면 깨어나고 정신력도 2까지 돌아온다(비-능력 회복).★
+                    if (delta > 0 && "faint".equals(pd.status) && pd.hp[0] > 1) {
+                        pd.status = "normal";
+                        pd.faintTurnsRemaining = 0;
+                        pd.san[0] = Math.min(pd.san[1], Math.max(2, pd.san[0]));
+                        Player wt = Bukkit.getPlayer(pd.uuid);
+                        if (wt != null) wt.sendMessage("§a몸을 추스르고 정신을 되찾습니다. §7(기절 회복 · 정신력 " + pd.san[0] + ")");
+                        ai.injectGmSystem("[회복] " + commDisplayName(pd) + "이(가) 치료로 기절에서 깨어나 정신까지 일부 되찾았다(정신력 " + pd.san[0] + "). 서술에 반영하라.");
                     }
                 }
                 if (update.has("san_change")) {
@@ -7810,11 +7824,12 @@ public class TRPGGameManager {
                 if (pd.faintTurnsRemaining <= 0) {
                     pd.status = "normal";
                     pd.hp[0]  = 1;
+                    pd.san[0] = Math.min(pd.san[1], Math.max(2, pd.san[0])); // ★기절에서 깨어나면 정신력도 2까지 회복★
                     pd.faintTurnsRemaining = 0;
                     updateAllScoreboards();
                     Player rp = Bukkit.getPlayer(pd.uuid);
-                    if (rp != null) rp.sendMessage("§a의식이 돌아왔다. 간신히 일어선다...");
-                    ai.injectGmSystem("[회복] " + commDisplayName(pd) + "이(가) 기절에서 깨어났다. HP 1로 회복. 서술에 반영하라.");
+                    if (rp != null) rp.sendMessage("§a의식이 돌아왔다. 간신히 일어선다... §7(정신력 " + pd.san[0] + ")");
+                    ai.injectGmSystem("[회복] " + commDisplayName(pd) + "이(가) 기절에서 깨어났다. 체력 1·정신력 " + pd.san[0] + "로 회복. 서술에 반영하라.");
                 }
             }
 
