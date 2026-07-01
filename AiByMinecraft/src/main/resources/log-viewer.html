@@ -275,6 +275,8 @@ function buildAlias(){
   for(const ev of RAWCACHE){
     if(ev.kind==="alias"&&ev.account&&ev.char){ALIAS[ev.account]=ev.char;ALIAS[ev.char]=ev.char;}
     else if(ev.cat==="배역"&&ev.who){const m=(ev.text||"").match(/=\s*(.+)$/);if(m){const c=m[1].trim();ALIAS[ev.who]=c;ALIAS[c]=c;}}
+    // '배역 배정 → 이름 (…)' 개인 로그에서 계정→표시명을 유추(별칭 이벤트가 없을 때의 폴백). 명시적 별칭이 우선.
+    else if(ev.cat==="개인"&&ev.who){const m=(ev.text||"").match(/배역 배정 →\s*([^(（]+?)\s*[(（]/);if(m){const c=m[1].trim();if(c&&c!=="이름 모를 인물"){if(!ALIAS[ev.who])ALIAS[ev.who]=c;ALIAS[c]=c;}}}
   }
   if(REPLAY&&Array.isArray(REPLAY.players))for(const p of REPLAY.players){const d=(p.charName&&p.charName.trim())?p.charName.trim():(p.name||"");if(p.name)ALIAS[p.name]=d;if(p.charName)ALIAS[p.charName]=d;}
 }

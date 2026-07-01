@@ -1049,9 +1049,13 @@ public class TRPGGameManager {
         }
 
         // ★로그 뷰어용 별칭★: 계정명↔캐릭터명 매핑을 기록해 뷰어가 입력·서술 시점을 한 인물로 통합하게 한다.
-        for (PlayerData pd : state.getAllPlayers())
-            if (pd.charName != null && !pd.charName.isEmpty())
-                gameLogger.logAlias(pd.name, pd.charName);
+        // 로그 뷰어 별칭: 계정명 노출 방지. 캐릭터명이 없으면 직업 등 표시명으로라도 계정을 가린다
+        //   (gmDisplayName = 캐릭터명 → 직업 → "이름 모를 인물"). 서로 다른 플레이어가 합쳐지는 걸 막고자
+        //   식별 불가 폴백('이름 모를 인물')은 별칭에서 제외(그 경우만 계정 그대로).
+        for (PlayerData pd : state.getAllPlayers()) {
+            String disp = pd.gmDisplayName();
+            if (!"이름 모를 인물".equals(disp)) gameLogger.logAlias(pd.name, disp);
+        }
 
         // GM 프롬프트 재생성 (NPC 배역 포함)
         gmSystemPrompt = buildGmPrompt(state.getGdamData());
@@ -1108,8 +1112,8 @@ public class TRPGGameManager {
                         + "아슬아슬하게 무효화한다('간발의 차로 무위로 돌아갔다'). 이 보호는 그 순간 소진되며, 이후엔 정상 판정한다.");
             }
             if (myPd != null) {
-                gameLogger.logPrivate(myPd.name, "배역 배정 → " + asgn.roleId()
-                    + " (" + myPd.age + "세 " + myPd.job + ", zone " + asgn.zone() + ")");
+                gameLogger.logPrivate(myPd.name, "배역 배정 → " + myPd.gmDisplayName()
+                    + " (" + myPd.age + "세 " + myPd.job + ", " + state.zoneNameOf(asgn.zone()) + ")");
             }
 
             if (myPd != null && !myPd.contactId.isEmpty()) {
@@ -5376,7 +5380,7 @@ public class TRPGGameManager {
             .findFirst()
             .ifPresent(pd -> {
                 spawnedPlayers.add(pd.uuid);
-                gameLogger.logPrivate(pd.name, "배역 등장 [" + pd.roleId + "]");
+                gameLogger.logPrivate(pd.name, "배역 등장 [" + pd.gmDisplayName() + "]");
                 Player p = Bukkit.getPlayer(pd.uuid);
                 if (p == null || !p.isOnline()) return;
                 p.sendMessage("§e§l[등장] 당신의 배역이 이야기에 들어섰습니다. 이제 행동할 수 있습니다.");
