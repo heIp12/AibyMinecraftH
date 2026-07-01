@@ -5633,33 +5633,41 @@ public class TRPGGameManager {
         return t.replaceAll("\\s+", "").toLowerCase();
     }
 
-    /** 그 NPC를 ★살아있는 등장 플레이어가 직접 연기 중인가★ — AI가 반전("사실 동일인물")을 만들며
-     *  같은 이름의 critical NPC를 따로 두면, 자율 NPC AI가 별도의 '두 번째 몸'을 운영해 페르소나가
-     *  두 갈래로 갈라지고 NPC가 자기 자신(=플레이어)을 못 알아본다(버그3, 특히 피날레 원년 복귀).
-     *  등장(spawn)한 플레이어의 charName과 일치하면 그 인물은 플레이어가 체현하므로 NPC 자율 운영을 멈춘다.
-     *  ★단 거울·도플갱어·위장형 '의도된 분신'은 예외 — 그런 괴담은 같은 이름의 별개 존재가 정상이다(억제하면 오히려 붕괴). */
-    private boolean isNameEmbodiedByPlayer(JsonObject npc) {
-        return embodyingPlayerLabel(npc) != null;
-    }
-
-    /** 위 조건이 참이면 GM 안내용 라벨(플레이어 charName)을, 아니면 null을 돌려준다(미등장/불일치/의도된 분신). */
-    private String embodyingPlayerLabel(JsonObject npc) {
+    /** 이 critical NPC가 살아있는 등장 플레이어의 배역과 ★같은 정체성(이름 일치)★인가 — 일치하면 그 플레이어 charName, 아니면 null.
+     *  적대/분신 여부와 무관한 '겹침' 판정이다. 겹침은 대부분 ★반전★(무자각 가해·위장 선인·이중인격·거울 등)이라
+     *  버그로 단정해 지우지 않는다 — 진짜 버그(자율로 두 갈래)는 아래 isAccidentalIdentityDup 하나뿐. */
+    private String overlappingPlayerLabel(JsonObject npc) {
         if (npc == null) return null;
-        // ★거울·도플갱어·위장·흉내형 NPC는 '의도적으로 같은 인물'이라 억제 대상이 아니다.
-        //   (거울 속의 나, 도플갱어, 흉내내는 괴담 등 — 같은 이름의 적대적 별개 존재가 시나리오의 핵심)
-        if (isHostileNpc(npc) || isIntentionalDoubleNpc(npc)) return null;
         String key = normCharName(getStr(npc, "name"));
         if (key.isEmpty()) return null;
         for (PlayerData pd : state.getAllPlayers()) {
             if (pd.isDead) continue;
-            if (!spawnedPlayers.contains(pd.uuid)) continue; // 등장한 배역만 체현으로 인정
+            if (!spawnedPlayers.contains(pd.uuid)) continue; // 등장한 배역만 겹침으로 인정
             if (pd.charName == null || pd.charName.isEmpty()) continue;
             if (normCharName(pd.charName).equals(key)) return pd.charName;
         }
         return null;
     }
 
-    /** 거울·분신·복제형 '의도된 도플갱어' NPC인가 — 같은 이름을 공유하는 것이 설계 의도인 경우(억제 예외). */
+    /** 그 겹침이 ★순수 사고성 중복★인가 — 피날레 원년 복귀에서 배역 이름이 npcs로 새어 든 경우(버그3의 실제 원인).
+     *  반전 신호가 하나도 없을 때만 참: 피날레 + true_role 없음 + 적대/위장 아님 + 거울/분신 아님.
+     *  → 이때만 자율 NPC를 생략(플레이어가 이미 그 인물을 연기 중이라 두 번째 몸은 순수 글리치·낭비).
+     *  그 외 겹침은 반전일 수 있어 지우지 않고 '같은 정체성' 인지로 다룬다(선량한 무자각 가해·위장 선인 등 보존). */
+    private boolean isAccidentalIdentityDup(JsonObject npc) {
+        if (overlappingPlayerLabel(npc) == null) return false;
+        if (state.getRoomNumber() != FINAL_ROOM) return false;   // 사고성 중복은 원년 복귀(피날레)에서만
+        if (!getStr(npc, "true_role").isBlank()) return false;    // 숨은 진실이 있으면 의도된 반전
+        return !isHostileNpc(npc) && !isIntentionalDoubleNpc(npc);
+    }
+
+    /** 정체성 겹침 NPC의 자율 AI/서술에 붙이는 '너희는 한 사람' 인지 — 낯선 제3자 모순·반전 소멸을 막는다. */
+    private String buildIdentityOverlapNote(String playerLabel) {
+        return "\n\n## 정체성 겹침 인지 ★\n너는 플레이어가 연기 중인 '" + playerLabel + "'와 ★같은 정체성★일 수 있다"
+            + "(반전: 숨은 측면·무의식·과거·위장·이중인격 등). 그 사람을 낯선 제3자처럼 대하거나 너가 그와 별개의 사람인 척 모순되게 굴지 마라. "
+            + "반전이라면 '한 사람의 두 면'으로 일관되게 — 선량한 이가 모르고 저지르는 일, 악인이 선한 척하는 일 같은 반전을 스스로 무너뜨리지 마라.\n";
+    }
+
+    /** 거울·분신·복제형 '의도된 도플갱어' NPC인가 — 같은 이름을 공유하는 것이 설계 의도인 경우. */
     private boolean isIntentionalDoubleNpc(JsonObject npc) {
         String h = (getStr(npc, "role_type") + " " + getStr(npc, "true_role") + " " + getStr(npc, "name")
                   + " " + getStr(npc, "description") + " " + getStr(npc, "personality")
@@ -5946,10 +5954,11 @@ public class TRPGGameManager {
             String npcName = npcObj.has("name") ? npcObj.get("name").getAsString() : "NPC";
             String npcZone = npcZones.getOrDefault(npcId,
                 npcObj.has("zone") ? npcObj.get("zone").getAsString() : "");
-            // ★페르소나 분리 방지(버그3)★: 그 인물을 살아있는 등장 플레이어가 직접 연기 중이면
-            //   자율 NPC AI를 돌리지 않는다 — 돌리면 같은 인물의 '두 번째 몸'이 생겨 시나리오가 붕괴한다.
-            //   (거울·도플갱어형 의도된 분신은 예외로 계속 구동 — embodyingPlayerLabel 내부에서 판별)
-            if (isNameEmbodiedByPlayer(npcObj)) continue;
+            // ★페르소나 분리(버그3)★: 정체성이 겹치는 플레이어 배역이 있으면 파악해 둔다.
+            //   사고성 중복(피날레 원년 복귀 에코)만 자율 구동 생략 — 그 외 겹침은 반전일 수 있어
+            //   유지하되 아래에서 '같은 정체성' 인지를 주입해 낯선 제3자 모순·반전 소멸을 막는다.
+            String overlapPlayer = overlappingPlayerLabel(npcObj);
+            if (overlapPlayer != null && isAccidentalIdentityDup(npcObj)) continue;
             // ★비용 절약★: 같은 구역에 플레이어도 없고 전화로도 닿지 않는 NPC는 자율 AI 호출 생략 —
             //   그 출력은 GM 컨텍스트로만 들어가 아무도 못 보므로 크레딧만 쓴다. 플레이어가 다가오면 다음 주기에 다시 활동.
             if (!npcCanReachAnyPlayer(npcId, npcZone)) continue;
@@ -5980,7 +5989,8 @@ public class TRPGGameManager {
             String npcPromptFinal = (wantThought
                 ? npcPrompt + "\n응답 말미에 <THOUGHT>지금 이 NPC의 내면 생각 1문장</THOUGHT>을 출력하라.\n"
                 : npcPrompt)
-                + buildNpcCallInstruction(npcId, npcZone); // NPC가 먼저 연락할 수 있게(닿는 상대 목록+태그)
+                + buildNpcCallInstruction(npcId, npcZone) // NPC가 먼저 연락할 수 있게(닿는 상대 목록+태그)
+                + (overlapPlayer != null ? buildIdentityOverlapNote(overlapPlayer) : ""); // 정체성 겹침이면 '같은 사람' 인지 주입
 
             ai.callNpcAi(npcId, npcPromptFinal, actionLog).thenAccept(npcResp -> {
                 if (npcResp == null || npcResp.startsWith("§c")) return;
@@ -7776,14 +7786,17 @@ public class TRPGGameManager {
             sb.append("위 NPC는 플레이어가 없으므로 GM이 자연스럽게 스토리에 통합한다.\n");
         }
         // 중요 NPC (하이브리드) 섹션 — GM과 분리, 독립 AI가 조종
-        //  ★버그3 방지★: 그 인물을 플레이어가 직접 연기 중(charName 일치)이면 자율 NPC에서 제외하고
-        //   별도의 '동일 인물 중복 등장 금지' 지침으로 분리 — 반전 '사실 동일인물'이어도 한 명으로 다룬다.
+        //  ★버그3 처리★: 플레이어 배역과 정체성이 겹치는 NPC는 (1)사고성 중복(피날레 원년 복귀 에코)만 자율에서 빼고
+        //   '중복 등장 금지'로 분리, (2)그 외 겹침은 반전일 수 있어 자율 유지 + '같은 정체성(한 사람)' 지침으로 보존.
         List<JsonObject> critNpcs = getCriticalNpcs();
         List<JsonObject> autoNpcs = new ArrayList<>();
-        java.util.LinkedHashSet<String> embodiedNames = new java.util.LinkedHashSet<>();
+        java.util.LinkedHashSet<String> embodiedNames = new java.util.LinkedHashSet<>();  // 사고성 중복 — 별개 등장 금지
+        java.util.LinkedHashSet<String> sharedIdentity = new java.util.LinkedHashSet<>(); // 정체성 겹침(반전 가능) — 유지+인지
         for (JsonObject npc : critNpcs) {
-            String lab = embodyingPlayerLabel(npc); // 거울·도플갱어형 분신은 내부에서 예외 처리(자율 NPC로 유지)
-            if (lab != null) embodiedNames.add(lab); else autoNpcs.add(npc);
+            String ov = overlappingPlayerLabel(npc);
+            if (ov != null && isAccidentalIdentityDup(npc)) { embodiedNames.add(ov); continue; }
+            autoNpcs.add(npc);
+            if (ov != null) sharedIdentity.add("'" + getStr(npc, "name") + "' ↔ 배역 '" + ov + "'");
         }
         if (!autoNpcs.isEmpty()) {
             sb.append("\n## 자율 NPC (독립 AI 결정 → GM이 서술) ★\n");
@@ -7799,10 +7812,17 @@ public class TRPGGameManager {
                 sb.append("\n");
             }
         }
+        if (!sharedIdentity.isEmpty()) {
+            sb.append("\n## 같은 정체성 인물 — 한 사람으로 다뤄라(반전 보존) ★★\n");
+            sb.append("아래 NPC는 플레이어가 연기하는 배역과 ★같은 정체성★일 수 있다(반전: 무의식·과거·위장·이중인격·거울 등). ");
+            sb.append("두 사람을 낯선 제3자로 취급하거나 서로를 못 알아보게 하지 말고 '한 사람의 두 면'으로 일관되게 다뤄라 — ");
+            sb.append("선량한 이가 모르고 저지르는 일, 악인이 선한 척하는 일 같은 반전을 지워버리지 마라(그 관계·비밀은 탐색으로 드러나게).\n");
+            for (String s : sharedIdentity) sb.append("- ").append(s).append("\n");
+        }
         if (!embodiedNames.isEmpty()) {
             sb.append("\n## 플레이어가 직접 연기하는 인물 — NPC 중복 등장 금지 ★★\n");
-            sb.append("아래 인물은 현재 플레이어가 직접 연기 중이다. 같은 이름의 NPC를 따로 등장시키거나 별개의 인물처럼 서술하지 마라.\n");
-            sb.append("반전으로 '사실 같은 사람'이라는 설정이 있어도 두 명이 아니라 ★한 명★으로만 다루며, 그 인물의 말·행동은 플레이어의 입력으로만 정해진다.\n");
+            sb.append("아래 인물은 현재 플레이어가 직접 연기 중이다(원년 복귀). 같은 이름의 NPC를 따로 등장시키거나 별개의 인물처럼 서술하지 마라.\n");
+            sb.append("두 명이 아니라 ★한 명★으로만 다루며, 그 인물의 말·행동은 플레이어의 입력으로만 정해진다.\n");
             for (String nm : embodiedNames) sb.append("- ").append(nm).append("\n");
         }
         // 대기 중인 배역 등장 조건 (미등장 플레이어)
