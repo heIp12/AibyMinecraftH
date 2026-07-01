@@ -7349,7 +7349,10 @@ public class TRPGGameManager {
                 + ": \"" + (message.length() > 60 ? message.substring(0, 60) + "…" : message)
                 + "\" / " + npcName + " 반응: " + summary);
 
-            gameLogger.logGmOutput("NPC직접(" + npcName + ")", visible);
+            // 뷰어: NPC 답신을 '발신자에게 온 통신'으로 기록(수신자=발신자) → ★발신자 시점에서도 대화가 보이게★ 양방향 연결.
+            //   (기존 logGmOutput은 to가 없어 발신자 개별 시점에 답이 안 떠 대화 흐름을 못 따라가던 문제 해결)
+            gameLogger.logComm(viaCallF ? "call" : "nearby", npcName,
+                java.util.List.of(senderPd.gmDisplayName()), visible);
         });
     }
 
