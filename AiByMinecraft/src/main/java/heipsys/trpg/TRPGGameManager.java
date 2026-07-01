@@ -3019,6 +3019,17 @@ public class TRPGGameManager {
         return (int) Math.round((threat + devel) / 2.0 * 100);
     }
 
+    /** 시나리오가 지금 어디쯤 와 있는지 대략적 '국면' 표현(정확한 %는 show_progress 상태창 담당 — 여기선 영화 줄거리 톤). */
+    private String scenarioProgressDescriptor() {
+        if (state.isDailyPhase()) return "아직 사건이 본격화되기 전 — 잔잔한 일상의 표면";
+        int pct = scenarioProgressPercent();
+        if (pct <= 20) return "이야기의 도입부 — 막 어긋나기 시작한 참";
+        if (pct <= 45) return "상황이 조여드는 전개부";
+        if (pct <= 70) return "위기가 정점으로 치닫는 중반~후반";
+        if (pct <= 90) return "파국 직전의 절정";
+        return "결말이 코앞 — 마지막 국면";
+    }
+
     private void activateGmDirective(Player player, PlayerData pd, TraitData td) {
         applyTraitUsed(pd, td.id, state.getCurrentTurn());
         String charDisplay = pd.gmDisplayName();
@@ -3340,7 +3351,7 @@ public class TRPGGameManager {
     private void activateObserverSight(Player player, PlayerData pd, TraitData td) {
         applyTraitUsed(pd, td.id, state.getCurrentTurn());
         // ★관조자의 눈은 '사용한 순간 1회'만★ — 지속·매 턴 자동 재발동 없음(GM 콜이 무인 누적되는 것을 차단).
-        fireObserverGlimpse(player, pd, td.name);
+        fireObserverGlimpse(player, pd, td.name, td.grade);
         player.sendMessage("§5[" + td.name + "] 무대 뒤의 현재 사고를 엿봅니다...");
     }
 
@@ -3555,36 +3566,63 @@ public class TRPGGameManager {
             }
             e.setValue(t); return false;
         });
-        // 관조자의 눈: 지속 중인 플레이어에게 이번 턴의 '무대 뒤 현재 사고'를 보여주고 턴 감소
-        if (!observerTurns.isEmpty()) {
-            for (UUID id : new ArrayList<>(observerTurns.keySet())) {
-                Player p = Bukkit.getPlayer(id);
-                PlayerData pd = state.getPlayer(id);
-                int left = observerTurns.getOrDefault(id, 0);
-                if (p == null || !p.isOnline() || pd == null || pd.isDead) { observerTurns.remove(id); continue; }
-                fireObserverGlimpse(p, pd, "관조자의 눈");
-                if (left - 1 <= 0) observerTurns.remove(id); else observerTurns.put(id, left - 1);
-            }
-        }
+        // (관조자의 눈은 '사용한 순간 1회'만 발동 — 지속형 매-턴 재발동 없음. activateObserverSight에서 직접 처리.)
     }
 
-    /** 관조자의 눈 — '무대 뒤(연출자)의 현재 사고'를 한 번 보여준다(전체 각본·정답 제외). 1회성·지속형 공통 사용. */
-    private void fireObserverGlimpse(Player player, PlayerData pd, String label) {
+    /** 관조자의 눈 — '무대 뒤(연출자)의 현재 사고'를 한 번 보여준다(전체 각본·정답 제외). 등급이 낮으면 글자가 깨져 판독이 어렵다. */
+    private void fireObserverGlimpse(Player player, PlayerData pd, String label, String grade) {
         String metaCtx = "## 관조자 시점(메타) 노출\n"
             + "플레이어가 '무대 뒤'를 잠깐 들여다본다. 지금 이 순간 ★연출자(GM)의 현재 사고·의도★를 1~3문장으로 보여줘라:\n"
             + "- 지금 무엇을·왜 굴리고 있는가, 곧 무엇이 닥치려 하는가, 이 존재가 지금 원하는 것.\n"
             + "- ★현재 사고에 한정★ — 전체 각본·정답·해결법·붕괴조건은 절대 통째로 노출 금지.\n"
-            + "- 관조자 톤(담담한 해설). 마크다운·태그 금지.";
+            + "- 관조자 톤(담담한 해설). 마크다운·태그 금지. (판독 흐림은 시스템이 등급대로 처리하니 너는 또렷이 써라.)";
+        int gi = gradeIdx(grade);
         ai.callGmAiOnce(gmSystemPrompt, metaCtx + "\n\n" + pd.gmDisplayName() + "이(가) 관조자의 눈으로 지금 이 순간의 '무대 뒤'를 들여다본다. 현재 사고를 보여줘.")
           .thenAccept(resp -> {
             String t = ai.stripTags(resp).trim();
             if (t.isEmpty()) return;
             plugin.getServer().getScheduler().runTask(plugin, () -> {
                 if (!player.isOnline()) return;
-                player.sendMessage("§5[" + label + " — 관조] §7" + t);
-                pd.addKeyFact("[" + label + "] " + t.replaceAll("§.", ""));
+                // ★가독성 = 등급★: 낮으면 글자가 깨지고(□) 뒤죽박죽 섞여 판독이 어렵고, 높으면 또렷.
+                String shown = garbleByGrade(t, gi);
+                player.sendMessage("§5[" + label + " — 관조] §7" + shown);
+                // 또렷이 읽힌 등급(B+)에서만 기록에 남긴다 — 판독 불가 조각은 오라클 문맥을 오염시키므로 기록하지 않는다.
+                if (gi >= 4) pd.addKeyFact("[" + label + "] " + t.replaceAll("§.", ""));
+                else player.sendMessage("§8 (형상이 깨져 온전히 새겨두지 못했다.)");
             });
         });
+    }
+
+    /** 관조자 가독성 처리 — 등급이 낮을수록 글자가 깨지거나(□·�) 인접 글자와 뒤바뀐다. gradeIdx: 0(F)~6(S). S는 완전 또렷. */
+    private static String garbleByGrade(String text, int gradeIdx) {
+        if (text == null || text.isEmpty() || gradeIdx >= 6) return text;
+        double p = switch (gradeIdx) {
+            case 5 -> 0.08; // A — 거의 또렷, 이따금 흐트러짐
+            case 4 -> 0.16; // B
+            case 3 -> 0.28; // C
+            case 2 -> 0.40; // D
+            case 1 -> 0.52; // E
+            default -> 0.64; // F — 대부분 판독 불가
+        };
+        String[] glitch = {"�", "▓", "▨", "▩", "▦", "◌", "㽀", "꘡", "⿕", "畂", "※", "¤"};
+        java.util.Random r = new java.util.Random();
+        char[] cs = text.toCharArray();
+        StringBuilder sb = new StringBuilder(cs.length + 8);
+        for (int i = 0; i < cs.length; i++) {
+            char c = cs[i];
+            if (c == ' ' || c == '\n' || c == '\r' || c == '.' || c == ',') { sb.append(c); continue; }
+            double roll = r.nextDouble();
+            if (roll >= p) { sb.append(c); continue; }              // 온전
+            if (roll < p * 0.55) {                                  // 글자 깨짐
+                sb.append(glitch[r.nextInt(glitch.length)]);
+            } else if (i + 1 < cs.length                            // 인접 글자와 뒤바꿈(뒤죽박죽)
+                       && cs[i + 1] != ' ' && cs[i + 1] != '\n' && cs[i + 1] != '\r') {
+                sb.append(cs[i + 1]); cs[i + 1] = c;
+            } else {
+                sb.append(glitch[r.nextInt(glitch.length)]);
+            }
+        }
+        return sb.toString();
     }
 
     /** 시간 회귀(time_rewind) — 파티 전원의 핵심 상태(체력·정신력·상태·위치·사망)를 N턴 전으로 되돌리고 GM 기억을 그 시점으로 잘라낸다. */
@@ -3920,13 +3958,21 @@ public class TRPGGameManager {
             case 2  -> "인접 구역·층";
             default -> "현재 위치";
         };
+        // ★등급 = 발견 정밀도★: 낮으면 '단서 유무'만, 높으면 '즉시 발견(내용)'. 아무것도 없으면 그냥 본 것을 서술.
+        int g = gradeIdx(td != null ? td.grade : "C");
+        String findRule = (g >= 5)
+            ? "- ★있으면 즉시 발견★: 이 범위에 살펴볼 단서가 있으면 그 ★내용을 곧바로★ 짚어준다(무엇인지 또렷이). 단 핵심 해결법·정답을 통째로 주지는 마라.\n"
+            : (g >= 3)
+            ? "- 단서가 있으면 ★무엇에 관한 것인지 방향만★ 짚어준다(정확한 내용은 아직 흐릿하게).\n"
+            : "- ★유무만★: 이 범위에 '살펴볼 만한 단서가 있다/없다' 정도만 알려준다(구체 내용은 아직 모른다).\n";
         String traitName = td != null ? td.name : "환경 탐색";
-        String scanCtx = "\n## " + traitName + " 탐색 처리 (범위: " + scopeStr + ")\n"
+        String scanCtx = "\n## " + traitName + " 탐색 처리 (범위: " + scopeStr + ", 등급: " + (td != null ? td.grade : "?") + ")\n"
             + "플레이어가 체계적 탐색으로 단서를 찾고 있다. 규칙:\n"
             + "- 탐색 범위(" + scopeStr + ") 안에서 찾을 수 있는 것만 서술한다.\n"
-            + "- 새로운 단서는 최대 1개. 핵심 해결법·답은 직접 알려주지 않는다.\n"
-            + "- 아무것도 없으면 '아무것도 발견하지 못했다' 서술. 억지로 단서를 만들지 않는다.\n"
-            + "- 탐색 행동 자체도 타임라인에 적절히 반영한다.\n";
+            + findRule
+            + "- ★정말 아무것도 없으면 억지로 지어내지 말고 눈에 보이는 광경을 담담히 서술한다(정직한 빈손).★\n"
+            + "- 탐색 행동 자체도 타임라인에 적절히 반영한다.\n"
+            + INFO_OBSERVE_PRINCIPLE;
         String charDisplay = pd.gmDisplayName();
         String prompt = charDisplay + "이(가) '" + traitName + "' 특성으로 " + scopeStr
             + " 범위에서 '" + target + "'을(를) 탐색한다.";
@@ -3999,14 +4045,25 @@ public class TRPGGameManager {
         int numChoices = td != null ? Math.max(2, Math.min(4, td.param("choices", 3))) : 3;
         final boolean autoMode = action == null || action.isBlank();
         final TraitData fTd = td;
-        String oracleCtx = "\n## 선택지 모드\n"
+        // ★등급 = 선택지 품질★: 높으면(A~S) 괴담 해결로 직접 이어지는 '정답' 선택지까지 섞어준다.
+        int g = gradeIdx(td != null ? td.grade : "C");
+        boolean allowSolve = g >= 5;
+        String outcomeMenu = allowSolve
+            ? "{\"choices\":[{\"text\":\"선택지(15자 이내)\",\"outcome\":\"solve|good|bad|neutral\"},...]}\n"
+              + "- solve: ★이 괴담을 실제로 해결·돌파하는 길로 직접 이어지는 '정답' 선택지★ — 상황상 정말 그런 수가 보일 때만 최대 1개(아니면 넣지 마라).\n"
+              + "- good: 현 상황에서 가장 효과적인 방법 (큰 보정+) — 정확히 1개\n"
+              + "- bad: 역효과를 낼 방법 (큰 패널티-) — 1개 이상\n"
+              + "- neutral: 무난하나 특별한 보정 없음\n"
+            : "{\"choices\":[{\"text\":\"선택지(15자 이내)\",\"outcome\":\"good|bad|neutral\"},...]}\n"
+              + "- good: 현 상황에서 가장 효과적인 방법 (큰 보정+) — 정확히 1개\n"
+              + "- bad: 역효과를 낼 방법 (큰 패널티-) — 1개 이상\n"
+              + "- neutral: 무난하나 특별한 보정 없음\n"
+              + "- ★해결로 직결되는 '정답' 선택지는 이 등급에선 넣지 마라(전술적 유불리까지만).★\n";
+        String oracleCtx = "\n## 선택지 모드 (등급: " + (td != null ? td.grade : "?") + ")\n"
             + (autoMode
                 ? "지금 ★현재 상황★에서 이 인물이 취할 만한 " + numChoices + "가지 행동 선택지를 JSON으로 제시하라:\n"
                 : "플레이어의 행동 의도를 받아 " + numChoices + "가지 선택지를 JSON으로 제시하라:\n")
-            + "{\"choices\":[{\"text\":\"선택지(15자 이내)\",\"outcome\":\"good|bad|neutral\"},...]}\n"
-            + "- good: 현 상황에서 가장 효과적인 방법 (큰 보정+) — 정확히 1개\n"
-            + "- bad: 역효과를 낼 방법 (큰 패널티-) — 1개 이상\n"
-            + "- neutral: 무난하나 특별한 보정 없음\n"
+            + outcomeMenu
             + "순서는 랜덤하게 섞어 정답을 알기 어렵게 할 것. JSON만 출력.\n";
 
         String prompt = autoMode
@@ -4068,6 +4125,7 @@ public class TRPGGameManager {
         if (pd == null) return;
         OracleChoice chosen = choices.get(idx);
         String modifier = switch (chosen.outcome()) {
+            case "solve"   -> " (계시 — ★정답: 이 괴담을 해결·돌파하는 결정적 선택. 그 시도가 성공적으로 이어지도록 서술하되 즉시 완전 클리어를 강요하지 말고 '해결의 결정적 진전'으로 처리★)";
             case "good"    -> " (계시 — 최적 선택: 큰 보정 적용)";
             case "bad"     -> " (계시 — 역효과 선택: 큰 패널티 적용)";
             default        -> " (계시 — 무난한 선택)";
@@ -4138,52 +4196,73 @@ public class TRPGGameManager {
 
         StringBuilder ctx = new StringBuilder();
         String focusRule;
+        String styleHint; // 이 능력의 '결'에 맞는 전달 말투 — INFO_TIER_PRINCIPLE의 4유형 중 어느 쪽인지 좁혀준다.
         switch (focus) {
             case "entity_sense" -> {
-                focusRule = "포커스=적대자 감지: 적대 존재의 '유형·본질·성향'만 직감으로 알려준다. 정확한 정체·이름·해결법은 금지.";
+                // 적대자 감지 = 시작 시 '경계할 자'에 대한 짧은 수수께끼 단서 한 줄.
+                focusRule = "포커스=적대자 감지: 경계해야 할 적대 존재에 대한 ★짧은 수수께끼 단서 한 줄★을 준다. "
+                    + "정확한 정체·이름·해결법은 금지 — '무엇을 경계해야 하는가'의 방향만 은유로 흘려라. "
+                    + "예: '악마는 빛을 등지고 서있다' · '지옥으로 가는 길은 선의로 포장되어 있다' · '오늘따라 친절이 무섭게 다가온다'.";
+                styleHint = "①인과율(은유·수수께끼) 또는 ③신탁(중의적 한 줄) 계열 — 짧은 경구 한 줄로. 등급이 높을수록 그 은유가 실체에 더 가깝게(제약 해제), 낮으면 더 흐리게.";
                 if (e != null) {
-                    if (e.has("type")) ctx.append("적대 존재 유형: ").append(getStr(e, "type")).append("\n");
+                    if (e.has("type")) ctx.append("적대 존재 유형(직접 노출 금지 — 은유의 재료로만): ").append(getStr(e, "type")).append("\n");
                     if (e.has("ai_context")) {
                         String pers = getStr(e.getAsJsonObject("ai_context"), "personality");
-                        if (!pers.isBlank()) ctx.append("본질·성향 참고: ").append(pers).append("\n");
+                        if (!pers.isBlank()) ctx.append("본질·성향(은유의 재료): ").append(pers).append("\n");
                     }
                     if (veryHigh && !getStr(e, "weakness").isBlank())
                         ctx.append("[등급 S 전용 — 약점 '방향'만 흐리게 암시 가능] 약점: ").append(getStr(e, "weakness")).append("\n");
                 }
             }
             case "ally_sense" -> {
-                focusRule = "포커스=구원자 탐지: 도움이 될 '아군/조력 성향 NPC의 이름과 현재 위치'를 알려준다. 적대·정체불명·위장 가능성 있는 인물은 절대 콕 집지 마라.";
+                // 구원자 탐지 = NPC 감지. 시작 시 '믿고 찾을 만한 조력자'에 대한 짧은 단서 한 줄(특징·인상).
+                focusRule = "포커스=구원자 탐지(조력 NPC): 믿고 기댈 만한 조력 NPC에 대한 ★짧은 단서 한 줄★을 준다 — 이름을 통째로 던지기보다 특징·인상으로 알아보게. "
+                    + "예: '그는 늘 긴 코트를 입고 있었지'. 적대·위장 가능성 있는 인물은 절대 콕 집지 마라.";
+                styleHint = "①인과율(특징을 에둘러) 또는 ③신탁(인상 한 줄) 계열. ★등급↑ = 제약 해제★: 높으면 이름·위치에 더 가깝게, 낮으면 특징 한 조각만 흐리게.";
                 ctx.append(buildAllyNpcContext());
             }
             case "lore_record" -> {
-                focusRule = "포커스=전지적 독자시점: '과거에 이 사건에 도전했다 실패한 이들의 짧은 이야기'를 들려준다. "
-                    + "특히 ★규칙·금기·행동 제약을 범해 탈락한★ 사례로 써서 규칙을 ★간접적으로★ 드러내라"
-                    + "('규칙은 X다'라고 적지 말고 '누가 X를 하다 사라졌다' 식으로). 정답·해결법은 금지.";
+                // 전지적 독자시점 = 이미 겪고 실패한 뒤 회귀한 '미래의 나'의 독백(소설풍). 과거 실패가 곧 앞날의 경고.
+                focusRule = "포커스=전지적 독자시점: 이 사건을 ★이미 겪고 실패한 뒤 시간을 거슬러 돌아온 '미래의 나(회귀자)'의 독백★을 소설처럼 들려준다. "
+                    + "특히 ★규칙·금기·행동 제약을 범해 스러진 순간★을 1인칭 회고로 써서 규칙을 ★간접적으로★ 드러내라"
+                    + "('규칙은 X다'라고 적지 말고 '나는 X를 하다 당했다… 다시는 그러지 마'처럼). ★정답·해야 할 행동을 '지시'하지는 마라 — 겪은 실패 하나를 서술할 뿐.★";
+                styleHint = "④'미래의 나' 유형으로 고정 — 회귀자의 1인칭 독백(소설풍), 단 하나의 실패를 담담히 회고. 정답 지시 금지.";
                 if (e != null && e.has("rules") && e.get("rules").isJsonArray() && e.getAsJsonArray("rules").size() > 0) {
-                    ctx.append("실제 규칙(이걸 어겨 실패한 일화로 변환):\n");
+                    ctx.append("실제 규칙(이걸 어겨 스러진 '나'의 회고로 변환):\n");
                     e.getAsJsonArray("rules").forEach(r -> ctx.append("  - ").append(r.getAsString()).append("\n"));
                 }
                 if (wr != null && wr.has("details") && wr.get("details").isJsonArray())
                     for (JsonElement d : wr.getAsJsonArray("details")) ctx.append("  - ").append(d.getAsString()).append("\n");
             }
             case "encounter_scan" -> {
-                focusRule = "포커스=첫 조우: 곧 처음 마주칠 적대 존재와 핵심 인물에 대한 짧은 직감을 준다 — 무엇과/누구와 얽히게 될지 살짝. 정체·정답·해결법은 제외.";
-                if (e != null && e.has("type")) ctx.append("처음 마주칠 적대 존재 유형: ").append(getStr(e, "type")).append("\n");
+                // 첫 조우 = 곧 마주칠 인물/존재의 성향·목표·상태를 어렴풋한 첫인상으로(정체는 모름).
+                focusRule = "포커스=첫 조우: 곧 처음 마주칠 인물/존재의 ★성향·목표·상태★를 어렴풋한 첫인상으로만 준다(정체·정답은 모른다). "
+                    + "겉으로 드러나는 낌새·행색·태도 위주로. 예: '비에 흠뻑 젖어 있다' · '다급히 정보실을 찾고 있다' · '뭔가 감추는 듯하다' · '나를 천천히 뜯어보고 있다'.";
+                styleHint = "출처(이름·표방 효과)에 맞춰 4유형 중 하나. 첫인상 한 조각(성향/목표/상태)만 — 정체 규정 금지.";
+                if (e != null && e.has("type")) ctx.append("처음 마주칠 적대 존재 유형(정체 직접 노출 금지): ").append(getStr(e, "type")).append("\n");
+                if (e != null && e.has("ai_context")) {
+                    String pers = getStr(e.getAsJsonObject("ai_context"), "personality");
+                    if (!pers.isBlank()) ctx.append("성향·태도(첫인상 재료): ").append(pers).append("\n");
+                }
                 ctx.append(buildAllyNpcContext());
             }
             default -> { // scenario_insight
+                // 시나리오 이해 = '영화 줄거리(스포일러 금지)' + '지금 어디쯤(진행도)'. ★핵심 해답(world_rules.core)은 절대 넘기지 않는다.★
                 focus = "scenario_insight";
-                focusRule = "포커스=시나리오 이해: 사건의 '대략적 윤곽'(지금 어떤 상황이고 무엇이 벌어지는지·전체 분위기)을 직감으로 알려준다. 정체·정답·해결법·약점은 제외.";
-                if (wr != null && !getStr(wr, "core").isBlank()) ctx.append("이 장소를 지배하는 흐름: ").append(getStr(wr, "core")).append("\n");
+                focusRule = "포커스=시나리오 이해: 지금 벌어지는 사건의 ★큰 줄기를 '영화 줄거리'처럼★(스포일러 금지) 어렴풋이 짚어주거나, ★이야기가 지금 어디쯤 와 있는지(진행도)★를 알려준다. 정체·정답·해결법·약점·붕괴조건은 제외.";
+                styleHint = "①인과율(에둘러) 또는 ③신탁(중의적) 계열 — 예고편처럼 분위기와 큰 줄기만.";
                 if (!getStr(gdam, "scale").isBlank()) ctx.append("사건 규모: ").append(getStr(gdam, "scale")).append("\n");
-                if (e != null && e.has("type")) ctx.append("(참고) 존재 유형: ").append(getStr(e, "type")).append("\n");
-                if (veryHigh && e != null && !getStr(e, "weakness").isBlank())
-                    ctx.append("[등급 S 전용 — 약점 '방향'만 흐리게 암시 가능] 약점: ").append(getStr(e, "weakness")).append("\n");
+                if (e != null && e.has("type")) ctx.append("(참고) 존재 유형(직접 이름 노출 금지): ").append(getStr(e, "type")).append("\n");
+                ctx.append("현재 진행도(줄거리 기준): ").append(scenarioProgressDescriptor()).append("\n");
             }
         }
         if (ctx.length() == 0) ctx.append("(특별히 잡히는 정보가 거의 없다 — 아주 흐릿한 직감만.)\n");
 
         String effectText = (td.effect == null) ? "" : td.effect.trim();
+        boolean allowWeaknessHint = veryHigh && "entity_sense".equals(focus); // 약점 방향 암시는 적대자 감지 S급에서만
+        String lengthRule = "lore_record".equals(focus)
+            ? "- ★예외적으로 3~4문장의 소설풍 1인칭 독백까지 허용★(회귀자의 회고 장면). 그 이상 늘리지는 마라.\n"
+            : "- ★1~2문장으로 짧게. 두루뭉실하고 중의적으로★(여러 갈래로 해석될 수 있게) — '어렴풋이 안다·직감한다'는 톤.\n";
         String system = "너는 괴담 TRPG에서 '정보 계열 특성'이 플레이어에게 주는 ★직감 브리핑★을 쓴다.\n"
             + "특성 이름: " + traitName + "\n"
             + (effectText.isBlank() ? "" : "이 특성이 표방하는 효과(설명): " + effectText + "\n")
@@ -4191,12 +4270,13 @@ public class TRPGGameManager {
             + focusRule + "\n## 작성 규칙\n"
             + "- ★이 특성의 '이름'과 '표방 효과'의 결·말투에 맞춰 브리핑을 자연스럽게 빚어라.★ "
             + "공개하는 정보의 종류·범위·표현을 이름/효과에 어울리게 AI가 직접 조절한다(능력 골격만 시스템이 정하고, 어떻게 비추는지는 네가 정한다).\n"
-            + "- ★1~2문장으로 짧게. 두루뭉실하고 중의적으로★(여러 갈래로 해석될 수 있게) — '어렴풋이 안다·직감한다'는 톤.\n"
+            + "- ★전달 말투★: " + styleHint + "\n"
+            + lengthRule
             + "- ★'규칙이 N개 있다 / 약점이 존재한다 / 무언가 있다' 같은 '존재 여부·개수' 진술은 절대 금지.★ 항상 ★실제 내용 조각★만, 그것도 흐릿하게 준다.\n"
             + "- ★같은 대상을 반복해 비춰도 새 사실을 누적하지 마라★ — 이미 준 조각과 같은 결을 표현만 달리하라(반복 사용으로 진상 특정 방지).\n"
             + "- 정답·정확한 해결 절차·붕괴조건은 어떤 경우에도 노출 금지.\n"
             + "- ★선명도만 등급에 비례(길이는 절대 늘리지 마라)★: 낮으면 한 조각을 아주 흐릿하게, 높으면 ★같은 짧은 길이로★ 한 조각을 더 또렷하게 짚어줄 뿐 — 문장을 늘리거나 나열하지 마라.\n"
-            + (veryHigh ? "- 이 특성은 등급이 매우 높다: 약점의 '방향' 한 가닥을 ★짧고 애매하게★ 스쳐도 된다 — 단 해답 문장처럼 풀어 쓰지 말고(정확한 해결법 금지), 플레이어가 스스로 잇게 하라.\n"
+            + (allowWeaknessHint ? "- 이 특성은 등급이 매우 높다: 약점의 '방향' 한 가닥을 ★짧고 애매하게★ 스쳐도 된다 — 단 해답 문장처럼 풀어 쓰지 말고(정확한 해결법 금지), 플레이어가 스스로 잇게 하라.\n"
                         : "- 약점·해결법은 절대 직접 알려주지 마라.\n")
             + "- 마크다운·머리표·메타 설명 없이 서술만.\n"
             + INFO_TIER_PRINCIPLE;
