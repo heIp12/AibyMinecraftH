@@ -7001,8 +7001,9 @@ public class TRPGGameManager {
         sender.sendMessage(heard > 0 ? "§7[방송 송출 — " + heard + "명에게 전달됨]"
                                      : "§8(방송했지만 지금 들을 다른 인원이 없습니다.)");
         state.log("comm", senderPd.name, "[방송] " + content);
-        gameLogger.logComm("broadcast", disp, heardNames, content); // 뷰어 통화내역: 방송 수신자 기록
-        noteEntityIntel(3, disp, content, "방송"); // 방송=개방 채널 → 괴담 수집 강함
+        String bNet = commNetworkKey(senderPd); // 폐쇄망(무전) 방송이면 그 망 접속자만 들었을 수 있음(PA는 개방)
+        gameLogger.logComm("broadcast", disp, heardNames, content, bNet); // 뷰어 통화내역: 방송 수신자 기록
+        noteEntityIntel(3, disp, content, bNet != null ? bNet + "망 방송" : "방송"); // 방송=개방 채널 → 괴담 수집 강함
         // GM·NPC 인지: 방송은 건물 전체로 퍼진 큰 행동. 내용은 시스템이 이미 전달했으니 중복 WITNESS 금지.
         if (currentPhase == Phase.HORROR || currentPhase == Phase.DAILY) {
             ai.injectGmSystem("[방송 송출] " + disp + "이(가) 방송 설비로 외쳤다: \"" + content
@@ -7088,24 +7089,32 @@ public class TRPGGameManager {
             if (!hasCommDevice(senderPd)) { sender.sendMessage("§c통신 기기가 없어 발신할 수 없습니다."); return; }
         }
         String disp = senderPd.gmDisplayName();
+        String senderNet = commNetworkKey(senderPd); // ★폐쇄망★: 있으면 같은 망 접속자만 수신
         List<PlayerData> targets = new ArrayList<>();
         for (UUID u : senderPd.knownContacts) {
             PlayerData op = state.getPlayer(u);
-            if (op != null && !op.isDead) targets.add(op);
+            if (op != null && !op.isDead) {
+                if (senderNet != null && !senderNet.equals(commNetworkKey(op))) continue; // 다른 망(또는 미접속)은 못 받음
+                targets.add(op);
+            }
         }
-        if (targets.isEmpty()) { sender.sendMessage("§7아는 번호가 없습니다. (먼저 연락처를 알아야 합니다)"); return; }
-        sender.sendMessage("§7[전체 발신 " + targets.size() + "명] §f" + message);
+        if (targets.isEmpty()) { sender.sendMessage(senderNet != null
+                ? "§7같은 " + senderNet + "망에 접속한 상대가 없습니다."
+                : "§7아는 번호가 없습니다. (먼저 연락처를 알아야 합니다)"); return; }
+        sender.sendMessage((senderNet != null ? "§7[" + senderNet + "망 발신 " : "§7[전체 발신 ") + targets.size() + "명] §f" + message);
         for (PlayerData op : targets) {
             Player op2 = Bukkit.getPlayer(op.uuid);
             if (op2 != null && op2.isOnline() && (bypass || hasCommDevice(op))) // 개방 시 수신자 기기 부재도 관통
-                op2.sendMessage("§b[📞 " + disp + " → 전체] §f" + message);
+                op2.sendMessage("§b[📞 " + disp + " → " + (senderNet != null ? senderNet + "망" : "전체") + "] §f" + message);
         }
-        state.log("comm", senderPd.name, "[전체발신] " + message);
-        // 뷰어 통화내역: 전체 발신도 ★수신자 전원을 기록★(그들 시점에도 보이게)
+        state.log("comm", senderPd.name, "[" + (senderNet != null ? senderNet + "망발신" : "전체발신") + "] " + message);
+        // 뷰어 통화내역: 전체 발신도 ★수신자 전원을 기록★(그들 시점에도 보이게). 폐쇄망이면 via=망이름.
         java.util.List<String> callNames = new ArrayList<>();
         for (PlayerData op : targets) callNames.add(op.gmDisplayName());
-        gameLogger.logComm("call", disp, callNames, message);
-        noteEntityIntel(3, disp, message, "전체 발신"); // 아는 번호 전원 발신 → 수집 강함
+        gameLogger.logComm("call", disp, callNames, message, senderNet);
+        // 폐쇄망은 전자형 괴담이 그 망에 붙어야만 수집(아니면 0=미수집). 개방 전체발신은 항상 강(3).
+        noteEntityIntel(senderNet != null ? (entityInterferes("electronic") ? 3 : 0) : 3, disp, message,
+            senderNet != null ? senderNet + "망 발신" : "전체 발신");
         // (입력 로그는 onChat 진입부에서 이미 1회 기록됨 — 여기서 중복 기록하지 않는다)
         if (commDetectableByEntity(senderPd)) noteCommUsedIfDangerous(senderPd, "전체 발신"); // 은밀 개방이면 괴담이 감지 못함
     }
@@ -8314,6 +8323,21 @@ public class TRPGGameManager {
     private static String notePreview(String s) {
         if (s == null) return "";
         return s.length() > 40 ? s.substring(0, 40) + "…" : s;
+    }
+
+    /**
+     * ★폐쇄망★: 이 플레이어가 접속한 닫힌 통신망 이름(무전 주파수·인트라넷·모스). 없으면 null(개방/육성·PA).
+     *  같은 망에 접속한 사람만 그 채널 통신을 수신하고, 전자형 괴담만 그 망에 끼어든다.
+     */
+    private String commNetworkKey(PlayerData pd) {
+        if (pd == null) return null;
+        for (String id : pd.heldItemIds) {
+            String low = itemDisplayName(id).toLowerCase();
+            if (low.contains("무전") || low.contains("워키") || low.contains("walkie") || low.contains("트랜시버") || low.contains("주파수")) return "무전";
+            if (low.contains("인트라넷") || low.contains("intranet") || low.contains("사내망") || low.contains("전산망")) return "인트라넷";
+            if (low.contains("모스") || low.contains("전신")) return "모스";
+        }
+        return null;
     }
 
     /** ★편지 두고가기★: 현재 위치에 쪽지를 남긴다 — 그 구역에 오는 사람(플레이어/괴담)이 발견. 즉시 전달되지 않음. */
