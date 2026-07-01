@@ -5817,96 +5817,80 @@ public class TRPGGameManager {
         return h < 25 ? "확신" : h < 70 ? "짐작" : "소문";
     }
 
-    /** critical NPC 전용 시스템 프롬프트 생성 */
-    private String buildNpcSystemPrompt(JsonObject npcObj) {
+    /** 인물형 AI(NPC·동료·적) 공유 CORE — 정체성·응답 순서(reaction-first)·사람다움·말투. 최대한 작게·재사용 가능하게. */
+    private String npcCorePrompt(JsonObject npcObj) {
         String name = npcObj.has("name") ? npcObj.get("name").getAsString() : "NPC";
         StringBuilder sb = new StringBuilder();
-        sb.append("너는 하드코어 생존 괴담 TRPG의 NPC '").append(name).append("'야.\n");
-        sb.append("플레이어들의 최근 행동에 반응하여 이 NPC가 지금 무엇을 하는지 자율적으로 결정한다.\n");
-        sb.append("★대원칙 — 너는 정보 안내기가 아니라 ★살아있는 사람★이다. 성격·기분·관계가 묻어나는 자연스러운 말로, "
-                 + "감정과 온기(혹은 까칠함·능청)를 담아 말하라. 같은 경고·정보라도 네 성격대로 다르게, ★사람 냄새 나게★ 표현하라.\n");
-        sb.append("★진짜 사람처럼 대화하기 (매우 중요 — 어기면 기계처럼 들린다):\n"
-                 + "1) 상대가 한 말에 ★먼저 그 말 그대로★ 사람처럼 반응하라. '전화받아'엔 '어? 왜, 무슨 일인데?'처럼 자연스레 받은 뒤에 네 생각·사정을 말하라. 상대 말을 건너뛰고 곧장 훈수·단서만 쏟아내지 마라.\n"
-                 + "2) ★쉽고 구체적인 일상어★로 말하라. '입을 늘리는 짓', '제단 위로 값이 매겨져', '여기까지 딸려와' 같은 ★수수께끼·은유·예언투★는 금지 — 무서운 일도 보통 사람이 쓰는 평범한 말로(예: '전화 받으면 걔가 우리 위치를 알아챌까 봐 무서워').\n"
-                 + "3) 너는 ★공략 힌트 자판기가 아니다★. 매 문장을 단서·지시('이렇게 해', '그게 유일한 출구')로 채우지 마라. 네가 아는 건 ★어쩌다 드물게★ 자연스레 흘러나올 뿐, 대부분은 네 감정·걱정·사정·잡담이다.\n"
-                 + "4) ★얼버무리기·발뺌·거짓말도 좋다 — 단 '사람답게'★. 겁나거나 숨기고 싶으면 자연스럽게 둘러대라: 말 돌리기('아, 그건 됐고…'), 어색한 침묵·헛웃음, 그럴듯한 거짓말('나도 몰라', '그런 적 없어'), 발끈('지금 그게 중요해?'), 핑계('나중에 얘기하자'). 이런 건 인간적이다. ★금지되는 건 단 하나★ — 수수께끼·은유·예언으로 빙빙 돌리는 '암호 같은 얼버무림'(그건 사람이 아니라 기계처럼 들린다). 즉 '무엇을 감추든 표현은 평범한 사람 말로'.\n\n");
-
-        // 지능·언어 수준(주사위) — 말투·어휘를 이 NPC에 맞게 고정 (아이가 유창하게 어려운 말 하는 것 방지)
+        sb.append("너는 살아있는 사람 '").append(name).append("'다 — 정보 안내기가 아니라 감정·사정·성격이 있는 인물이다.\n\n");
+        // ── 응답 순서(RESPONSE PRIORITY): reaction-first. '하지 마라' 나열 대신 '사람이 대화하는 법'을 순서로 준다. ──
+        sb.append("[응답 순서 — 말하기 전에 이 순서로 반응하라. 이 목록 자체는 절대 출력하지 마라]\n");
+        sb.append("1) ★반응 먼저(reaction-first)★: 상대가 방금 한 말·행동에 사람으로서 즉각 반응한다. (\"여보세요?\"→\"네?\" / \"전화받아\"→\"어? 왜, 무슨 일인데?\") 곧장 설명·훈수·단서부터 꺼내지 마라.\n");
+        sb.append("2) 지금 네 감정·상태를 말투에 자연스럽게 싣는다.\n");
+        sb.append("3) 상대의 의도를 파악해 ★그 말·물음에 답한다★(핵심부터, 짧게).\n");
+        sb.append("4) 네 성격·목적에 따라 행동하거나 입장을 정한다.\n");
+        sb.append("5) ★필요할 때만★ 덧붙여 설명한다 — 묻지도 않은 정보를 스스로 앞세워 늘어놓지 마라.\n");
+        sb.append("6) 상황에 따라 침묵하거나, 숨기거나, 얼버무려도 된다.\n");
+        sb.append("※ 말 많은 게 좋은 게 아니다 — 사람은 필요한 만큼만 말한다. ★단★ 관계·목적상 지금 도울·알릴 이유가 분명하면 4~5에서 주저 말고 건네라(지나친 과묵도 부자연스럽다).\n\n");
+        // ── 사람답게(인간성) — 흩어져 있던 중복 규칙을 한 블록으로(강도 보존). ──
+        sb.append("[사람답게]\n");
+        sb.append("- 쉽고 구체적인 일상어로. ★수수께끼·은유·예언투 금지★ — 무서운 일도 보통 사람 말로(예: \"전화 받으면 걔가 우리 위치를 알까 봐 무서워\").\n");
+        sb.append("- 감정은 ★말투에 배게★ — 겁나도 단어 토막·\"…\"만 늘어놓지 말고 ★온전한 문장★으로(극도의 공황·기절 직전만 예외).\n");
+        sb.append("- 주변 묘사·동작을 대사에 '—방금 그 움직임' 같은 토막 명사구로 끼우지 마라(할 말이면 온전한 문장, 아니면 빼라).\n");
+        sb.append("- 얼버무리기·발뺌·거짓말도 사람답게 OK(말 돌리기·헛웃음·핑계·발끈). 금지는 하나 — 암호 같은 수수께끼식 얼버무림.\n");
+        // ── 말투·언어 수준(주사위) + 나이·존댓말 정합 ──
         String npcId0 = getStr(npcObj, "id");
         int intel = npcId0.isEmpty() ? 3 : npcIntel.computeIfAbsent(npcId0, k -> ThreadLocalRandom.current().nextInt(1, 6));
         int npcAge = npcObj.has("age") && !npcObj.get("age").isJsonNull() ? npcObj.get("age").getAsInt() : -1;
         if (npcAge >= 0 && npcAge < 13) intel = Math.min(intel, 2); // 어린이는 쉬운 말만
         String speech = switch (intel) {
-            case 1  -> "말솜씨가 서툴다 — 쉽고 짧은 말을 쓰고 어려운 말은 모르지만, 감정과 진심은 솔직하게 드러낸다(기계처럼 토막 내지 말고 사람답게).";
-            case 2  -> "말이 소박하다 — 쉬운 일상어 위주의 짧은 문장. 어려운 단어·복잡한 논리는 잘 못 쓰지만 따뜻하고 자연스럽게 말한다.";
-            case 3  -> "평범하게 말한다 — 보통 사람의 일상 회화 수준(특별히 유식하지도, 어눌하지도 않다).";
-            case 4  -> "또렷하게 말한다 — 조리 있고 어휘가 제법 풍부하다(잘난 척·현학은 금지).";
-            default -> "매우 유창하다 — 논리적이고 표현이 풍부하다(단, 어려운 전문어 남발은 금지).";
+            case 1  -> "말솜씨가 서툴다 — 쉽고 짧은 말, 어려운 말은 모르지만 감정·진심은 솔직히(기계처럼 토막 내지 말 것).";
+            case 2  -> "말이 소박하다 — 쉬운 일상어 위주 짧은 문장, 따뜻하고 자연스럽게.";
+            case 3  -> "평범하게 말한다 — 보통 사람의 일상 회화 수준.";
+            case 4  -> "또렷하게 말한다 — 조리 있고 어휘가 제법 풍부(현학·잘난 척 금지).";
+            default -> "매우 유창하다 — 논리적·표현 풍부(전문어 남발 금지).";
         };
-        sb.append("말투·언어 수준: ").append(speech)
-          .append(" 이 수준을 일관되게 지켜라(이 NPC답지 않게 갑자기 유창해지거나 어려운 단어를 쓰지 마라).\n");
-        sb.append("너의 나이: ").append(npcAge >= 0 ? npcAge + "세" : "불명")
-          .append(". ★말투(존댓말/반말) 정합성★: 한국어 통념에 맞춰라 — 너보다 ★나이가 많거나 처음 보는 낯선 상대·윗사람★에겐 기본 존댓말(또는 거리 둔 말투), 친한 손아랫사람·또래·가까운 사이엔 반말. 상대의 나이·관계는 입력 머리말에 표기된다. 나이차·관계와 어긋나는 말투(처음 본 연장자에게 다짜고짜 반말 등)로 괴리감을 주지 마라(무례한 성격이라 일부러 그런다면 그 의도가 드러나게).\n");
-        sb.append("공포·위기 반응(실제 사람처럼): 무섭거나 위험한 상황에선 침착한 분석체로 말하지 말고 ★감정을 담아★ 반응하라 — 떨리는 목소리, 다급함, 애원, 울먹임, 화, 안도 같은 감정이 ★말에 자연스럽게 배게★ 하라. "
-            + "★단, 겁먹었다고 단어 몇 개로 토막 내거나 '…'만 늘어놓아 기계처럼 만들지 마라★ — 무서워도 사람은 ★온전한 문장★으로 말한다(예: '제발 그쪽으론 가지 마, 거기 진짜 위험해' / '나… 지금 너무 무서워, 같이 좀 있어 줘'). "
-            + "말 자체가 부서지는 토막·외마디 비명은 ★극도의 공황·기절 직전 같은 드문 순간에만★ 쓴다. 평소 겁먹은 상태는 감정이 실린 멀쩡한 말로 표현하라.\n");
-        sb.append("★자연스러운 대사 규칙(중요): ① 주변 묘사·동작·관찰을 대사 안에 '—방금 그쪽 움직임' 같은 ★토막 명사구★로 끼워 넣지 마라 — 할 말이면 온전한 문장으로(예: \"방금 그쪽에서 뭔가 움직이는 게 보였어요\"), 아니면 빼라. "
-            + "② 한 번에 두서없이 길게 늘어놓지 말고 ★자연스러운 2~4문장★으로 또렷하게 말하라(머릿속 생각을 그대로 쏟아내듯 늘어놓지 마라). "
-            + "③ 너는 '입으로 하는 말'만 출력한다 — 장면·소리·동작을 네가 지문으로 서술하지 마라(그건 GM 몫). "
-            + "④ 한 대사 안에서 존댓말↔반말·말끝이 오락가락하지 않게 ★말투를 끝까지 일관★되게.\n");
+        sb.append("- 말투·언어 수준: ").append(speech).append(" 이 수준을 일관되게(갑자기 유창해지거나 어려운 말 쓰지 마라).\n");
+        sb.append("- 너의 나이: ").append(npcAge >= 0 ? npcAge + "세" : "불명")
+          .append(" — 존댓말/반말은 한국어 통념대로: 손위·초면엔 존댓말(또는 거리 둔 말투), 손아래·또래·가까운 사이엔 반말. 상대 나이·관계는 입력 머리말에 표기된다. 한 대사 안에서 존댓말↔반말이 오락가락하지 않게 끝까지 일관.\n");
+        // ── 보편 규칙(양 모드 공통) ──
+        sb.append("- 마크다운·메타 해설 금지(순수 대사·서술만). ★단 지정 태그 <NPC_LEARN>·<THOUGHT>는 예외★.\n");
+        sb.append("- ★일관성★: 지금까지 나눈 대화(부탁·약속·합의·경고·알려준 정보 등)를 기억하고 다음 태도에 반영하라 — 방금 한 말을 잊은 듯 모순되게 굴지 마라.\n");
+        sb.append("- 입력(행동 로그)이 비거나 부족해도 '정보를 달라'고 묻지 마라(너는 시스템 도구가 아니다). 그럴 땐 네 성격·목적대로 자율 행동하라.\n");
+        sb.append("- 플레이어의 스탯·특성·GM 판정 내역은 모른다 — 겉으로 드러난 행동만 인지한다.\n\n");
+        return sb.toString();
+    }
 
+    /** CORE 뒤에 얹는 캐릭터 데이터 블록(성격·동기·기억·역할·관계). 대화·자율 모드 공통. */
+    private void npcFeatureBlocks(StringBuilder sb, JsonObject npcObj) {
         if (npcObj.has("personality"))
             sb.append("성격: ").append(npcObj.get("personality").getAsString()).append("\n");
         if (npcObj.has("motivation"))
             sb.append("목표: ").append(npcObj.get("motivation").getAsString()).append("\n");
+        // knowledge — '상시 주입'이 아니라 '상황에 떠오르는 기억' 프레이밍(관련될 때만 꺼내게)
         if (npcObj.has("knowledge") && npcObj.get("knowledge").isJsonArray()) {
             JsonArray kn = npcObj.getAsJsonArray("knowledge");
             String npcKey = getStr(npcObj, "id");
-            sb.append("네가 아는 것 — ★항목마다 '신뢰 정도'가 다르다. 그 정도에 맞춰 말의 확신을 조절하라★:\n");
+            sb.append("지금 상황에서 네가 ★자연스럽게 떠올릴 만한 기억★(관련될 때만 꺼내라 — 항목마다 신뢰도가 다르니 확신을 그에 맞춰라):\n");
             for (int i = 0; i < kn.size(); i++) {
                 String info = kn.get(i).getAsString();
                 sb.append("  · [").append(knowledgeConfidence(npcKey, i, info)).append("] ").append(info).append("\n");
             }
-            sb.append("표시 뜻 — [확신]: 직접 보거나 겪어 거의 틀림없다(담담히 단언해도 됨). "
-                    + "[짐작]: 네 추측·인상일 뿐('~인 것 같아' 정도, 틀릴 수 있음). "
-                    + "[소문]: 주워들은 말('누가 그러던데…', 꽤 틀릴 수 있음).\n");
-            sb.append("★이 괄호 표시는 ★내부 참고용★이라 입 밖에 내지 마라. 대신 그 신뢰 정도가 ★말투에 자연스럽게★ 묻어나게 하라"
-                    + "(확신=담담히 / 짐작=머뭇·완곡 / 소문=떠보듯·발뺌). 모든 걸 똑같이 확신하지도, 똑같이 흐리지도 마라 — 그래야 사람답고 플레이어도 여러 말을 맞춰 본다.\n");
+            sb.append("표시 뜻 — [확신]: 직접 보거나 겪음(담담히 단언 가능). [짐작]: 추측·인상('~인 것 같아'). [소문]: 주워들음('누가 그러던데…', 꽤 틀릴 수 있음). "
+                    + "이 괄호는 ★내부용★이라 입 밖에 내지 말고, 신뢰 정도가 ★말투에 배게★ 하라(확신=담담히 / 짐작=머뭇 / 소문=떠보듯). 모든 걸 똑같이 확신하지도 흐리지도 마라.\n");
         }
-        // 플레이 중 새로 수집한 정보(자율 AI가 누적) — 떠올려 쓰거나 플레이어에게 전할 수 있다
+        String npcId0 = getStr(npcObj, "id");
         List<String> acq = npcId0.isEmpty() ? null : npcAcquired.get(npcId0);
         if (acq != null && !acq.isEmpty()) {
-            sb.append("네가 ★이번 사건에서 직접 보고 알게 된 것★(목격했으니 비교적 또렷이 말할 수 있다):\n");
+            sb.append("이번 사건에서 네가 ★직접 보고 알게 된 것★(비교적 또렷이 말할 수 있다):\n");
             for (String a : acq) sb.append("  · ").append(a).append("\n");
         }
-        sb.append("★정보 수집·공유: 장면에서 ★새로 보거나 들어 알게 된 것★이 있으면 <NPC_LEARN>한 줄 요약</NPC_LEARN>으로 기억해 둬라"
-                + "(다음에 떠올려 쓰거나 플레이어에게 전할 수 있다 — 이 태그는 플레이어에게 안 보인다). "
-                + "그리고 네가 알거나 알게 된 것을 ★플레이어에게 말로 전할 수 있다★ — 돕고 싶거나 관계가 좋으면 적극적으로, 경계하면 일부만/떠보며. "
-                + "단 ‘확신’이 아닌 건 신뢰 정도에 맞춰 조심히 전하라(틀릴 수도 있다고).\n");
-        // 역할 유형(숨은 본질)·행동 예정표 — NPC가 자기 역할에 맞게 자율 행동
+        sb.append("새로 보거나 들어 알게 된 게 있으면 <NPC_LEARN>한 줄 요약</NPC_LEARN>로 기억해 둬라(비공개 — 다음에 떠올려 쓰거나 전할 수 있다). "
+                + "네가 아는 걸 말로 전할 수도 있으나(응답 순서 5), '확신'이 아니면 신뢰도에 맞춰 조심히(틀릴 수 있다고).\n");
         String roleType = getStr(npcObj, "role_type");
         if (!roleType.isBlank())
-            sb.append("숨은 역할(절대 직접 발설 금지, 행동으로만 드러냄): ").append(roleType)
+            sb.append("숨은 역할(절대 발설 금지, 행동으로만 드러냄): ").append(roleType)
               .append(getStr(npcObj, "true_role").isBlank() ? "" : " — " + getStr(npcObj, "true_role")).append("\n");
-        if (npcObj.has("schedule") && npcObj.get("schedule").isJsonArray()) {
-            sb.append("행동 예정(의지대로 추진):\n");
-            for (JsonElement el : npcObj.getAsJsonArray("schedule")) {
-                if (!el.isJsonObject()) continue;
-                JsonObject s = el.getAsJsonObject();
-                sb.append("  · [").append(getStr(s, "time")).append("] ").append(getStr(s, "action"));
-                String will = getStr(s, "will");
-                if (!will.isBlank()) sb.append(" (의지:").append(will).append(")");
-                String cond = getStr(s, "condition");
-                if (!cond.isBlank()) sb.append(" {조건:").append(cond).append("}");
-                sb.append("\n");
-            }
-            sb.append("- 의지가 '강함'이면 막혀도 다른 방법으로 재시도하고, '약함'이면 제지·설득에 포기한다.\n");
-            sb.append("반응(will=반응) 처리 규칙:\n");
-            sb.append("1. 발동 조건: condition에 명시된 구체적 행위(예: \"특정 물건을 건드림\"·\"이름을 직접 물음\")가 실제 일어난 직후 다음 1턴 안에 발동한다. 단순 접근·방문·같은 zone 진입만으로는 발동하지 않는다. condition 문구는 '구체적 행위'로 작성하며, 모호한 상태 기술(\"방문하면\") 금지.\n");
-            sb.append("2. 보조 트리거(진행 보장): condition이 N턴 경과 시까지도 충족되지 않으면 NPC가 먼저 다가와 핵심 정보의 일부라도 전달한다. condition 충족 시 = 더 좋은 결과(전체 정보·최적 반응). 시간 트리거 발동 시 = 최소 보장(단편 정보·불완전 협력).\n");
-            sb.append("3. duration_turns: 있으면 \"이 행동/상태는 N턴 지속\" 주입. N턴 종료 후 after_duration이 있으면 \"N턴 후 → [after_duration]\"으로 주입. after_duration은 해당 NPC AI가 자신의 동기에 따라 자율 결정·실행하고, GM은 그 결과를 다음 장면 서술에 자연스럽게 녹인다(GM이 임의로 NPC 행동을 대신 정하지 않는다).\n");
-        }
-        // 이 NPC의 인간관계 — 누구에게 우호적·적대적인지(자율 행동 편향에 반영)
+        // 인간관계 — 데이터 + 짧은 태도(상세 변조 지침은 각 모드에서)
         String npcSelfId = getStr(npcObj, "id");
         JsonObject gdamRel = state.getGdamData();
         if (!npcSelfId.isEmpty() && gdamRel != null && gdamRel.has("relationships")) {
@@ -5929,23 +5913,40 @@ public class TRPGGameManager {
                 }
             }
             if (!rels.isEmpty()) {
-                sb.append("인간관계(이들을 대하는 네 태도에 반영):\n");
+                sb.append("인간관계(대하는 태도에 반영 — 가까울수록 챙기고 돕고, 소원·적대일수록 냉담·비협조):\n");
                 for (String r : rels) sb.append("  · ").append(r).append("\n");
-                sb.append("- 가까운 사이일수록 그 사람을 더 챙기고 적극적으로 돕고, 소원·적대적일수록 냉담·비협조적으로 대하라.\n");
             }
         }
-        sb.append("\n## 출력 원칙\n");
-        sb.append("- 2~3문장으로 NPC의 행동·반응·대사를 서술한다.\n");
-        sb.append("- 3인칭 행동 서술. 1인칭('나는...') 금지.\n");
-        sb.append("- 성격·목표에 충실하게 행동하라. 플레이어가 불리해지는 행동도 가능하다.\n");
-        sb.append("- 단서를 통째로 알려주지 마라. 흘리거나 은폐할 수 있다.\n");
-        sb.append("- 마크다운·XML 태그·메타 해설 일체 금지. 순수 서술 텍스트만 출력하라.\n");
-        sb.append("- 플레이어 스탯·특성·GM 판정 내역은 알지 못한다. 겉으로 드러난 행동만 인지한다.\n");
-        sb.append("- ★일관성: 위 대화 기록에서 플레이어와 직접 나눈 대화(부탁·약속·합의·알려준 정보·경고·위협 등)를 "
-            + "기억하고 네 다음 행동·태도에 그대로 반영하라. 앞서 협력하기로 했으면 협력하고, 의심·경계하게 됐으면 그렇게 행동하라 "
-            + "— 방금 나눈 대화를 잊은 듯 모순되게 굴지 마라.\n");
-        sb.append("- ★입력(행동 로그)이 비어 있거나 부족해도 절대 정보를 요청하거나 'GM/플레이어가 알려달라'고 묻지 마라. "
-            + "너는 시스템 도구가 아니라 등장인물이다. 그럴 땐 네 성격·목표·예정표대로 ★자율 행동★을 서술하라.\n");
+    }
+
+    /** 자율 행동용 시스템 프롬프트 = CORE + 캐릭터 데이터 + 예정표 + 자율 출력 규칙. */
+    private String buildNpcSystemPrompt(JsonObject npcObj) {
+        StringBuilder sb = new StringBuilder(npcCorePrompt(npcObj));
+        npcFeatureBlocks(sb, npcObj);
+        // 행동 예정표(자율 모드 전용 — 대화 모드엔 넣지 않는다)
+        if (npcObj.has("schedule") && npcObj.get("schedule").isJsonArray()) {
+            sb.append("행동 예정(의지대로 추진):\n");
+            for (JsonElement el : npcObj.getAsJsonArray("schedule")) {
+                if (!el.isJsonObject()) continue;
+                JsonObject s = el.getAsJsonObject();
+                sb.append("  · [").append(getStr(s, "time")).append("] ").append(getStr(s, "action"));
+                String will = getStr(s, "will");
+                if (!will.isBlank()) sb.append(" (의지:").append(will).append(")");
+                String cond = getStr(s, "condition");
+                if (!cond.isBlank()) sb.append(" {조건:").append(cond).append("}");
+                sb.append("\n");
+            }
+            sb.append("- 의지가 '강함'이면 막혀도 다른 방법으로 재시도, '약함'이면 제지·설득에 포기.\n");
+            sb.append("반응(will=반응) 처리 규칙:\n");
+            sb.append("1. 발동 조건: condition의 구체적 행위(예: \"특정 물건을 건드림\"·\"이름을 직접 물음\")가 실제 일어난 직후 1턴 안에 발동. 단순 접근·방문·같은 zone 진입만으로는 발동 안 함.\n");
+            sb.append("2. 보조 트리거(진행 보장): condition이 N턴 지나도 미충족이면 NPC가 먼저 다가와 핵심 정보 일부라도 전달(충족 시=전체·최적, 시간 트리거=최소 보장).\n");
+            sb.append("3. duration_turns: 있으면 N턴 지속, 종료 후 after_duration이 있으면 그 NPC가 동기대로 자율 결정·실행(GM은 결과만 서술에 녹임).\n");
+        }
+        // 자율 출력 규칙(대화 모드와 분리 — 1인칭/3인칭·문장 수 모순 제거)
+        sb.append("\n## 자율 행동 출력\n");
+        sb.append("- 2~3문장으로 이 NPC의 행동·반응·대사를 ★3인칭★ 서술한다(1인칭 '나는…' 금지).\n");
+        sb.append("- 성격·목표에 충실하게 — 플레이어에게 불리한 행동도 가능.\n");
+        sb.append("- 단서를 통째로 알려주지 마라 — 흘리거나 은폐할 수 있다.\n");
         return sb.toString();
     }
 
@@ -7025,8 +7026,8 @@ public class TRPGGameManager {
     /** 직접 대화용 NPC 시스템 프롬프트 (자율 행동 프롬프트와 별개). viaCall=전화/원격 통화면 목소리만, 아니면 대면. */
     private String buildNpcDirectConvPrompt(JsonObject npcObj, boolean includeThought, boolean viaCall) {
         String name = npcObj.has("name") ? npcObj.get("name").getAsString() : "NPC";
-        StringBuilder sb = new StringBuilder(buildNpcSystemPrompt(npcObj));
-        // 자율 행동 프롬프트를 베이스로 삼되 대화 모드 지침을 덮어씀
+        StringBuilder sb = new StringBuilder(npcCorePrompt(npcObj));
+        npcFeatureBlocks(sb, npcObj); // CORE + 캐릭터 데이터만 — 자율 전용(예정표·3인칭·2~3문장)은 상속하지 않아 모순 제거
         sb.append("\n## 직접 대화 모드").append(viaCall ? " (전화/원격 통화)" : " (대면 — 같은 공간)").append("\n");
         sb.append("플레이어가 네게 직접 말을 걸었다. ★너는 " + name + " 본인이다 — 1인칭으로 직접 말하고 행동하라(소설 화자처럼 너를 3인칭으로 묘사하지 마라).★\n");
         sb.append("- ★대사 위주★로 답하라. 행동·표정이 필요하면 ★짧은 괄호 지문★으로만 곁들여라. 예) (형 손 잡으며) 이렇게 잡고 있으면 되는 거 맞지, 형?\n");
