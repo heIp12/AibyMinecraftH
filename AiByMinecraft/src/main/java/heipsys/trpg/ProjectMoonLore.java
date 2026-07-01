@@ -277,6 +277,9 @@ public final class ProjectMoonLore {
         // ── 공유 카테고리 표본(에라 무관하게 세계관 어휘 확장) ──
         c.append("- 장비/공방(무작위 표본): ").append(sample(EGO, 2)).append(" · ").append(sample(WORKSHOP, 1)).append("\n");
         c.append("- 지역/개념(무작위 표본): ").append(sample(GEO, 2)).append(" · ").append(sample(SINGULARITY, 1)).append("\n");
+        c.append("- ★타 날개(기업) 협업·파견: 다른 Wing의 지원·계약·파견 인력이 얽히는 구도도 가능하다 — 예: ").append(sample(WINGS, 2))
+         .append(". 그 특이점·자원으로 개입(예: R사=복제 용병 파견, W사=운송·현상 복구, K사=회복 앰플, T사=시간 조작 지원 등). ")
+         .append("협업·이해충돌·배신 같은 관계 구도로 활용 가능(확실한 캐논만, 시대 정합 유지 · 매번은 아님).\n");
 
         // ── 환상체(등급-스테이지 정합 + 고등급 간접 처리) ──
         c.append(pickAbnormalityBlock(roomNumber));
