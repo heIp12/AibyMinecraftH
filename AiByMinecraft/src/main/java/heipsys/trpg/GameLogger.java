@@ -65,8 +65,8 @@ public class GameLogger {
     //  세션 라이프사이클
     // ──────────────────────────────────────────────────────────────
 
-    /** 새 세션 시작 시 호출 — 씨드 기준 실행 횟수를 매겨 새 로그 파일 생성. */
-    public void startNewLog(String seed, int room) {
+    /** 새 세션 시작 시 호출 — 씨드 기준 실행 횟수를 매겨 새 로그 파일 생성. title=괴담(시나리오) 이름(뷰어 파일목록 표시용). */
+    public void startNewLog(String seed, int room, String title) {
         synchronized (lock) {
             ensureDir();                       // 폴더가 사라졌어도 재생성 시도
             writeWarned = false;               // 새 세션마다 경고 1회 재허용
@@ -85,7 +85,9 @@ public class GameLogger {
             meta.addProperty("seed", seed == null ? "" : seed);
             meta.addProperty("stage", room);
             meta.addProperty("run", count);
-            appendEvent("세션", "", "세션 시작 (스테이지 " + room + ")", meta);
+            boolean hasTitle = title != null && !title.isEmpty() && !"???".equals(title);
+            if (hasTitle) meta.addProperty("title", title);   // 뷰어가 파일목록·헤더에 표시할 괴담 이름
+            appendEvent("세션", "", "세션 시작 (스테이지 " + room + ")" + (hasTitle ? " — 괴담: " + title : ""), meta);
             // 파일 생성 여부를 콘솔에 절대경로로 알려, "logs 파일이 안 보인다"를 즉시 진단 가능하게 한다.
             if (currentFile.exists())
                 plugin.getLogger().info("[gamelog] 플레이 로그 기록 시작 → " + currentFile.getAbsolutePath());
@@ -175,6 +177,25 @@ public class GameLogger {
         extra.addProperty("kind", "private");
         JsonArray to = new JsonArray(); to.add(player); extra.add("to", to);
         record("개인", player, content, extra);
+    }
+
+    /**
+     * 통신·연락 이벤트(전화·근처발화·방송) — ★발신자(actor)와 수신자(to)를 함께 기록★해
+     * 뷰어에서 통화내역·수신자 시점 표시가 가능하게 한다.
+     *  @param kind "call"(전화) / "nearby"(근처 발화) / "broadcast"(방송)
+     *  @param actor 발신자 표시명, to 수신자 표시명 목록(계정명 금지 — gmDisplayName 등), text 발화 내용
+     */
+    public void logComm(String kind, String actor, java.util.List<String> to, String text) {
+        String k = (kind == null || kind.isEmpty()) ? "call" : kind;
+        JsonObject extra = new JsonObject();
+        extra.addProperty("kind", k);
+        if (to != null && !to.isEmpty()) {
+            JsonArray arr = new JsonArray();
+            for (String t : to) if (t != null && !t.isEmpty()) arr.add(t);
+            if (arr.size() > 0) extra.add("to", arr);
+        }
+        String label = "call".equals(k) ? "통화" : "nearby".equals(k) ? "근처" : "방송";
+        record("통신", actor, "[" + label + "] " + (text == null ? "" : text), extra);
     }
 
     /** 로그 뷰어용 계정명↔캐릭터명 별칭 기록 — 같은 인물의 입력·서술 시점을 하나로 통합하게 한다. */
