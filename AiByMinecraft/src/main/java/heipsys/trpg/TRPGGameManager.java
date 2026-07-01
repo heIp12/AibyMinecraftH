@@ -176,6 +176,15 @@ public class TRPGGameManager {
     private final Map<String, List<String>> npcAcquired = new ConcurrentHashMap<>();
     /** NPC id → 그 NPC와 직접 대화(통화 포함)가 있었던 마지막 턴. 대화 중인 NPC를 자율 AI가 중복 구동해 맥락을 오염(되묻기·모순)시키지 않도록 게이트. */
     private final Map<String, Integer> npcLastDirectTurn = new ConcurrentHashMap<>();
+    /** ★편지 두고가기(dead-drop)★: 구역 id → 그곳에 남겨진 쪽지 목록. 그 구역에 들어온 사람(플레이어/괴담)이 발견한다. */
+    private final Map<String, List<DroppedNote>> droppedNotes = new ConcurrentHashMap<>();
+    /** 남겨진 쪽지(편지) — 위치에 놓여 발견을 기다린다. 문서형 괴담이 발견하면 훼손(orig→content). */
+    private static final class DroppedNote {
+        final String authorDisp, targetDisp, orig; String content; boolean tampered = false; final int turnLeft;
+        DroppedNote(String a, String t, String c, int turn) { authorDisp = a; targetDisp = t; orig = c; content = c; turnLeft = turn; }
+    }
+    /** 편지를 옮겨줄 매개(전서구·비둘기·인편·우편) 키워드 — 있으면 전달, 없으면 두고가기(dead-drop). */
+    private static final Set<String> CARRIER_KEYWORDS = Set.of("전서구", "비둘기", "인편", "전령", "파발", "우편", "우체", "택배", "배달", "우체통");
     /** 금지워드형 괴담: 입에 올리면(입력) 즉시 파국이 되는 단어. 빈 값이면 이 메커니즘 비활성. 재시도 시 변경. */
     private volatile String forbiddenWord = "";
 
@@ -805,6 +814,8 @@ public class TRPGGameManager {
         pendingStageEndNames.clear();
         spawnedPlayers.clear();
         commChannels.clear();
+        droppedNotes.clear();      // 편지 두고가기 — 스테이지 전환 시 남겨진 쪽지 정리
+        npcLastDirectTurn.clear();
         lastEndingPages = null;
         forceRetryAllowed = false; // 새 스테이지 진입 — 동반회귀 재도전 허용 초기화
         state.getAllPlayers().forEach(pd -> traitMan.resetStageTraits(pd));
@@ -2087,6 +2098,8 @@ public class TRPGGameManager {
                 //   내부 게이트로 대상 시나리오에서만 실제 호출(그 외엔 값싼 no-op).
                 if (curTurn % 3 == 2) fireEntityActorForTurn();
             }
+            // ★편지 두고가기★: 문서형 괴담이 남겨진 쪽지를 발견·훼손(원본→변형). 값싼 게이트(쪽지 없거나 비문서형이면 즉시 반환).
+            tamperDroppedNotes();
 
             // 12. 스테이지 기반 자동 등장 체크 (STATE_UPDATE 외부에서 stage 이미 변경된 경우 보정)
             checkAndAutoSpawn();
@@ -7193,6 +7206,13 @@ public class TRPGGameManager {
             }
         }
 
+        // ★편지 두고가기(dead-drop)★: 서면(원격 문서)인데 옮겨줄 매개(전서구·인편·우편)가 없으면 즉시 전달되지 않고
+        //   ★현재 위치에 남겨진다★ — 그 구역에 오는 사람(엉뚱한 이·괴담 포함)이 발견한다. (매개가 있으면 아래에서 전달)
+        if (written && !hasCarrier(senderPd)) {
+            leaveDroppedNote(sender, senderPd, targetPd, message);
+            return;
+        }
+
         // 괴담이 정체를 차용한 배역이면 → 괴담이 그 사람인 척 기만 응답
         if (targetPd.impersonated) {
             deliverImpersonatedReply(sender, senderPd, targetPd, message, viaDevice);
@@ -8277,6 +8297,85 @@ public class TRPGGameManager {
         return sb.toString();
     }
 
+    /** 편지를 옮겨줄 매개(전서구·인편·우편 등)를 가졌는가 — 소지 아이템 또는 시나리오 우편 시스템(constraints.postal). */
+    private boolean hasCarrier(PlayerData pd) {
+        if (pd != null) for (String id : pd.heldItemIds) {
+            String low = itemDisplayName(id).toLowerCase();
+            for (String kw : CARRIER_KEYWORDS) if (low.contains(kw)) return true;
+        }
+        JsonObject g = state.getGdamData();
+        if (g != null && g.has("constraints") && g.get("constraints").isJsonObject()) {
+            JsonObject c = g.getAsJsonObject("constraints");
+            if (c.has("postal") && c.get("postal").getAsBoolean()) return true;
+        }
+        return false;
+    }
+
+    private static String notePreview(String s) {
+        if (s == null) return "";
+        return s.length() > 40 ? s.substring(0, 40) + "…" : s;
+    }
+
+    /** ★편지 두고가기★: 현재 위치에 쪽지를 남긴다 — 그 구역에 오는 사람(플레이어/괴담)이 발견. 즉시 전달되지 않음. */
+    private void leaveDroppedNote(Player sender, PlayerData senderPd, PlayerData targetPd, String message) {
+        String zone = senderPd.zone == null ? "" : senderPd.zone;
+        String authorDisp = commDisplayName(senderPd);
+        String targetDisp = targetPd == null ? "" : commDisplayName(targetPd);
+        droppedNotes.computeIfAbsent(zone, k -> new java.util.concurrent.CopyOnWriteArrayList<>())
+            .add(new DroppedNote(authorDisp, targetDisp, message, state.getCurrentTurn()));
+        sender.sendMessage("§b[편지] §f" + (targetDisp.isEmpty() ? "" : targetDisp + "에게 남기는 ") + "쪽지를 "
+            + zoneDisplayName(zone) + "에 두었다. §7(이곳에 오는 사람이 발견한다 — 엉뚱한 이나 괴담이 먼저 볼 수도 있다.)");
+        state.log("comm", authorDisp, "→ (두고감@" + zoneDisplayName(zone) + ") "
+            + (targetDisp.isEmpty() ? "" : targetDisp + ": ") + message);
+        gameLogger.logItem("item", authorDisp, "편지를 남김"
+            + (targetDisp.isEmpty() ? "" : " (→" + targetDisp + ")") + ": " + notePreview(message), "두고감@" + zoneDisplayName(zone));
+        ai.injectGmSystem("[편지 두고감] " + authorDisp + "이(가) " + zoneDisplayName(zone) + "에 "
+            + (targetDisp.isEmpty() ? "" : targetDisp + "에게 보내는 ") + "쪽지를 남겼다 — 그 구역에 오는 인물이 발견할 수 있다(엉뚱한 손·괴담 포함).");
+    }
+
+    /** 구역 진입 시 그곳에 남겨진 쪽지를 발견 — 발견자가 실물을 가져간다(1부). 훼손됐으면 훼손본을 읽는다. */
+    private void discoverDroppedNotes(PlayerData mover, String zone) {
+        List<DroppedNote> notes = droppedNotes.get(zone);
+        if (notes == null || notes.isEmpty()) return;
+        Player mp = Bukkit.getPlayer(mover.uuid);
+        String finder = commDisplayName(mover);
+        for (DroppedNote n : new java.util.ArrayList<>(notes)) {
+            if (n.authorDisp.equals(finder)) continue; // 자기가 둔 쪽지는 '발견'이 아님
+            notes.remove(n); // 실물 한 부 — 발견자가 가져간다
+            boolean intended = !n.targetDisp.isEmpty() && n.targetDisp.equals(finder);
+            String head = intended ? "당신에게 남겨진 쪽지"
+                : (n.targetDisp.isEmpty() ? "누군가 남긴 쪽지" : "다른 사람(" + n.targetDisp + ")에게 남겨진 쪽지");
+            if (mp != null && mp.isOnline()) {
+                mp.sendMessage("§b[발견] §f" + head + (n.tampered ? " §c(누군가 손댄 흔적이 있다)" : "") + ":");
+                mp.sendMessage("§7\"" + n.content + "\"");
+            }
+            appendNarrativeLog(mover, "[편지 발견] " + head + ": " + n.content);
+            gameLogger.logItem("clue", finder, "쪽지 발견 — " + n.content,
+                n.tampered ? "훼손된 채 발견" : (intended ? "수신" : "엉뚱한 손에"));
+            ai.injectGmSystem("[편지 발견] " + finder + "이(가) " + zoneDisplayName(zone) + "에서 " + head
+                + "를 발견했다: \"" + n.content + "\"" + (n.tampered ? " (이미 훼손됨)" : "") + ". 정황에 반영.");
+        }
+    }
+
+    /** 문서형 괴담이 남겨진 쪽지를 발견해 ★훼손★(원본→변형). 뷰어엔 원본/변형됨으로 남는다. 턴마다 호출(값싼 게이트). */
+    private void tamperDroppedNotes() {
+        if (droppedNotes.isEmpty() || !entityInterferes("text")) return; // 문서형 괴담만
+        java.util.Random rng = new java.util.Random();
+        for (Map.Entry<String, List<DroppedNote>> e : droppedNotes.entrySet()) {
+            for (DroppedNote n : e.getValue()) {
+                if (n.tampered) continue;
+                if (rng.nextInt(100) < 25) { // 미발견 쪽지를 문서형 괴담이 발견·훼손
+                    String altered = tamperText(n.orig, rng);
+                    n.content = altered; n.tampered = true;
+                    gameLogger.logItemTampered(getEntityName(), "쪽지", n.orig, altered, "괴담의 문서 훼손");
+                    ai.injectGmSystem("[편지 훼손] 괴담이 " + zoneDisplayName(e.getKey())
+                        + "에 남겨진 쪽지를 발견해 내용을 바꿔놓았다: \"" + n.orig + "\" → \"" + altered
+                        + "\". 나중에 읽는 이는 훼손본을 믿게 된다.");
+                }
+            }
+        }
+    }
+
     private void deliverDirectMessage(Player sender, PlayerData senderPd, PlayerData targetPd,
                                       String message, boolean viaDevice, boolean written) {
         String kind    = written ? "letter" : (viaDevice ? "call" : "nearby");
@@ -8506,6 +8605,8 @@ public class TRPGGameManager {
         }
         moved.zone = newZone;
         moved.visitedZones.add(newZone); // 방문 기록 (직접 그린 약도에 반영)
+        // ★편지 두고가기★: 새 구역에 들어오면 그곳에 남겨진 쪽지를 발견(엉뚱한 손·훼손본 포함).
+        if (zoneChanged && spawnedPlayers.contains(moved.uuid)) discoverDroppedNotes(moved, newZone);
         // 첫 배치 시: 인접 구역도 약도에 공개 + 지도 자동 지급
         if (firstAssignment) {
             moved.visitedZones.addAll(mapMan.getAdjacentZones(newZone));

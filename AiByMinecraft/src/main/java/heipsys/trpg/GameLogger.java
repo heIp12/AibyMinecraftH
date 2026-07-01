@@ -303,6 +303,21 @@ public class GameLogger {
         record(cat, actor, body, extra);
     }
 
+    /**
+     * ★아이템 변형·훼손★ — 남겨둔 편지·쪽지 등을 괴담·NPC가 발견해 고치거나 훼손했을 때.
+     * 뷰어가 "원본 / 변형됨"으로 대조해 보여준다(통신 변조와 동일 표기). kind=item + orig.
+     *  @param actor 훼손 주체(괴담 이름 등), name 아이템 이름(편지·쪽지), orig 원문, altered 훼손된 내용, cause 이유
+     */
+    public void logItemTampered(String actor, String name, String orig, String altered, String cause) {
+        JsonObject extra = new JsonObject();
+        extra.addProperty("kind", "item");
+        if (actor != null && !actor.isEmpty()) extra.addProperty("actor", actor);
+        if (name  != null && !name.isEmpty())  extra.addProperty("item", name);
+        extra.addProperty("orig", orig == null ? "" : strip(orig).trim());  // 뷰어: 원본 줄
+        if (cause != null && !cause.isEmpty()) extra.addProperty("cause", cause);
+        record("아이템", actor, (altered == null ? "" : altered), extra);
+    }
+
     /** 로그 뷰어용 계정명↔캐릭터명 별칭 기록 — 같은 인물의 입력·서술 시점을 하나로 통합하게 한다. */
     public void logAlias(String account, String charName) {
         if (account == null || charName == null || account.isEmpty() || charName.isEmpty()) return;
