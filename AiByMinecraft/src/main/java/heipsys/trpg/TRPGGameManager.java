@@ -61,6 +61,14 @@ public class TRPGGameManager {
     private static final Set<String> COMM_ITEM_KEYWORDS = Set.of(
         "전화", "phone", "폰", "무전", "walkie", "radio", "라디오", "휴대폰", "핸드폰", "스마트폰", "통신", "intercom", "인터콤"
     );
+    /** 문서형(글) 통신 수단·기기 키워드 — 이 매체는 ★문서형 괴담★이 개입. 표시 이름 유추에도 쓴다. */
+    private static final Set<String> WRITTEN_MEDIA_KEYWORDS = Set.of(
+        "편지", "서찰", "서신", "쪽지", "전서구", "비둘기", "팩스", "전보", "봉투", "필담", "메모", "letter", "fax"
+    );
+    /** 음성형(소리) 통신 수단·기기 키워드(전자 기기 포함) — 이 매체는 ★음성형 괴담★이 개입. 표시 이름 유추에도 쓴다. */
+    private static final Set<String> VOICE_MEDIA_KEYWORDS = Set.of(
+        "전화", "phone", "폰", "무전", "walkie", "radio", "라디오", "휴대폰", "핸드폰", "스마트폰", "통신구", "intercom", "인터콤", "트랜시버", "확성기", "스피커", "헤드셋", "이어폰"
+    );
     /** 이 특성을 가진 플레이어의 연락처는 모두가 안다 (공인 연락처) */
     private static final Set<String> CELEBRITY_TRAIT_KEYWORDS = Set.of(
         "유명", "셀럽", "스타", "인플루언서", "연예인", "celebrity", "famous"
@@ -6751,28 +6759,30 @@ public class TRPGGameManager {
         boolean written  = !sameZone && !viaCall && writtenCommAvailable() && knowsNpc;
         if (!(sameZone || viaCall || written)) return; // 번호·수단도 모르고 멀리 있으면 닿지 않는다(추후 GM 정황으로)
         boolean remote = viaCall || written;
+        String media = remote ? commMediumName(target, written) : ""; // 구체 매체 이름(전서구·통신구·서찰·필담…)
         // ★통신 변조★: @이름과 동일 — 매체형 괴담(음성형↔통화 / 문서형↔서면)이 원격 선연락을 가로채 바꿔 전달(30%). 대면은 변조 안 함.
         boolean tampered = remote && entityInterferes(written) && new java.util.Random().nextInt(100) < 30;
         String heard = tampered ? tamperText(callMsg, new java.util.Random()) : callMsg;
-        String tag = sameZone ? "§a[근처] §f" : written ? "§b[✉ 수신] §f" : "§b[📞 수신] §f";
+        String tag = sameZone ? "§a[근처] §f" : written ? ("§b[✉ " + media + "] §f") : ("§b[📞 " + media + "] §f");
         tp.sendMessage(tag + npcName + ": " + heard);
         target.everKnownNpcContacts.add(npcId); // 연락받음 → 그 번호를 알게 됨(콜백 가능)
-        appendNarrativeLog(target, (sameZone ? "[근처] " : written ? "[서면] " : "[수신] ") + npcName + ": " + heard);
+        appendNarrativeLog(target, (sameZone ? "[근처] " : "[" + media + "] ") + npcName + ": " + heard);
         state.log("comm", npcName, "→ " + commDisplayName(target) + ": " + callMsg);
-        // 뷰어 통신내역: NPC→플레이어 선연락도 수신자를 기록(수신자 시점·통신내역에 표시). 변조 시 원본+변형본 대조.
+        // 뷰어 통신내역: NPC→플레이어 선연락도 수신자를 기록(수신자 시점·통신내역에 표시). 변조 시 원본+변형본 대조. via=구체 매체명.
         String kind = written ? "letter" : (sameZone ? "nearby" : "call");
+        String via = remote ? media : null;
         if (tampered) gameLogger.logCommTampered(kind, npcName,
-                java.util.List.of(commDisplayName(target)), callMsg, heard, written ? "괴담의 기록 변조" : "괴담의 음성 변조");
+                java.util.List.of(commDisplayName(target)), callMsg, heard, written ? "괴담의 기록 변조" : "괴담의 음성 변조", via);
         else gameLogger.logComm(kind, npcName,
-                java.util.List.of(commDisplayName(target)), callMsg);
-        String medium = sameZone ? "직접" : written ? "서면으로" : "전화로";
+                java.util.List.of(commDisplayName(target)), callMsg, via);
+        String medium = sameZone ? "직접(대면)" : media;
         if (tampered)
             ai.injectGmSystem("[NPC 선연락·통신 변조] " + npcName + "이(가) " + commDisplayName(target)
-                + "에게 " + medium + " 먼저 연락했으나 괴담이 가로채 \"" + callMsg + "\"를 \"" + heard
+                + "에게 " + medium + " 방식으로 먼저 연락했으나 괴담이 가로채 \"" + callMsg + "\"를 \"" + heard
                 + "\"로 바꿔 전했다. 플레이어는 변형된 말을 들었다 — 이후 정황·오해에 반영.");
         else
             ai.injectGmSystem("[NPC 선연락] " + npcName + "이(가) " + commDisplayName(target)
-                + "에게 " + medium + " 먼저 연락했다: \"" + callMsg
+                + "에게 " + medium + " 방식으로 먼저 연락했다: \"" + callMsg
                 + "\". 시스템이 이미 그 플레이어에게 전달했으니 중복하지 말고 이후 정황·반응만 다뤄라.");
     }
 
@@ -7160,7 +7170,7 @@ public class TRPGGameManager {
 
         deliverDirectMessage(sender, senderPd, targetPd, message, viaDevice, written);
         exchangeContacts(senderPd, targetPd);
-        if (viaDevice && commDetectableByEntity(senderPd)) noteCommUsedIfDangerous(senderPd, written ? "편지/필담" : "전화/무전"); // 은밀 개방이면 괴담이 감지 못함
+        if (viaDevice && commDetectableByEntity(senderPd)) noteCommUsedIfDangerous(senderPd, commMediumName(senderPd, written)); // 은밀 개방이면 괴담이 감지 못함
     }
 
     /** 시나리오상 통신기기가 작동하는가 (constraints.phone_usable, 기본 true). GM 개설 채널은 이와 무관하게 작동. */
@@ -7331,14 +7341,15 @@ public class TRPGGameManager {
             }
         }
         final boolean remote = viaCall || written; // 원격(통화·서면) 여부 — 변조·시점 처리에 사용
+        final String media = remote ? commMediumName(senderPd, written) : ""; // 구체 매체 이름(전화/무전·통신구·서찰·전서구·필담…)
 
         // 대면이든 통화든 ★접촉하면 연락처를 기억★ — 이후 다른 곳에서도 전화로 부를 수 있다(다회차 이월).
         senderPd.everKnownNpcContacts.add(npcId);
         refreshCommItems(senderPd);
         npcLastDirectTurn.put(npcId, state.getCurrentTurn()); // 대화 중 — 자율 AI 중복 구동 방지(맥락 오염 차단)
-        // 뷰어 통신내역: 플레이어→NPC 발신 기록(수신자=NPC) — 매체(통화/서면/대면)별 kind
+        // 뷰어 통신내역: 플레이어→NPC 발신 기록(수신자=NPC) — 매체(통화/서면/대면)별 kind + 구체 매체명(via)
         gameLogger.logComm(written ? "letter" : (viaCall ? "call" : "nearby"), senderPd.gmDisplayName(),
-            java.util.List.of(npcName), message);
+            java.util.List.of(npcName), message, remote ? media : null);
         // ★괴담 정보 수집·성장★: NPC와의 소통은 수집도 '중간'. 지능·소통·고위력 괴담이면 GM에 역이용 지시 주입.
         noteEntityIntel(2, senderPd.gmDisplayName(), message, "NPC 소통");
 
@@ -7351,7 +7362,7 @@ public class TRPGGameManager {
         //   대면이면 플레이어와 같은 zone이라 플레이어의 최근 행동이 포함됨 / 통화면 NPC 자기 zone 상황만(원격 장면 누출 방지).
         String sceneLog = state.buildEntityLog(3, npcZone);
         // 지식 게이팅 문맥 = 플레이어 발화 + 현재 장면(관련 기억만 떠오르게)
-        String npcPrompt = buildNpcDirectConvPrompt(npcObj, hasEavesdrop, viaCall, written, message + " " + (sceneLog == null ? "" : sceneLog));
+        String npcPrompt = buildNpcDirectConvPrompt(npcObj, hasEavesdrop, viaCall, written, media, message + " " + (sceneLog == null ? "" : sceneLog));
         String situation = (sceneLog == null || sceneLog.isBlank()) ? ""
             : "[지금 " + (remote ? "네 주변에서" : "이곳에서") + " 일어나는 일(네가 직접 보고 들은 것)]\n" + sceneLog + "\n\n";
         String userMsg   = situation + "[" + senderPd.gmDisplayName() + (viaCall ? "이/가 전화로 말한다" : written ? "이/가 글(쪽지·편지)로 전한다" : "이/가 말한다")
@@ -7391,7 +7402,7 @@ public class TRPGGameManager {
 
             // GM 컨텍스트에 요약만 주입 (전체 대화 노출 방지)
             String summary = visible.length() > 120 ? visible.substring(0, 120) + "…" : visible;
-            ai.injectGmSystem("[NPC " + (viaCallF ? "통화" : writtenF ? "서면" : "직접 대화") + "] " + commDisplayName(senderPd) + " → " + npcName
+            ai.injectGmSystem("[NPC " + (remote ? media : "직접 대화") + "] " + commDisplayName(senderPd) + " → " + npcName
                 + ": \"" + (message.length() > 60 ? message.substring(0, 60) + "…" : message)
                 + "\" / " + npcName + " 반응: " + summary);
 
@@ -7399,10 +7410,11 @@ public class TRPGGameManager {
             //   (기존 logGmOutput은 to가 없어 발신자 개별 시점에 답이 안 떠 대화 흐름을 못 따라가던 문제 해결)
             //   변조되면 원본+변형본을 함께 기록(뷰어 원본/변형됨 대조).
             String kindR = writtenF ? "letter" : (viaCallF ? "call" : "nearby");
+            String viaR = remote ? media : null;
             if (tamperedR) gameLogger.logCommTampered(kindR, npcName,
-                    java.util.List.of(senderPd.gmDisplayName()), visible, heardR, writtenF ? "괴담의 기록 변조" : "괴담의 음성 변조");
+                    java.util.List.of(senderPd.gmDisplayName()), visible, heardR, writtenF ? "괴담의 기록 변조" : "괴담의 음성 변조", viaR);
             else gameLogger.logComm(kindR, npcName,
-                    java.util.List.of(senderPd.gmDisplayName()), visible);
+                    java.util.List.of(senderPd.gmDisplayName()), visible, viaR);
         });
     }
 
@@ -7676,11 +7688,12 @@ public class TRPGGameManager {
     }
 
     /** 직접 대화용 NPC 시스템 프롬프트 (자율 행동 프롬프트와 별개). viaCall=전화/원격 통화면 목소리만, 아니면 대면. */
-    private String buildNpcDirectConvPrompt(JsonObject npcObj, boolean includeThought, boolean viaCall, boolean written, String context) {
+    private String buildNpcDirectConvPrompt(JsonObject npcObj, boolean includeThought, boolean viaCall, boolean written, String media, String context) {
         String name = npcObj.has("name") ? npcObj.get("name").getAsString() : "NPC";
+        String mname = (media == null || media.isBlank()) ? (written ? "서면" : "통화") : media; // 구체 매체 이름(전서구·통신구·서찰…)
         StringBuilder sb = new StringBuilder(npcCorePrompt(npcObj));
         npcFeatureBlocks(sb, npcObj, context); // CORE + 캐릭터 데이터(현재상태·성격·목적·기억). 자율 전용 실행규칙·3인칭·문장수는 상속 안 함
-        sb.append("\n## 직접 대화 모드").append(viaCall ? " (전화/원격 통화)" : written ? " (서면 — 쪽지·편지·필담)" : " (대면 — 같은 공간)").append("\n");
+        sb.append("\n## 직접 대화 모드").append(viaCall ? " (원격 통화 — " + mname + ")" : written ? " (서면 — " + mname + ")" : " (대면 — 같은 공간)").append("\n");
         sb.append("플레이어가 네게 직접 말을 걸었다. ★너는 " + name + " 본인이다 — 관찰당하는 인물이 아니라 행동하는 당사자다. 1인칭으로 직접 말하고 행동하라(\"" + name + "은(는) …한다\"처럼 소설 화자가 3인칭으로 너를 묘사하지 마라).★\n");
         sb.append("- ★대사 위주★로 답하라. 행동·표정이 필요하면 ★짧은 괄호 지문★으로만 곁들여라. 예) (형 손 잡으며) 이렇게 잡고 있으면 되는 거 맞지, 형?\n");
         sb.append("- ★속마음·감정 단정(해설) 금지(가장 중요)★: \"믿는 듯\", \"불안한 듯\", \"…처럼 보인다\" 식으로 너나 상대의 내면을 ★추측·서술하지 마라★. 감정은 ★말투와 짧은 행동★으로만 드러내고, 해석은 상대(플레이어)에게 맡겨라. 너의 진짜 속마음은 아래 <THOUGHT>(비공개)에만 적는다.\n");
@@ -7701,14 +7714,14 @@ public class TRPGGameManager {
                  + "같은 확인(\"누구세요\"·\"그게 뭐죠\"·\"왜 그래요\")을 ★두 번 이상 반복하지 마라★ — 낯선 상대라도 경계·의심은 ★처음 한두 마디★로만 표하고, 그 뒤엔 반드시 대화를 진전시켜라.\n");
         // G2: 통화 vs 서면 vs 대면 — 보이는 것과 가능한 상호작용이 다르다
         if (viaCall) {
-            sb.append("\n### 통화 모드 — 목소리만\n");
-            sb.append("- 지금은 ★전화/원격 통화★다. 너의 ★행동·표정·몸짓을 묘사하지 마라★(상대는 너를 볼 수 없다). 오직 말소리로만 전달한다.\n");
+            sb.append("\n### 통화 모드 — 목소리만 (" + mname + ")\n");
+            sb.append("- 지금은 ★" + mname + "(원격 음성)★다. 너의 ★행동·표정·몸짓을 묘사하지 마라★(상대는 너를 볼 수 없다). 오직 말소리로만 전달한다.\n");
             sb.append("- 단, 목소리에 묻어나는 단서는 표현 가능: 떨리는 목소리, 거친 숨, 울먹임, 머뭇거림, 수화기 너머 배경음(사이렌·발소리 등)으로 네 상태·상황을 은근히 드러내라.\n");
             sb.append("- 통화로는 상대가 너를 ★물리적으로 어쩌지 못한다★(빼앗기·붙잡기 불가) — 통화 중 그런 시도는 통하지 않는다.\n");
             sb.append("- ★통화 거부·종료 가능★: 너무 자주·오래 시달리거나, 기분이 상했거나, 지금 바쁘거나 위험하면 짧게만 답하거나 '지금 바빠, 나중에' 식으로 끊으려 하거나 실제로 끊을 수 있다(성격·관계·상황에 따라 네가 판단). 의무적으로 다 받아줄 필요 없다.\n");
         } else if (written) {
-            sb.append("\n### 서면 모드 — 글로만 주고받기\n");
-            sb.append("- 지금은 ★쪽지·편지·필담(글)★로 주고받는다. 상대는 너를 볼 수 없고 너도 상대를 볼 수 없다 — 오직 ★글로 쓴 말★만 오간다.\n");
+            sb.append("\n### 서면 모드 — 글로만 주고받기 (" + mname + ")\n");
+            sb.append("- 지금은 ★" + mname + "(글)★로 주고받는다. 상대는 너를 볼 수 없고 너도 상대를 볼 수 없다 — 오직 ★글로 쓴 말★만 오간다.\n");
             sb.append("- ★행동·표정·몸짓·목소리를 묘사하지 마라★. 글에 담기는 것(급히 쓴 흔적, 떨리는 글씨, 번진 잉크·눌러쓴 자국 등)으로만 네 상태를 은근히 드러낼 수 있다.\n");
             sb.append("- 글은 ★시차★가 있다 — 차분히 신중하게 쓸 수 있으나, 실시간으로 몰아붙이거나 즉각 되받아치기는 어렵다. 한 번에 전할 말을 담아라.\n");
             sb.append("- ★답을 미루거나 짧게 끊을 수 있다★(바쁨·경계·위험·불신 시). 의무적으로 다 답할 필요 없다.\n");
@@ -7959,6 +7972,52 @@ public class TRPGGameManager {
             + "수집이 누적될수록 괴담은 더 강해지고 대응이 정교해진다. 강도가 약하면 어렴풋한 반응만.");
     }
 
+    /** 아이템 id → 표시 이름(없으면 id 그대로). 매체 이름 유추·로그용. */
+    private String itemDisplayName(String id) {
+        if (id == null) return "";
+        JsonObject def = itemMan == null ? null : itemMan.findDef(id);
+        if (def == null) return id;
+        if (def.has("name")  && !def.get("name").getAsString().isBlank())  return def.get("name").getAsString();
+        if (def.has("title") && !def.get("title").getAsString().isBlank()) return def.get("title").getAsString();
+        return id;
+    }
+
+    /**
+     * 통신 매체의 ★표시 이름★ — 괴담 개입 판정은 class(음성/문서)로 하되, 이름은 다양하게.
+     *  서면만이 아니라 필담·서찰·전서구·통신구·데이터 전송 등 시대·기기·시나리오에 맞는 이름을 고른다.
+     *  우선순위: ①플레이어가 실제 소지한 (그 class의) 통신 수단 이름 → ②constraints.comm_media.{voice|written} → ③시대 기본값.
+     *  @param written true=문서형(편지·서찰·전서구·필담…) / false=음성형(전화·무전·통신구…)
+     */
+    private String commMediumName(PlayerData pd, boolean written) {
+        java.util.Set<String> kws = written ? WRITTEN_MEDIA_KEYWORDS : VOICE_MEDIA_KEYWORDS;
+        // ① 소지 기기·수단 이름(그 class와 맞는 것) — 실제 손에 든 매체가 곧 이름이 된다(전서구·군용무전기·통신구 등).
+        if (pd != null) for (String id : pd.heldItemIds) {
+            String nm = itemDisplayName(id);
+            String low = (nm == null || nm.isEmpty() ? id : nm).toLowerCase();
+            for (String kw : kws) if (low.contains(kw.toLowerCase())) return (nm == null || nm.isEmpty()) ? id : nm;
+        }
+        JsonObject g = state.getGdamData();
+        JsonObject c = (g != null && g.has("constraints") && g.get("constraints").isJsonObject()) ? g.getAsJsonObject("constraints") : null;
+        // ② 시나리오 명시(constraints.comm_media.{voice|written})
+        if (c != null && c.has("comm_media") && c.get("comm_media").isJsonObject()) {
+            JsonObject m = c.getAsJsonObject("comm_media");
+            String key = written ? "written" : "voice";
+            if (m.has(key) && !m.get(key).getAsString().isBlank()) return m.get(key).getAsString().trim();
+        }
+        // ③ 시대 기본값
+        String era = c != null && c.has("era") ? c.get("era").getAsString() : "";
+        if (written) {
+            if (era.contains("미래") || era.contains("우주") || era.contains("SF") || era.contains("사이버")) return "데이터 전송";
+            if (era.contains("조선") || era.contains("사극") || era.contains("전근대") || era.contains("근세") || era.contains("고려")) return "서찰";
+            if (era.contains("중세") || era.contains("판타지")) return "전서구";
+            if (era.contains("근대") || era.contains("개화") || era.contains("일제")) return "편지";
+            return "쪽지"; // 현대에 전자통신 두절 시 손편지·쪽지
+        } else {
+            if (era.contains("미래") || era.contains("우주") || era.contains("SF") || era.contains("사이버")) return "통신구";
+            return "전화/무전";
+        }
+    }
+
     /** 원격 ★필담(편지·쪽지)★ 매체가 가능한가 — 전자 통신이 없는 시대·상황에서 종이로 전한다.
      *  constraints.written_comm 플래그 우선, 없으면 시대(현대·미래가 아니면)로 판단. */
     private boolean writtenCommAvailable() {
@@ -8040,8 +8099,11 @@ public class TRPGGameManager {
     private void deliverDirectMessage(Player sender, PlayerData senderPd, PlayerData targetPd,
                                       String message, boolean viaDevice, boolean written) {
         String kind    = written ? "letter" : (viaDevice ? "call" : "nearby");
-        String tag     = written ? "§b[필담]" : (viaDevice ? "§a[통신]" : "§a[근처]");
-        String medium  = written ? "편지/쪽지" : (viaDevice ? "전화/무전" : "근거리");
+        // ★매체 이름★: 원격이면 시대·소지기기에 맞는 이름(전화/무전·통신구·서찰·전서구·필담…), 대면은 근거리.
+        String media   = viaDevice ? commMediumName(senderPd, written) : "";
+        String via     = viaDevice ? media : null;
+        String tag     = viaDevice ? ((written ? "§b[" : "§a[") + media + "]") : "§a[근처]";
+        String medium  = viaDevice ? media : "근거리";
         String outLine = tag + " §f" + commDisplayName(senderPd) + " → " + commDisplayName(targetPd) + ": " + message;
 
         sender.sendMessage(outLine); // 발신자는 자기가 한 말 그대로 본다
@@ -8054,15 +8116,15 @@ public class TRPGGameManager {
 
         state.log("comm", commDisplayName(senderPd),
             "→ " + commDisplayName(targetPd) + " (" + medium + "): " + message);
-        // 뷰어: 발신자·★수신자★ 함께 기록(수신자 시점에도 보이게). 변조되면 원본+변형본 대조.
+        // 뷰어: 발신자·★수신자★ 함께 기록(수신자 시점에도 보이게). 변조되면 원본+변형본 대조. via=구체 매체 이름.
         if (tampered) {
             gameLogger.logCommTampered(kind, commDisplayName(senderPd),
-                java.util.List.of(commDisplayName(targetPd)), message, heard, written ? "괴담의 기록 변조" : "괴담의 음성 변조");
+                java.util.List.of(commDisplayName(targetPd)), message, heard, written ? "괴담의 기록 변조" : "괴담의 음성 변조", via);
             ai.injectGmSystem("[통신 변조] 괴담이 " + commDisplayName(senderPd) + "→" + commDisplayName(targetPd)
-                + " " + (written ? "필담" : "통신") + "을 가로채 \"" + message + "\"를 \"" + heard + "\"로 바꿔 전했다. 이후 정황·오해에 반영.");
+                + " " + (viaDevice ? media : "대화") + "을(를) 가로채 \"" + message + "\"를 \"" + heard + "\"로 바꿔 전했다. 이후 정황·오해에 반영.");
         } else {
             gameLogger.logComm(kind, commDisplayName(senderPd),
-                java.util.List.of(commDisplayName(targetPd)), message);
+                java.util.List.of(commDisplayName(targetPd)), message, via);
         }
 
         // ★괴담 정보 수집·성장★: 원격 통신(강)·대면 직접(중). 지능/소통/고위력 괴담이면 GM에 역이용 지시.
