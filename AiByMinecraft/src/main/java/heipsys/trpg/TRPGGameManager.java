@@ -6377,7 +6377,11 @@ public class TRPGGameManager {
         //   내가 ★내보내는★ 게 아니다. (예: "방송을 들으며 '가자' 이동한다" → 방송이 아니라 평범한 행동 서술)
         //   방송을 언급했다고 무조건 송출되어 평범한 채팅이 방송으로 오인되던 불만을 수정.
         //   단, ★능동 송출 동사(방송한다/송출/외친다/내보낸다)가 함께 있으면★ 청취가 아니라 '들리도록 송출'이므로 억제하지 않는다.
-        boolean activeSend = msg.contains("방송한") || msg.contains("방송해") || msg.contains("방송했")
+        // '방송을 한다/해/했다', '방송 한다/해/했' = 능동 송출로 인정(따옴표·발화동사 없이 서술해도 방송으로 잡힘).
+        //   단 '방송을 하는 걸 들었다'는 '한'≠'하는'이라 미포함 → 수동 청취 오탐 없음.
+        boolean sendVerb = msg.contains("방송을 한") || msg.contains("방송을 해") || msg.contains("방송을 했")
+                || msg.contains("방송 한다") || msg.contains("방송 해") || msg.contains("방송 했");
+        boolean activeSend = sendVerb || msg.contains("방송한") || msg.contains("방송해") || msg.contains("방송했")
                 || msg.contains("송출") || msg.contains("내보") || msg.contains("외치") || msg.contains("외쳐")
                 || msg.contains("외쳤") || msg.contains("외침");
         // ★수신(청취) 제외★: 방송뿐 아니라 통신·무전·교신·음성·목소리가 '들리거나 흘러나오는' 상황은
@@ -6397,7 +6401,7 @@ public class TRPGGameManager {
             || msg.indexOf('\'') >= 0 || msg.indexOf('「') >= 0
             || msg.contains("말") || msg.contains("외치") || msg.contains("외쳐") || msg.contains("알린")
             || msg.contains("알려") || msg.contains("방송한") || msg.contains("방송해") || msg.contains("방송했")
-            || msg.contains("송출") || msg.contains("내보") || msg.contains("전한");
+            || msg.contains("송출") || msg.contains("내보") || msg.contains("전한") || sendVerb;
         return utter;
     }
 
