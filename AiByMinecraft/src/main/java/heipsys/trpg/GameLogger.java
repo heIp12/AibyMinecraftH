@@ -168,6 +168,15 @@ public class GameLogger {
         record(cat, caster, body, extra);
     }
 
+    /** 개인 전용 시스템 메시지(배역 배정·등장 등) — 로그 뷰어에서 ★그 플레이어 시점에만★ 보이게(NPC·타인 시점 제외). */
+    public void logPrivate(String player, String content) {
+        if (player == null || player.isEmpty()) { logEvent(content); return; }
+        JsonObject extra = new JsonObject();
+        extra.addProperty("kind", "private");
+        JsonArray to = new JsonArray(); to.add(player); extra.add("to", to);
+        record("개인", player, content, extra);
+    }
+
     /** 로그 뷰어용 계정명↔캐릭터명 별칭 기록 — 같은 인물의 입력·서술 시점을 하나로 통합하게 한다. */
     public void logAlias(String account, String charName) {
         if (account == null || charName == null || account.isEmpty() || charName.isEmpty()) return;

@@ -1108,7 +1108,7 @@ public class TRPGGameManager {
                         + "아슬아슬하게 무효화한다('간발의 차로 무위로 돌아갔다'). 이 보호는 그 순간 소진되며, 이후엔 정상 판정한다.");
             }
             if (myPd != null) {
-                gameLogger.logEvent("배역 배정: " + myPd.name + " → " + asgn.roleId()
+                gameLogger.logPrivate(myPd.name, "배역 배정 → " + asgn.roleId()
                     + " (" + myPd.age + "세 " + myPd.job + ", zone " + asgn.zone() + ")");
             }
 
@@ -5376,7 +5376,7 @@ public class TRPGGameManager {
             .findFirst()
             .ifPresent(pd -> {
                 spawnedPlayers.add(pd.uuid);
-                gameLogger.logEvent("배역 등장: " + pd.name + " [" + pd.roleId + "]");
+                gameLogger.logPrivate(pd.name, "배역 등장 [" + pd.roleId + "]");
                 Player p = Bukkit.getPlayer(pd.uuid);
                 if (p == null || !p.isOnline()) return;
                 p.sendMessage("§e§l[등장] 당신의 배역이 이야기에 들어섰습니다. 이제 행동할 수 있습니다.");

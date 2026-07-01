@@ -44,6 +44,7 @@
   .ev.k-input{border-left-color:var(--input)} .ev.k-gm{border-left-color:var(--gm)} .ev.k-npc{border-left-color:var(--npc)}
   .ev.k-ability{border-left-color:var(--ability);background:#251c22} .ev.k-system{border-left-color:var(--system);opacity:.85}
   .ev.k-broadcast{border-left-color:var(--broadcast)} .ev.k-gm_input{border-left-color:#444b5a;opacity:.72}
+  .ev.k-private{border-left-color:#8f9bb0}
   .ev.k-ability .badge{background:var(--ability);color:#2a0f0f}
   .pill{font-size:11px;padding:1px 7px;border-radius:20px;border:1px solid var(--line);color:var(--dim)}
   .drop{margin:50px auto;max-width:600px;border:2px dashed var(--line);border-radius:14px;padding:44px 24px;text-align:center;color:var(--dim);background:var(--panel)}
@@ -114,6 +115,7 @@ function normalize(ev){
     else if(cat.startsWith("NPC")){kind=kind||"npc";const m=cat.match(/\(([^)]*)\)/);if(m)actor=actor||m[1];const a=cat.indexOf("→");if(a>=0)target=cat.slice(a+1);}
     else if(cat.startsWith("능력")){kind=kind||"ability";actor=actor||who;}
     else if(cat==="배역"){kind=kind||"alias";}
+    else if(cat==="개인"){kind=kind||"private";if(!actor)actor=who||((text.match(/^(\S+)/)||[])[1]||"");}
     else if(["세션","구분","이벤트"].includes(cat)){kind=kind||"system";}
     else{kind=kind||"event";actor=actor||who;}
   }
@@ -179,7 +181,7 @@ function renderSide(){
 }
 function badgeFor(e){ return e.kind==="ability"?(e.ability?"✨ "+e.ability:"✨ 능력")
   :e.kind==="input"?"입력":e.kind==="gm"?"GM 서술":e.kind==="broadcast"?"📢 방송":e.kind==="npc"?"☎ NPC"
-  :e.kind==="system"?"시스템":e.kind==="gm_input"?"GM입력(상세)":(e.cat||"이벤트"); }
+  :e.kind==="system"?"시스템":e.kind==="private"?"개인":e.kind==="gm_input"?"GM입력(상세)":(e.cat||"이벤트"); }
 
 function filtered(){
   const q=(document.getElementById("q")?.value||"").trim().toLowerCase();
