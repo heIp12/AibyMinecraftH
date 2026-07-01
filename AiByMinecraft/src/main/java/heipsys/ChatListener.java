@@ -86,6 +86,17 @@ public class ChatListener implements Listener {
         trpgManager.getNarrativeDelivery().onSneak(event.getPlayer());
     }
 
+    /** 관전자가 인물을 클릭해 그 시점으로 '들어가면' 자동으로 대상 소지품 미러를 연다(웅크리기는 관전 중 동작 안 함). */
+    @EventHandler
+    public void onStartSpectating(com.destroystokyo.paper.event.player.PlayerStartSpectatingEntityEvent event) {
+        TRPGGameManager trpgManager = trpg();
+        if (trpgManager == null || !trpgManager.isActive()) return;
+        if (!(event.getNewSpectatorTarget() instanceof Player)) return;
+        Player spectator = event.getPlayer();
+        // 이벤트 시점엔 getSpectatorTarget()이 아직 갱신 전이라 다음 틱에 연다.
+        Bukkit.getScheduler().runTask(plugin, () -> trpgManager.openSpectatorMirror(spectator));
+    }
+
     /** 캐릭터 정보 / 기록 아이템 우클릭 → 해당 GUI 열기 */
     @EventHandler
     public void onInfoItemUse(PlayerInteractEvent event) {
@@ -95,6 +106,12 @@ public class ChatListener implements Listener {
         Action action = event.getAction();
         if (action != Action.RIGHT_CLICK_AIR && action != Action.RIGHT_CLICK_BLOCK) return;
         Player player = event.getPlayer();
+        // 관전자 우클릭 → 보고 있는 대상의 소지품 미러(책·정보·기록 열람). 스펙테이터는 아이템이 없으므로 먼저 처리.
+        if (player.getGameMode() == GameMode.SPECTATOR) {
+            event.setCancelled(true);
+            Bukkit.getScheduler().runTask(plugin, () -> trpgManager.openSpectatorMirror(player));
+            return;
+        }
         if (trpgManager.isInfoItem(event.getItem())) {
             event.setCancelled(true);
             Bukkit.getScheduler().runTask(plugin, () -> trpgManager.openCharacterInfo(player));
@@ -130,15 +147,21 @@ public class ChatListener implements Listener {
         }, 40L);
     }
 
+    /** 관전 인벤(대상 소지품 미러)은 읽기 전용 — 책=읽기, 정보★/기록책=대상 GUI(보기 전용)로 라우팅. */
     @EventHandler
     public void onSpectatorClickBook(InventoryClickEvent event) {
         if (!(event.getWhoClicked() instanceof Player player)) return;
         if (player.getGameMode() != GameMode.SPECTATOR) return;
-
+        event.setCancelled(true); // 관전 중 인벤 클릭은 아이템 이동 불가(열람 전용)
         ItemStack clicked = event.getCurrentItem();
-        if (clicked != null && clicked.getType() == Material.WRITTEN_BOOK) {
-            event.setCancelled(true);
+        if (clicked == null || clicked.getType() == Material.AIR) return;
+        TRPGGameManager trpgManager = trpg();
+        if (clicked.getType() == Material.WRITTEN_BOOK) {
             player.openBook(clicked);
+        } else if (trpgManager != null && trpgManager.isInfoItem(clicked)) {
+            Bukkit.getScheduler().runTask(plugin, () -> trpgManager.openSpectatorInfo(player));
+        } else if (trpgManager != null && trpgManager.isRecordItem(clicked)) {
+            Bukkit.getScheduler().runTask(plugin, () -> trpgManager.openSpectatorRecords(player));
         }
     }
 }

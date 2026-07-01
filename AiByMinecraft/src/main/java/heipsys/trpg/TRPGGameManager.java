@@ -553,6 +553,7 @@ public class TRPGGameManager {
             dialogMan.clearDialog(p);
             removeInfoItem(p);
             removeRecordItem(p);
+            if (p.getGameMode() == GameMode.SPECTATOR) p.setGameMode(GameMode.SURVIVAL); // 관전 해제(세션 종료 정리)
         });
         itemMan.reclaimChapterItems(new ArrayList<>(Bukkit.getOnlinePlayers()));
         narrativeDelivery.clearAll();
@@ -1374,6 +1375,7 @@ public class TRPGGameManager {
                 Title.Times.times(Duration.ofMillis(500), Duration.ofMillis(2400), Duration.ofMillis(800))
             ));
             p.sendMessage("§8§o게임이 시작되었습니다...");
+            if (p.getGameMode() == GameMode.SPECTATOR) p.setGameMode(GameMode.SURVIVAL); // 새 스테이지/세션 — 관전 해제
             // 캐릭터 정보 아이템 지급 (우클릭으로 능력치·특성 GUI 열기)
             giveInfoItem(p);
             giveRecordItem(p); // 기록(로그/정보) 아이템 지급
@@ -4460,6 +4462,7 @@ public class TRPGGameManager {
         target.isDead = false;
         target.puppetRecoveryTurns = 0; // 완전 잠식(관전) 해제 — 아군 회복이 조종을 완전히 풀어준다
         target.faintTurnsRemaining = 0; // 기절 타이머도 해제
+        restorePlaying(target); // 부활 시 관전(스펙테이터) 해제 → 생존 복귀
         applyTraitUsed(pd, traitId, state.getCurrentTurn());
         updateAllScoreboards();
         String targetDisplay = target.gmDisplayName();
@@ -7796,6 +7799,50 @@ public class TRPGGameManager {
      * 탈락(사망)한 플레이어가 행동을 시도하면 침묵하지 않고 자신의 상태를 텍스트로 안내한다.
      * (이전에는 isDead면 아무 응답 없이 무시 → "채팅이 막히고 아무것도 안 나온다"는 문제 발생)
      */
+    // ── 관전(스펙테이터) 시스템 — 게임 전부터 관전 중인 관찰자용 ──────────────
+    //   ※ 참여자는 사망해도 스펙테이터로 바뀌지 않는다(부활·몸 유지 정합). 스펙테이터 모드인 사람이 대상을 관전하면 도구 제공.
+    /** 부활 시 (혹시 스펙테이터였다면) 생존 상태(서바이벌)로 복귀. */
+    private void restorePlaying(PlayerData pd) {
+        if (pd == null) return;
+        Player p = Bukkit.getPlayer(pd.uuid);
+        if (p != null && p.isOnline() && p.getGameMode() == GameMode.SPECTATOR)
+            p.setGameMode(GameMode.SURVIVAL);
+    }
+    /** 관전자가 현재 시점으로 보고 있는(클릭한) 대상의 PlayerData(없으면 null). */
+    private PlayerData spectatedPd(Player spectator) {
+        org.bukkit.entity.Entity t = spectator.getSpectatorTarget();
+        return (t instanceof Player tp) ? state.getPlayer(tp.getUniqueId()) : null;
+    }
+    /** 관전: 대상의 인벤토리를 읽기 전용으로 복제해 연다(책·정보★·기록책 클릭 시 해당 GUI로). */
+    public void openSpectatorMirror(Player spectator) {
+        if (spectator.getGameMode() != GameMode.SPECTATOR) return;
+        PlayerData tpd = spectatedPd(spectator);
+        Player tp = tpd == null ? null : Bukkit.getPlayer(tpd.uuid);
+        if (tpd == null || tp == null) {
+            spectator.sendMessage("§7먼저 관전할 인물을 §f클릭§7해 그 시점으로 들어가세요(그 뒤 웅크리기).");
+            return;
+        }
+        org.bukkit.inventory.Inventory mirror = Bukkit.createInventory(null, 45,
+            net.kyori.adventure.text.Component.text("[관전] " + tpd.gmDisplayName() + " 의 소지품"));
+        ItemStack[] src = tp.getInventory().getContents();
+        for (int i = 0; i < src.length && i < 45; i++) if (src[i] != null) mirror.setItem(i, src[i].clone());
+        spectator.openInventory(mirror);
+        spectator.sendMessage("§8(§f책§8=클릭해 읽기 · §f정보★§8=캐릭터 정보 · §f기록책§8=기록 · 아이템은 열람만)");
+    }
+    /** 관전: 대상의 캐릭터 정보(보기 전용 — 능력 발동 불가). */
+    public void openSpectatorInfo(Player spectator) {
+        PlayerData tpd = spectatedPd(spectator);
+        if (tpd == null) { spectator.sendMessage("§7관전할 인물을 먼저 클릭하세요."); return; }
+        dialogMan.showCharacterInfo(spectator, tpd, charGen.describeJob(tpd.job),
+            traitId -> spectator.sendMessage("§7관전 중에는 능력을 발동할 수 없습니다(보기 전용)."));
+    }
+    /** 관전: 대상의 기록(보기 전용). */
+    public void openSpectatorRecords(Player spectator) {
+        PlayerData tpd = spectatedPd(spectator);
+        if (tpd == null) { spectator.sendMessage("§7관전할 인물을 먼저 클릭하세요."); return; }
+        dialogMan.showRecordChoice(spectator, tpd);
+    }
+
     private void sendDeadStatus(Player player, PlayerData pd) {
         long now = System.currentTimeMillis();
         Long last = lastDeadNotice.get(player.getUniqueId());
