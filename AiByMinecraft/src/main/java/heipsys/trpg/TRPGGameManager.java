@@ -928,7 +928,13 @@ public class TRPGGameManager {
         }
     }
     private void bumpStat(PlayerData pd, int idx, int amt) {
-        switch (idx) { case 0 -> pd.str += amt; case 1 -> pd.cha += amt; case 2 -> pd.luk += amt; default -> pd.spr += amt; }
+        // 스탯 상한 20(문서 범위 1~20) 클램프 — 시작 보정 누적이 범위를 넘지 않게.
+        switch (idx) {
+            case 0 -> pd.str = Math.min(20, pd.str + amt);
+            case 1 -> pd.cha = Math.min(20, pd.cha + amt);
+            case 2 -> pd.luk = Math.min(20, pd.luk + amt);
+            default -> pd.spr = Math.min(20, pd.spr + amt);
+        }
     }
     /** 보유 특성 중 가장 낮은 등급 하나를 한 단계 올린다(A 상한). 올릴 게 없으면 false. */
     private boolean upgradeOneTrait(PlayerData pd, java.util.List<String> notes) {
