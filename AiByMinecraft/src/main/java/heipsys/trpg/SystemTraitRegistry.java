@@ -320,6 +320,15 @@ public class SystemTraitRegistry {
         sb.append("  예) '악몽의 잔상' — 지난 악몽에서 단서 한 조각 → gm_directive\n");
         sb.append("★ 이 구분을 절대 무시하지 말 것. 회상·직관·내면 경험형 특성에 ai_query를 쓰면 치명적 버그 발생.\n\n");
 
+        sb.append("## ★★ effectType은 능력의 '컨셉(이름·설명·effect·origin)'과 반드시 일치 ★★\n");
+        sb.append("'정보를 준다'는 이유만으로 ai_query(초자연적 질문·신탁)를 붙이지 마라 — 발동 시 나오는 '행동'이 이름·컨셉과 어긋나면(예: 방송 권한인데 신비한 속삭임이 나옴) 잘못된 effectType다. 능력의 ★실제 수단★에 맞춰라:\n");
+        sb.append("  · 통신·방송·지시 전달·채널 제어·연락 개통 → gm_directive(통신형). (설득·회유면 social)\n");
+        sb.append("  · 감시·모니터링·도청·엿듣기·원격 청취/투시 → remote_sense.\n");
+        sb.append("  · 아군 위치·생사 파악 → link_ally.   · 현재 구역 수색·탐색 → area_scan.\n");
+        sb.append("  · '직접 질문해 답을 얻음 / 점술·예지·직감·계시로 앎'(초자연적 앎) → ai_query·scenario_insight 등.\n");
+        sb.append("  · ★현실 권한·장비(관제 권한·마스터키·해킹·CCTV·무전 등)는 그 장비의 실제 기능에 맞는 effectType★ — 신비한 신탁으로 바꾸지 마라.\n");
+        sb.append("  반례(★하지 마라★): '방송 지시 권한'(마이크로 지시·현장 음성 모니터링) → ai_query ✗ → gm_directive(지시 방송) 또는 remote_sense(모니터링) ○.\n\n");
+
         sb.append("## ★ 발동 방식 3분류 (자동/수동/상태조건) — 능력 표현 기준 ★\n");
         sb.append("능력의 '발동 조건'은 아래 셋 중 하나로 표현한다(소설식 '자동/수동/상태조건'과 동일):\n");
         sb.append("  · 수동(직접 발동): active=true. 플레이어가 버튼으로 발동. 예) 질문권·즉시판정.\n");
