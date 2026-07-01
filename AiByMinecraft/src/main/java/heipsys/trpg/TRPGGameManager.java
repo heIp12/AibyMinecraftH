@@ -5660,11 +5660,18 @@ public class TRPGGameManager {
         return !isHostileNpc(npc) && !isIntentionalDoubleNpc(npc);
     }
 
-    /** 정체성 겹침 NPC의 자율 AI/서술에 붙이는 '너희는 한 사람' 인지 — 낯선 제3자 모순·반전 소멸을 막는다. */
+    /** 이름 겹침 NPC가 '의도된 정체성 반전' 후보인가 — 숨은 역할(true_role)이 있거나 적대/위장·거울/분신형일 때만.
+     *  이 신호가 없으면 그냥 우연한 동명이인으로 보고 아무 지시도 붙이지 않는다(일반 NPC 혼란 방지). */
+    private boolean hasIdentityTwistSignal(JsonObject npc) {
+        return isHostileNpc(npc) || isIntentionalDoubleNpc(npc) || !getStr(npc, "true_role").isBlank();
+    }
+
+    /** 이름 겹침 NPC에 붙이는 ★조건부★ 정체성 안내 — 단정하지 않는다(동명이인이면 무시하도록).
+     *  설정상 동일 인물/숨은 측면일 때만 '한 사람'으로 굴게 해, 우연히 이름만 같은 일반 NPC의 혼란을 막는다. */
     private String buildIdentityOverlapNote(String playerLabel) {
-        return "\n\n## 정체성 겹침 인지 ★\n너는 플레이어가 연기 중인 '" + playerLabel + "'와 ★같은 정체성★일 수 있다"
-            + "(반전: 숨은 측면·무의식·과거·위장·이중인격 등). 그 사람을 낯선 제3자처럼 대하거나 너가 그와 별개의 사람인 척 모순되게 굴지 마라. "
-            + "반전이라면 '한 사람의 두 면'으로 일관되게 — 선량한 이가 모르고 저지르는 일, 악인이 선한 척하는 일 같은 반전을 스스로 무너뜨리지 마라.\n";
+        return "\n\n## 정체성 관계 확인 ★\n플레이어가 연기하는 '" + playerLabel + "'와 네 이름이 같다. 아래를 ★네 설정에 따라 스스로 판단★하라(억지로 동일 인물이라 여기지 마라):\n"
+            + "- ★설정상 네가 그 사람과 동일 인물이거나 그 사람의 숨은 측면(무의식·과거·위장·이중인격 등)이라면★: 그를 낯선 제3자처럼 대하지 말고 '한 사람의 두 면'으로 일관되게 행동하라(선량한 이의 무자각 가해·악인의 위장 같은 반전을 스스로 무너뜨리지 마라).\n"
+            + "- ★그저 이름이 우연히 같은 별개의 인물이라면★ 이 안내는 무시하고 평소처럼 독립된 인물로 행동하라.\n";
     }
 
     /** 거울·분신·복제형 '의도된 도플갱어' NPC인가 — 같은 이름을 공유하는 것이 설계 의도인 경우. */
@@ -5990,7 +5997,7 @@ public class TRPGGameManager {
                 ? npcPrompt + "\n응답 말미에 <THOUGHT>지금 이 NPC의 내면 생각 1문장</THOUGHT>을 출력하라.\n"
                 : npcPrompt)
                 + buildNpcCallInstruction(npcId, npcZone) // NPC가 먼저 연락할 수 있게(닿는 상대 목록+태그)
-                + (overlapPlayer != null ? buildIdentityOverlapNote(overlapPlayer) : ""); // 정체성 겹침이면 '같은 사람' 인지 주입
+                + (overlapPlayer != null && hasIdentityTwistSignal(npcObj) ? buildIdentityOverlapNote(overlapPlayer) : ""); // 반전 신호 있는 동명만 조건부 안내(우연 동명이인 제외)
 
             ai.callNpcAi(npcId, npcPromptFinal, actionLog).thenAccept(npcResp -> {
                 if (npcResp == null || npcResp.startsWith("§c")) return;
@@ -7796,7 +7803,7 @@ public class TRPGGameManager {
             String ov = overlappingPlayerLabel(npc);
             if (ov != null && isAccidentalIdentityDup(npc)) { embodiedNames.add(ov); continue; }
             autoNpcs.add(npc);
-            if (ov != null) sharedIdentity.add("'" + getStr(npc, "name") + "' ↔ 배역 '" + ov + "'");
+            if (ov != null && hasIdentityTwistSignal(npc)) sharedIdentity.add("'" + getStr(npc, "name") + "' ↔ 배역 '" + ov + "'"); // 반전 신호 있는 동명만(우연 동명이인 제외)
         }
         if (!autoNpcs.isEmpty()) {
             sb.append("\n## 자율 NPC (독립 AI 결정 → GM이 서술) ★\n");
@@ -7813,10 +7820,11 @@ public class TRPGGameManager {
             }
         }
         if (!sharedIdentity.isEmpty()) {
-            sb.append("\n## 같은 정체성 인물 — 한 사람으로 다뤄라(반전 보존) ★★\n");
-            sb.append("아래 NPC는 플레이어가 연기하는 배역과 ★같은 정체성★일 수 있다(반전: 무의식·과거·위장·이중인격·거울 등). ");
-            sb.append("두 사람을 낯선 제3자로 취급하거나 서로를 못 알아보게 하지 말고 '한 사람의 두 면'으로 일관되게 다뤄라 — ");
-            sb.append("선량한 이가 모르고 저지르는 일, 악인이 선한 척하는 일 같은 반전을 지워버리지 마라(그 관계·비밀은 탐색으로 드러나게).\n");
+            sb.append("\n## 이름이 겹치는 인물 — 설정 확인 후 다뤄라 ★\n");
+            sb.append("아래 NPC는 플레이어 배역과 이름이 같고 숨은 역할이 있어 ★반전으로 동일 인물일 수 있다★(무의식·과거·위장·이중인격·거울 등). ");
+            sb.append("설정상 동일 인물/숨은 측면이면 낯선 제3자로 취급하지 말고 '한 사람의 두 면'으로 일관되게 다뤄라 — ");
+            sb.append("선량한 이의 무자각 가해·악인의 위장 같은 반전을 지워버리지 마라(관계·비밀은 탐색으로 드러나게). ");
+            sb.append("설정상 그냥 동명이인이면 별개 인물로 두어라.\n");
             for (String s : sharedIdentity) sb.append("- ").append(s).append("\n");
         }
         if (!embodiedNames.isEmpty()) {
