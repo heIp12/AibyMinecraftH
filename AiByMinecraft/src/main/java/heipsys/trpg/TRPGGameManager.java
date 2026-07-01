@@ -6295,6 +6295,14 @@ public class TRPGGameManager {
                 && (msg.contains("전체") || msg.contains("전원") || msg.contains("모두") || msg.contains("다들") || msg.contains("전 직원")))
             device = true;
         if (!device) return false;
+        // ★청취(수동) 제외★: '방송을 듣/들으며 · 방송이 들린다/나온다/흘러나온다 · 방송 소리' 등은 방송을 ★듣는★ 상황이지
+        //   내가 ★내보내는★ 게 아니다. (예: "방송을 들으며 '가자' 이동한다" → 방송이 아니라 평범한 행동 서술)
+        //   방송을 언급했다고 무조건 송출되어 평범한 채팅이 방송으로 오인되던 불만을 수정.
+        if (msg.contains("방송을 듣") || msg.contains("방송을 들") || msg.contains("방송 듣") || msg.contains("방송 들")
+                || msg.contains("방송이 들") || msg.contains("방송이 나오") || msg.contains("방송이 흘러")
+                || msg.contains("방송이 울려") || msg.contains("방송 소리") || msg.contains("나오는 방송")
+                || msg.contains("들리는 방송") || msg.contains("들려오"))
+            return false;
         boolean utter = msg.indexOf('"') >= 0 || msg.indexOf('“') >= 0 || msg.indexOf('”') >= 0
             || msg.indexOf('\'') >= 0 || msg.indexOf('「') >= 0
             || msg.contains("말") || msg.contains("외치") || msg.contains("외쳐") || msg.contains("알린")
