@@ -7,6 +7,7 @@ import org.bukkit.entity.Player;
 
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * /trpg 커맨드 핸들러.
@@ -40,9 +41,18 @@ public class CMDTrpg implements CommandExecutor, TabCompleter {
         }
 
         switch (args[0].toLowerCase()) {
-            case "start"  -> {
+            case "start", "s"  -> {
                 if (!player.isOp()) { player.sendMessage("§c권한이 없습니다."); return true; }
-                trpg.startSession(player);
+                // /trpg start setting  (또는 /trpg s s) → 시작 옵션 설정
+                if (args.length > 1 && (args[1].equalsIgnoreCase("setting") || args[1].equalsIgnoreCase("set") || args[1].equalsIgnoreCase("s"))) {
+                    trpg.handleStartSetting(player, Arrays.copyOfRange(args, 2, args.length));
+                } else {
+                    trpg.startSession(player);
+                }
+            }
+            case "setting", "set" -> {
+                if (!player.isOp()) { player.sendMessage("§c권한이 없습니다."); return true; }
+                trpg.handleStartSetting(player, Arrays.copyOfRange(args, 1, args.length));
             }
             case "stop"   -> {
                 if (!player.isOp()) { player.sendMessage("§c권한이 없습니다."); return true; }
@@ -113,7 +123,7 @@ public class CMDTrpg implements CommandExecutor, TabCompleter {
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (args.length == 1) {
-            List<String> subs = List.of("start", "stop", "retry", "next", "resume", "load", "read", "replay", "replaylist", "list", "status", "me", "log", "info", "추천", "map", "trait", "ending", "givetrait", "jobrefresh", "help");
+            List<String> subs = List.of("start", "setting", "stop", "retry", "next", "resume", "load", "read", "replay", "replaylist", "list", "status", "me", "log", "info", "추천", "map", "trait", "ending", "givetrait", "jobrefresh", "help");
             String partial = args[0].toLowerCase();
             return subs.stream()
                 .filter(s -> s.startsWith(partial))
@@ -121,6 +131,13 @@ public class CMDTrpg implements CommandExecutor, TabCompleter {
         }
         if (args.length == 2) {
             String sub = args[0].toLowerCase();
+            String partial2 = args[1].toLowerCase();
+            if (sub.equals("setting") || sub.equals("set")) {
+                return Stream.of("pregen", "stage").filter(s -> s.startsWith(partial2)).collect(Collectors.toList());
+            }
+            if (sub.equals("start") || sub.equals("s")) {
+                return Stream.of("setting").filter(s -> s.startsWith(partial2)).collect(Collectors.toList());
+            }
             if (sub.equals("load") || sub.equals("read")) {
                 String partial = args[1].toLowerCase();
                 return trpg.listSavedSeeds().stream()
@@ -161,6 +178,7 @@ public class CMDTrpg implements CommandExecutor, TabCompleter {
     private void sendHelp(Player player) {
         player.sendMessage("§e[TRPG 커맨드]");
         player.sendMessage("§f/trpg start §7— 새 세션 시작 (OP)");
+        player.sendMessage("§f/trpg setting §7— 시작 옵션(자동 사전생성·시작 스테이지) 설정 (OP)");
         player.sendMessage("§f/trpg load <씨드> §7— 저장된 세션 불러오기 (OP)");
         player.sendMessage("§f/trpg read <씨드> §7— .gdam 복호화 후 .json으로 내보내기 (OP)");
         player.sendMessage("§f/trpg replay <코드> §7— 기록된 시작(직업·특성·능력치)으로 그 스테이지만 재현 (OP)");
