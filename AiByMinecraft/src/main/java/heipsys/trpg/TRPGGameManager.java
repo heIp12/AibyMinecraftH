@@ -6378,12 +6378,21 @@ public class TRPGGameManager {
         //   방송을 언급했다고 무조건 송출되어 평범한 채팅이 방송으로 오인되던 불만을 수정.
         //   단, ★능동 송출 동사(방송한다/송출/외친다/내보낸다)가 함께 있으면★ 청취가 아니라 '들리도록 송출'이므로 억제하지 않는다.
         boolean activeSend = msg.contains("방송한") || msg.contains("방송해") || msg.contains("방송했")
-                || msg.contains("송출") || msg.contains("내보") || msg.contains("외치") || msg.contains("외쳐");
-        if (!activeSend && (msg.contains("방송을 듣") || msg.contains("방송을 들") || msg.contains("방송 듣") || msg.contains("방송 들")
-                || msg.contains("방송이 들") || msg.contains("방송이 나오") || msg.contains("방송이 흘러")
-                || msg.contains("방송이 울려") || msg.contains("방송 소리") || msg.contains("나오는 방송")
-                || msg.contains("들리는 방송")))   // ('들려오'는 능동 송출에도 흔히 붙어 과억제 → 제거)
-            return false;
+                || msg.contains("송출") || msg.contains("내보") || msg.contains("외치") || msg.contains("외쳐")
+                || msg.contains("외쳤") || msg.contains("외침");
+        // ★수신(청취) 제외★: 방송뿐 아니라 통신·무전·교신·음성·목소리가 '들리거나 흘러나오는' 상황은
+        //   내가 ★내보내는★ 게 아니라 ★듣는★ 것이다(기기 단어가 있어도 방송 송출 아님).
+        //   "통신을 듣고 뛰었다 / 스피커에서 통신이 흘러나오자 …" 같은 평범한 서술의 방송 오판을 막는다.
+        //   ('들려오'는 능동 송출에도 흔히 붙어 과억제 → 제외.  activeSend가 있으면 수신 언급이 있어도 송출로 본다.)
+        if (!activeSend) {
+            for (String n : new String[]{"방송", "통신", "무전", "교신", "음성", "목소리"}) {
+                if (msg.contains(n + "을 듣") || msg.contains(n + "을 들") || msg.contains(n + " 듣") || msg.contains(n + " 들")
+                        || msg.contains(n + "이 듣") || msg.contains(n + "이 들") || msg.contains(n + "이 나오")
+                        || msg.contains(n + "이 흘러") || msg.contains(n + "이 울려") || msg.contains(n + " 소리")
+                        || msg.contains("나오는 " + n) || msg.contains("들리는 " + n) || msg.contains("흘러나오는 " + n))
+                    return false;
+            }
+        }
         boolean utter = msg.indexOf('"') >= 0 || msg.indexOf('“') >= 0 || msg.indexOf('”') >= 0
             || msg.indexOf('\'') >= 0 || msg.indexOf('「') >= 0
             || msg.contains("말") || msg.contains("외치") || msg.contains("외쳐") || msg.contains("알린")
