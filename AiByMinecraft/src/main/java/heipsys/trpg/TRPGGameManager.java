@@ -1510,9 +1510,14 @@ public class TRPGGameManager {
         PlayerData pd = state.getPlayer(player);
         if (pd == null) return;
         if (pd.isDead) { sendDeadStatus(player, pd); return; }
-        if (pd.puppetRecoveryTurns > 0) {
-            player.sendMessage("§5완전히 조종되어 스스로 행동할 수 없습니다...");
-            player.sendMessage("§8(관전 중 | 상태: §5완전 잠식 §8| 회복까지 약 §f" + pd.puppetRecoveryTurns + "§8턴)");
+        if (pd.puppetRecoveryTurns != 0) {
+            if (pd.puppetRecoveryTurns < 0) { // 완전 조종(괴담팀) — 자연 회복 없음, 치유 능력으로만 복구
+                player.sendMessage("§5괴담에게 완전히 삼켜져 스스로 행동할 수 없습니다...");
+                player.sendMessage("§8(완전 조종 | §f치유(회복) 능력§8으로만 돌아올 수 있습니다)");
+            } else {
+                player.sendMessage("§5완전히 조종되어 스스로 행동할 수 없습니다...");
+                player.sendMessage("§8(관전 중 | 회복까지 약 §f" + pd.puppetRecoveryTurns + "§8턴)");
+            }
             return;
         }
         // 괴담 변신(gdam_morph) 중: 통제 불가 — 플레이어 입력은 '변신체가 제멋대로 날뛰는' GM 구동 턴으로 처리한다
@@ -2031,28 +2036,38 @@ public class TRPGGameManager {
                     //   이 처리가 없으면 SAN이 한 번이라도 0이 된 뒤 회복해도 status="puppet"이 남아
                     //   GM이 매 턴 '조종됨'으로 서술하는 무한 조종 서술 버그가 생긴다.
                     //   막 관전 해제된 경우(위 if)는 '아직 영향 아래' 한 단계를 유지하고 다음 회복에서 normal이 된다.
-                    else if ("puppet".equals(pd.status) && pd.san[0] > 0) {
+                    else if ("puppet".equals(pd.status) && pd.san[0] > 0 && pd.puppetRecoveryTurns != -1) {
+                        // 완전 조종(-1)은 자연 SAN 회복으로 풀리지 않는다(치유 능력 전용) — 그 외 홀림만 각성 처리.
                         pd.status = "normal";
                         Player t3 = Bukkit.getPlayer(pd.uuid);
                         if (t3 != null) t3.sendMessage("§a정신이 돌아왔다. 다시 자신의 의지로 행동할 수 있습니다.");
                         ai.injectGmSystem("[각성] " + commDisplayName(pd) + "의 자아가 완전히 돌아왔다. 더 이상 조종당하지 않는다(normal). 이제부터 조종 서술 금지.");
                     }
-                    if (horrorActive && pd.san[0] <= 0 && !pd.isDead) {
+                    // ★정신력 사망 모델★: 1 → 홀림(행동불가, 회복) / 0 → 완전 조종(괴담팀 편입, 치유 능력으로만 복구).
+                    if (horrorActive && pd.san[0] <= 1 && !pd.isDead) {
                         Player target = Bukkit.getPlayer(pd.uuid);
-                        if ("puppet".equals(pd.status) || "faint".equals(pd.status)) {
-                            // 홀림·기절 상태에서 SAN=0 재도달 → 완전 잠식(관전). 탈락하지 않음.
-                            pd.faintTurnsRemaining = 0; // 기절 타이머 리셋 (완전 잠식이 우선)
+                        if (pd.san[0] <= 0) {
+                            // ★정신력 0 → 완전 조종(괴담팀)★: 괴담이 몸·능력을 마음대로 부린다. 죽지 않으며 ★치유(회복) 능력으로만★ 복구.
+                            pd.faintTurnsRemaining = 0;
                             pd.status = "puppet";
-                            pd.puppetRecoveryTurns = computePuppetRecoveryTurns(pd); // 가변(정신력 최대치·피해 비례)
+                            pd.puppetRecoveryTurns = -1; // sentinel: 자연 회복 없음(heal-only) + 입력 차단
+                            if (target != null) {
+                                target.sendMessage("§5의식이 완전히 삼켜졌습니다. 몸이 더 이상 당신의 것이 아닙니다...");
+                                target.sendMessage("§8(완전 조종 — 괴담이 당신을 부립니다. §f치유(회복) 능력§8으로만 돌아올 수 있습니다)");
+                            }
+                            ai.injectGmSystem("[완전 조종] " + commDisplayName(pd) + "의 정신이 무너져 ★괴담의 것★이 됐다 — 괴담이 이 인물의 몸과 ★능력까지★ 마음대로 부린다(아군을 공격·기만할 수 있다). "
+                                + "이 인물을 괴담 편 행위자로 서술하라. 스스로 행동 불가. 오직 아군의 '치유(회복) 능력'으로만 자아를 되찾는다(자연 회복 없음).");
+                        } else if (!"puppet".equals(pd.status)) {
+                            // ★정신력 1 → 홀림(행동불가)★: 잠시 조종당하나 몇 턴 뒤 자아가 돌아온다(피해 비례 지속).
+                            pd.faintTurnsRemaining = 0;
+                            pd.status = "puppet";
+                            pd.puppetRecoveryTurns = computePuppetRecoveryTurns(pd);
                             int rec = pd.puppetRecoveryTurns;
                             if (target != null) {
-                                target.sendMessage("§5의식이 완전히 잠식되었습니다. 육체만이 남아 움직입니다...");
-                                target.sendMessage("§8(관전 상태 — 약 " + rec + "턴 후 자아 일부 회복 · 아군의 도움으로 더 빨리 풀 수 있음)");
+                                target.sendMessage("§5이성이 흔들린다... 잠시 몸이 뜻대로 움직이지 않습니다.");
+                                target.sendMessage("§8(홀림 — 약 " + rec + "턴 후 자아 회복 · 아군의 도움으로 단축)");
                             }
-                            ai.injectGmSystem("[완전 잠식] " + commDisplayName(pd) + "의 의식이 무너졌다. 육체가 괴담의 손발로 움직인다. 약 " + rec + "턴 후 자아 일부 회복(아군이 흔들어 깨우거나 SAN 회복 시 더 빨리).");
-                        } else {
-                            pd.status = "puppet";
-                            if (target != null) target.sendMessage("§5이성이 무너져 내린다... 당신의 의지가 서서히 사라지는 것이 느껴진다.");
+                            ai.injectGmSystem("[홀림] " + commDisplayName(pd) + "의 정신이 흔들려 약 " + rec + "턴간 몸이 조종된다(스스로 행동 불가). 그 뒤 자아가 돌아온다. 서술에 반영하라.");
                         }
                     }
                 }
@@ -2126,7 +2141,8 @@ public class TRPGGameManager {
                 if (pd.isDead && !deadBefore) vcause = "사망";
                 else if (!statusBefore.equals(pd.status)) vcause = switch (pd.status) {
                     case "faint"  -> "행동불가(기절)";
-                    case "puppet" -> (pd.puppetRecoveryTurns > 0 ? "완전 잠식(관전)" : "조종(홀림)");
+                    case "puppet" -> (pd.puppetRecoveryTurns < 0 ? "완전 조종(괴담팀)"
+                                      : pd.puppetRecoveryTurns > 0 ? "홀림(행동불가)" : "조종");
                     case "animal" -> "동물화";
                     case "normal" -> "회복";
                     case "dead"   -> "사망";
