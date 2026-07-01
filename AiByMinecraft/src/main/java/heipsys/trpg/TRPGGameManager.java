@@ -2801,12 +2801,60 @@ public class TRPGGameManager {
         }
     }
 
+    /**
+     * ★정보 계열 공통 원칙★ — '지혜' 축복형 설계: 등급↑ = 서술량이 아니라 '제약 해제(정밀도·권한)'.
+     * 항상 짧게, 검열된 올빼미처럼 애매하게(생각할 여지), 해답을 떠먹이지 않는다.
+     * 모든 정보 능력 ctx 끝에 붙여 일관 적용한다(중복 게이트 문구 통합).
+     */
+    private static final String INFO_TIER_PRINCIPLE =
+          "## 정보 공개 원칙(엄수)\n"
+        + "- ★길이는 항상 짧게 고정★: 등급이 높아도 문장을 늘리지 마라(기본 1문장, 꼭 필요할 때만 2문장). 부연·나열 금지.\n"
+        + "- ★등급↑ = 제약 해제(정밀도·권한)이지 분량 증가가 아니다★: 낮은 등급은 '흐릿한 느낌 한 조각'(또렷이 말할 권한 없음), 높은 등급은 '또렷한 사실·정확한 위치·근거 있는 가능성 한 조각'을 ★같은 짧은 길이로★ 준다.\n"
+        + "- ★떠먹이지 않는다★: 최고 등급이라도 해답·해결 절차를 통째로 풀지 말고, 애매하게(생각할 여지를 남기게) 급소만 짚어 스스로 연결하게 하라. 위급하면 경고만.\n"
+        + "- ★단, 플레이어가 이미 발견·확보한 정보(아래 목록이 있으면)는 인과율 제한에서 자유롭다★ — 그건 애매하게 돌릴 필요 없이 또렷이 확답·연결해 ★정답 쪽으로 유도★해도 된다(제약은 '아직 모르는 새 비밀'에만).\n"
+        + "- ★전달 말투는 이 능력의 '출처(이름·표방 효과)'에 맞춰 아래 넷 중 하나를 골라 빚어라★:\n"
+        + "  ① 인과율에 얽매인 유형 → 최대한 ★빙 둘러 말한다★(직답 회피·은유·수수께끼).\n"
+        + "  ② 계시형 → ★핵심 단어나 문장 '하나'만★ 툭 던진다(부연 없이).\n"
+        + "  ③ 집약형(전지·통찰) → 여러 정보를 ★한 단어·한 문장에 압축★한다(짧지만 밀도 높게).\n"
+        + "  ④ '미래의 나' 유형 → 미래의 자신이 보내는 말투로 ★단 하나의 실패★를 짚어 경고한다.\n"
+        + "  (능력 설명에 뚜렷한 결이 없으면 ①~② 중 상황에 맞게.)\n";
+
+    /**
+     * ★관찰·감지형 공통 원칙★(원격감지·환경탐색·아군감지) — 초자연적 예언이 아니라 '눈·귀로 본 것을 그대로'.
+     * 오라클형(예언·직감)과 달리 수수께끼로 꼬지 않고 담담히 전하며, ★허탕(빈손)도 정직하게★ 가능하다.
+     */
+    private static final String INFO_OBSERVE_PRINCIPLE =
+          "## 관찰·감지 원칙(엄수)\n"
+        + "- ★본 것을 그대로 담담히★ 전한다 — 수수께끼·은유·예언 말투 금지(초자연적 예언이 아니라 눈·귀로 관찰한 것이다).\n"
+        + "- ★길이는 짧게 고정★(1문장, 길어도 2문장). 등급↑ = 범위·정밀도 해제이지 분량 증가가 아니다.\n"
+        + "- ★허탕 가능★: 잡히는 게 없으면 '멀어서/막혀서 잡히는 것이 없다'처럼 ★정직하게 빈손★을 알려라 — 그저 텅 빈 광경일 수도 있다. 억지로 단서를 지어내지 마라.\n"
+        + "- 관찰로 드러난 사실까지만. 핵심 해결법·정답은 관찰로도 통째로 주지 않는다.\n";
+
+    /**
+     * 오라클형 정보 능력에 '플레이어가 이미 발견·확보한 정보(keyFacts)'를 주입한다.
+     * ★이미 아는 정보는 인과율 제한에서 자유★ — 또렷이 확답·연결해 정답으로 유도해도 된다. 없으면 "".
+     */
+    private String knownFactsBlock(PlayerData pd) {
+        if (pd == null) return "";
+        List<String> facts;
+        synchronized (pd.keyFacts) { facts = new ArrayList<>(pd.keyFacts); }
+        if (facts.isEmpty()) return "";
+        int n = facts.size();
+        List<String> show = facts.subList(Math.max(0, n - 8), n); // 최근 8개만(과다 주입 방지)
+        StringBuilder sb = new StringBuilder(
+            "\n## 플레이어가 이미 발견·확보한 정보 (★인과율 제한에서 자유 — 또렷이 확답·연결해 정답으로 유도 가능★)\n");
+        for (String f : show) sb.append("  · ").append(f.replaceAll("§.", "")).append("\n");
+        sb.append("- 위 '이미 아는 것들'끼리, 또는 지금 주는 조각과 이어져 정답을 가리키면 ★그 연결의 실마리를 짚어줘라★(스포일러가 아니라 플레이어 몫의 확답이다).\n");
+        return sb.toString();
+    }
+
     private void activateAiQueryAutoFire(Player player, PlayerData pd, TraitData td) {
         int info = td.param("info", 1);
+        // ★등급=정밀도(길이 아님)★: 3=또렷한 잔상 한 조각 / 2=방향 잡히는 잔상 / 1=느낌만 — 전부 '한 문장'.
         String depthRule = switch (info) {
-            case 3 -> "- 핵심 근처를 ★짧고 중의적인 1~2문장★의 잔상·직관으로만 스치게 한다(해결법 직접 노출 금지, 여러 해석이 가능하게).\n";
-            case 2 -> "- ★한두 문장의 두루뭉실한 잔상★으로 방향만 흐릿하게 암시한다.\n";
-            default -> "- '어렴풋한 느낌·예감·낌새'만 ★한 문장★으로 모호하게 스친다. 직접적 단서 나열 금지.\n";
+            case 3 -> "- ★한 문장★으로 핵심에 근접한 ★또렷한 잔상 한 조각★을 스치게 한다(해결법 자체는 아니게, 애매하게).\n";
+            case 2 -> "- ★한 문장★으로 방향이 어렴풋이 잡히는 잔상을 준다.\n";
+            default -> "- ★한 문장★으로 '어렴풋한 느낌·예감·낌새'만 모호하게 스친다.\n";
         };
         String charDisplay = pd.gmDisplayName();
         String directive = (td.effect != null && !td.effect.isBlank())
@@ -2819,7 +2867,8 @@ public class TRPGGameManager {
             + "- 마치 기억이 어렴풋이 떠오르거나, 직관이 번뜩이거나, 눈앞에 잔상이 스치는 것처럼 묘사한다.\n"
             + depthRule
             + "- 독백·내면의 소리는 <-내용-> 형식으로 표현할 수 있다.\n"
-            + "- 서술 완료 후 게임 진행을 타임라인에 적절히 반영한다.\n";
+            + "- 서술 완료 후 게임 진행을 타임라인에 적절히 반영한다.\n"
+            + INFO_TIER_PRINCIPLE + knownFactsBlock(pd);
 
         String prompt = charDisplay + "이(가) '" + td.name + "' 특성으로 기억·직관을 경험한다. "
             + "이 순간의 내면 경험을 GM 서술로 묘사해줘.";
@@ -3732,11 +3781,12 @@ public class TRPGGameManager {
             case 1  -> "인접한 다른 구역";
             default -> "같은 층의 다른 구역";
         };
+        // ★등급=정밀도(길이 아님)★: 3=또렷한 사실 한 조각 / 2=사실 하나 / 1=기척 / 0=느낌 — 전부 짧게.
         String depthRule = switch (info) {
-            case 3  -> "- 핵심 해결법 자체는 직접 알려주지 않되, 원격으로 본 내용을 꽤 구체적으로 2~3문장 서술한다.\n";
-            case 2  -> "- 원격으로 감지한 사실을 1~2가지 암시한다(2문장 이내).\n";
-            case 1  -> "- '어렴풋한 인기척·소리·기척' 수준으로 부분적으로만 묘사한다(2문장 이내).\n";
-            default -> "- 아주 모호한 '느낌·예감' 형식으로만 1문장 암시한다. 직접적 단서 나열 금지.\n";
+            case 3  -> "- ★1문장(길면 2문장)★으로 원격의 ★또렷한 사실 한 조각★을 짚는다 — 무엇이 어디에 있는지 급소만(해결법 자체는 아니게).\n";
+            case 2  -> "- ★1문장★으로 원격으로 감지한 사실 하나를 짚는다.\n";
+            case 1  -> "- ★1문장★으로 '어렴풋한 인기척·소리·기척' 수준만.\n";
+            default -> "- ★1문장★으로 아주 모호한 '느낌·예감'만.\n";
         };
         String traitName = td != null ? td.name : "원격 감지";
         String senseCtx = "\n## " + traitName + " 원격 감지 처리 (범위: " + rangeStr + ", 정보 깊이 " + info + "/3)\n"
@@ -3744,7 +3794,8 @@ public class TRPGGameManager {
             + "- 반드시 '" + rangeStr + "'에 해당하는 ★다른 장소의 정보만 서술한다(현재 위치 묘사 금지).\n"
             + depthRule
             + "- 새로운 단서는 최대 1개. 핵심 해결법·답은 직접 알려주지 않는다.\n"
-            + "- 감지할 것이 없으면 '멀어서 잡히는 것이 없다' 식으로 서술한다. 억지로 단서를 만들지 않는다.\n";
+            + "- 감지할 것이 없으면 '멀어서 잡히는 것이 없다' 식으로 서술한다. 억지로 단서를 만들지 않는다.\n"
+            + INFO_OBSERVE_PRINCIPLE;
         String charDisplay = pd.gmDisplayName();
         String prompt = charDisplay + "이(가) '" + traitName + "' 특성으로 " + rangeStr
             + "에 있는 '" + target + "'을(를) 원격으로 감지한다. 위 규칙에 맞춰 GM 서술로 묘사해줘.";
@@ -3761,10 +3812,11 @@ public class TRPGGameManager {
         TraitData td = pd.traits.stream().filter(t -> t.id.equals(traitId)).findFirst().orElse(null);
         if (td != null) applyTraitUsed(pd, td.id, state.getCurrentTurn()); // C1: 입력 도착 시 소진
         int depth = td != null ? td.param("depth", 2) : 2;
+        // ★등급=내다보는 깊이(길이 아님)★: 3=직후+핵심 분기 한두 갈래 / 2=직후+한 단계 분기 / 1=직후만 — 전부 짧게.
         String depthRule = switch (depth) {
-            case 3  -> "- 그 행동의 직후 결과뿐 아니라, 이어질 여러 갈래·연쇄 전개까지 2~4문장으로 전망한다.\n";
-            case 2  -> "- 그 행동의 직후 결과와 한 단계 분기를 2~3문장으로 전망한다.\n";
-            default -> "- 그 행동의 직후 예상 결과만 1~2문장으로 짧게 전망한다.\n";
+            case 3  -> "- ★1~2문장★으로 직후 결과 + 한두 갈래 앞의 ★핵심 분기★까지 짚는다(여러 갈래를 길게 나열하지 말 것 — 급소만).\n";
+            case 2  -> "- ★1~2문장★으로 직후 결과와 한 단계 분기를 짚는다.\n";
+            default -> "- ★1문장★으로 직후 예상 결과만 짧게.\n";
         };
         String traitName = td != null ? td.name : "예지";
         String foresightCtx = "\n## " + traitName + " 결과 예지 처리 (예측 깊이 " + depth + "/3)\n"
@@ -3772,7 +3824,8 @@ public class TRPGGameManager {
             + "- 이것은 '전망'일 뿐 실제 판정·진행이 아니다. 타임라인을 진행시키지 말고, 결과를 확정하지도 마라.\n"
             + depthRule
             + "- '~할 것이다 / ~로 보인다 / ~할 위험이 있다' 식의 예측 어조로 서술한다.\n"
-            + "- 핵심 해결법·정답을 통째로 알려주지는 않는다. 어디까지나 가능성·분기 전망이다.\n";
+            + "- 핵심 해결법·정답을 통째로 알려주지는 않는다. 어디까지나 가능성·분기 전망이다.\n"
+            + INFO_TIER_PRINCIPLE + knownFactsBlock(pd);
         String charDisplay = pd.gmDisplayName();
         String prompt = charDisplay + "이(가) '" + traitName + "' 특성으로 다음 행동의 결과를 미리 본다. 의도한 행동: \""
             + action + "\". 위 규칙에 맞춰 예상 결과·분기를 전망해줘.";
@@ -3825,7 +3878,8 @@ public class TRPGGameManager {
         String linkCtx = "\n## " + traitName + " 처리 (감지 깊이 " + depth + "/3)\n"
             + "플레이어가 초감각으로 아군을 탐지하고 있다. 현재 아군 상태:\n" + allyCtx
             + "규칙:\n" + depthRule
-            + "- 직접 통신 채널을 여는 것은 불가. 감각적 인지·이야기 서술로만 표현한다.\n";
+            + "- 직접 통신 채널을 여는 것은 불가. 감각적 인지·이야기 서술로만 표현한다.\n"
+            + INFO_OBSERVE_PRINCIPLE;
         String charDisplay = pd.gmDisplayName();
         String prompt = charDisplay + "이(가) '" + traitName + "' 특성으로 아군을 탐지한다. 탐지 목표: \"" + query + "\"";
         ai.callGmAiOnce(gmSystemPrompt, linkCtx + "\n\n" + prompt).thenAccept(response ->
@@ -3850,7 +3904,8 @@ public class TRPGGameManager {
         String prayerCtx = "\n## " + name + " 질문 처리 (정보 깊이 " + info + "/3)\n"
             + "플레이어가 시스템 특성으로 GM에게 직접 질문했다.\n규칙:\n" + depthRule
             + "- ★배경 정보는 공개★: '지금이 언제인가(시대·시기·대략 시각)·여기가 어디인가(지역·장소·현재/시작 위치)' 같은 무대 배경을 물으면, 정보 깊이와 무관하게 또렷이 알려줘라(핵심 스포일러 아님). 단 시간을 빼앗긴 상태(시간 불명)면 시각만 모호하게.\n"
-            + "- ★반복 조회 누적 금지★: 같은 대상·장소·주제를 다시 물어도 ★새 사실을 더 주지 마라★ — 이미 준 인상과 같은 결을 표현만 달리하라(여러 번 캐물어 진상을 특정하지 못하게).\n";
+            + "- ★반복 조회 누적 금지★: 같은 대상·장소·주제를 다시 물어도 ★새 사실을 더 주지 마라★ — 이미 준 인상과 같은 결을 표현만 달리하라(여러 번 캐물어 진상을 특정하지 못하게).\n"
+            + INFO_TIER_PRINCIPLE + knownFactsBlock(pd);
 
         String charDisplay = pd.gmDisplayName();
         String prompt = charDisplay + "이(가) '" + name + "' 특성으로 질문한다: \"" + question + "\" "
@@ -4066,11 +4121,13 @@ public class TRPGGameManager {
             + "- ★'규칙이 N개 있다 / 약점이 존재한다 / 무언가 있다' 같은 '존재 여부·개수' 진술은 절대 금지.★ 항상 ★실제 내용 조각★만, 그것도 흐릿하게 준다.\n"
             + "- ★같은 대상을 반복해 비춰도 새 사실을 누적하지 마라★ — 이미 준 조각과 같은 결을 표현만 달리하라(반복 사용으로 진상 특정 방지).\n"
             + "- 정답·정확한 해결 절차·붕괴조건은 어떤 경우에도 노출 금지.\n"
-            + "- 선명도는 등급에 비례하되 ★또렷이 단정하지 말 것★: 낮으면 한 조각만 아주 흐릿하게, 높아도 한 가닥 더 짚어주는 정도(여전히 중의적·짧게).\n"
-            + (veryHigh ? "- 이 특성은 등급이 매우 높다: 약점의 '방향' 한 가닥은 흐리게 암시해도 된다(정확한 해결법은 여전히 금지).\n"
+            + "- ★선명도만 등급에 비례(길이는 절대 늘리지 마라)★: 낮으면 한 조각을 아주 흐릿하게, 높으면 ★같은 짧은 길이로★ 한 조각을 더 또렷하게 짚어줄 뿐 — 문장을 늘리거나 나열하지 마라.\n"
+            + (veryHigh ? "- 이 특성은 등급이 매우 높다: 약점의 '방향' 한 가닥을 ★짧고 애매하게★ 스쳐도 된다 — 단 해답 문장처럼 풀어 쓰지 말고(정확한 해결법 금지), 플레이어가 스스로 잇게 하라.\n"
                         : "- 약점·해결법은 절대 직접 알려주지 마라.\n")
-            + "- 마크다운·머리표·메타 설명 없이 서술만.\n";
-        String prompt = "## 시나리오 정보(아래 내용만 근거로 삼아라)\n" + ctx + "\n위 정보로 '" + traitName + "' 직감 브리핑을 작성하라.";
+            + "- 마크다운·머리표·메타 설명 없이 서술만.\n"
+            + INFO_TIER_PRINCIPLE;
+        String prompt = "## 시나리오 정보(아래 내용만 근거로 삼아라)\n" + ctx + knownFactsBlock(pd)
+            + "\n위 정보로 '" + traitName + "' 직감 브리핑을 작성하라.";
 
         ai.callAssistant(system, prompt).thenAccept(raw -> {
             String text = (raw == null) ? "" : raw.replaceAll("```", "").replaceAll("(?m)^#+\\s*", "").trim();
