@@ -549,6 +549,8 @@ public class GameStateManager {
         return currentTurn;
     }
     public int getCurrentTurn()  { return currentTurn; }
+    /** 지금까지 발화(진행)된 타임라인/분기 사건 수 — 통합 진행도 계산용. */
+    public int getFiredEventCount() { return firedEvents.size(); }
 
     // ──────────────────────────────────────────────────────────────
     //  이벤트 로그

@@ -166,6 +166,12 @@ public class TRPGGameManager {
     private final Map<UUID, Integer> commBypassTurn = new ConcurrentHashMap<>();
     /** 통신 개방이 '은밀형'인지(uuid → true). true면 그 통신을 괴담이 감지하지 못한다(통신 유인·추적 반응 억제). */
     private final Map<UUID, Boolean> commBypassStealth = new ConcurrentHashMap<>();
+    /** 상태창 OVERVIEW 캐시 — FULL(전체 개요)은 시작 1회, NOW(눈앞의 시나리오)는 국면(단계) 바뀔 때 갱신. 영화 예고편식·스포일러 금지. */
+    private String scenarioOverviewFull = "";
+    private String scenarioOverviewNow  = "";
+    private int    overviewNowStage     = -999; // NOW를 생성한 timelineStage. 이 값과 현재 단계가 다르면 재생성.
+    /** 상태창 RECENT — 최근 발화한 핵심 사건 라벨(코드가 사건 발화 시 갱신). */
+    private String recentKeyEvent       = "";
     /** 동물 소생(revive_as_animal)으로 동물 형태가 된 플레이어 (uuid). 제한 행동만 가능(능력·통신 불가), 피해 시 진짜 소멸. */
     private final Set<UUID> animalForm = ConcurrentHashMap.newKeySet();
     /** 능력 대가(cost_stun)로 행동불능 상태인 플레이어의 남은 턴 수 (uuid → turns). 0 이하면 정상. */
@@ -2929,27 +2935,88 @@ public class TRPGGameManager {
 
     private void activateShowProgress(Player player, PlayerData pd, TraitData td) {
         applyTraitUsed(pd, td.id, state.getCurrentTurn());
-        // ★정보 계열★: 수치·시스템 용어를 노출하는 대신, 현재 진행 상태를 GM이 '이야기 감각'으로 번역해 알려준다.
-        String phaseStr = state.isDailyPhase()
-            ? "일상 파트 (남은 " + state.getDailyTurnsLeft() + "턴)"
-            : "괴담 파트 — 타임라인 " + state.getTimelineStage() + "단계";
-        String charDisplay = pd.gmDisplayName();
-        String progCtx = "\n## " + td.name + " — 진행도 가늠 (정보 계열)\n"
-            + charDisplay + "이(가) '지금 사건이 얼마나 진행됐는지'를 가늠한다. "
-            + "내부 상태(★플레이어에게 숫자·용어로 노출 금지★): " + phaseStr
-            + ", 오염도 " + corruptMan.getLevel() + "(" + corruptMan.getAttempts() + "회차).\n규칙:\n"
-            + "- 위 수치를 ★그대로 말하지 말고★, 이야기 속 감각(시간의 압박·상황이 얼마나 악화됐는지·고비가 가까운지)으로 1~2문장 번역해 알려줘라.\n"
-            + "- 정답·해결법·붕괴조건은 노출 금지. '얼마나 급한가/어디쯤 왔는가'의 감만 준다.\n"
-            + "- 담담한 톤, 마크다운·머리표·메타 설명 없이 서술만.\n";
-        String prompt = charDisplay + "이(가) '" + td.name + "' 특성으로 사건의 진행 정도를 가늠한다. 위 상태를 이야기 감각으로 알려줘.";
-        player.sendMessage("§e[" + td.name + " — 진행도 가늠 중...]");
-        ai.callGmAiOnce(gmSystemPrompt, progCtx + "\n\n" + prompt).thenAccept(response ->
-            plugin.getServer().getScheduler().runTask(plugin, () -> {
-                String stripped = ai.stripTags(response).trim();
-                if (!stripped.isBlank())
-                    traitReveal(player, pd, "[" + td.name + "] " + stripped, false); // 진행 감각은 인상(표시만, 사실 기록 아님)
-            })
-        );
+        // ★상태창(코드·실시간, GM 콜 없음)★: 하나의 만능 창이 아니라 능력 '성능(등급)'에 따라 ★단편적으로★ 보여준다.
+        //   등급이 낮으면 조각 하나, 높으면 여러 조각. OVERVIEW는 캐시 텍스트(있을 때만).
+        String panel = buildStatusPanel(pd, statusPanelsOf(td));
+        player.sendMessage("§b[" + td.name + "]");
+        if (panel.isBlank()) { player.sendMessage("§8 (지금은 잡히는 정보가 없다.)"); return; }
+        for (String line : panel.split("\n")) if (!line.isEmpty()) player.sendMessage(line);
+    }
+
+    /** 능력 성능(등급)에 따라 보여줄 상태창 패널을 ★단편적으로★ 고른다. effectParams "panels"(CSV)가 풀,
+     *  없으면 기본 우선순위. 등급이 낮을수록 조각 수를 줄인다(C/D 이하=1, B=2, A=3, S=전부). */
+    private java.util.List<String> statusPanelsOf(TraitData td) {
+        java.util.List<String> pool = new java.util.ArrayList<>();
+        Object raw = (td.effectParams == null) ? null : td.effectParams.get("panels");
+        if (raw != null && !String.valueOf(raw).isBlank())
+            for (String s : String.valueOf(raw).split("[,/ ]+")) { String k = s.trim().toLowerCase(); if (!k.isEmpty()) pool.add(k); }
+        if (pool.isEmpty())
+            pool = new java.util.ArrayList<>(java.util.Arrays.asList("progress", "ally", "recent", "start", "overview_now", "overview_full"));
+        int cap = switch (td.grade == null ? "" : td.grade) {
+            case "S" -> 6; case "A" -> 3; case "B" -> 2; default -> 1;
+        };
+        return pool.size() > cap ? new java.util.ArrayList<>(pool.subList(0, cap)) : pool;
+    }
+
+    /** 요청된 패널만 조립해 렌더(코드 결정적). OVERVIEW/RECENT는 캐시 텍스트가 있을 때만. */
+    private String buildStatusPanel(PlayerData pd, java.util.List<String> panels) {
+        StringBuilder sb = new StringBuilder();
+        boolean overviewShown = false; // ★시나리오 개요는 전체/단편 중 '하나만'★
+        for (String p : panels) {
+            switch (p) {
+                case "start"    -> sb.append(panelStart());
+                case "ally"     -> sb.append(panelAlly(pd));
+                case "progress" -> sb.append(panelProgress());
+                case "recent"        -> { if (!recentKeyEvent.isBlank())      sb.append("§7▪ 최근: §f").append(recentKeyEvent).append("\n"); }
+                case "overview_full" -> { if (!overviewShown && !scenarioOverviewFull.isBlank()) { sb.append("§7▪ 개요: §f").append(scenarioOverviewFull).append("\n"); overviewShown = true; } }
+                case "overview_now"  -> { if (!overviewShown && !scenarioOverviewNow.isBlank())  { sb.append("§7▪ 지금: §f").append(scenarioOverviewNow).append("\n"); overviewShown = true; } }
+                default -> {}
+            }
+        }
+        return sb.toString();
+    }
+
+    private String panelStart() {
+        String era = "";
+        JsonObject g = state.getGdamData();
+        if (g != null && g.has("constraints") && g.get("constraints").isJsonObject())
+            era = getStr(g.getAsJsonObject("constraints"), "era");
+        String time = state.getCurrentTimeString();
+        StringBuilder sb = new StringBuilder("§7▪ 배경: §f").append(era.isBlank() ? "?" : era);
+        if (time != null && !time.isBlank()) sb.append(" · ").append(time);
+        return sb.append("\n").toString();
+    }
+
+    private String panelAlly(PlayerData self) {
+        StringBuilder sb = new StringBuilder("§7▪ 동료:\n");
+        boolean any = false;
+        for (PlayerData op : state.getAllPlayers()) {
+            if (self != null && op.uuid.equals(self.uuid)) continue;
+            any = true;
+            String nm = op.gmDisplayName();
+            if (!spawnedPlayers.contains(op.uuid)) { sb.append("§8   · ").append(nm).append(" — 아직 등장 전\n"); continue; }
+            String stat = op.isDead ? "§c사망" : ("puppet".equals(op.status) ? "§d조종당함" : "§a생존");
+            String loc = (op.zone == null || op.zone.isBlank()) ? "위치 미상" : zoneDisplayName(op.zone);
+            sb.append("§7   · §f").append(nm).append(" §7[").append(stat).append("§7] ").append(loc).append("\n");
+        }
+        return any ? sb.toString() : "";
+    }
+
+    private String panelProgress() {
+        int pct = scenarioProgressPercent();
+        int filled = Math.round(pct / 12.5f);
+        StringBuilder bar = new StringBuilder();
+        for (int i = 0; i < 8; i++) bar.append(i < filled ? "▓" : "░");
+        return "§7▪ 진행: §f" + bar + " " + pct + "%\n";
+    }
+
+    /** 통합 진행도 % — 위협(단계)+전개(발화 사건) 반반. 일상 파트는 0(사건 전). */
+    private int scenarioProgressPercent() {
+        if (state.isDailyPhase()) return 0;
+        int maxStage = Math.max(1, state.getMaxStage());
+        double threat = Math.min(1.0, state.getTimelineStage() / (double) maxStage);
+        double devel  = Math.min(1.0, state.getFiredEventCount() / (double) maxStage);
+        return (int) Math.round((threat + devel) / 2.0 * 100);
     }
 
     private void activateGmDirective(Player player, PlayerData pd, TraitData td) {
