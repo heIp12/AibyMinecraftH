@@ -373,7 +373,7 @@ public final class AbnormalityCodex {
 
     private static String format(String[] r) {
         return "\n[상세 캐논 레코드 — GM 전용 · ★생김새·능력·강함만 고정★ · 원문/대사 복붙 금지]\n"
-            + "· 피해유형 표기: 물리=몸 피해 / 정신=정신력 피해 / 침식=몸·정신 동시 잠식 / 영혼=방어 무시 치명타.\n"
+            + "· 피해유형 표기: 물리[RED]=몸 피해 / 정신[WHITE]=정신력 피해 / 침식[BLACK]=몸·정신 동시 잠식 / 영혼[PALE]=방어 무시 치명타.\n"
             + "· 생김새: " + r[1] + "\n"
             + "· 보유 능력: " + r[2] + "\n"
             + "· 강함: " + threatTier(r[3]) + " · " + r[3] + "\n"

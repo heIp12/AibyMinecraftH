@@ -102,7 +102,7 @@ public final class ProjectMoonLore {
     };
     static final String[] FIXERS = {
         "붉은안개(칼리)", "붉은시선(베르길리우스)", "검은침묵(안젤리카·롤랑)", "보라눈물(이오리)",
-        "푸른잔향(아르갈리아)", "쪽빛노인", "주홍십자"
+        "푸른잔향(아르갈리아)", "발톱(바랄)", "조율자(제나)"
     };
     static final String[] SINGULARITY = {
         "F사 요정(잠금 개념 파괴)", "G사 중력 조절", "H사 홍원(환)", "J사 자물쇠(정보 잠금)",
@@ -343,7 +343,7 @@ public final class ProjectMoonLore {
         // ── 에라별 전용 블록: 그 에라가 뽑혔을 때만 붙인다(시대 혼입 방지) ──
         switch (era) {
             case LOBOTOMY -> {
-                scope = "프로젝트 문 — ★로보토미 코퍼레이션★ 시대(환상체 격리·관리 시설)의 환상체·사건";
+                scope = "★로보토미 코퍼레이션★ 시대(환상체 격리·관리 시설)의 환상체·사건";
                 c.append("\n【무대: 로보토미 코퍼레이션】 이 시대로만 구성하라(도서관·림버스 요소 혼입 금지 — 아직 존재하지 않는다).\n");
                 c.append("- 인물(무작위 표본): ").append(sample(CHARS_LOBO, 3)).append("\n");
                 c.append("- 장소(무작위 표본): ").append(sample(LOC_LOBO, 3)).append("\n");
@@ -356,7 +356,7 @@ public final class ProjectMoonLore {
                 c.append(sephirahPersonaBlock(roomNumber, era));
             }
             case LIBRARY -> {
-                scope = "프로젝트 문 — ★라이브러리 오브 루이나★ 시대(도시의 도서관·초대·책)의 환상체·사건";
+                scope = "★라이브러리 오브 루이나★ 시대(도시의 도서관·초대·책)의 환상체·사건";
                 c.append("\n【무대: 라이브러리 오브 루이나】 이 시대로만 구성하라(림버스의 단테·수감자·버스 혼입 금지).\n");
                 c.append("- 인물(무작위 표본): ").append(sample(CHARS_LIBRARY, 3)).append(" · 뒷골목: ").append(sample(CHARS_CITY, 2)).append("\n");
                 c.append("- 장소(무작위 표본): ").append(sample(LOC_LIBRARY, 3)).append("\n");
@@ -367,7 +367,7 @@ public final class ProjectMoonLore {
                 c.append(sephirahPersonaBlock(roomNumber, era));
             }
             default -> {
-                scope = "프로젝트 문 — ★림버스 컴퍼니★ 시대(도시·해결사·거울 던전)의 환상체·사건";
+                scope = "★림버스 컴퍼니★ 시대(도시·해결사·거울 던전)의 환상체·사건";
                 c.append("\n【무대: 림버스 컴퍼니】 이 시대로만 구성하라(가장 미래 — 로보토미 운영기·도서관기 인물 혼입 금지).\n");
                 c.append("- 인물(무작위 표본): ").append(sample(CHARS_LIMBUS, 3)).append(" · 뒷골목: ").append(sample(CHARS_CITY, 2)).append("\n");
                 c.append("- 장소(무작위 표본): ").append(sample(LOC_LIMBUS, 3)).append("\n");
