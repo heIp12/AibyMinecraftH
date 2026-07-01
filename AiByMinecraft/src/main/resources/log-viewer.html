@@ -680,6 +680,7 @@ function renderInfo(){
       const roleName={}; if(REPLAY&&Array.isArray(REPLAY.players))for(const p of REPLAY.players)if(p.roleId)roleName[p.roleId]=p.charName||p.roleId;
       h+=sh('zones','구역 (맵)');
       for(const z of SCENARIO.zones){
+        if(!z)continue;
         const conns=(z.connections||[]).map(c=>zname[c]||c).filter(Boolean).join(" · ");
         const who=(z.accessible_by||[]).map(r=>roleName[r]||r).filter(Boolean).join(", ");
         h+=`<div class="card"><b>${esc(z.name||z.zone_id||"?")}</b> <span class="dim2">${esc(z.area||"")}</span>`

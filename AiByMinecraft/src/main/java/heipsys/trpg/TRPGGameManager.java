@@ -1282,7 +1282,7 @@ public class TRPGGameManager {
                 applyRoleStats(myPd, roleData);
             }
             // 원년 배역 스냅샷: 이 판이 시작된 스테이지(=startStage, 기본 1)의 배역을 '원년'으로 1회 기록 → 피날레 복귀·중간 시작 대응.
-            if (!myPd.hasOrigChar && state.getRoomNumber() == startStage) captureOrigChar(myPd);
+            if (myPd != null && !myPd.hasOrigChar && state.getRoomNumber() == startStage) captureOrigChar(myPd);
 
             p.sendMessage("§e§l[배역 배정]");
             p.sendMessage(roleMan.getRoleBriefing(asgn.roleId(), corruptMan.getLevel()));
@@ -2767,12 +2767,14 @@ public class TRPGGameManager {
         TraitData trait = pd.traits.stream().filter(t -> t.id.equals(traitId)).findFirst().orElse(null);
         if (trait == null) { player.sendMessage("§c특성을 찾을 수 없습니다."); return; }
 
-        if (trait.remainingCooldown > 0) {
-            player.sendMessage("§c[" + trait.name + "] 쿨다운 중입니다. (" + trait.remainingCooldown + "턴 남음)");
-            return;
-        }
+        // 스테이지당 1회(cooldownTurns==-1)형은 사용 후 remainingCooldown이 센티넬(MAX_VALUE)이 되므로
+        // 이 분기를 먼저 처리한다 — 그렇지 않으면 아래 쿨다운 메시지가 '2147483647턴 남음'을 출력한다.
         if (trait.cooldownTurns == -1 && trait.usedThisStage > 0) {
             player.sendMessage("§c[" + trait.name + "] 이번 스테이지에서 이미 사용했습니다.");
+            return;
+        }
+        if (trait.remainingCooldown > 0) {
+            player.sendMessage("§c[" + trait.name + "] 쿨다운 중입니다. (" + trait.remainingCooldown + "턴 남음)");
             return;
         }
         // 시스템 효과: uses 기반 사용 횟수 상한 검사 (ai_query 등)
@@ -7720,7 +7722,7 @@ public class TRPGGameManager {
     private void accrueContribution(Map<String, String> grades) {
         if (grades == null) return;
         grades.forEach((name, g) -> {
-            PlayerData pd = findByName(name);
+            PlayerData pd = findAnyByName(name); // 사망(자기희생)자도 기여도 반영 — findByName은 사망자 제외
             if (pd != null) pd.contribution += gradeToPoints(g);
         });
     }
@@ -7740,7 +7742,7 @@ public class TRPGGameManager {
     private void awardEndStats(Map<String, String> grades, Map<String, java.util.List<String>> growth) {
         if (grades == null) return;
         grades.forEach((name, g) -> {
-            PlayerData pd = findByName(name);
+            PlayerData pd = findAnyByName(name); // 사망(자기희생)자도 성장 스텟 반영 — findByName은 사망자 제외
             if (pd == null) return;
             int pts = endStatPoints(g);
             if (pts <= 0) return;

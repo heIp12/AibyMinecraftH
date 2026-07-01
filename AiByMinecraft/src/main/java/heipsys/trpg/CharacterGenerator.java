@@ -365,7 +365,9 @@ public class CharacterGenerator {
 
     public JobTier rollStats(PlayerData pd, JsonObject roleData) {
         // 나이 — roleData가 있으면 배역 범위 우선, 없으면 가중 무작위 (12~30 빈출)
-        if (roleData != null && roleData.has("age_range")) {
+        if (roleData != null && roleData.has("age_range")
+                && roleData.get("age_range").isJsonArray()
+                && roleData.getAsJsonArray("age_range").size() >= 2) {
             JsonArray ar = roleData.getAsJsonArray("age_range");
             int lo = ar.get(0).getAsInt(), hi = ar.get(1).getAsInt();
             if (hi < lo) { int t = lo; lo = hi; hi = t; }
@@ -386,7 +388,7 @@ public class CharacterGenerator {
 
         // 직업 — roleData가 있으면 배역 풀 우선, 없으면 가중치 계층 선택
         JobTier tier = JobTier.COMMON;
-        if (roleData != null && roleData.has("job_pool")) {
+        if (roleData != null && roleData.has("job_pool") && roleData.get("job_pool").isJsonArray()) {
             JsonArray pool = roleData.getAsJsonArray("job_pool");
             if (pool.size() >= 5) {
                 pd.job = pool.get(RNG.nextInt(pool.size())).getAsString();

@@ -158,7 +158,9 @@ public class GameStateManager {
         archiveStageLog();   // 재도전 — 이번 시도 로그도 캠페인 로그에 보관
         eventLog.clear();
         loadTimelineConfig(gdamData);
-        players.values().forEach(PlayerData::resetToBase);
+        // 재도전 시에도 영구(비배역) 특성의 스탯 보정을 복원한다 — clearRoleData(다음 스테이지)와 동일한 불변식.
+        // (resetToBase만 하면 클리어 보상 특성의 str/hp 등이 재도전마다 사라진다.)
+        players.values().forEach(pd -> { pd.resetToBase(); pd.reapplyTraitStats(); });
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -198,6 +200,7 @@ public class GameStateManager {
             ps.add(e.getKey().toString(), SNAP_GSON.toJsonTree(e.getValue()));
         o.add("players", ps);
         synchronized (eventLog) { o.add("eventLog", SNAP_GSON.toJsonTree(eventLog)); } // 종료 평가·최근 장면 맥락
+        synchronized (campaignLog) { o.add("campaignLog", SNAP_GSON.toJsonTree(campaignLog)); } // 전 스테이지 총평 로그(이어하기 시 보존)
         JsonObject tko = new JsonObject();
         timeKnownOverride.forEach((u, b) -> tko.addProperty(u.toString(), b));
         o.add("timeKnownOverride", tko); // 플레이어별 시간 인지 토글(GM TIME_VISIBLE)
@@ -254,6 +257,14 @@ public class GameStateManager {
                 if (arr != null) for (EventLogEntry el : arr) if (el != null) eventLog.add(el);
             }
         }
+        synchronized (campaignLog) {
+            campaignLog.clear();
+            if (o.has("campaignLog") && o.get("campaignLog").isJsonArray()) {
+                EventLogEntry[] arr = SNAP_GSON.fromJson(o.get("campaignLog"), EventLogEntry[].class);
+                if (arr != null) for (EventLogEntry el : arr) if (el != null) campaignLog.add(el);
+            }
+        }
+        justFiredEvents.clear(); // 소비성 버퍼(스냅샷에 없음) — 재사용 인스턴스에 이전 사건이 잔류하지 않도록 정리
         timeKnownOverride.clear();
         if (o.has("timeKnownOverride") && o.get("timeKnownOverride").isJsonObject()) {
             for (Map.Entry<String, JsonElement> e : o.getAsJsonObject("timeKnownOverride").entrySet()) {
@@ -803,7 +814,7 @@ public class GameStateManager {
                 lines.add("[" + resolveDisplayName(e.player) + "] " + e.content);
             }
         }
-        int from = Math.max(0, lines.size() - limit);
+        int from = Math.max(0, lines.size() - Math.max(0, limit)); // limit 음수 방어(subList 경계 위반 방지)
         StringBuilder sb = new StringBuilder();
         for (String l : lines.subList(from, lines.size())) sb.append(l).append("\n");
         return sb.toString();
