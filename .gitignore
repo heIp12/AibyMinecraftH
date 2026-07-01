@@ -3,3 +3,5 @@
 AiByMinecraft/target/
 target/
 AiByMinecraft/src/main/resources/*.jar
+# 컴파일 산출물 — 소스 트리에 섞여도 커밋 금지(감사 중 javac가 남긴 .class 등)
+*.class
