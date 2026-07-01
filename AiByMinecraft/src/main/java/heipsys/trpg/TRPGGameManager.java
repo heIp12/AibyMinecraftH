@@ -5861,20 +5861,64 @@ public class TRPGGameManager {
     }
 
     /** CORE 뒤에 얹는 캐릭터 데이터 블록(성격·동기·기억·역할·관계). 대화·자율 모드 공통. */
-    private void npcFeatureBlocks(StringBuilder sb, JsonObject npcObj) {
+    /** 지식 항목이 현재 문맥과 얼마나 관련되는지 — 항목의 2글자 이상 토큰이 문맥에 등장한 수. */
+    private static int relevanceScore(String info, String ctx) {
+        if (info == null || ctx == null || ctx.isEmpty()) return 0;
+        int s = 0;
+        for (String tok : info.split("[^가-힣A-Za-z0-9]+"))
+            if (tok.length() >= 2 && ctx.contains(tok)) s++;
+        return s;
+    }
+    /** context = 현재 발화·장면(지식 게이팅의 관련도 신호). 빈 값이면 신뢰도만으로 상위 선별. */
+    private void npcFeatureBlocks(StringBuilder sb, JsonObject npcObj, String context) {
+        // ★현재 상태(지금 하는 일) — 가장 먼저★. schedule은 '무엇을 아는가'가 아니라 '지금 무엇을 하는가'.
+        //   장면의 현재 상태이자 '뭐 해?' 물음의 출발점 → 결정 순서(현재행동→말투→목적→내용)의 맨 위에 둔다.
+        if (npcObj.has("schedule") && npcObj.get("schedule").isJsonArray() && npcObj.getAsJsonArray("schedule").size() > 0) {
+            sb.append("지금 네 상태·하는 일 (★대화·행동의 출발점 — '뭐 해?' 같은 물음엔 여기서부터 답하고, 이 행동을 대사·몸짓에 자연스럽게 묻혀라★):\n");
+            for (JsonElement el : npcObj.getAsJsonArray("schedule")) {
+                if (!el.isJsonObject()) continue;
+                JsonObject s = el.getAsJsonObject();
+                sb.append("  · [").append(getStr(s, "time")).append("] ").append(getStr(s, "action"));
+                String will = getStr(s, "will");
+                if (!will.isBlank()) sb.append(" (의지:").append(will).append(")");
+                String cond = getStr(s, "condition");
+                if (!cond.isBlank()) sb.append(" {조건:").append(cond).append("}");
+                sb.append("\n");
+            }
+            sb.append("- 의지 '강함'이면 막혀도 다른 방법으로 재시도, '약함'이면 제지·설득에 포기. 조건부 반응은 그 조건이 실제 일어났을 때만.\n");
+        }
         if (npcObj.has("personality"))
-            sb.append("성격: ").append(npcObj.get("personality").getAsString()).append("\n");
+            sb.append("성격(말투에 반영): ").append(npcObj.get("personality").getAsString()).append("\n");
         if (npcObj.has("motivation"))
-            sb.append("목표: ").append(npcObj.get("motivation").getAsString()).append("\n");
-        // knowledge — '상시 주입'이 아니라 '상황에 떠오르는 기억' 프레이밍(관련될 때만 꺼내게)
+            sb.append("목적(무엇을·얼마나 말할지 좌우): ").append(npcObj.get("motivation").getAsString()).append("\n");
+        // ② 지식 게이팅 — '상시 전량 주입'을 막는다. 지금 상황과 ★관련된 기억만★(관련 없으면 신뢰도 높은 것 위주로)
+        //   최대 KNOW_CAP개만 노출 → '아는 걸 한 번에 다 쏟기'(GPT 설명 과잉)를 물리적으로 억제. 나머지는 대화가 흐르면 떠오름.
         if (npcObj.has("knowledge") && npcObj.get("knowledge").isJsonArray()) {
             JsonArray kn = npcObj.getAsJsonArray("knowledge");
             String npcKey = getStr(npcObj, "id");
-            sb.append("지금 상황에서 네가 ★자연스럽게 떠올릴 만한 기억★(관련될 때만 꺼내라 — 항목마다 신뢰도가 다르니 확신을 그에 맞춰라):\n");
+            final int KNOW_CAP = 4;
+            String ctx = context == null ? "" : context;
+            // 점수 = 관련도(문맥에 항목 단어 등장 수)*10 + 신뢰도(확신2/짐작1/소문0). 관련 우선, 동점이면 확신 우선.
+            List<int[]> scored = new ArrayList<>(); // [원본index, score]
             for (int i = 0; i < kn.size(); i++) {
+                String info = kn.get(i).getAsString();
+                String cf = knowledgeConfidence(npcKey, i, info);
+                int conf = cf.contains("확신") ? 2 : cf.contains("짐작") ? 1 : 0;
+                scored.add(new int[]{i, relevanceScore(info, ctx) * 10 + conf});
+            }
+            boolean gated = kn.size() > KNOW_CAP;
+            List<Integer> pick = new ArrayList<>();
+            if (gated) {
+                scored.sort((a, b) -> b[1] - a[1]);
+                for (int k = 0; k < KNOW_CAP; k++) pick.add(scored.get(k)[0]);
+                java.util.Collections.sort(pick); // 원래 순서로 표시
+            } else for (int i = 0; i < kn.size(); i++) pick.add(i);
+            sb.append("지금 상황에서 네가 ★자연스럽게 떠올릴 만한 기억★(관련될 때만 꺼내라 — 항목마다 신뢰도가 다르니 확신을 그에 맞춰라):\n");
+            for (int i : pick) {
                 String info = kn.get(i).getAsString();
                 sb.append("  · [").append(knowledgeConfidence(npcKey, i, info)).append("] ").append(info).append("\n");
             }
+            if (gated) sb.append("  (그 밖에도 아는 게 더 있지만 지금 떠오르는 건 이 정도다 — 대화가 그쪽으로 흐르면 더 떠오른다.)\n");
             sb.append("표시 뜻 — [확신]: 직접 보거나 겪음(담담히 단언 가능). [짐작]: 추측·인상('~인 것 같아'). [소문]: 주워들음('누가 그러던데…', 꽤 틀릴 수 있음). "
                     + "이 괄호는 ★내부용★이라 입 밖에 내지 말고, 신뢰 정도가 ★말투에 배게★ 하라(확신=담담히 / 짐작=머뭇 / 소문=떠보듯). 모든 걸 똑같이 확신하지도 흐리지도 마라.\n");
         }
@@ -5920,27 +5964,15 @@ public class TRPGGameManager {
     }
 
     /** 자율 행동용 시스템 프롬프트 = CORE + 캐릭터 데이터 + 예정표 + 자율 출력 규칙. */
-    private String buildNpcSystemPrompt(JsonObject npcObj) {
+    private String buildNpcSystemPrompt(JsonObject npcObj, String context) {
         StringBuilder sb = new StringBuilder(npcCorePrompt(npcObj));
-        npcFeatureBlocks(sb, npcObj);
-        // 행동 예정표(자율 모드 전용 — 대화 모드엔 넣지 않는다)
-        if (npcObj.has("schedule") && npcObj.get("schedule").isJsonArray()) {
-            sb.append("행동 예정(의지대로 추진):\n");
-            for (JsonElement el : npcObj.getAsJsonArray("schedule")) {
-                if (!el.isJsonObject()) continue;
-                JsonObject s = el.getAsJsonObject();
-                sb.append("  · [").append(getStr(s, "time")).append("] ").append(getStr(s, "action"));
-                String will = getStr(s, "will");
-                if (!will.isBlank()) sb.append(" (의지:").append(will).append(")");
-                String cond = getStr(s, "condition");
-                if (!cond.isBlank()) sb.append(" {조건:").append(cond).append("}");
-                sb.append("\n");
-            }
-            sb.append("- 의지가 '강함'이면 막혀도 다른 방법으로 재시도, '약함'이면 제지·설득에 포기.\n");
-            sb.append("반응(will=반응) 처리 규칙:\n");
-            sb.append("1. 발동 조건: condition의 구체적 행위(예: \"특정 물건을 건드림\"·\"이름을 직접 물음\")가 실제 일어난 직후 1턴 안에 발동. 단순 접근·방문·같은 zone 진입만으로는 발동 안 함.\n");
-            sb.append("2. 보조 트리거(진행 보장): condition이 N턴 지나도 미충족이면 NPC가 먼저 다가와 핵심 정보 일부라도 전달(충족 시=전체·최적, 시간 트리거=최소 보장).\n");
-            sb.append("3. duration_turns: 있으면 N턴 지속, 종료 후 after_duration이 있으면 그 NPC가 동기대로 자율 결정·실행(GM은 결과만 서술에 녹임).\n");
+        npcFeatureBlocks(sb, npcObj, context);
+        // 자율 실행 타이밍 — 위 '현재 상태(schedule)'의 예정을 자율적으로 실행할 때만 적용(대화 모드엔 불필요).
+        if (npcObj.has("schedule") && npcObj.get("schedule").isJsonArray() && npcObj.getAsJsonArray("schedule").size() > 0) {
+            sb.append("위 '현재 상태'의 예정을 자율 실행할 때:\n");
+            sb.append("1. 조건부(반응) 예정: condition의 구체적 행위가 실제 일어난 직후 1턴 안에만 발동(단순 접근·방문·같은 zone 진입만으론 발동 안 함).\n");
+            sb.append("2. 보조 트리거(진행 보장): condition이 N턴 지나도 미충족이면 먼저 다가와 핵심 정보 일부라도 전달(충족 시=전체·최적, 시간 트리거=최소 보장).\n");
+            sb.append("3. duration_turns: 있으면 N턴 지속, 종료 후 after_duration은 동기대로 자율 실행(GM은 결과만 서술에 녹임).\n");
         }
         // 자율 출력 규칙(대화 모드와 분리 — 1인칭/3인칭·문장 수 모순 제거)
         sb.append("\n## 자율 행동 출력\n");
@@ -5989,7 +6021,7 @@ public class TRPGGameManager {
             // 빈 로그를 그대로 주면 모델이 '입력을 달라'는 메타 응답을 내놓는다 → 자율 행동 지시로 대체한다.
             if (actionLog == null || actionLog.isBlank())
                 actionLog = "(최근 이 위치에서 관측된 플레이어 행동이 없다. 네 성격·목표·행동 예정표에 따라 지금 네가 ★자율적으로★ 하는 행동을 1~2문장으로 서술하라. 정보를 요청하지 말 것.)";
-            String npcPrompt = buildNpcSystemPrompt(npcObj);
+            String npcPrompt = buildNpcSystemPrompt(npcObj, actionLog); // 자율: 최근 장면을 지식 게이팅 문맥으로
 
             // ③ 엿보기: 같은 zone의 엿보기 특성 보유 플레이어 목록
             final List<Player> eavesdroppers = new ArrayList<>();
@@ -6713,11 +6745,12 @@ public class TRPGGameManager {
         boolean hasEavesdrop = senderPd.traits.stream()
             .anyMatch(t -> t.id.contains("엿보기") || t.id.contains("eavesdrop"));
 
-        String npcPrompt = buildNpcDirectConvPrompt(npcObj, hasEavesdrop, viaCall);
         String relLabel  = relationshipLabel(senderPd.roleId, npcId);
         // GM→NPC 행동 서술(#1·#2): NPC가 인지하는 범위(자기 zone)의 최근 장면을 함께 줘 대화가 현재 상황과 어긋나지 않게.
         //   대면이면 플레이어와 같은 zone이라 플레이어의 최근 행동이 포함됨 / 통화면 NPC 자기 zone 상황만(원격 장면 누출 방지).
         String sceneLog = state.buildEntityLog(3, npcZone);
+        // 지식 게이팅 문맥 = 플레이어 발화 + 현재 장면(관련 기억만 떠오르게)
+        String npcPrompt = buildNpcDirectConvPrompt(npcObj, hasEavesdrop, viaCall, message + " " + (sceneLog == null ? "" : sceneLog));
         String situation = (sceneLog == null || sceneLog.isBlank()) ? ""
             : "[지금 " + (viaCall ? "네 주변에서" : "이곳에서") + " 일어나는 일(네가 직접 보고 들은 것)]\n" + sceneLog + "\n\n";
         String userMsg   = situation + "[" + senderPd.gmDisplayName() + (viaCall ? "이/가 전화로 말한다" : "이/가 말한다")
@@ -7024,10 +7057,10 @@ public class TRPGGameManager {
     }
 
     /** 직접 대화용 NPC 시스템 프롬프트 (자율 행동 프롬프트와 별개). viaCall=전화/원격 통화면 목소리만, 아니면 대면. */
-    private String buildNpcDirectConvPrompt(JsonObject npcObj, boolean includeThought, boolean viaCall) {
+    private String buildNpcDirectConvPrompt(JsonObject npcObj, boolean includeThought, boolean viaCall, String context) {
         String name = npcObj.has("name") ? npcObj.get("name").getAsString() : "NPC";
         StringBuilder sb = new StringBuilder(npcCorePrompt(npcObj));
-        npcFeatureBlocks(sb, npcObj); // CORE + 캐릭터 데이터만 — 자율 전용(예정표·3인칭·2~3문장)은 상속하지 않아 모순 제거
+        npcFeatureBlocks(sb, npcObj, context); // CORE + 캐릭터 데이터(현재상태·성격·목적·기억). 자율 전용 실행규칙·3인칭·문장수는 상속 안 함
         sb.append("\n## 직접 대화 모드").append(viaCall ? " (전화/원격 통화)" : " (대면 — 같은 공간)").append("\n");
         sb.append("플레이어가 네게 직접 말을 걸었다. ★너는 " + name + " 본인이다 — 1인칭으로 직접 말하고 행동하라(소설 화자처럼 너를 3인칭으로 묘사하지 마라).★\n");
         sb.append("- ★대사 위주★로 답하라. 행동·표정이 필요하면 ★짧은 괄호 지문★으로만 곁들여라. 예) (형 손 잡으며) 이렇게 잡고 있으면 되는 거 맞지, 형?\n");

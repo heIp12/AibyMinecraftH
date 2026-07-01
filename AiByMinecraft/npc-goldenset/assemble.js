@@ -36,13 +36,25 @@ function core(n){
 
 `;}
 
-function features(n){
-  let s="";
-  if(n.personality)s+=`성격: ${n.personality}\n`;
-  if(n.motivation)s+=`목표: ${n.motivation}\n`;
+function relevanceScore(info,ctx){if(!info||!ctx)return 0;let s=0;for(const tok of String(info).split(/[^가-힣A-Za-z0-9]+/))if(tok.length>=2&&ctx.includes(tok))s++;return s;}
+function features(n,context){
+  let s=""; const ctx=context||"";
+  // ★현재 상태(schedule) — 가장 먼저: '지금 무엇을 하는가'(대화·행동 출발점)
+  if(n.schedule&&n.schedule.length){
+    s+=`지금 네 상태·하는 일 (★대화·행동의 출발점 — '뭐 해?' 같은 물음엔 여기서부터 답하고, 이 행동을 대사·몸짓에 자연스럽게 묻혀라★):\n`;
+    for(const sc of n.schedule)s+=`  · [${sc.time||""}] ${sc.action||""}`+(sc.will?` (의지:${sc.will})`:"")+(sc.condition?` {조건:${sc.condition}}`:"")+`\n`;
+    s+=`- 의지 '강함'이면 막혀도 다른 방법으로 재시도, '약함'이면 제지·설득에 포기. 조건부 반응은 그 조건이 실제 일어났을 때만.\n`;
+  }
+  if(n.personality)s+=`성격(말투에 반영): ${n.personality}\n`;
+  if(n.motivation)s+=`목적(무엇을·얼마나 말할지 좌우): ${n.motivation}\n`;
   if(n.knowledge&&n.knowledge.length){
+    const CAP=4,confW=c=>c==="확신"?2:c==="짐작"?1:0;
+    let pick; const gated=n.knowledge.length>CAP;
+    if(gated){let idx=n.knowledge.map((k,i)=>[i,relevanceScore(k.info,ctx)*10+confW(k.conf)]);idx.sort((a,b)=>b[1]-a[1]);pick=idx.slice(0,CAP).map(x=>x[0]).sort((a,b)=>a-b);}
+    else pick=n.knowledge.map((_,i)=>i);
     s+=`지금 상황에서 네가 ★자연스럽게 떠올릴 만한 기억★(관련될 때만 꺼내라 — 항목마다 신뢰도가 다르니 확신을 그에 맞춰라):\n`;
-    for(const k of n.knowledge)s+=`  · [${k.conf}] ${k.info}\n`;
+    for(const i of pick)s+=`  · [${n.knowledge[i].conf}] ${n.knowledge[i].info}\n`;
+    if(gated)s+=`  (그 밖에도 아는 게 더 있지만 지금 떠오르는 건 이 정도다 — 대화가 그쪽으로 흐르면 더 떠오른다.)\n`;
     s+=`표시 뜻 — [확신]: 직접 보거나 겪음(담담히 단언 가능). [짐작]: 추측·인상('~인 것 같아'). [소문]: 주워들음('누가 그러던데…', 꽤 틀릴 수 있음). 이 괄호는 ★내부용★이라 입 밖에 내지 말고, 신뢰 정도가 ★말투에 배게★ 하라(확신=담담히 / 짐작=머뭇 / 소문=떠보듯). 모든 걸 똑같이 확신하지도 흐리지도 마라.\n`;
   }
   if(n.acquired&&n.acquired.length){s+=`이번 사건에서 네가 ★직접 보고 알게 된 것★(비교적 또렷이 말할 수 있다):\n`;for(const a of n.acquired)s+=`  · ${a}\n`;}
