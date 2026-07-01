@@ -37,7 +37,10 @@ public final class ProjectMoonLore {
         "지정사서 호크마", "지정사서 케테르", "붉은시선 베르길리우스", "보라눈물 이오리", "푸른잔향 아르갈리아",
         "검은침묵", "붉은안개 칼리", "리우협회 샤오", "리우협회 로웰", "새벽사무소 살바도르",
         "쐐기사무소 오스카", "하나협회 올리비에", "하나협회 미리내", "찰스사무소 아스톨포", "츠바이협회 잔느",
-        "K사 고용 지크프리트"
+        "K사 고용 지크프리트",
+        // 잔향악단(도서관이 맞이하는 초대 손님·접대 상대)
+        "우는 아이 필립", "톱니교단 에일린", "톱니교단 그레타", "브레멘 음악대 오스왈드", "늑대의 시간 타냐",
+        "인형사 재헌", "핏빛 밤 엘레나", "어제의 약속 플루토", "주홍십자 소속원"
     };
     static final String[] CHARS_LIMBUS = {
         "LCB 관리자 단테", "길잡이 베르길리우스", "운전수 카론", "수감자 이상", "수감자 파우스트",
@@ -284,23 +287,30 @@ public final class ProjectMoonLore {
     }
 
     /**
-     * ★인물 성격·말투 가이드 — 로보토미 세피라 1명(안내/관리 NPC 후보)★.
+     * ★인물 성격·말투 가이드 — 세피라 1명(안내/관리 NPC 후보)★.
+     * 로보토미=세피라, ★라오루=지정사서(동일 인물이라 성격·말투 그대로 연결)★.
      * '기본 성격·말투'(캐논)를 제시하되, ★시나리오 목적에 따라 역할이 가변★됨을 함께 명시한다.
-     * 이번 회차 참고 모드를 하나 제안(대체로 정석, 가끔 어두운 모드로 다양화)하되, 최종 선택은 시나리오 목적에 맡긴다.
      */
-    private static String sephirahPersonaBlock(int roomNumber) {
+    private static String sephirahPersonaBlock(int roomNumber, Era era) {
+        boolean lib = era == Era.LIBRARY;
         String[] s = SEPHIRAH[ThreadLocalRandom.current().nextInt(SEPHIRAH.length)];
         int roll = ThreadLocalRandom.current().nextInt(100);
         int modeIdx = roll < 55 ? 0 : 1 + ThreadLocalRandom.current().nextInt(NPC_ROLE_MODE.length - 1);
         String mode = NPC_ROLE_MODE[modeIdx];
-        return "\n- ★안내/관리 NPC 후보(세피라) — 기본 성격·말투(캐논): '" + s[0] + "' [" + s[1] + "]\n"
+        String head = lib
+            ? "\n- ★안내/사서 NPC 후보(지정사서) — ★로보토미 세피라와 동일 인물★이라 성격·말투 그대로 연결: '" + s[0] + "' [라오루: 앤젤라의 도서관 지정사서]\n"
+            : "\n- ★안내/관리 NPC 후보(세피라) — 기본 성격·말투(캐논): '" + s[0] + "' [" + s[1] + "]\n";
+        String tail = lib
+            ? "    · ★라오루 맥락★: 로보토미 붕괴 후 앤젤라의 도서관 지정사서가 된 같은 인물 — 겪은 일로 다소 달라졌을 순 있으나 근본 성격·말투는 유지. 반드시 등장시킬 필요는 없다.\n"
+            : "    · ★세피라를 반드시 등장시킬 필요는 없다★ — 평범한 직원 안내역이어도 되고, 등장시키면 위 캐논을 존중하라(예소드 고정 금지).\n";
+        return head
             + "    · 기본 성격: " + s[2] + "\n"
             + "    · 기본 말투: " + s[3] + "\n"
             + "    · 말투 예시(그대로 쓰지 말고 어미·리듬·태도만 참고): \"" + s[4] + "\"\n"
             + "    · ★역할은 가변★: 위 성격·말투는 '기본값'이다. 시나리오 목적에 맞게 재해석하라 — 이번 회차 참고 모드: [" + mode + "].\n"
             + "      더 맞는 모드가 있으면 그것을 택하라(정석 / 잘못된 안내 / 숨은 적대자 / 조종자 / 적대적 공조 / 비극적 존재). "
             + "어두운 모드일 때 캐논 성격은 겉모습·출발점일 뿐, 실제 행동·진의는 배정된 역할을 따른다.\n"
-            + "    · ★세피라를 반드시 등장시킬 필요는 없다★ — 평범한 직원 안내역이어도 되고, 등장시키면 위 캐논을 존중하라(예소드 고정 금지).\n";
+            + tail;
     }
 
     /** 모든 시대 공통 — 인물 성격·말투는 '기본값'이고 시나리오 목적에 따라 역할이 가변된다는 규칙(directive용). */
@@ -339,7 +349,7 @@ public final class ProjectMoonLore {
                  .append("환상체 관리와 별개로 timeline.main_events(정해진 시각 자동 발생)에 시련을 배치해 압박을 주거나, 시나리오 자체를 '자정의 시련 대응'으로 구성할 수 있다(가능성 — 매번은 아님).\n");
                 c.append("- ★추가 사건 '세피라 코어 억제': 부서 관리 세피라가 폭주해 진압·설득해야 하는 특수 사건도 가능(자정의 시련처럼 드물게). 해당 세피라의 성격·상처가 극단화된 형태로 나타난다.\n");
                 c.append("- 배역(플레이어): 로보토미 직원(관리원·작업자·정보팀·안전팀·제압팀·연구원 등). 세피라 예소드로만 만들지 말 것.\n");
-                c.append(sephirahPersonaBlock(roomNumber));
+                c.append(sephirahPersonaBlock(roomNumber, era));
             }
             case LIBRARY -> {
                 scope = "프로젝트 문 — ★라이브러리 오브 루이나★ 시대(도시의 도서관·초대·책)의 환상체·사건";
@@ -348,7 +358,9 @@ public final class ProjectMoonLore {
                 c.append("- 장소(무작위 표본): ").append(sample(LOC_LIBRARY, 3)).append("\n");
                 c.append("- 도시 인프라(무작위 표본): ").append(sample(ORGS, 2)).append(" · ").append(sample(FIXERS, 1)).append(" · ").append(sample(FINGERS, 1)).append(" · ").append(sample(SYNDICATES, 1)).append("\n");
                 c.append("- 핵심 개념: 초대·책(횃불)·접객·지정사서·각 층(분야)·거울 기술·뒤틀림·신(心)/망(望).\n");
+                c.append("- ★추가 사건 '잔향악단(도서관 접대)': 도서관에 유인·초대된 손님 집단이 각 층 지정사서와 맞붙는 접대(전투)로 책(이야기)을 얻는 사건 — 우는 아이·톱니교단·브레멘 음악대·늑대의 시간·인형사·핏빛 밤·어제의 약속·푸른잔향 등(확실한 캐논만, 드물게).\n");
                 c.append("- 배역(플레이어): 사서·초대된 손님(픽서·협회)·해결사·정보상 등.\n");
+                c.append(sephirahPersonaBlock(roomNumber, era));
             }
             default -> {
                 scope = "프로젝트 문 — ★림버스 컴퍼니★ 시대(도시·해결사·거울 던전)의 환상체·사건";
