@@ -1048,6 +1048,11 @@ public class TRPGGameManager {
             assignments = roleMan.assignRoles(players);
         }
 
+        // ★로그 뷰어용 별칭★: 계정명↔캐릭터명 매핑을 기록해 뷰어가 입력·서술 시점을 한 인물로 통합하게 한다.
+        for (PlayerData pd : state.getAllPlayers())
+            if (pd.charName != null && !pd.charName.isEmpty())
+                gameLogger.logAlias(pd.name, pd.charName);
+
         // GM 프롬프트 재생성 (NPC 배역 포함)
         gmSystemPrompt = buildGmPrompt(state.getGdamData());
 
@@ -4633,14 +4638,15 @@ public class TRPGGameManager {
     }
 
     /**
-     * 스테이지별 보상 등급 상한. 고등급은 '스테이지 지연'이 아니라 ★엄격한 평가★로 희소하게 만든다
-     * (S/A는 runScenarioEvaluation·클리어 판정에서 좀처럼 안 나옴). 여기선 초반 stage1만 가볍게 막는다.
-     * - 1스테이지: 최대 A (S 클리어 시 S)
-     * - 2스테이지+: S까지 (단 실제로 S/A를 받으려면 평가가 그만큼 뛰어나야 함)
+     * 스테이지별 보상 등급 상한 ★전체 밸런스 너프★. 상한을 낮추면 보상 범위가 F~상한으로 좁아진다
+     * (B가 더 자주 나오는 게 아니라 A·S 자체가 안 나옴 = 전반적 하향). 고등급은 후반 + 엄격 평가로만 희소하게.
+     * - 1스테이지: 최대 B
+     * - 2스테이지: 최대 A
+     * - 3스테이지+: S까지 (단 실제로 S/A를 받으려면 평가가 그만큼 뛰어나야 함)
      */
     private String maxRewardGrade(int room, String clearGrade) {
-        boolean sClear = gradeIdx(clearGrade) >= 6;
-        if (room <= 1) return sClear ? "S" : "A";
+        if (room <= 1) return "B";
+        if (room <= 2) return "A";
         return "S";
     }
 
