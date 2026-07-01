@@ -2128,6 +2128,7 @@ public class TRPGGameManager {
                     String clue = update.get("new_clue").getAsString();
                     state.discoverClue(clue);
                     state.log("clue", pd.name, "단서 발견: " + clue);
+                    gameLogger.logItem("clue", pd.gmDisplayName(), clue, ""); // 뷰어: 단서 뱃지 + 재생 진행연동 상태패널
                     // CODE-15: 발견 단서를 '발견 사실'로 표식(엔딩 공개 필터용).
                     state.markFactDiscovered(clue);
                     // 단서에 괴담 이름이 등장하면 'name' 사실도 발견 처리(이름 알아냄).
@@ -4413,7 +4414,9 @@ public class TRPGGameManager {
             + (allowWeaknessHint ? "- 이 특성은 등급이 매우 높다: 약점의 '방향' 한 가닥을 ★짧고 애매하게★ 스쳐도 된다 — 단 해답 문장처럼 풀어 쓰지 말고(정확한 해결법 금지), 플레이어가 스스로 잇게 하라.\n"
                         : "- 약점·해결법은 절대 직접 알려주지 마라.\n")
             + "- 마크다운·머리표·메타 설명 없이 서술만.\n"
-            + INFO_TIER_PRINCIPLE;
+            // 위 규칙이 INFO_TIER_PRINCIPLE 내용을 이미 모두 담고 있어(styleHint=말투, lengthRule, 존재여부·누적·선명도 규칙)
+            //   중복 첨부를 제거하고 안전 프레이밍(GAME_FICTION_FRAME)만 유지한다(Haiku 거부 방지). ~360토큰/사용 절감.
+            + GAME_FICTION_FRAME;
         String prompt = "## 시나리오 정보(아래 내용만 근거로 삼아라)\n" + ctx + knownFactsBlock(pd)
             + "\n위 정보로 '" + traitName + "' 직감 브리핑을 작성하라.";
 
@@ -7261,12 +7264,19 @@ public class TRPGGameManager {
     /** heldItemIds 추가 + item_type이 있으면 ItemInstance(런타임 상태) 등록 */
     private void noteHeldItem(PlayerData pd, String itemId) {
         if (pd == null || itemId == null || itemId.isBlank()) return;
+        boolean isNew = !pd.heldItemIds.contains(itemId); // 최초 획득만 로그(중복 방지)
         pd.heldItemIds.add(itemId);
         JsonObject def = itemMan.findDef(itemId);
         if (def != null && def.has("item_type")
                 && !def.get("item_type").getAsString().isBlank()
                 && !pd.itemStates.containsKey(itemId)) {
             pd.itemStates.put(itemId, buildItemInstance(def, itemId));
+        }
+        // ★아이템 획득 로그★ — 시작 소지품 포함, 뷰어의 아이템 뱃지 + 재생 진행연동 상태패널(그 시점에 아는 것)에 표시.
+        if (isNew && gameLogger != null) {
+            String nm = def != null && def.has("name")  ? def.get("name").getAsString()
+                      : def != null && def.has("title") ? def.get("title").getAsString() : itemId;
+            gameLogger.logItem("item", pd.gmDisplayName(), nm, state.getCurrentTurn() <= 1 ? "시작 소지" : "");
         }
         refreshCommItems(pd); // 새 아이템(통신 기기 포함) 지급 시 연락법·연락처 표기 갱신
     }

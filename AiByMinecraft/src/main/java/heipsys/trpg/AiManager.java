@@ -461,7 +461,8 @@ public class AiManager {
                     snapshot = new ArrayList<>(gmContext);     // 네트워크엔 스냅샷 전달(전송 중 동시 변경 안전)
                 }
                 try {
-                    String result = send(gmModel(), systemPrompt, snapshot, GM_MAX_TOKENS); // 락 미보유 — 블로킹 I/O
+                    // cacheHistory=true: 마지막 메시지 프리픽스 캐싱 → 매 턴 커지는 히스토리를 다음 턴에 0.1× 읽기(핵심 절감).
+                    String result = send(gmModel(), systemPrompt, snapshot, GM_MAX_TOKENS, true); // 락 미보유 — 블로킹 I/O
                     // 히스토리에는 태그 제거 버전 저장 → 다음 턴에 STATE_UPDATE JSON 재전송 방지
                     synchronized (gmLock) { gmContext.add(msg("assistant", stripTags(result))); }
                     return result;
@@ -510,7 +511,7 @@ public class AiManager {
                     snapshot = new ArrayList<>(entityContext);
                 }
                 try {
-                    String result = send(entityModel(), systemPrompt, snapshot, ASST_MAX_TOKENS);
+                    String result = send(entityModel(), systemPrompt, snapshot, ASST_MAX_TOKENS, true); // 히스토리 프리픽스 캐싱
                     synchronized (entityLock) { entityContext.add(msg("assistant", result)); }
                     return result;
                 } catch (Exception e) {
@@ -537,7 +538,7 @@ public class AiManager {
                     snapshot = new ArrayList<>(ctx);
                 }
                 try {
-                    String result = send(npcModel(), systemPrompt, snapshot, ASST_MAX_TOKENS);
+                    String result = send(npcModel(), systemPrompt, snapshot, ASST_MAX_TOKENS, true); // 히스토리 프리픽스 캐싱
                     synchronized (ctx) { ctx.add(msg("assistant", result)); }
                     return result;
                 } catch (Exception e) {
@@ -848,10 +849,16 @@ public class AiManager {
 
     private String send(String model, String system, List<JsonObject> messages, int maxTokens)
             throws Exception {
-        return send(model, system, messages, maxTokens, 0);
+        return send(model, system, messages, maxTokens, 0, false);
     }
 
-    private String send(String model, String system, List<JsonObject> messages, int maxTokens, int attempt)
+    /** cacheHistory=true면 마지막 메시지에 cache_control을 달아 히스토리 프리픽스를 캐시(멀티턴 GM 전용). */
+    private String send(String model, String system, List<JsonObject> messages, int maxTokens, boolean cacheHistory)
+            throws Exception {
+        return send(model, system, messages, maxTokens, 0, cacheHistory);
+    }
+
+    private String send(String model, String system, List<JsonObject> messages, int maxTokens, int attempt, boolean cacheHistory)
             throws Exception {
 
         String body;
@@ -888,6 +895,25 @@ public class AiManager {
                 JsonArray arr = new JsonArray();
                 for (JsonObject m : messages) {
                     if (!"system".equals(m.get("role").getAsString())) arr.add(m);
+                }
+                // ★히스토리 프리픽스 캐싱★(멀티턴 GM 전용): 마지막 메시지에 cache_control을 달면 다음 턴에 이전
+                //   히스토리를 0.1× 읽기로 재사용한다. 원본 메시지는 손대지 않고 arr의 마지막 슬롯만 블록형 복제로 교체.
+                if (cacheHistory && arr.size() > 0) {
+                    JsonObject src = arr.get(arr.size() - 1).getAsJsonObject();
+                    if (src.has("content") && src.get("content").isJsonPrimitive()) {
+                        JsonObject block = new JsonObject();
+                        block.addProperty("type", "text");
+                        block.addProperty("text", src.get("content").getAsString());
+                        JsonObject cc = new JsonObject();
+                        cc.addProperty("type", "ephemeral");
+                        block.add("cache_control", cc);
+                        JsonArray contentArr = new JsonArray();
+                        contentArr.add(block);
+                        JsonObject marked = new JsonObject();
+                        marked.addProperty("role", src.get("role").getAsString());
+                        marked.add("content", contentArr);
+                        arr.set(arr.size() - 1, marked);
+                    }
                 }
                 req.add("messages", arr);
                 body = req.toString();
@@ -933,14 +959,14 @@ public class AiManager {
         if (response.statusCode() == 429) {
             if (attempt >= 3) throw new RuntimeException("API 429: 재시도 횟수 초과 (3회)");
             Thread.sleep(7000L * (attempt + 1));
-            return send(model, system, messages, maxTokens, attempt + 1);
+            return send(model, system, messages, maxTokens, attempt + 1, cacheHistory);
         }
         // 모델 ID가 이 키에서 안 먹히면(404 not_found) 탐지된 '가용' 모델로 1회 폴백 — 잘못된 모델로 게임이 죽지 않게.
         if (response.statusCode() == 404 && attempt < 2 && response.body().toLowerCase().contains("not_found")) {
             ensureModelsDiscovered();
             String fb = autoMedium != null ? autoMedium : (autoLow != null ? autoLow : autoHigh);
             if (fb != null && !fb.equals(model)) {
-                return send(fb, system, messages, maxTokens, attempt + 1);
+                return send(fb, system, messages, maxTokens, attempt + 1, cacheHistory);
             }
         }
         if (response.statusCode() != 200) {

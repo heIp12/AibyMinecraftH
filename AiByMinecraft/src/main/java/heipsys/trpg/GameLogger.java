@@ -226,8 +226,57 @@ public class GameLogger {
             for (String t : to) if (t != null && !t.isEmpty()) arr.add(t);
             if (arr.size() > 0) extra.add("to", arr);
         }
-        String label = "call".equals(k) ? "통화" : "nearby".equals(k) ? "근처" : "방송";
-        record("통신", actor, "[" + label + "] " + (text == null ? "" : text), extra);
+        record("통신", actor, "[" + commLabel(k) + "] " + (text == null ? "" : text), extra);
+    }
+
+    /** 통신 수단 라벨 — 통화·근처(외침)·방송뿐 아니라 외침·편지·귓속말 등 가변 수단을 지원. */
+    private static String commLabel(String k) {
+        if (k == null) return "통화";
+        switch (k) {
+            case "nearby":    return "근처";
+            case "broadcast": return "방송";
+            case "shout":     return "외침";
+            case "letter":    return "편지";
+            case "whisper":   return "귓속말";
+            case "call": default: return "통화";
+        }
+    }
+
+    /**
+     * ★변형(변절)된 통신★ — 괴담·NPC가 전달 중 메시지를 바꿨을 때 원본과 변형본을 함께 기록.
+     * 뷰어가 "원본 / 변형됨"으로 대조해 보여준다.
+     *  @param kind 통신 수단(call/nearby/broadcast/shout/letter/whisper), orig 원문, altered 변형된 문장, cause 변형 주체·이유
+     */
+    public void logCommTampered(String kind, String actor, java.util.List<String> to,
+                                String orig, String altered, String cause) {
+        String k = (kind == null || kind.isEmpty()) ? "call" : kind;
+        JsonObject extra = new JsonObject();
+        extra.addProperty("kind", k);
+        if (to != null && !to.isEmpty()) {
+            JsonArray arr = new JsonArray();
+            for (String t : to) if (t != null && !t.isEmpty()) arr.add(t);
+            if (arr.size() > 0) extra.add("to", arr);
+        }
+        extra.addProperty("orig", orig == null ? "" : strip(orig).trim());  // 뷰어: 원본 줄
+        if (cause != null && !cause.isEmpty()) extra.addProperty("cause", cause);
+        record("통신", actor, "[" + commLabel(k) + "] " + (altered == null ? "" : altered), extra);
+    }
+
+    /**
+     * ★아이템·단서 획득★ — 뷰어의 아이템/단서 뱃지 + 재생 진행연동 상태패널(그 시점에 아는 정보)에 쓰인다.
+     *  @param kind "item"(아이템) 또는 "clue"(단서/힌트), actor 획득자 표시명, name 아이템·단서 내용, note 부가(예: "시작 소지","능력") — 없으면 ""
+     */
+    public void logItem(String kind, String actor, String name, String note) {
+        if (name == null || name.isBlank()) return;
+        String k = "clue".equals(kind) ? "clue" : "item";
+        JsonObject extra = new JsonObject();
+        extra.addProperty("kind", k);
+        if (actor != null && !actor.isEmpty()) extra.addProperty("actor", actor);
+        extra.addProperty("item", name);
+        if (note != null && !note.isEmpty()) extra.addProperty("cause", note);
+        String cat  = "clue".equals(k) ? "단서" : "아이템";
+        String body = name + (note != null && !note.isEmpty() ? " (" + note + ")" : "");
+        record(cat, actor, body, extra);
     }
 
     /** 로그 뷰어용 계정명↔캐릭터명 별칭 기록 — 같은 인물의 입력·서술 시점을 하나로 통합하게 한다. */
