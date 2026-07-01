@@ -36,6 +36,7 @@
   .ev .t{color:var(--dim);font-variant-numeric:tabular-nums;font-size:12px;flex:none}
   .ev .badge{font-size:11px;padding:1px 7px;border-radius:20px;background:var(--panel2);color:var(--dim)}
   .ev .who{font-weight:600} .ev .arrow{color:var(--dim)}
+  .ev.split{margin-left:18px;border-left:2px solid var(--line)} .ev .top.cont{opacity:.55}
   .ln{white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;line-height:1.6;color:#dfe2ea;margin:2px 0;animation:pop .16s ease}
   .ln.bc{color:var(--broadcast);font-weight:600} .ln.mono{color:#c9b3ff;font-style:italic}
   .ln.say b{font-weight:700}
@@ -97,7 +98,7 @@
 <script>
 "use strict";
 let EVENTS=[], VIEWPOINTS=[], curVP="__all__";
-let ALIAS={}, REPLAY=null, SCENARIO=null, RAWCACHE=[];
+let ALIAS={}, REPLAY=null, SCENARIO=null, RAWCACHE=[], KNOWN=new Set();
 let FILES={logs:[],replays:[],scenarios:[],gdams:[]};
 let playing=false, speed=1, queue=[], qi=0, qtimer=null, curBodyEl=null;
 
@@ -125,7 +126,9 @@ function normalize(ev){
       if(mc){const tg=mc[1];
         if(/^(전체|전원|모두|all)$/i.test(tg))kind="broadcast";
         else if(/^(근처|주변|주위)$/.test(tg))kind="nearby";
-        else if(!/^(GM|시스템|SYSTEM)$/i.test(tg)){kind="call";if(!target)target=tg;}}}
+        else if(!/^(GM|시스템|SYSTEM)$/i.test(tg) && (KNOWN.has(tg)||KNOWN.has(canon(tg)))){kind="call";if(!target)target=tg;}
+        // 미지의 @이름(오타·없는 대상)은 통화로 인식하지 않음 → 유령 대상·시점 생성 방지(입력 그대로)
+      }}
     else if(cat==="GM입력"){kind=kind||"gm_input";actor=actor||who;}
     else if(cat.startsWith("GM→")){let x=cat.slice(3);
       if(isGlobal(x)||x.startsWith("능력방송")){kind=kind||"broadcast";actor=actor||"GM";}
@@ -134,12 +137,18 @@ function normalize(ev){
     else if(cat.startsWith("NPC")){kind=kind||"npc";const m=cat.match(/\(([^)]*)\)/);if(m)actor=actor||m[1];const a=cat.indexOf("→");if(a>=0)target=cat.slice(a+1);}
     else if(cat.startsWith("능력")){kind=kind||"ability";actor=actor||who;}
     else if(cat==="배역"){kind=kind||"alias";}
-    else if(cat==="개인"){kind=kind||"private";if(!actor)actor=who||((text.match(/^(\S+)/)||[])[1]||"");}
-    else if(["세션","구분","이벤트"].includes(cat)){kind=kind||"system";}
+    else if(cat==="개인"){
+      if(/배역 배정 →/.test(text)){kind="assign";if(!actor)actor=who;} // 신형 배역배정(당사자 개인 로그) — 시점 한정
+      else{kind=kind||"private";if(!actor)actor=who||((text.match(/^(\S+)/)||[])[1]||"");}}
+    else if(["세션","구분","이벤트"].includes(cat)){
+      const a1=text.match(/배역 배정:\s*(\S+)\s*→/); // 구형 배역배정(전역 이벤트) → 당사자 시점으로 한정(assign)
+      if(a1){kind="assign";if(!actor)actor=a1[1];}
+      else kind=kind||"system";}
     else{kind=kind||"event";actor=actor||who;}
   }
   if(target&&!to.length)to=[target];
   actor=canon(actor); to=to.map(canon);
+  if(kind==="assign")bodyText="배역 배정: "+(actor||"?"); // 계정→role_id·zone_id 메타 노출 제거 + 당사자 표시명으로
   return {seq:ev.seq||0,t:ev.t||"",kind,actor,to,ability:ev.ability||"",detail:ev.detail||"",text:bodyText,cat};
 }
 function visibleTo(e,vp){ if(vp==="__all__")return true; if(e.kind==="system"||e.kind==="broadcast"||e.kind==="nearby")return true;
@@ -182,6 +191,23 @@ function headHtml(e){
   return {cls:"ev k-"+e.kind+me, top:`<div class="top"><span class="t">${esc(e.t)}</span><span class="badge">${esc(badgeFor(e))}</span>${det}${who}${toStr}</div>`};
 }
 function evHtml(e){ const h=headHtml(e); const body=parseBody(e.text).map(blockHtml).join(""); return `<div class="${h.cls}">${h.top}${body?`<div class="body">${body}</div>`:""}</div>`; }
+// 개별(현재) 시점 전용: GM 서술에 낀 대사·방송을 별도 칸으로 분리(전체 타임라인은 evHtml 그대로 유지).
+function contHead(e){return `<div class="top cont"><span class="t">${esc(e.t)}</span><span class="badge">${esc(badgeFor(e))}</span></div>`;}
+function evHtmlSplit(e){
+  const blocks=parseBody(e.text);
+  if(!blocks.some(b=>b.type==="say"||b.type==="bc")) return evHtml(e); // 분리할 대사·방송 없으면 그대로
+  const h=headHtml(e); const out=[]; let buf=[]; let headUsed=false;
+  const flush=()=>{const body=buf.map(blockHtml).join(""); buf=[]; if(!body.replace(/<[^>]+>/g,"").trim())return;
+    out.push(`<div class="${h.cls}">${headUsed?contHead(e):h.top}<div class="body">${body}</div></div>`); headUsed=true;};
+  for(const b of blocks){
+    if(b.type==="say"||b.type==="bc"){ flush();
+      const bad=b.type==="bc"?"📢 방송":"💬 대사", kc=b.type==="bc"?"broadcast":"say";
+      out.push(`<div class="ev k-${kc} split"><div class="top"><span class="t">${esc(e.t)}</span><span class="badge">${bad}</span></div><div class="body">${blockHtml(b)}</div></div>`); headUsed=true;
+    } else buf.push(b);
+  }
+  flush();
+  return out.join("")||evHtml(e);
+}
 
 function renderSide(){
   const side=document.getElementById("side"); side.innerHTML="";
@@ -200,7 +226,7 @@ function renderSide(){
 }
 function badgeFor(e){ return e.kind==="ability"?(e.ability?"✨ "+e.ability:"✨ 능력")
   :e.kind==="input"?"입력":e.kind==="call"?"📞 통화":e.kind==="nearby"?"👥 근처":e.kind==="gm"?"GM 서술":e.kind==="broadcast"?"📢 방송":e.kind==="npc"?"☎ NPC"
-  :e.kind==="system"?"시스템":e.kind==="private"?"개인":e.kind==="gm_input"?"GM입력(상세)":(e.cat||"이벤트"); }
+  :e.kind==="assign"?"🎭 배역":e.kind==="system"?"시스템":e.kind==="private"?"개인":e.kind==="gm_input"?"GM입력(상세)":(e.cat||"이벤트"); }
 const COMM_KINDS=new Set(["call","nearby","broadcast"]);
 
 function filtered(){
@@ -246,7 +272,7 @@ function renderMain(){
   main.innerHTML=toolbarHtml(list)+`<div id="stream"></div>`;
   const stream=document.getElementById("stream");
   if(!list.length) stream.innerHTML=`<div class="empty">표시할 이벤트가 없습니다.</div>`;
-  else stream.innerHTML=list.map(evHtml).join("");
+  else stream.innerHTML=list.map(curVP==="__all__"?evHtml:evHtmlSplit).join(""); // 전체=이벤트단위, 현재시점=대사·방송 칸분리
   bindToolbar();
   const q2=document.getElementById("q"); if(q2){q2.focus();q2.setSelectionRange(q2.value.length,q2.value.length);}
 }
@@ -296,18 +322,37 @@ function parseTXT(t){const out=[];let cur=null,seq=0;const head=/^\[(\d\d:\d\d:\
     else if(cur&&raw.trim()){cur.text+=(cur.text?"\n":"")+raw.trim();}}
   if(cur)out.push(cur);return out;}
 function buildAlias(){
-  ALIAS={};
+  ALIAS={}; KNOWN=new Set();
+  const uni=(nm,jb)=>{nm=(nm||"").trim();jb=(jb||"").trim();return (nm&&jb)?`${nm}(${jb})`:(nm||jb);}; // 이름(직업)
+  // 표시명 disp로 여러 별칭 키(계정·이름·직업·role_id)를 통합 — 같은 사람이 여러 라벨로 쪼개지지 않게.
+  const setAll=(disp,...keys)=>{disp=(disp||"").trim();if(!disp||disp==="이름 모를 인물")return;
+    for(const k of keys){const kk=(k||"").trim();if(kk){ALIAS[kk]=disp;KNOWN.add(kk);}}KNOWN.add(disp);};
+  // replay: role_id → 이름/직업 (구형 이벤트 배역배정에 이름을 붙이는 조인 소스)
+  const byRole={};
+  if(REPLAY&&Array.isArray(REPLAY.players))for(const p of REPLAY.players)
+    if(p.roleId)byRole[p.roleId]={char:(p.charName||"").trim(),job:(p.job||"").trim()};
   for(const ev of RAWCACHE){
-    if(ev.kind==="alias"&&ev.account&&ev.char){ALIAS[ev.account]=ev.char;ALIAS[ev.char]=ev.char;}
-    else if(ev.cat==="배역"&&ev.who){const m=(ev.text||"").match(/=\s*(.+)$/);if(m){const c=m[1].trim();ALIAS[ev.who]=c;ALIAS[c]=c;}}
-    // '배역 배정 → 이름 (…)' 개인 로그에서 계정→표시명을 유추(별칭 이벤트가 없을 때의 폴백). 명시적 별칭이 우선.
-    else if(ev.cat==="개인"&&ev.who){const m=(ev.text||"").match(/배역 배정 →\s*([^(（]+?)\s*[(（]/);if(m){const c=m[1].trim();if(c&&c!=="이름 모를 인물"){if(!ALIAS[ev.who])ALIAS[ev.who]=c;ALIAS[c]=c;}}}
-    // 구형 '[이벤트] 배역 배정: <계정> → <role_id> (<나이>세 <직업>, zone <zone>)' → 계정·role_id를 직업(배역명)으로 매핑. 명시적 별칭이 우선.
+    if(ev.kind==="alias"&&ev.account&&ev.char){setAll(ev.char,ev.account,ev.char);}
+    else if(ev.cat==="배역"&&ev.who){const m=(ev.text||"").match(/=\s*(.+)$/);if(m)setAll(m[1].trim(),ev.who,m[1].trim());}
+    // 신형 개인 '배역 배정 → 이름 (나이세 직업, …)' → 이름(직업)
+    else if(ev.cat==="개인"&&ev.who){
+      const m=(ev.text||"").match(/배역 배정 →\s*([^(（]+?)\s*[(（]\s*(?:\d+\s*세\s*)?([^,，()）]+?)\s*[,，)）]/);
+      if(m)setAll(uni(m[1],m[2]),ev.who,m[1],m[2]);
+      else{const m2=(ev.text||"").match(/배역 배정 →\s*([^(（]+?)\s*[(（]/);if(m2)setAll(m2[1].trim(),ev.who,m2[1]);}
+    }
+    // 구형 이벤트 '배역 배정: 계정 → role_id (나이세 직업, zone …)' → 이름(직업)(이름은 replay 조인, 없으면 직업만)
     const am=(ev.text||"").match(/배역 배정:\s*(\S+)\s*→\s*(\S+)\s*[(（]\s*(?:\d+\s*세\s*)?([^,，()）]+?)\s*[,，)）]/);
-    if(am){const acct=am[1],role=am[2],job=am[3].trim();
-      if(job&&job!=="이름 모를 인물"){if(!ALIAS[acct])ALIAS[acct]=job;if(!ALIAS[role])ALIAS[role]=job;ALIAS[job]=job;}}
+    if(am){const acct=am[1],role=am[2],job=am[3].trim();const nm=byRole[role]?byRole[role].char:"";
+      setAll(uni(nm,job),acct,role,job,nm);}
   }
-  if(REPLAY&&Array.isArray(REPLAY.players))for(const p of REPLAY.players){const d=(p.charName&&p.charName.trim())?p.charName.trim():(p.name||"");if(p.name)ALIAS[p.name]=d;if(p.charName)ALIAS[p.charName]=d;}
+  // replay 이름·NPC명도 KNOWN에 등록(@대상 검증용) — 시나리오 NPC 포함
+  if(REPLAY&&Array.isArray(REPLAY.players))for(const p of REPLAY.players){const d=uni(p.charName,p.job);if(p.charName)setAll(d,p.charName);}
+  if(SCENARIO&&Array.isArray(SCENARIO.npcs))for(const npc of SCENARIO.npcs)if(npc&&npc.name)KNOWN.add(String(npc.name).trim());
+  // 이벤트에 등장하는 NPC·GM 대상 이름도 KNOWN에(@대상 오인 방지)
+  for(const ev of RAWCACHE){const c=ev.cat||"";let mm;
+    if(mm=c.match(/NPC\(([^)]+)\)/))KNOWN.add(mm[1].trim());
+    if(c.startsWith("GM→")){const t=stripPhase(c.slice(3)).replace(/^NPC\(/,"").replace(/\)$/,"").trim();if(t&&!isGlobal(t))KNOWN.add(t);}
+  }
 }
 function rebuild(raw){ EVENTS=raw.map(normalize).sort((a,b)=>(a.seq||0)-(b.seq||0)); buildViewpoints(); curVP="__all__"; stopPlay(); }
 // 로그에서 괴담(시나리오) 이름 파싱 — 세션 이벤트의 title 필드(JSONL) 또는 '괴담: X' 라인(.txt)
