@@ -160,8 +160,12 @@ public class TRPGGameManager {
     private final Map<UUID, Integer> phaseOutTurns = new ConcurrentHashMap<>();
     /** 괴담 변신(gdam_morph) 중인 플레이어의 남은 변신 턴 수 (uuid → turns). 0 이하면 정상. 변신 중엔 조작 불가(GM 구동). */
     private final Map<UUID, Integer> morphTurns = new ConcurrentHashMap<>();
-    /** 관조자의 눈(observer_sight) 지속 중인 플레이어의 남은 턴 수 (uuid → turns). 매 턴 GM 현재 사고를 보여준다. */
+    /** 관조자의 눈(observer_sight) 지속 중인 플레이어의 남은 턴 수 (uuid → turns). ★1턴 고정이라 실제로는 지속 등록되지 않지만, 구형 세이브 호환을 위해 틱 처리는 유지한다. */
     private final Map<UUID, Integer> observerTurns = new ConcurrentHashMap<>();
+    /** 통신 개방 능력(gm_directive 통신형) — 이 '턴 번호'에 발동한 플레이어는 그 턴 동안 통신 제한(두절·기기부재)을 무시하고 @발신 가능. */
+    private final Map<UUID, Integer> commBypassTurn = new ConcurrentHashMap<>();
+    /** 통신 개방이 '은밀형'인지(uuid → true). true면 그 통신을 괴담이 감지하지 못한다(통신 유인·추적 반응 억제). */
+    private final Map<UUID, Boolean> commBypassStealth = new ConcurrentHashMap<>();
     /** 동물 소생(revive_as_animal)으로 동물 형태가 된 플레이어 (uuid). 제한 행동만 가능(능력·통신 불가), 피해 시 진짜 소멸. */
     private final Set<UUID> animalForm = ConcurrentHashMap.newKeySet();
     /** 능력 대가(cost_stun)로 행동불능 상태인 플레이어의 남은 턴 수 (uuid → turns). 0 이하면 정상. */
@@ -586,6 +590,8 @@ public class TRPGGameManager {
         phaseOutTurns.clear();
         morphTurns.clear();
         observerTurns.clear();
+        commBypassTurn.clear();
+        commBypassStealth.clear();
         animalForm.clear();
         stunTurns.clear();
         possessingNpc.clear();
@@ -1457,6 +1463,7 @@ public class TRPGGameManager {
             });
 
         morphTurns.clear(); observerTurns.clear(); animalForm.clear(); stunTurns.clear(); possessingNpc.clear(); // 변신·관조·동물형태·행동불능·빙의는 스테이지 넘어 유지되지 않음
+        commBypassTurn.clear(); commBypassStealth.clear(); // 통신 개방도 스테이지 넘어 유지 안 됨(턴 번호 재사용 오작동 방지)
         loadForbiddenWord(); // 금지워드형 괴담의 금지어 로드(entity.forbidden_word)
         lastPlayerActionMs = System.currentTimeMillis(); lastIdleAccelMs = 0L; // 무행동 가속 기준점 초기화
         lastAutoSaveTurn = -1; // 새 스테이지 시작 — 첫 턴부터 다시 저장되도록
@@ -2866,12 +2873,27 @@ public class TRPGGameManager {
 
     private void activateShowProgress(Player player, PlayerData pd, TraitData td) {
         applyTraitUsed(pd, td.id, state.getCurrentTurn());
+        // ★정보 계열★: 수치·시스템 용어를 노출하는 대신, 현재 진행 상태를 GM이 '이야기 감각'으로 번역해 알려준다.
         String phaseStr = state.isDailyPhase()
             ? "일상 파트 (남은 " + state.getDailyTurnsLeft() + "턴)"
             : "괴담 파트 — 타임라인 " + state.getTimelineStage() + "단계";
-        player.sendMessage("§e[" + td.name + "] 현재 괴담 진행 상태:");
-        player.sendMessage("§7  단계: §f" + phaseStr);
-        player.sendMessage("§7  오염도: §f" + corruptMan.getLevel() + " (" + corruptMan.getAttempts() + "회차)");
+        String charDisplay = pd.gmDisplayName();
+        String progCtx = "\n## " + td.name + " — 진행도 가늠 (정보 계열)\n"
+            + charDisplay + "이(가) '지금 사건이 얼마나 진행됐는지'를 가늠한다. "
+            + "내부 상태(★플레이어에게 숫자·용어로 노출 금지★): " + phaseStr
+            + ", 오염도 " + corruptMan.getLevel() + "(" + corruptMan.getAttempts() + "회차).\n규칙:\n"
+            + "- 위 수치를 ★그대로 말하지 말고★, 이야기 속 감각(시간의 압박·상황이 얼마나 악화됐는지·고비가 가까운지)으로 1~2문장 번역해 알려줘라.\n"
+            + "- 정답·해결법·붕괴조건은 노출 금지. '얼마나 급한가/어디쯤 왔는가'의 감만 준다.\n"
+            + "- 담담한 톤, 마크다운·머리표·메타 설명 없이 서술만.\n";
+        String prompt = charDisplay + "이(가) '" + td.name + "' 특성으로 사건의 진행 정도를 가늠한다. 위 상태를 이야기 감각으로 알려줘.";
+        player.sendMessage("§e[" + td.name + " — 진행도 가늠 중...]");
+        ai.callGmAiOnce(gmSystemPrompt, progCtx + "\n\n" + prompt).thenAccept(response ->
+            plugin.getServer().getScheduler().runTask(plugin, () -> {
+                String stripped = ai.stripTags(response).trim();
+                if (!stripped.isBlank())
+                    traitReveal(player, pd, "[" + td.name + "] " + stripped, false); // 진행 감각은 인상(표시만, 사실 기록 아님)
+            })
+        );
     }
 
     private void activateGmDirective(Player player, PlayerData pd, TraitData td) {
@@ -2879,49 +2901,30 @@ public class TRPGGameManager {
         String charDisplay = pd.gmDisplayName();
         String directive = (td.effect != null && !td.effect.isBlank())
             ? td.effect : "이 특성의 효과를 사건 전개에 자연스럽게 반영하라.";
-        // ★방송형 directive★(효과가 '모든 아군 방송/경고'류) — GM 생성 멘트를 전원에게 [방송]으로 확정 전달.
-        //   기존엔 handleAction(일반 턴)으로 처리돼 발동자에게만 가고 다른 플레이어에겐 누락됐다(버그6).
-        if (directive.contains("방송") || directive.contains("전원") || directive.contains("모든 아군")
-                || directive.contains("모두에게") || directive.contains("전 직원") || directive.contains("전체에게")
-                || directive.contains("전체 경고") || directive.contains("전체 공지")) {
-            String bctx = "\n## " + td.name + " — 전체 경고 방송 생성\n"
-                + charDisplay + "이(가) '" + td.name + "' 능력으로 모든 아군에게 보낼 ★긴급 경고/행동 지시 방송★을 만든다. 효과: " + directive + "\n"
-                + "- 지금 상황·괴담 정황에 근거한 ★1~2문장 방송 멘트★만 출력(메타·지문 없이 멘트 그대로).\n"
-                + "- 핵심 해결법을 통째로 누설하지는 말되, 생존에 필요한 경고는 분명히.";
-            String bprompt = charDisplay + "이(가) '" + td.name + "'으로 전체 경고 방송을 보낸다. 방송 멘트를 생성해줘.";
-            player.sendMessage("§d[" + td.name + " 발동 — 전체 방송 송출 중...]");
-            ai.callGmAiOnce(gmSystemPrompt, bctx + "\n\n" + bprompt).thenAccept(resp ->
-                plugin.getServer().getScheduler().runTask(plugin, () -> {
-                    String msg = ai.stripThought(ai.stripTags(resp)).trim();
-                    if (!msg.isEmpty()) deliverAbilityBroadcast(pd, td.name, msg);
-                }));
+        // ★통신형 directive★(효과가 '방송/전원 연락'류) — GM 서술을 생성하지 않고,
+        //   ★이번 턴 통신 제한(두절·기기 부재)을 풀어★ 플레이어가 직접 @전체/@이름/@ 로 전하게 한다(GM 콜 대신 주입 1회).
+        //   사용 사실만 GM에 주입하고, 효과 내용이 '은밀/도청 불가'류면 괴담이 이 통신을 감지하지 못한다.
+        if (containsAny(directive, "방송", "전원", "모든 아군", "모두에게", "전 직원", "전체에게",
+                "전체 경고", "전체 공지", "연락", "통신", "무전", "교신")) {
+            boolean stealth = containsAny(directive + " " + td.name,
+                "은밀", "몰래", "숨", "은폐", "도청", "감청", "들키", "발각", "안 들", "안들",
+                "비밀", "암호", "조용", "안전", "포착되지", "감지되지", "감지 안", "감지불가", "추적 불");
+            commBypassTurn.put(pd.uuid, state.getCurrentTurn());   // 이번 턴 통신 제한 무시(턴 넘어가면 자동 만료)
+            commBypassStealth.put(pd.uuid, stealth);
+            player.sendMessage("§b[" + td.name + "] §f이번 턴 통신 제한이 풀렸습니다 — 지금 §e@전체§f · §e@이름§f · §e@ 메시지§f로 전하세요."
+                + (stealth ? " §8(괴담이 감지하지 못하는 은밀 통신)" : ""));
+            ai.injectGmSystem("[통신 개방 능력] " + charDisplay + "이(가) '" + td.name
+                + "' 능력으로 통신 제한을 뚫고 아군에게 연락 수단을 연다"
+                + (stealth
+                    ? " — ★이 통신은 은밀해 괴담이 감지하지 못한다(통신 유인·추적·강화 반응 금지).★"
+                    : " — 통신 자체는 정상 규칙대로 괴담이 감지할 수 있다.")
+                + " 실제 전달 내용은 시스템이 처리하니 중복 서술 말고 정황·반응만 다뤄라.");
             return;
         }
         String gmMsg = "[시스템 특성: " + td.name + " 발동] " + charDisplay
             + "이(가) '" + td.name + "' 특성을 발동했다. GM 지시: " + directive;
         boolean accepted = turnMan.handleAction(player, gmMsg, gmSystemPrompt);
         player.sendMessage(accepted ? "§7[" + td.name + " 발동 중...]" : "§7행동 처리 중입니다. 잠시 후 다시 시도하세요.");
-    }
-
-    /** 능력으로 생성된 전체 경고 방송을 모든 등장 플레이어(발신자 포함)에게 [방송]으로 확정 전달(버그6: gm_directive 방송형 누락 수정). */
-    private void deliverAbilityBroadcast(PlayerData senderPd, String abilityName, String content) {
-        if (content == null || content.isBlank()) return;
-        String disp = senderPd.gmDisplayName();
-        int heard = 0;
-        for (PlayerData op : state.getAllPlayers()) {
-            if (op.isDead || !spawnedPlayers.contains(op.uuid)) continue;
-            Player op2 = Bukkit.getPlayer(op.uuid);
-            if (op2 != null && op2.isOnline()) {
-                op2.sendMessage("§b[📢 " + abilityName + "] §f" + disp + ": " + content);
-                appendNarrativeLog(op, "[방송:" + abilityName + "] " + disp + ": " + content);
-                heard++;
-            }
-        }
-        state.log("comm", senderPd.name, "[방송:" + abilityName + "] " + content);
-        gameLogger.logGmOutput("능력방송(" + abilityName + ")", disp + ": " + content);
-        ai.injectGmSystem("[능력 전체 방송] " + disp + "이(가) '" + abilityName
-            + "' 능력으로 전원에게 경고를 방송했다: \"" + content
-            + "\". 시스템이 이미 모든 등장 인원에게 전달했으니 같은 내용을 중복 전달 말고 정황·반응만 다뤄라.");
     }
 
     private void activateAreaScan(Player player, PlayerData pd, TraitData td) {
@@ -3210,17 +3213,12 @@ public class TRPGGameManager {
         return true;
     }
 
-    /** 관조자의 눈(observer_sight) — '무대 뒤(연출자)의 현재 사고'를 엿본다. turns>1이면 N턴간 매 턴 보여준다(전체 각본·정답 제외). */
+    /** 관조자의 눈(observer_sight) — '무대 뒤(연출자)의 현재 사고'를 엿본다. ★사용한 순간 1회만★(지속·매 턴 자동 없음, 전체 각본·정답 제외). */
     private void activateObserverSight(Player player, PlayerData pd, TraitData td) {
         applyTraitUsed(pd, td.id, state.getCurrentTurn());
-        int turns = Math.max(1, td.param("turns", 1));
-        fireObserverGlimpse(player, pd, td.name); // 발동 즉시 1회
-        if (turns > 1) {
-            observerTurns.put(pd.uuid, turns - 1); // 남은 턴은 매 턴 자동으로(tickRestrictionStates)
-            player.sendMessage("§5[" + td.name + "] 앞으로 " + turns + "턴간 매 턴 무대 뒤의 사고를 엿봅니다.");
-        } else {
-            player.sendMessage("§5[" + td.name + "] 무대 뒤의 현재 사고를 엿봅니다...");
-        }
+        // ★관조자의 눈은 '사용한 순간 1회'만★ — 지속·매 턴 자동 재발동 없음(GM 콜이 무인 누적되는 것을 차단).
+        fireObserverGlimpse(player, pd, td.name);
+        player.sendMessage("§5[" + td.name + "] 무대 뒤의 현재 사고를 엿봅니다...");
     }
 
     /** 거래(pact) — 괴담과 1회 거래(대가↔양보). GM이 판정·서술. */
@@ -3256,10 +3254,18 @@ public class TRPGGameManager {
     private void activateGdamMorph(Player player, PlayerData pd, TraitData td) {
         applyTraitUsed(pd, td.id, state.getCurrentTurn());
         int turns = Math.max(1, td.param("turns", 2));
-        String[] kinds = {"규칙형 괴이", "포식형 괴물", "유혹형 정령", "도플갱어형 존재", "그림자형 괴담", "기괴한 SCP형 개체"};
-        String kind = kinds[new java.util.Random().nextInt(kinds.length)];
+        // ★고정 변신★: effect에 특정 괴담 이름이 적혀 있으면 그 괴담으로 변신(예: "빨간 마스크"), 없으면 무작위 유형.
+        boolean fixed = td.effect != null && !td.effect.isBlank();
+        String kind;
+        if (fixed) {
+            kind = td.effect.trim();
+        } else {
+            String[] kinds = {"규칙형 괴이", "포식형 괴물", "유혹형 정령", "도플갱어형 존재", "그림자형 괴담", "기괴한 SCP형 개체"};
+            kind = kinds[new java.util.Random().nextInt(kinds.length)];
+        }
         morphTurns.put(pd.uuid, turns); // 변신 지속 턴 — 그동안 플레이어 입력 차단(GM이 구동)
-        ai.injectGmSystem("[괴담 변신] " + pd.gmDisplayName() + "이(가) 약 " + turns + "턴간 '" + kind + "'(으)로 변신했다. "
+        ai.injectGmSystem("[괴담 변신] " + pd.gmDisplayName() + "이(가) 약 " + turns + "턴간 '" + kind + "'(으)로 변신했다"
+            + (fixed ? "(★이 괴담으로 고정 변신 — 그 괴담의 알려진 본성·행태 그대로 구동★)." : ".") + " "
             + "그 본성대로 ★GM이 자율 구동★하라 — 플레이어의 통제를 벗어나며(조작 불가), 피아를 가리지 않아 아군도 위험할 수 있다. "
             + turns + "턴 후 원래 모습으로 돌아온다. 박력 있게 서술하되 즉시 전멸 강요는 피하라.");
         player.sendMessage("§5[" + td.name + "] 당신은 '" + kind + "'(으)로 변신했습니다 — 약 " + turns + "턴간 통제할 수 없습니다(GM이 구동).");
@@ -6508,8 +6514,11 @@ public class TRPGGameManager {
 
     /** '@전체 메시지' → 내가 번호를 아는(knownContacts) 모든 플레이어에게 기기로 발신. */
     private void broadcastToKnownContacts(Player sender, PlayerData senderPd, String message) {
-        if (!isPhoneUsable()) { sender.sendMessage("§c통신이 두절되어 발신할 수 없습니다."); return; }
-        if (!hasCommDevice(senderPd)) { sender.sendMessage("§c통신 기기가 없어 발신할 수 없습니다."); return; }
+        boolean bypass = hasCommBypass(senderPd); // 통신 개방 능력 발동 턴 — 두절·기기 제한 무시
+        if (!bypass) {
+            if (!isPhoneUsable()) { sender.sendMessage("§c통신이 두절되어 발신할 수 없습니다."); return; }
+            if (!hasCommDevice(senderPd)) { sender.sendMessage("§c통신 기기가 없어 발신할 수 없습니다."); return; }
+        }
         String disp = senderPd.gmDisplayName();
         List<PlayerData> targets = new ArrayList<>();
         for (UUID u : senderPd.knownContacts) {
@@ -6520,7 +6529,7 @@ public class TRPGGameManager {
         sender.sendMessage("§7[전체 발신 " + targets.size() + "명] §f" + message);
         for (PlayerData op : targets) {
             Player op2 = Bukkit.getPlayer(op.uuid);
-            if (op2 != null && op2.isOnline() && hasCommDevice(op))
+            if (op2 != null && op2.isOnline() && (bypass || hasCommDevice(op))) // 개방 시 수신자 기기 부재도 관통
                 op2.sendMessage("§b[📞 " + disp + " → 전체] §f" + message);
         }
         state.log("comm", senderPd.name, "[전체발신] " + message);
@@ -6529,7 +6538,7 @@ public class TRPGGameManager {
         for (PlayerData op : targets) callNames.add(op.gmDisplayName());
         gameLogger.logComm("call", disp, callNames, message);
         // (입력 로그는 onChat 진입부에서 이미 1회 기록됨 — 여기서 중복 기록하지 않는다)
-        noteCommUsedIfDangerous(senderPd, "전체 발신"); // 통신 유인형이면 괴담 반응 유도
+        if (commDetectableByEntity(senderPd)) noteCommUsedIfDangerous(senderPd, "전체 발신"); // 은밀 개방이면 괴담이 감지 못함
     }
 
     private void handleDirectComm(Player sender, PlayerData senderPd, String raw) {
@@ -6595,13 +6604,14 @@ public class TRPGGameManager {
             if (gmChannel) {
                 viaDevice = true; // GM 개설 채널 → 번호 불필요 (시나리오 통신 차단과 무관하게 작동)
             } else {
+                boolean bypass = hasCommBypass(senderPd); // 통신 개방 능력 발동 턴 — 두절·기기 제한 무시
                 // 시나리오상 통신이 두절(영역형 교란·시대상 부재 등)이면 기기 통신 불가
-                if (!isPhoneUsable()) {
+                if (!bypass && !isPhoneUsable()) {
                     sender.sendMessage("§c통신이 두절되어 기기로 연락할 수 없습니다. (직접 찾아가야 합니다)");
                     return;
                 }
-                // 기기 통신: 양쪽 모두 통신 기기 보유 필요
-                if (!hasCommDevice(senderPd) || !hasCommDevice(targetPd)) {
+                // 기기 통신: 양쪽 모두 통신 기기 보유 필요 (개방 중이면 관통)
+                if (!bypass && (!hasCommDevice(senderPd) || !hasCommDevice(targetPd))) {
                     sender.sendMessage("§c근처에 없고 통신 기기로도 닿지 않습니다. (직접 찾아가거나 다른 방법이 필요)");
                     return;
                 }
@@ -6629,7 +6639,7 @@ public class TRPGGameManager {
 
         deliverDirectMessage(sender, senderPd, targetPd, message, viaDevice);
         exchangeContacts(senderPd, targetPd);
-        if (viaDevice) noteCommUsedIfDangerous(senderPd, "전화/무전"); // 통신 유인형이면 괴담 반응 유도
+        if (viaDevice && commDetectableByEntity(senderPd)) noteCommUsedIfDangerous(senderPd, "전화/무전"); // 은밀 개방이면 괴담이 감지 못함
     }
 
     /** 시나리오상 통신기기가 작동하는가 (constraints.phone_usable, 기본 true). GM 개설 채널은 이와 무관하게 작동. */
@@ -6660,6 +6670,29 @@ public class TRPGGameManager {
         ai.injectGmSystem("[통신 유인 발동] " + commDisplayName(senderPd) + "이(가) 기기 통신을 사용했다(" + how
             + "). 통신 유인형 규칙에 따라 괴담이 그 신호에 ★응답·추적·강화★되도록 다음 서술에 반영하라(즉사 과잉 금지, 위협 고조). "
             + "단, '통신을 써서 위험해졌다'고 시스템처럼 못박지 말고 정황(소리·기척·접근 등)으로만 서서히 드러내라.");
+    }
+
+    /** 통신 개방 능력이 이번 턴 활성인가 — 발동 턴 == 현재 턴이면 통신 제한을 무시한다(턴이 넘어가면 자동 만료). */
+    private boolean hasCommBypass(PlayerData pd) {
+        if (pd == null) return false;
+        return commBypassTurn.getOrDefault(pd.uuid, -999) == state.getCurrentTurn();
+    }
+
+    /** 이번 턴 통신 개방이 '은밀형'인가(괴담 감지 불가). */
+    private boolean isCommBypassStealth(PlayerData pd) {
+        return pd != null && hasCommBypass(pd) && commBypassStealth.getOrDefault(pd.uuid, false);
+    }
+
+    /** 이 통신을 괴담이 감지할 수 있는가 — 은밀형 통신 개방 중이면 감지 불가(통신 유인·추적 억제). */
+    private boolean commDetectableByEntity(PlayerData pd) {
+        return !isCommBypassStealth(pd);
+    }
+
+    /** 문자열에 후보 키워드 중 하나라도 포함되는가. */
+    private static boolean containsAny(String hay, String... needles) {
+        if (hay == null) return false;
+        for (String n : needles) if (n != null && !n.isEmpty() && hay.contains(n)) return true;
+        return false;
     }
 
     /** 통신 기기(전화·무전기 등) 소지 여부 */
@@ -8478,6 +8511,7 @@ public class TRPGGameManager {
             }
         // 동물 형태(revive_as_animal)는 PlayerData.status="animal"에서 재구성(변신·관조·행동불능·빙의 지속은 일시 상태라 복원 안 함 — 본체로 복귀)
         morphTurns.clear(); observerTurns.clear(); animalForm.clear(); stunTurns.clear(); possessingNpc.clear();
+        commBypassTurn.clear(); commBypassStealth.clear();
         loadForbiddenWord(); // 금지워드형 괴담의 금지어 복원
         for (PlayerData pd : state.getAllPlayers())
             if ("animal".equals(pd.status) && !pd.isDead) animalForm.add(pd.uuid);

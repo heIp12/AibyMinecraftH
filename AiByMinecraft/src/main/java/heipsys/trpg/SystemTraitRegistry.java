@@ -75,8 +75,8 @@ public class SystemTraitRegistry {
             "발동 시 N턴간 괴담의 감지(perception 양식 전부 — 청각·시각·통신·전지 등)에서 벗어난다. 그동안 괴담은 자신을 직접 표적·추적하지 못한다.",
             "turns=지속 턴수(1~3), uses=스테이지당 횟수(1~2)"),
         OBSERVER_SIGHT("observer_sight", true,
-            "발동 시 '무대 뒤(연출자)의 현재 사고'를 엿본다 — 지금 이 순간 무슨 의도로 일이 굴러가는지. 전체 각본·정답은 제외, 현재 사고만. turns>1이면 그 턴 수만큼 매 턴 자동으로 엿본다.",
-            "uses=스테이지당 횟수(1~2), turns=지속 턴 수(1=즉시 1회, 2~3=N턴 지속)"),
+            "발동 시 '무대 뒤(연출자)의 현재 사고'를 엿본다 — 지금 이 순간 무슨 의도로 일이 굴러가는지. 전체 각본·정답은 제외, 현재 사고만. ★사용한 그 순간 1회만★ 엿본다(지속·연장 불가).",
+            "uses=스테이지당 횟수(1~2)"),
         PACT("pact", true,
             "발동 시 괴담과 1회 거래를 시도한다 — 대가(체력·정신력·단서 등)를 치르고 양보 1개를 얻는다. 고위험. GM이 거래를 판정·서술한다.",
             "uses=스테이지당 횟수(1)"),
@@ -84,7 +84,7 @@ public class SystemTraitRegistry {
             "발동 시 자신이 한 과거 행동 1개를 다른 것으로 개찬한다 — 인과가 바뀐다(정답 날조 불가, GM이 개연성 판정).",
             "uses=스테이지당 횟수(1)"),
         GDAM_MORPH("gdam_morph", true,
-            "발동 시 N턴간 무작위 괴담으로 변신한다 — 그 괴담 본성대로 행동(★조작 불가, GM이 구동, 피아식별 없음). 난장판+통제 상실이 곧 대가.",
+            "발동 시 N턴간 괴담으로 변신한다 — 그 괴담 본성대로 행동(★조작 불가, GM이 구동, 피아식별 없음). 난장판+통제 상실이 곧 대가. ★effect에 특정 괴담 이름을 적으면 그 괴담으로 '고정' 변신(예: effect=\"빨간 마스크\"), 비우면 무작위.",
             "turns=변신 지속 턴수(1~3), uses=스테이지당 횟수(1)"),
         PHASE_OUT("phase_out", true,
             "발동 시 N턴간 턴을 건너뛰며 아무 간섭도 받지 않는다(위상 이탈). 종료 시 극적 탈출(건물 폭파 등)이 가능하다.",
@@ -416,8 +416,8 @@ public class SystemTraitRegistry {
             }
             case OBSERVER_SIGHT -> {
                 td.effectParams.putIfAbsent("uses", 1);
-                td.effectParams.putIfAbsent("turns", 1);
-                clamp(td, "uses", 1, 2); clamp(td, "turns", 1, 3);
+                td.effectParams.put("turns", 1); // ★관조자의 눈은 항상 1턴(사용 순간 1회)만 — 매 턴 자동 재발동으로 GM 콜이 누적되는 것을 차단
+                clamp(td, "uses", 1, 2);
             }
             case PACT, PAST_EDIT, POSSESS_NPC, NPC_BIND -> {
                 td.effectParams.putIfAbsent("uses", 1);
@@ -649,7 +649,7 @@ public class SystemTraitRegistry {
             case FORESIGHT        -> td.param("depth", 2) >= 3 ? 5 : 3;
             case SOCIAL           -> td.param("power", 2) >= 3 ? 5 : 3;
             case SCENARIO_INSIGHT, ENTITY_SENSE, ALLY_SENSE, LORE_RECORD, ENCOUNTER_SCAN -> td.param("depth", 1) >= 2 ? 3 : 1;
-            case OBSERVER_SIGHT   -> td.param("turns", 1) >= 2 ? 10 : 5; // 지속(N턴)이면 강력 → S급
+            case OBSERVER_SIGHT   -> 5; // 사용 순간 1회만(1턴 고정) → A급
             case PACT             -> 5;
             case PAST_EDIT        -> 5;
             case GDAM_MORPH       -> td.param("turns", 2) >= 2 ? 10 : 5; // 2턴+ 변신(통제 상실·적대 괴물)은 S급으로 게이팅
