@@ -90,7 +90,8 @@
   <h1>🩸 괴담 TRPG 로그 뷰어</h1>
   <span class="meta" id="meta">로그를 불러오세요</span>
   <span style="flex:1"></span>
-  <button class="file" id="pick">파일 열기</button>
+  <button class="file" id="pickAuto">🔍 자동 탐색·결합</button>
+  <button class="file alt" id="pick">파일 열기</button>
   <button class="file alt" id="pickDir">📁 폴더 열기</button>
   <button class="file alt" id="toggleInfo" style="display:none">📊 스탯·시나리오</button>
   <input type="file" id="file" accept=".jsonl,.json,.txt,.replay,.gdam" multiple style="display:none">
@@ -102,7 +103,8 @@
     <div class="drop" id="drop">
       <p>📂 <b>로그 파일을 여기에 끌어다 놓으세요</b></p>
       <p>권장: <code>씨드#n.events.jsonl</code> · 또는 <code>씨드#n.txt</code> · 함께 <code>.replay</code>/<code>.json</code>/<code>.gdam</code></p>
-      <p><b>📁 폴더 열기</b> — <code>logs</code> 폴더째 선택하면 목록에서 고르고 스탯·시나리오까지 표시</p>
+      <p><b>🔍 자동 탐색·결합</b> — <code>logs</code>·<code>replays</code>·<code>gdam</code>을 품은 <b>상위 폴더</b>를 한 번 선택하면 하위를 훑어 이름·스탯·시나리오까지 자동 결합</p>
+      <p><b>📁 폴더 열기</b> — 폴더가 따로면 <code>logs</code>→<code>replays</code>→<code>gdam</code>을 차례로 열어도 자동 누적·결합</p>
     </div>
   </main>
 </div>
@@ -555,6 +557,28 @@ function ingestFolder(fl){
   openFolderLog(cur); // 보던 로그 유지 — 새로 합쳐진 replay/gdam을 반영해 다시 연다
   resolveFolderTitles().then(renderSide); // 파일 목록에 괴담 이름 표시(.gdam 복호화 우선)
 }
+// ★자동 탐색·결합★: 폴더 하나(상위 폴더 권장 — logs·replays·gdam을 품은 폴더)만 권한을 주면
+//  하위 logs/replays/gdam을 ★재귀 순회★해 관련 파일을 모두 찾아 씨드로 자동 결합한다.
+//  (브라우저 보안상 '파일 하나'만으로는 형제 폴더로 올라갈 수 없어, 폴더 권한 1회가 필요하다.)
+async function autoDiscover(){
+  if(!window.showDirectoryPicker){ // File System Access 미지원(파이어폭스 등) → 폴더 열기로 대체 안내
+    document.getElementById("meta").textContent="이 브라우저는 자동 탐색 미지원 → '폴더 열기'로 상위 폴더(logs·replays·gdam 포함)를 선택하세요(자동 결합됨).";
+    dirEl.click(); return;
+  }
+  let root; try{ root=await window.showDirectoryPicker(); }catch(_){ return; } // 사용자 취소
+  document.getElementById("meta").textContent="자동 탐색 중…";
+  const files=[];
+  async function walk(dir,depth){
+    if(depth>5) return; // 폭주 방지(깊이 제한)
+    try{ for await (const entry of dir.values()){
+      if(entry.kind==="file"){ if(/\.(jsonl|txt|replay|json|gdam)$/i.test(entry.name)){ try{ files.push(await entry.getFile()); }catch(_){} } }
+      else if(entry.kind==="directory"){ await walk(entry,depth+1); }
+    } }catch(_){}
+  }
+  await walk(root,0);
+  if(!files.length){ document.getElementById("meta").textContent="선택한 폴더에서 로그/리플레이/시나리오를 찾지 못했습니다(상위 폴더를 선택했는지 확인)."; return; }
+  ingestFolder(files); // 기존 누적·씨드 매칭 흐름 재사용(logs·replays·gdam 자동 결합)
+}
 // 씨드 정규화(핵심): 로그·리플레이·gdam이 ★서로 다른 폴더·다른 파일명 규칙★이어도 같은 게임으로 묶이게 한다.
 //  로그 "<seed>#<run>.txt" / 리플레이 "S<stage>_<seed>_<hexT시각>.replay" / gdam "<seed>.gdam" → 공통 영숫자 코어로 축약.
 function seedKey(n){
@@ -577,6 +601,7 @@ function openFolderLog(f){FILES.logs.forEach(x=>x.__on=false);f.__on=true;REPLAY
 const fileEl=document.getElementById("file"),dirEl=document.getElementById("dir");
 document.getElementById("pick").onclick=()=>fileEl.click();
 document.getElementById("pickDir").onclick=()=>dirEl.click();
+document.getElementById("pickAuto").onclick=autoDiscover;
 document.getElementById("toggleInfo").onclick=()=>{renderInfo();document.getElementById("info").classList.toggle("open");};
 fileEl.onchange=e=>{if(e.target.files.length)ingestAll(e.target.files);};
 dirEl.onchange=e=>{if(e.target.files.length)ingestFolder(e.target.files);};
