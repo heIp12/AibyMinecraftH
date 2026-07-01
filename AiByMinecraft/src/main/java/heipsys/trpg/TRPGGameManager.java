@@ -226,6 +226,10 @@ public class TRPGGameManager {
     private CompletableFuture<JsonObject> pregenFuture = null;
     /** pregenFuture가 대상으로 하는 절대 스테이지 번호(-1=없음). nextRoom과 일치할 때만 재사용. */
     private int pregenRoom = -1;
+    /** 시작 설정: 다음 시나리오 자동 사전생성 on/off (기본 on). /trpg setting pregen 으로 토글. */
+    private boolean autoPregen = true;
+    /** 시작 설정: 신규 세션 시작 스테이지(1~6). 2 이상이면 (start-1)단계 시작 스펙 보정. */
+    private int startStage = 1;
     private String gmSystemPrompt = PromptBuilder.GM_SYSTEM_BASE;
     private BossBar loadingBar;
 
@@ -418,7 +422,7 @@ public class TRPGGameManager {
 
         boolean freshSession = !state.isSessionActive();
         if (freshSession) retriedThisRun = false; // 새 게임 — 무리트라이 보너스 추적 초기화
-        int room = state.isSessionActive() ? state.getRoomNumber() + 1 : 1;
+        int room = state.isSessionActive() ? state.getRoomNumber() + 1 : Math.max(1, Math.min(6, startStage)); // 신규 세션은 설정된 시작 스테이지부터
         broadcast("§e§l═══ TRPG 세션 시작 (스테이지 " + room + ") ═══");
         broadcast("§7.gdam 파일을 생성 중입니다...");
 
@@ -489,6 +493,7 @@ public class TRPGGameManager {
                             stepLoadingBar("캐릭터 생성 중... (" + done + "/" + total + ")",
                                 0.85f + 0.15f * done / total);
                             if (done >= total) endLoadingBar();
+                            applyStartStageBoost(pd); // 시작 스테이지 비례 시작 스펙 보정(설정 시)
                             if (!p.isOnline()) {
                                 pendingCreation.remove(p.getUniqueId());
                                 checkAllConfirmed();
@@ -843,8 +848,91 @@ public class TRPGGameManager {
      * 플레이어가 특성 선택·정비하는 동안 생성이 진행되어 /trpg next 대기 시간이 크게 줄어든다.
      * 로딩바·브로드캐스트 없이 조용히 진행하며 /trpg next에서 consumePregenOrGenerate로 소비된다.
      */
+    // ──────────────────────────────────────────────────────────────
+    //  시작 설정 (/trpg setting) — 자동 사전생성 토글 + 시작 스테이지 보정
+    // ──────────────────────────────────────────────────────────────
+
+    /** /trpg setting [pregen on|off | stage N] — 인자 없으면 현재 설정 표시. */
+    public void handleStartSetting(Player player, String[] sub) {
+        if (sub == null || sub.length == 0) { openStartSettings(player); return; }
+        String key = sub[0].toLowerCase();
+        if (key.equals("pregen") || key.equals("자동생성") || key.equals("자동")) {
+            if (sub.length >= 2) {
+                String v = sub[1].toLowerCase();
+                autoPregen = v.equals("on") || v.equals("켜기") || v.equals("켬") || v.equals("true") || v.equals("1");
+            } else autoPregen = !autoPregen; // 값 없으면 토글
+            player.sendMessage("§6[설정] 다음 시나리오 자동 사전생성: " + (autoPregen ? "§a켜짐" : "§c꺼짐 §7(/trpg next에서 즉석 생성)"));
+        } else if (key.equals("stage") || key.equals("스테이지")) {
+            if (sub.length < 2) { player.sendMessage("§c사용법: §f/trpg setting stage <1-6>"); return; }
+            try {
+                startStage = Math.max(1, Math.min(6, Integer.parseInt(sub[1].trim())));
+                player.sendMessage("§6[설정] 시작 스테이지: §b" + startStage
+                    + (startStage > 1 ? " §7(시작 보정 " + (startStage - 1) + "단계: 단계당 올스탯+2 & D~B특성/스탯등급)" : " §7(보정 없음)"));
+                player.sendMessage("§7다음 §f/trpg start §7부터 적용됩니다.");
+            } catch (NumberFormatException e) { player.sendMessage("§c숫자를 입력하세요: §f/trpg setting stage <1-6>"); }
+        } else {
+            openStartSettings(player);
+        }
+    }
+
+    /** 현재 시작 설정 표시(/trpg setting). */
+    public void openStartSettings(Player player) {
+        player.sendMessage("§e§l═══ TRPG 시작 설정 ═══");
+        player.sendMessage("§f· 다음 시나리오 자동생성: " + (autoPregen ? "§a켜짐" : "§c꺼짐")
+            + "  §7→ §f/trpg setting pregen on|off");
+        player.sendMessage("§f· 시작 스테이지: §b" + startStage
+            + (startStage > 1 ? " §7(보정 " + (startStage - 1) + "단계)" : "")
+            + "  §7→ §f/trpg setting stage <1-6>");
+        player.sendMessage("§7시작 스테이지 보정: 단계당 올스탯 총합 +2, 그리고 무작위로");
+        player.sendMessage("§7  [D~B 등급 특성 1개] 또는 [스탯 1단계(+2) 상승] 중 하나.");
+        player.sendMessage("§7설정은 다음 §f/trpg start§7 부터 적용됩니다.");
+    }
+
+    /** 시작 스테이지 비례 시작 스펙 보정(신규 캐릭터 생성 시). startStage>1이고 현재 스테이지==startStage일 때만. */
+    private void applyStartStageBoost(PlayerData pd) {
+        if (pd == null || startStage <= 1) return;
+        if (state.getRoomNumber() != startStage) return; // 시작 스테이지에서만(도중 합류·다음 스테이지엔 미적용)
+        int levels = startStage - 1;
+        java.util.Random rng = new java.util.Random();
+        java.util.List<String> gained = new java.util.ArrayList<>();
+        for (int i = 0; i < levels; i++) {
+            bumpStat(pd, rng.nextInt(4), 1);
+            bumpStat(pd, rng.nextInt(4), 1);                 // 단계당 올스탯 총합 +2
+            if (rng.nextBoolean()) {                          // 무작위: D~B 특성 추가
+                TraitData t = rollLowGradeTrait(pd, rng);
+                if (t != null) { pd.traits.add(t); gained.add(t.name + "(" + t.grade + ")"); }
+                else bumpStat(pd, rng.nextInt(4), 2);         // 특성 풀 소진 시 스탯으로 대체
+            } else {
+                bumpStat(pd, rng.nextInt(4), 2);              // 또는: 스탯 1단계(+2) 상승
+            }
+        }
+        pd.snapshotBase(); // 보정 스탯을 base로 재확정(재도전·다음 스테이지에도 유지)
+        Player p = Bukkit.getPlayer(pd.uuid);
+        if (p != null) {
+            p.sendMessage("§6[시작 보정] 시작 스테이지 " + startStage + " — " + levels + "단계 성장 적용");
+            if (!gained.isEmpty()) p.sendMessage("§6 추가 특성: §f" + String.join(", ", gained));
+        }
+    }
+    private void bumpStat(PlayerData pd, int idx, int amt) {
+        switch (idx) { case 0 -> pd.str += amt; case 1 -> pd.cha += amt; case 2 -> pd.luk += amt; default -> pd.spr += amt; }
+    }
+    /** 보유하지 않은 D~B(현재 풀은 B·C) 프리셋 특성 1개를 무작위로 TraitData화. 없으면 null. */
+    private TraitData rollLowGradeTrait(PlayerData pd, java.util.Random rng) {
+        java.util.List<SystemTraitRegistry.Preset> pool = new java.util.ArrayList<>();
+        for (SystemTraitRegistry.Preset ps : SystemTraitRegistry.presets()) {
+            String g = ps.grade();
+            if (("B".equals(g) || "C".equals(g) || "D".equals(g))
+                && pd.traits.stream().noneMatch(t -> ps.id().equals(t.id))) pool.add(ps);
+        }
+        if (pool.isEmpty()) return null;
+        TraitData td = pool.get(rng.nextInt(pool.size())).toTraitData();
+        td.origin = "시작 보정";
+        return td;
+    }
+
     private void startPregenNext() {
         if (replayLock) return;            // 재현 세션은 다음 스테이지가 없음
+        if (!autoPregen) return;           // 설정: 자동 사전생성 꺼짐 → /trpg next에서 즉석 생성
         if (!nextStageUnlocked) return;    // 진출 불가(단순 생존 등) — 미리 만들 필요 없음
         int current = state.getRoomNumber();
         // 최종 스테이지면 다음이 없다 — nextSession의 종료 조건과 동일하게 사전 생성 차단.
@@ -1006,8 +1094,10 @@ public class TRPGGameManager {
         charGen.generate(player).thenAccept(newPd -> {
             newPd.diceRollsRemaining = pd.diceRollsRemaining;
             state.addPlayer(newPd);
-            plugin.getServer().getScheduler().runTask(plugin, () ->
-                showCharacterSheetForPlayer(player, newPd));
+            plugin.getServer().getScheduler().runTask(plugin, () -> {
+                applyStartStageBoost(newPd); // 재굴림도 시작 보정 재적용
+                showCharacterSheetForPlayer(player, newPd);
+            });
         });
     }
 
