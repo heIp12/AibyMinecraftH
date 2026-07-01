@@ -1,4 +1,4 @@
-package heipsys.trpg;
+package heipsys.trpg.projectmoon;
 
 /**
  * ★환상체 상세 캐논 레코드 코덱★ — 이름별로 '생김새 · 보유 능력 · 강함(3축)'만 자작 요약한다.
