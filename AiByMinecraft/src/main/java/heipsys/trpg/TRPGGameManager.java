@@ -2128,6 +2128,7 @@ public class TRPGGameManager {
                     String clue = update.get("new_clue").getAsString();
                     state.discoverClue(clue);
                     state.log("clue", pd.name, "단서 발견: " + clue);
+                    gameLogger.logItem("clue", pd.gmDisplayName(), clue, ""); // 뷰어: 단서 뱃지 + 재생 진행연동 상태패널
                     // CODE-15: 발견 단서를 '발견 사실'로 표식(엔딩 공개 필터용).
                     state.markFactDiscovered(clue);
                     // 단서에 괴담 이름이 등장하면 'name' 사실도 발견 처리(이름 알아냄).
@@ -7263,12 +7264,19 @@ public class TRPGGameManager {
     /** heldItemIds 추가 + item_type이 있으면 ItemInstance(런타임 상태) 등록 */
     private void noteHeldItem(PlayerData pd, String itemId) {
         if (pd == null || itemId == null || itemId.isBlank()) return;
+        boolean isNew = !pd.heldItemIds.contains(itemId); // 최초 획득만 로그(중복 방지)
         pd.heldItemIds.add(itemId);
         JsonObject def = itemMan.findDef(itemId);
         if (def != null && def.has("item_type")
                 && !def.get("item_type").getAsString().isBlank()
                 && !pd.itemStates.containsKey(itemId)) {
             pd.itemStates.put(itemId, buildItemInstance(def, itemId));
+        }
+        // ★아이템 획득 로그★ — 시작 소지품 포함, 뷰어의 아이템 뱃지 + 재생 진행연동 상태패널(그 시점에 아는 것)에 표시.
+        if (isNew && gameLogger != null) {
+            String nm = def != null && def.has("name")  ? def.get("name").getAsString()
+                      : def != null && def.has("title") ? def.get("title").getAsString() : itemId;
+            gameLogger.logItem("item", pd.gmDisplayName(), nm, state.getCurrentTurn() <= 1 ? "시작 소지" : "");
         }
         refreshCommItems(pd); // 새 아이템(통신 기기 포함) 지급 시 연락법·연락처 표기 갱신
     }

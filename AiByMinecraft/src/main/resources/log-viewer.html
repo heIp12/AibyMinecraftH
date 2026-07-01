@@ -49,6 +49,16 @@
   .ev.k-vital{border-left-color:var(--vital);background:#2a1820}
   .ev.k-ability .badge{background:var(--ability);color:#2a0f0f}
   .ev.k-vital .badge{background:var(--vital);color:#2a0f14}
+  .ev.k-item{border-left-color:#e0c56a;background:#241f14} .ev.k-item .badge{background:#e0c56a;color:#2a230f}
+  .ev.k-clue{border-left-color:#66c8b0;background:#14231f} .ev.k-clue .badge{background:#66c8b0;color:#0f2a23}
+  .ev.k-shout,.ev.k-letter,.ev.k-whisper{border-left-color:var(--broadcast)}
+  .ln.tamper-orig{color:var(--dim);text-decoration:line-through;opacity:.72}
+  .ln.tamper-new{color:#ff9a6b;font-weight:600}
+  .tamper-tag{font-size:11px;color:var(--dim);margin-right:5px}
+  #info .know{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:7px;font-size:12px;line-height:1.55}
+  #info .know .hp{color:var(--vital)} #info .know .san{color:#7aa2ff}
+  #info .know .kitem{color:#e0c56a} #info .know .kclue{color:#66c8b0}
+  #info .know .khead{font-weight:600;margin-bottom:3px} #info .live{color:#ff9a6b;font-size:11px}
   .pill{font-size:11px;padding:1px 7px;border-radius:20px;border:1px solid var(--line);color:var(--dim)}
   .drop{margin:50px auto;max-width:600px;border:2px dashed var(--line);border-radius:14px;padding:44px 24px;text-align:center;color:var(--dim);background:var(--panel)}
   .drop.drag{border-color:var(--accent);color:var(--txt);background:var(--panel2)}
@@ -100,7 +110,7 @@
 <script>
 "use strict";
 let EVENTS=[], VIEWPOINTS=[], curVP="__all__";
-let ALIAS={}, REPLAY=null, SCENARIO=null, RAWCACHE=[], KNOWN=new Set();
+let ALIAS={}, REPLAY=null, SCENARIO=null, RAWCACHE=[], KNOWN=new Set(), CONTACTS={};
 let FILES={logs:[],replays:[],scenarios:[],gdams:[]};
 let playing=false, speed=1, queue=[], qi=0, qtimer=null, curBodyEl=null;
 
@@ -128,6 +138,7 @@ function normalize(ev){
       if(mc){const tg=mc[1];
         if(/^(전체|전원|모두|all)$/i.test(tg))kind="broadcast";
         else if(/^(근처|주변|주위)$/.test(tg))kind="nearby";
+        else if(CONTACTS[tg]){kind="call";target=CONTACTS[tg];bodyText="@"+CONTACTS[tg]+(mc[2]?" "+mc[2]:"");} // 연락처 번호 → 이름으로 표시
         else if(!/^(GM|시스템|SYSTEM)$/i.test(tg) && (KNOWN.has(tg)||KNOWN.has(canon(tg)))){kind="call";if(!target)target=tg;}
         // 미지의 @이름(오타·없는 대상)은 통화로 인식하지 않음 → 유령 대상·시점 생성 방지(입력 그대로)
       }}
@@ -138,20 +149,26 @@ function normalize(ev){
       else{kind=kind||"gm";actor=actor||"GM";target=x;}}
     else if(cat.startsWith("NPC")){kind=kind||"npc";const m=cat.match(/\(([^)]*)\)/);if(m)actor=actor||m[1];const a=cat.indexOf("→");if(a>=0)target=cat.slice(a+1);}
     else if(cat.startsWith("능력")){kind=kind||"ability";actor=actor||who;}
+    else if(cat==="아이템"){kind=kind||"item";actor=actor||who;}
+    else if(cat==="단서"){kind=kind||"clue";actor=actor||who;}
     else if(cat==="배역"){kind=kind||"alias";}
     else if(cat==="개인"){
       if(/배역 배정 →/.test(text)){kind="assign";if(!actor)actor=who;} // 신형 배역배정(당사자 개인 로그) — 시점 한정
       else{kind=kind||"private";if(!actor)actor=who||((text.match(/^(\S+)/)||[])[1]||"");}}
     else if(["세션","구분","이벤트"].includes(cat)){
       const a1=text.match(/배역 배정:\s*(\S+)\s*→/); // 구형 배역배정(전역 이벤트) → 당사자 시점으로 한정(assign)
+      const a2=text.match(/배역 등장:\s*(\S+)\s*\[/); // "배역 등장: 계정 [role_id]" — 계정명·role_id 메타 노출 스크럽
       if(a1){kind="assign";if(!actor)actor=a1[1];}
+      else if(a2){kind="assign";if(!actor)actor=a2[1];}
       else kind=kind||"system";}
     else{kind=kind||"event";actor=actor||who;}
   }
   if(target&&!to.length)to=[target];
   actor=canon(actor); to=to.map(canon);
-  if(kind==="assign")bodyText="배역 배정: "+(actor||"?"); // 계정→role_id·zone_id 메타 노출 제거 + 당사자 표시명으로
-  return {seq:ev.seq||0,t:ev.t||"",kind,actor,to,ability:ev.ability||"",detail:ev.detail||"",phase:ev.phase||"",cause:ev.cause||"",text:bodyText,cat};
+  if(kind==="assign")bodyText=(/등장/.test(text)?"배역 등장: ":"배역 배정: ")+(actor||"?"); // 계정→role_id·zone_id 메타 제거 + 표시명으로
+  return {seq:ev.seq||0,t:ev.t||"",kind,actor,to,ability:ev.ability||"",detail:ev.detail||"",phase:ev.phase||"",cause:ev.cause||"",
+          text:bodyText,cat,orig:ev.orig||"",via:ev.via||"",item:ev.item||"",
+          hpAfter:ev.hpAfter,hpMax:ev.hpMax,sanAfter:ev.sanAfter,sanMax:ev.sanMax,hpDelta:ev.hpDelta,sanDelta:ev.sanDelta};
 }
 function visibleTo(e,vp){ if(vp==="__all__")return true; if(e.kind==="system"||e.kind==="broadcast"||e.kind==="nearby")return true;
   if(e.actor===vp)return true; if(e.to.includes(vp))return true; if(e.to.some(isGlobal))return true; return false; }
@@ -192,19 +209,28 @@ function headHtml(e){
   const det=e.detail&&e.kind==="ability"?`<span class="badge">${esc(e.detail)}</span>`:"";
   return {cls:"ev k-"+e.kind+me, top:`<div class="top"><span class="t">${esc(e.t)}</span><span class="badge">${esc(badgeFor(e))}</span>${det}${who}${toStr}</div>`};
 }
-function evHtml(e){ const h=headHtml(e); const body=parseBody(e.text).map(blockHtml).join(""); return `<div class="${h.cls}">${h.top}${body?`<div class="body">${body}</div>`:""}</div>`; }
+// 본문 HTML — 괴담·NPC가 메시지를 변형(변절)했으면 원본/변형됨을 대조해 보여준다.
+function bodyHtmlOf(e){
+  if(e.orig) return `<div class="ln"><span class="tamper-tag">원본</span><span class="tamper-orig">${esc(e.orig)}</span></div>`
+                  + `<div class="ln"><span class="tamper-tag">변형됨</span><span class="tamper-new">${esc(e.text)}</span></div>`;
+  return parseBody(e.text).map(blockHtml).join("");
+}
+function evHtml(e){ const h=headHtml(e); const body=bodyHtmlOf(e); return `<div class="${h.cls}">${h.top}${body?`<div class="body">${body}</div>`:""}</div>`; }
 // 개별(현재) 시점 전용: GM 서술에 낀 대사·방송을 별도 칸으로 분리(전체 타임라인은 evHtml 그대로 유지).
 function contHead(e){return `<div class="top cont"><span class="t">${esc(e.t)}</span><span class="badge">${esc(badgeFor(e))}</span></div>`;}
 function evHtmlSplit(e){
+  if(e.orig) return evHtml(e); // 변형 대조는 통째로
   const blocks=parseBody(e.text);
   if(!blocks.some(b=>b.type==="say"||b.type==="bc")) return evHtml(e); // 분리할 대사·방송 없으면 그대로
   const h=headHtml(e); const out=[]; let buf=[]; let headUsed=false;
   const flush=()=>{const body=buf.map(blockHtml).join(""); buf=[]; if(!body.replace(/<[^>]+>/g,"").trim())return;
     out.push(`<div class="${h.cls}">${headUsed?contHead(e):h.top}<div class="body">${body}</div></div>`); headUsed=true;};
   for(const b of blocks){
-    if(b.type==="say"||b.type==="bc"){ flush();
-      const bad=b.type==="bc"?"📢 방송":"💬 대사", kc=b.type==="bc"?"broadcast":"say";
-      out.push(`<div class="ev k-${kc} split"><div class="top"><span class="t">${esc(e.t)}</span><span class="badge">${bad}</span></div><div class="body">${blockHtml(b)}</div></div>`); headUsed=true;
+    if(b.type==="say"){ flush(); // ★대사: 화자 이름을 상단(헤더)에 — 입력처럼★
+      const col=colorFor(b.name);
+      out.push(`<div class="ev k-say split"><div class="top"><span class="t">${esc(e.t)}</span><span class="badge">💬 대사</span><span class="who" style="color:${col}">${esc(b.name)}</span></div><div class="body"><div class="ln">${esc(b.text)}</div></div></div>`); headUsed=true;
+    } else if(b.type==="bc"){ flush();
+      out.push(`<div class="ev k-broadcast split"><div class="top"><span class="t">${esc(e.t)}</span><span class="badge">📢 방송</span></div><div class="body">${blockHtml(b)}</div></div>`); headUsed=true;
     } else buf.push(b);
   }
   flush();
@@ -228,9 +254,11 @@ function renderSide(){
 }
 function badgeFor(e){ return e.kind==="ability"?(e.phase==="result"?"✨ "+(e.ability||"능력")+" 결과":(e.ability?"✨ "+e.ability:"✨ 능력"))
   :e.kind==="vital"?"❤ 상태"
-  :e.kind==="input"?"입력":e.kind==="call"?"📞 통화":e.kind==="nearby"?"👥 근처":e.kind==="gm"?"GM 서술":e.kind==="broadcast"?"📢 방송":e.kind==="npc"?"☎ NPC"
+  :e.kind==="item"?"🎒 아이템":e.kind==="clue"?"🔍 단서"
+  :e.kind==="input"?"입력":e.kind==="call"?"📞 통화":e.kind==="nearby"?"👥 근처":e.kind==="shout"?"📣 외침":e.kind==="letter"?"✉ 편지":e.kind==="whisper"?"🤫 귓속말"
+  :e.kind==="gm"?"GM 서술":e.kind==="broadcast"?"📢 방송":e.kind==="npc"?"☎ NPC"
   :e.kind==="assign"?"🎭 배역":e.kind==="system"?"시스템":e.kind==="private"?"개인":e.kind==="gm_input"?"GM입력(상세)":(e.cat||"이벤트"); }
-const COMM_KINDS=new Set(["call","nearby","broadcast"]);
+const COMM_KINDS=new Set(["call","nearby","broadcast","shout","letter","whisper"]);
 
 function filtered(){
   const q=(document.getElementById("q")?.value||"").trim().toLowerCase();
@@ -244,7 +272,7 @@ function filtered(){
     if(onlyComm&&!COMM_KINDS.has(e.kind))return false;
     if(onlyVital&&e.kind!=="vital")return false;
     if(!showVerbose&&HIDE_KIND_DEFAULT.has(e.kind))return false;
-    if(q){const hay=(e.actor+" "+e.to.join(" ")+" "+e.ability+" "+e.text+" "+e.cat).toLowerCase();if(!hay.includes(q))return false;}
+    if(q){const hay=(e.actor+" "+e.to.join(" ")+" "+e.ability+" "+e.text+" "+(e.orig||"")+" "+(e.item||"")+" "+e.cat).toLowerCase();if(!hay.includes(q))return false;}
     return true;
   });
 }
@@ -297,26 +325,67 @@ function buildQueue(){
   }
   return q;
 }
-function togglePlay(){ playing?stopPlay():startPlay(); }
+function playBtnOn(on){const b=document.getElementById("playBtn");if(b){b.textContent=on?"⏸ 멈춤":"▶ 재생";b.classList.toggle("on",on);}}
+function togglePlay(){
+  if(playing){ pausePlay(); return; }
+  if(queue.length && qi>0 && qi<queue.length){ playing=true; playBtnOn(true); step(); return; } // ★이어재생★(처음부터 아님)
+  startPlay();
+}
 function startPlay(){
   playing=true; queue=buildQueue(); qi=0; curBodyEl=null;
   const main=document.getElementById("main");
   main.innerHTML=toolbarHtml(filtered())+`<div id="stream"></div>`; bindToolbar();
+  if(curVP!=="__all__"){const info=document.getElementById("info");if(info)info.classList.add("open");const tb=document.getElementById("toggleInfo");if(tb)tb.style.display="";}
   step();
 }
-function stopPlay(){ if(qtimer){clearTimeout(qtimer);qtimer=null;} if(playing){playing=false; const b=document.getElementById("playBtn"); if(b){b.textContent="▶ 재생";b.classList.remove("on");}} }
+function pausePlay(){ if(qtimer){clearTimeout(qtimer);qtimer=null;} playing=false; playBtnOn(false); } // 위치 유지(이어재생 가능)
+function stopPlay(){ pausePlay(); qi=0; queue=[]; curBodyEl=null; }                                    // 완전 초기화(필터·시점 변경 시)
 function step(){
   const stream=document.getElementById("stream"); if(!stream){stopPlay();return;}
-  if(qi>=queue.length){ stopPlay(); return; }
+  if(qi>=queue.length){ pausePlay(); return; } // 끝 — 상태패널은 마지막 시점으로 남긴다(초기화 X)
   const it=queue[qi++]; let len=40;
   if(it.whole){ stream.insertAdjacentHTML("beforeend",evHtml(it.e)); curBodyEl=null; len=(it.e.text||"").length||40; }
   else if(it.header){ const h=headHtml(it.e); const d=document.createElement("div"); d.className=h.cls;
     d.innerHTML=h.top+`<div class="body"></div>`; stream.appendChild(d); curBodyEl=d.querySelector(".body"); len=8; }
   else if(it.block){ if(curBodyEl) curBodyEl.insertAdjacentHTML("beforeend",blockHtml(it.block)); len=(it.block.text||"").length||20; }
   stream.lastElementChild&&stream.lastElementChild.scrollIntoView({block:"end",behavior:"smooth"});
+  if(curVP!=="__all__" && it.e) updateLive(it.e.seq||0); // ★재생 위치에 맞춰 그 플레이어가 '지금' 아는 정보·상태만★
   const cnt=document.getElementById("cnt"); if(cnt)cnt.textContent=qi+"/"+queue.length;
   const delay=Math.max(260,(360+len*24)/speed);   // 길수록 더 오래(읽을 시간)
   qtimer=setTimeout(step,delay);
+}
+// 표시명 "이름(직업)" — buildAlias의 uni와 동일 규칙(상태 계산에서 replay 플레이어 매칭용).
+function uniName(nm,jb){nm=(nm||"").trim();jb=(jb||"").trim();return (nm&&jb)?nm+"("+jb+")":(nm||jb);}
+// 특정 시점(seq) 기준, 그 플레이어가 '지금까지' 아는 상태를 접어서 계산(체력·정신·능력발동수·단서·아이템).
+function stateAt(vp,seq){
+  let hp=null,hpMax=null,san=null,sanMax=null,abil=0; const items=[],clues=[];
+  const rp=((REPLAY&&REPLAY.players)||[]).find(p=>uniName(p.charName,p.job)===vp||p.charName===vp||canon(p.charName)===vp);
+  if(rp){ if(Array.isArray(rp.hp)){hp=rp.hp[0];hpMax=rp.hp[1];} if(Array.isArray(rp.san)){san=rp.san[0];sanMax=rp.san[1];} }
+  for(const e of EVENTS){ if((e.seq||0)>seq)break;
+    const mine=e.actor===vp, tome=e.to&&e.to.includes(vp);
+    if(e.kind==="vital"&&mine){ if(e.hpAfter!=null){hp=e.hpAfter;hpMax=e.hpMax;} if(e.sanAfter!=null){san=e.sanAfter;sanMax=e.sanMax;} }
+    else if(e.kind==="ability"&&mine&&e.phase!=="result")abil++;
+    else if(e.kind==="item"&&(mine||tome))items.push((e.item||e.text||"아이템").replace(/^→\S+\s*/,""));
+    else if(e.kind==="clue"&&(mine||tome))clues.push((e.text||"단서").replace(/^→\S+\s*/,""));
+  }
+  return {hp,hpMax,san,sanMax,abil,items,clues};
+}
+function livePanelHtml(vp,st){
+  let h=`<h3>재생 시점 — 아는 만큼만 <span class="live">● LIVE</span></h3>`;
+  h+=`<div class="know"><div class="khead" style="color:${colorFor(vp)}">${esc(vp)}</div>`;
+  h+=`<span class="hp">체력 ${st.hp??"?"}${st.hpMax!=null?"/"+st.hpMax:""}</span> &nbsp; <span class="san">정신 ${st.san??"?"}${st.sanMax!=null?"/"+st.sanMax:""}</span><br>`;
+  h+=`<span class="st">능력 발동</span>${st.abil}회</div>`;
+  const list=(arr,cls,label,icon)=>{ if(!arr.length)return ""; const uq=[...new Set(arr.filter(Boolean))]; if(!uq.length)return "";
+    return `<div class="know"><div class="khead ${cls}">${icon} ${esc(label)} (${uq.length})</div>`+uq.map(x=>`<div>· ${esc(x)}</div>`).join("")+`</div>`;};
+  h+=list(st.clues,"kclue","알아낸 단서","🔍");
+  h+=list(st.items,"kitem","가진 아이템","🎒");
+  return h;
+}
+function updateLive(seq){
+  if(curVP==="__all__")return;
+  const body=document.getElementById("infoBody"); if(body)body.innerHTML=livePanelHtml(curVP,stateAt(curVP,seq));
+  const info=document.getElementById("info"); if(info)info.classList.add("open");
+  const tb=document.getElementById("toggleInfo"); if(tb)tb.style.display="";
 }
 
 function esc(s){return String(s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]))}
@@ -330,7 +399,7 @@ function parseTXT(t){const out=[];let cur=null,seq=0;const head=/^\[(\d\d:\d\d:\
     else if(cur&&raw.trim()){cur.text+=(cur.text?"\n":"")+raw.trim();}}
   if(cur)out.push(cur);return out;}
 function buildAlias(){
-  ALIAS={}; KNOWN=new Set();
+  ALIAS={}; KNOWN=new Set(); CONTACTS={};
   const uni=(nm,jb)=>{nm=(nm||"").trim();jb=(jb||"").trim();return (nm&&jb)?`${nm}(${jb})`:(nm||jb);}; // 이름(직업)
   // 표시명 disp로 여러 별칭 키(계정·이름·직업·role_id)를 통합 — 같은 사람이 여러 라벨로 쪼개지지 않게.
   const setAll=(disp,...keys)=>{disp=(disp||"").trim();if(!disp||disp==="이름 모를 인물")return;
@@ -354,8 +423,10 @@ function buildAlias(){
       setAll(uni(nm,job),acct,role,job,nm);}
   }
   // replay 이름·NPC명도 KNOWN에 등록(@대상 검증용) — 시나리오 NPC 포함
-  if(REPLAY&&Array.isArray(REPLAY.players))for(const p of REPLAY.players){const d=uni(p.charName,p.job);if(p.charName)setAll(d,p.charName);}
-  if(SCENARIO&&Array.isArray(SCENARIO.npcs))for(const npc of SCENARIO.npcs)if(npc&&npc.name)KNOWN.add(String(npc.name).trim());
+  if(REPLAY&&Array.isArray(REPLAY.players))for(const p of REPLAY.players){const d=uni(p.charName,p.job);if(p.charName)setAll(d,p.charName);
+    if(p.contactId){const cid=String(p.contactId).trim();if(cid)CONTACTS[cid]=(p.charName||"").trim()||d;}} // 연락처 번호→이름
+  if(SCENARIO&&Array.isArray(SCENARIO.npcs))for(const npc of SCENARIO.npcs){if(npc&&npc.name)KNOWN.add(String(npc.name).trim());
+    if(npc&&npc.contactId){const cid=String(npc.contactId).trim();if(cid&&npc.name)CONTACTS[cid]=String(npc.name).trim();}} // NPC 연락처도
   // 이벤트에 등장하는 NPC·GM 대상 이름도 KNOWN에(@대상 오인 방지)
   for(const ev of RAWCACHE){const c=ev.cat||"";let mm;
     if(mm=c.match(/NPC\(([^)]+)\)/))KNOWN.add(mm[1].trim());
@@ -395,12 +466,13 @@ function decryptGdamFile(file){return file.text().then(decryptGdamText);}
 function gdamTitleOf(j){return (j&&j.entity&&j.entity.name)?String(j.entity.name):"";}
 // 폴더 로그 각각의 괴담 이름 확정: 씨드 매칭 .gdam 복호화 우선 → 실패 시 로그 텍스트('괴담: X'/title)에서 파싱
 async function resolveFolderTitles(){
-  const bySeed={};
+  const gd=[];
   for(const g of (FILES.gdams||[])){
-    try{const nm=gdamTitleOf(await decryptGdamFile(g)); if(nm)bySeed[seedOf(g.name)]=nm;}catch(_){}
+    try{const nm=gdamTitleOf(await decryptGdamFile(g)); if(nm)gd.push({name:g.name,title:nm});}catch(_){}
   }
   for(const f of FILES.logs){
-    let title=bySeed[seedOf(f.name)]||"";
+    let title="";
+    const g=gd.find(x=>seedMatch(x.name,f.name)); if(g)title=g.title;
     if(!title){try{title=parseScenarioTitle(await f.slice(0,8192).text());}catch(_){}}
     f.__title=title;
   }
@@ -446,7 +518,20 @@ function renderInfo(){
     const sol=[["약점",e.weakness],["해결책",e.solution],["공략",e.exploit_path],["탈출",e.escape],["제압",ph.defeat]]
       .map(x=>{const s=S(x[1]);return s?`<span class="st">${x[0]}</span>${esc(s)}`:"";}).filter(Boolean);
     if(sol.length)h+=`<div class="spoiler"><h3>대처법 · GM 전용(스포일러)</h3><div class="card" style="margin:0;background:transparent;border:0;padding:2px 0">${sol.join("<br>")}</div></div>`;
-    if(Array.isArray(SCENARIO.npcs)&&SCENARIO.npcs.length){h+=`<h3>NPC</h3>`;for(const n of SCENARIO.npcs)h+=`<div class="card"><b>${esc(n.name||n.id||"?")}</b> <span style="color:var(--dim)">${esc(n.role_type||"")}${n.zone?" · "+esc(n.zone):""}</span>${n.motivation?"<br>"+esc(n.motivation):""}</div>`;}}
+    if(Array.isArray(SCENARIO.npcs)&&SCENARIO.npcs.length){h+=`<h3>NPC</h3>`;for(const n of SCENARIO.npcs)h+=`<div class="card"><b>${esc(n.name||n.id||"?")}</b> <span style="color:var(--dim)">${esc(n.role_type||"")}${n.zone?" · "+esc(n.zone):""}</span>${n.motivation?"<br>"+esc(n.motivation):""}</div>`;}
+    if(Array.isArray(SCENARIO.zones)&&SCENARIO.zones.length){ // 구역(맵) — 이름·구역명 해석
+      const zname={}; for(const z of SCENARIO.zones)if(z&&z.zone_id)zname[z.zone_id]=z.name||z.zone_id;
+      const roleName={}; if(REPLAY&&Array.isArray(REPLAY.players))for(const p of REPLAY.players)if(p.roleId)roleName[p.roleId]=p.charName||p.roleId;
+      h+=`<h3>구역 (맵)</h3>`;
+      for(const z of SCENARIO.zones){
+        const conns=(z.connections||[]).map(c=>zname[c]||c).filter(Boolean).join(" · ");
+        const who=(z.accessible_by||[]).map(r=>roleName[r]||r).filter(Boolean).join(", ");
+        h+=`<div class="card"><b>${esc(z.name||z.zone_id||"?")}</b> <span class="dim2">${esc(z.area||"")}</span>`
+          +(conns?`<br><span class="st">연결</span>${esc(conns)}`:"")
+          +(who?`<br><span class="st">출입</span>${esc(who)}`:"")
+          +(z.exclusive?` <span class="dim2">· 전용</span>`:"")+`</div>`;
+      }
+    }}
   b.innerHTML=h||`<div class="empty">.replay(스탯)·.json/.gdam(시나리오)을 함께 불러오면 표시됩니다.</div>`;
   document.getElementById("toggleInfo").style.display=(REPLAY||SCENARIO)?"":"none";
 }
@@ -458,18 +543,32 @@ function ingest(file){const nm=file.name.toLowerCase();
   loadLogText(file.name,t);renderInfo();});}
 function ingestAll(fl){const files=[...fl];const meta=files.filter(f=>/\.(replay|json|gdam)$/i.test(f.name));const logs=files.filter(f=>/\.(jsonl|txt)$/i.test(f.name));
   Promise.all(meta.map(ingest)).then(()=>{if(logs[0])ingest(logs[0]);});}
-function ingestFolder(fl){FILES={logs:[],replays:[],scenarios:[],gdams:[]};
-  for(const f of fl){if(/\.(jsonl|txt)$/i.test(f.name))FILES.logs.push(f);else if(/\.replay$/i.test(f.name))FILES.replays.push(f);else if(/\.gdam$/i.test(f.name))FILES.gdams.push(f);else if(/\.json$/i.test(f.name))FILES.scenarios.push(f);}
+// ★폴더 누적★: logs·replays·gdam이 서로 다른 폴더면, 각 폴더를 차례로 열어도 합쳐진다(초기화하지 않고 병합).
+//  logs 폴더를 먼저 열고 → replays 폴더를 열면 이미 보던 로그가 이름·스탯까지 갖춰 다시 렌더된다.
+function ingestFolder(fl){
+  if(!FILES||!FILES.logs)FILES={logs:[],replays:[],scenarios:[],gdams:[]};
+  const add=(arr,f)=>{ if(!arr.some(x=>x.name===f.name&&x.size===f.size))arr.push(f); };
+  for(const f of fl){if(/\.(jsonl|txt)$/i.test(f.name))add(FILES.logs,f);else if(/\.replay$/i.test(f.name))add(FILES.replays,f);else if(/\.gdam$/i.test(f.name))add(FILES.gdams,f);else if(/\.json$/i.test(f.name))add(FILES.scenarios,f);}
   FILES.logs.sort((a,b)=>a.name.localeCompare(b.name));
-  if(!FILES.logs.length){document.getElementById("meta").textContent="폴더에 .jsonl/.txt 로그가 없습니다.";return;}
-  openFolderLog(FILES.logs.find(f=>/\.events\.jsonl$/i.test(f.name))||FILES.logs[0]);
+  if(!FILES.logs.length){document.getElementById("meta").textContent="이 폴더엔 로그가 없습니다 — 먼저 logs 폴더를 여세요(replays·gdam은 이어서 열면 자동 결합).";resolveFolderTitles().then(renderSide);return;}
+  const cur=FILES.logs.find(f=>f.__on)||FILES.logs.find(f=>/\.events\.jsonl$/i.test(f.name))||FILES.logs[0];
+  openFolderLog(cur); // 보던 로그 유지 — 새로 합쳐진 replay/gdam을 반영해 다시 연다
   resolveFolderTitles().then(renderSide); // 파일 목록에 괴담 이름 표시(.gdam 복호화 우선)
 }
-function seedOf(n){const m=n.match(/([A-Za-z0-9]{6,8})[#_.]/);return m?m[1]:n.replace(/\.(events\.)?(jsonl|txt|json|replay|gdam)$/i,"");}
-// ↑ 표준 씨드(영숫자 6~8)면 그걸로. 아니면(한글·짧은 씨드) 로그/gdam이 같은 base로 정규화되도록 알려진 확장자만 제거.
-function openFolderLog(f){FILES.logs.forEach(x=>x.__on=false);f.__on=true;const seed=seedOf(f.name);REPLAY=null;SCENARIO=null;
-  const rep=FILES.replays.find(x=>x.name.includes(seed)),sc=FILES.scenarios.find(x=>x.name.includes(seed));
-  const gd=(FILES.gdams||[]).find(x=>x.name.includes(seed));const jobs=[];
+// 씨드 정규화(핵심): 로그·리플레이·gdam이 ★서로 다른 폴더·다른 파일명 규칙★이어도 같은 게임으로 묶이게 한다.
+//  로그 "<seed>#<run>.txt" / 리플레이 "S<stage>_<seed>_<hexT시각>.replay" / gdam "<seed>.gdam" → 공통 영숫자 코어로 축약.
+function seedKey(n){
+  let s=(n||"").replace(/\.(events\.)?(jsonl|txt|json|replay|gdam)$/i,""); // 확장자
+  s=s.replace(/^S\d+_/i,"");             // 리플레이 스테이지 접두 S3_
+  s=s.replace(/_[0-9A-Za-z]+T\d+$/,"");  // 리플레이 날짜·시각 접미 _3FA16T2026
+  s=s.replace(/[#_]\d+$/,"");            // 실행 회차 #1 / _1
+  return s.replace(/[^A-Za-z0-9]/g,"").toUpperCase(); // 영숫자 코어(대문자)
+}
+// 두 파일이 같은 게임인지: 코어 일치 또는 포함(회차 '#' 유실 등 변형 흡수).
+function seedMatch(a,b){a=seedKey(a);b=seedKey(b);return !!a&&!!b&&(a===b||a.includes(b)||b.includes(a));}
+function openFolderLog(f){FILES.logs.forEach(x=>x.__on=false);f.__on=true;REPLAY=null;SCENARIO=null;
+  const rep=FILES.replays.find(x=>seedMatch(x.name,f.name)),sc=FILES.scenarios.find(x=>seedMatch(x.name,f.name));
+  const gd=(FILES.gdams||[]).find(x=>seedMatch(x.name,f.name));const jobs=[];
   if(rep)jobs.push(rep.text().then(t=>{try{REPLAY=JSON.parse(t);}catch(_){}}));
   if(sc)jobs.push(sc.text().then(t=>{try{const j=JSON.parse(t);if(j.entity||j.world_rules||j.npcs)SCENARIO=j;else if(j.players&&!REPLAY)REPLAY=j;}catch(_){}}));
   else if(gd)jobs.push(decryptGdamFile(gd).then(j=>{if(j&&(j.entity||j.world_rules||j.npcs))SCENARIO=j;}).catch(()=>{})); // .json 없으면 원본 .gdam 복호화로 시나리오 표시
