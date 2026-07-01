@@ -145,6 +145,10 @@ public class PlayerData {
     public int   baseLuk = 4;
     public int   baseSpr = 4;
 
+    /** Gson 역직렬화 전용 no-arg 생성자. 필드 이니셜라이저를 실행시켜, 구버전 세이브에 없는
+     *  신규 컬렉션 필드가 null(→ NPE)이 되지 않게 한다. (없으면 Gson이 Unsafe로 할당해 이니셜라이저를 건너뛴다.) */
+    public PlayerData() {}
+
     public PlayerData(UUID uuid, String name) {
         this.uuid = uuid;
         this.name = name;

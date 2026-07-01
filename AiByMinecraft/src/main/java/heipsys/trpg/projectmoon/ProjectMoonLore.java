@@ -137,11 +137,11 @@ public final class ProjectMoonLore {
 
     // ── 환상체 등급별 (ZAYIN~ALEPH) — 원작 위키 검증본, 저등급 다수+고등급 소수 ────────────
     //   ZAYIN·TETH: 초반 스테이지에서 직접 관리 가능한 저위험 환상체 (통상+도구형+후원자)
-    static final String[] ABNO_ZAYIN_TETH = {
-        // ZAYIN
+    static final String[] ABNO_ZAYIN = {
         "단 한번의 악과 수백 가지의 선행", "만지지 마", "역병 의사", "요정의 축제",
-        "당신은 행복해야 합니다", "무엇이든 바꿔드립니다", "오래전의 믿음과 약속", "조정의 거울", "분홍 군단",
-        // TETH
+        "당신은 행복해야 합니다", "무엇이든 바꿔드립니다", "오래전의 믿음과 약속", "조정의 거울", "분홍 군단"
+    };
+    static final String[] ABNO_TETH = {
         "1.76 MHz", "거미봉오리", "고기 초롱", "공허한 꿈", "교육용 오뚜기 토끼", "늙은 여인",
         "미녀와 야수", "버려진 살인마", "벚꽃의 무덤", "벽을 보는 여인", "부서져 가는 갑옷", "불타버린 소녀",
         "수줍은 오늘의 표정", "우주 속의 조각", "징벌 새", "피의 욕조",
@@ -256,7 +256,7 @@ public final class ProjectMoonLore {
         int g1 = lo + ThreadLocalRandom.current().nextInt(hi - lo + 1);
         int g2 = lo + ThreadLocalRandom.current().nextInt(hi - lo + 1);
         int grade = Math.min(g1, g2);                                  // 저등급 다수 편향
-        String[] pool = grade <= 2 ? ABNO_ZAYIN_TETH : grade == 3 ? ABNO_HE : grade == 4 ? ABNO_WAW : ABNO_ALEPH;
+        String[] pool = grade == 1 ? ABNO_ZAYIN : grade == 2 ? ABNO_TETH : grade == 3 ? ABNO_HE : grade == 4 ? ABNO_WAW : ABNO_ALEPH;
         String abno = pool[ThreadLocalRandom.current().nextInt(pool.length)];
         String gName = GRADE[grade - 1];
         String rec = abnormalityRecord(abno);   // 상세 레코드(있으면) — 생김새·능력·강함만, 해결책 미제공(GM 전용)

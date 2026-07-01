@@ -138,6 +138,8 @@ public class TRPGGameManager {
     private final Map<UUID, String> pendingPrayerInput = new ConcurrentHashMap<>(); // UUID → traitId
     private final Map<UUID, String> pendingOracleInput = new ConcurrentHashMap<>(); // UUID → traitId
     private final Map<UUID, Integer> pendingLuckModifier   = new ConcurrentHashMap<>();
+    /** 행운 보정을 이번 행동의 ★실제 주사위 굴림★에 반영하기 위한 1회성 스태시(playDiceResult가 소비). */
+    private final Map<UUID, Integer> pendingDiceLuck        = new ConcurrentHashMap<>();
     private final Map<UUID, List<OracleChoice>> pendingOracleChoices = new ConcurrentHashMap<>();
     private final Map<UUID, String> pendingSaintTrait = new ConcurrentHashMap<>();
     private final Map<UUID, String> pendingAreaScanInput = new ConcurrentHashMap<>(); // UUID → traitId
@@ -1876,6 +1878,9 @@ public class TRPGGameManager {
         Integer luckMod = pendingLuckModifier.remove(player.getUniqueId());
         if (luckMod != null) {
             actionMessage = actionMessage + " §8[행운 보정 " + (luckMod > 0 ? "+" : "") + luckMod + "]";
+            pendingDiceLuck.put(player.getUniqueId(), luckMod); // 이번 행동의 주사위 굴림에 실제 반영(playDiceResult가 소비)
+        } else {
+            pendingDiceLuck.remove(player.getUniqueId()); // 이월 방지: 이번 행동에 행운 없으면 스태시 정리
         }
 
         // B1/C4: 확정성공·운명 등 '다음 행동 보정' 대기분 주입 (1회 적용 후 소멸)
@@ -2838,7 +2843,7 @@ public class TRPGGameManager {
         pd.traits.stream().filter(t -> t.id.equals(traitId)).findFirst().ifPresent(t -> {
             t.usedThisStage++;
             t.lastUsedTurn = currentTurn;
-            if (t.cooldownTurns > 0) t.remainingCooldown = t.cooldownTurns;
+            if (t.cooldownTurns > 0) t.remainingCooldown = t.cooldownTurns + 1; // +1: 발동 당턴의 틱(1회)을 상쇄 → 실효 쿨다운=설정값
             else if (t.cooldownTurns == -1) t.remainingCooldown = Integer.MAX_VALUE;
             applyActivationCost(pd, t); // 발동 대가(소모·행동불능·괴담 진행)를 실제 적용 + GM에 명시
         });
@@ -6759,6 +6764,8 @@ public class TRPGGameManager {
             if (trimmed.isEmpty() || looksLikeMetaRequest(trimmed)) return;
             ai.injectGmSystem("[괴담 자율 행동 — GM만 인지] " + getEntityName() + ": " + trimmed
                 + "\n→ GM은 다음 서술에서 이 괴담의 행동·존재감을 그 성격대로 자연스럽게 녹여 내라(직접 출력 금지, 플레이어 조종 금지).");
+            // 다회차 학습: 괴담의 자율 행동을 오염 메모리에 누적 → 재도전 시 buildCorruptionContext가 '이전 회차 기억'으로 주입(더 집요해짐).
+            corruptMan.addEntityMemory(trimmed.length() > 80 ? trimmed.substring(0, 80) + "…" : trimmed);
         });
     }
 
@@ -9470,6 +9477,9 @@ public class TRPGGameManager {
         // ★공정성★: roll·outcome은 AI가 아니라 ★코드가 직접★ 정한다.
         //   (AI가 유리한 값만 고르던 문제[거의 다 성공] + '주사위는 성공인데 서술은 실패' 불일치를 동시에 제거)
         int roll = ThreadLocalRandom.current().nextInt(1, max + 1);
+        // ★행운 보정★: 능력으로 건 행운 수치를 실제 굴림에 반영(1~max로 클램프, 1회 소비). GM 텍스트 주입만 하고 굴림엔 안 반영되던 공백 보완.
+        Integer luckAdj = pendingDiceLuck.remove(player.getUniqueId());
+        if (luckAdj != null && luckAdj != 0) roll = Math.max(1, Math.min(max, roll + luckAdj));
         int effDc = dc > 0 ? Math.max(2, Math.min(max, dc)) : (int) Math.ceil(max * 0.55); // dc 미지정 시 중앙값보다 약간 높게
         int band = Math.max(1, max / 10);
         boolean success = roll >= effDc;
