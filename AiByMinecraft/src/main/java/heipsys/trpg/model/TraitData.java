@@ -76,6 +76,16 @@ public class TraitData {
             case "S" -> 6; case "A" -> 5; case "B" -> 4; case "C" -> 3; case "D" -> 2; case "E" -> 1; default -> 0;
         };
     }
+
+    /** AI가 등급을 'D/F'·'D 또는 F'·'B~C'처럼 여러 개로 줄 때 첫 유효 등급 한 글자로 정규화(없으면 def). */
+    public static String normGrade(String g, String def) {
+        if (g != null) {
+            for (char c : g.toUpperCase().toCharArray()) {
+                if ("SABCDEF".indexOf(c) >= 0) return String.valueOf(c);
+            }
+        }
+        return def;
+    }
     /**
      * 실효(파워) 등급: 출신(originGrade)이 D보다 낮고 그보다 강화됐다면, '낮았던 만큼' 파워가 더 높다.
      * 예) F(출신) → 명목 C 까지 강화 = 실효 A. (예산·실제 효과는 실효 등급 기준)

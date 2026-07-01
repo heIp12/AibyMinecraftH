@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>괴담 TRPG 로그 뷰어</title>
+<style>
+  :root{
+    --bg:#14161c; --panel:#1c1f27; --panel2:#232733; --line:#2e3340;
+    --txt:#e7e9ee; --dim:#9aa1b1; --accent:#7aa2ff;
+    --input:#9ad27a; --gm:#cdbbff; --npc:#ffd27a; --ability:#ff8a8a;
+    --system:#6f7686; --broadcast:#7adfff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:"Segoe UI","Malgun Gothic",system-ui,sans-serif;background:var(--bg);color:var(--txt);font-size:14px}
+  header{padding:10px 16px;background:var(--panel);border-bottom:1px solid var(--line);display:flex;gap:12px;align-items:center;flex-wrap:wrap;position:sticky;top:0;z-index:5}
+  header h1{font-size:15px;margin:0;font-weight:600}
+  header .meta{color:var(--dim);font-size:12px}
+  .layout{display:flex;height:calc(100vh - 53px)}
+  aside{width:250px;min-width:250px;background:var(--panel);border-right:1px solid var(--line);overflow-y:auto;padding:8px}
+  aside h2{font-size:11px;text-transform:uppercase;color:var(--dim);letter-spacing:.05em;margin:12px 6px 6px}
+  .vp{padding:7px 10px;border-radius:7px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;margin-bottom:2px}
+  .vp:hover{background:var(--panel2)}
+  .vp.active{background:var(--accent);color:#0d1018;font-weight:600}
+  .vp .cnt{font-size:11px;color:var(--dim)}
+  .vp.active .cnt{color:#0d1018}
+  main{flex:1;overflow-y:auto;padding:14px 18px}
+  .toolbar{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+  .toolbar input[type=text]{background:var(--panel2);border:1px solid var(--line);color:var(--txt);padding:6px 10px;border-radius:7px;min-width:220px}
+  .toolbar label{color:var(--dim);display:flex;gap:5px;align-items:center;cursor:pointer;user-select:none}
+  .ev{border:1px solid var(--line);border-left-width:4px;border-radius:8px;background:var(--panel);padding:9px 12px;margin-bottom:8px}
+  .ev .top{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;margin-bottom:3px}
+  .ev .t{color:var(--dim);font-variant-numeric:tabular-nums;font-size:12px}
+  .ev .badge{font-size:11px;padding:1px 7px;border-radius:20px;background:var(--panel2);color:var(--dim)}
+  .ev .who{font-weight:600}
+  .ev .arrow{color:var(--dim)}
+  .ev .body{white-space:pre-wrap;line-height:1.5;color:#dfe2ea}
+  .ev.k-input{border-left-color:var(--input)}
+  .ev.k-gm{border-left-color:var(--gm)}
+  .ev.k-npc{border-left-color:var(--npc)}
+  .ev.k-ability{border-left-color:var(--ability);background:#251c22}
+  .ev.k-system{border-left-color:var(--system);opacity:.85}
+  .ev.k-broadcast{border-left-color:var(--broadcast)}
+  .ev.k-gm_input{border-left-color:#444b5a;opacity:.7}
+  .ev.k-ability .badge{background:var(--ability);color:#2a0f0f}
+  .pill{font-size:11px;padding:1px 7px;border-radius:20px;border:1px solid var(--line);color:var(--dim)}
+  .drop{margin:60px auto;max-width:560px;border:2px dashed var(--line);border-radius:14px;padding:48px 24px;text-align:center;color:var(--dim);background:var(--panel)}
+  .drop.drag{border-color:var(--accent);color:var(--txt);background:var(--panel2)}
+  .drop b{color:var(--txt)}
+  .empty{color:var(--dim);text-align:center;padding:40px}
+  button.file{background:var(--accent);color:#0d1018;border:0;padding:7px 14px;border-radius:7px;font-weight:600;cursor:pointer}
+  code{background:var(--panel2);padding:1px 5px;border-radius:4px;color:#bcd0ff}
+</style>
+</head>
+<body>
+<header>
+  <h1>🩸 괴담 TRPG 로그 뷰어</h1>
+  <span class="meta" id="meta">로그 파일을 불러오세요</span>
+  <span style="flex:1"></span>
+  <button class="file" id="pick">파일 열기</button>
+  <input type="file" id="file" accept=".jsonl,.json,.txt" style="display:none">
+</header>
+<div class="layout">
+  <aside id="side">
+    <div class="empty" style="padding:20px 8px">시점 목록</div>
+  </aside>
+  <main id="main">
+    <div class="drop" id="drop">
+      <p>📂 <b>로그 파일을 여기에 끌어다 놓으세요</b></p>
+      <p>권장: <code>씨드#n.events.jsonl</code> (시점별 정밀 분리)<br>
+         또는 기존 <code>씨드#n.txt</code> (단순 타임라인)</p>
+    </div>
+  </main>
+</div>
+<script>
+"use strict";
+let EVENTS = [];        // 정규화된 이벤트
+let VIEWPOINTS = [];    // {name, count}
+let curVP = "__all__";
+
+const GLOBAL_RE = /전체|전원|모두|모든|방송|broadcast|^\*$|all/i;
+const HIDE_KIND_DEFAULT = new Set(["gm_input"]); // 상세 토글로만 표시
+
+function isGlobalTarget(s){ return GLOBAL_RE.test(s||""); }
+function isPersonName(s){
+  if(!s) return false;
+  if(["GM","SYSTEM","시스템"].includes(s)) return false;
+  if(isGlobalTarget(s)) return false;
+  return true;
+}
+
+// 원시 이벤트(JSONL 또는 txt 파싱 결과)를 표준 형태로
+function normalize(ev){
+  let kind = ev.kind || "";
+  let actor = ev.actor || "";
+  let to = Array.isArray(ev.to) ? ev.to.filter(Boolean) : [];
+  const cat = ev.cat || "";
+  const who = ev.who || "";
+  let target = "";
+  if(!kind || !actor){
+    if(cat === "입력"){ kind = kind||"input"; actor = actor||who; }
+    else if(cat.startsWith("GM→")){
+      kind = kind||"gm"; actor = actor||"GM";
+      target = cat.slice(3);
+      if(isGlobalTarget(target)) kind = "broadcast";
+    }
+    else if(cat === "GM입력"){ kind = kind||"gm_input"; actor = actor||who; }
+    else if(cat.startsWith("NPC")){
+      kind = kind||"npc";
+      const m = cat.match(/\(([^)]*)\)/); if(m && !actor) actor = m[1];
+      const ar = cat.indexOf("→"); if(ar>=0) target = cat.slice(ar+1);
+    }
+    else if(cat.startsWith("능력")){ kind = kind||"ability"; actor = actor||who; }
+    else if(["세션","구분","이벤트"].includes(cat)){ kind = kind||"system"; }
+    else { kind = kind||"event"; actor = actor||who; }
+  }
+  if(target && !to.length) to = [target];
+  return {
+    seq: ev.seq||0, t: ev.t||"", kind, actor, to,
+    ability: ev.ability||"", detail: ev.detail||"", text: ev.text||"", cat
+  };
+}
+
+// 이 이벤트가 시점 vp에게 보이는가
+function visibleTo(e, vp){
+  if(vp === "__all__") return true;
+  if(e.kind === "system") return true;            // 세션·구분선은 어디서나
+  if(e.actor === vp) return true;                  // 본인이 한 행동/발화
+  if(e.to.includes(vp)) return true;               // 본인에게 도착
+  if(e.to.some(isGlobalTarget)) return true;       // 전체 방송/공지
+  if(e.kind === "broadcast") return true;
+  return false;
+}
+
+function buildViewpoints(){
+  const m = new Map();
+  for(const e of EVENTS){
+    const cands = [e.actor, ...e.to];
+    for(const c of cands){
+      if(!isPersonName(c)) continue;
+      m.set(c, (m.get(c)||0)+1);
+    }
+  }
+  VIEWPOINTS = [...m.entries()].map(([name,count])=>({name,count}))
+    .sort((a,b)=>b.count-a.count);
+}
+
+function renderSide(){
+  const side = document.getElementById("side");
+  side.innerHTML = "";
+  const mk = (name,label,count)=>{
+    const d = document.createElement("div");
+    d.className = "vp"+(curVP===name?" active":"");
+    d.innerHTML = `<span>${label}</span><span class="cnt">${count}</span>`;
+    d.onclick = ()=>{ curVP=name; renderSide(); renderMain(); };
+    return d;
+  };
+  const h0 = document.createElement("h2"); h0.textContent="전체"; side.appendChild(h0);
+  side.appendChild(mk("__all__","🗂 전체 타임라인", EVENTS.length));
+  const h1 = document.createElement("h2"); h1.textContent="시점 (플레이어·NPC)"; side.appendChild(h1);
+  if(!VIEWPOINTS.length){ const e=document.createElement("div"); e.className="empty"; e.style.padding="10px"; e.textContent="(시점 정보 없음 — .jsonl 권장)"; side.appendChild(e); }
+  for(const v of VIEWPOINTS) side.appendChild(mk(v.name, "👤 "+v.name, v.count));
+}
+
+function badgeFor(e){
+  if(e.kind==="ability") return e.ability ? ("✨ "+e.ability) : "✨ 능력";
+  if(e.kind==="input") return "입력";
+  if(e.kind==="gm") return "GM 서술";
+  if(e.kind==="broadcast") return "📢 방송";
+  if(e.kind==="npc") return "NPC";
+  if(e.kind==="system") return "시스템";
+  if(e.kind==="gm_input") return "GM입력(상세)";
+  return e.cat || "이벤트";
+}
+
+function renderMain(){
+  const main = document.getElementById("main");
+  const q = (document.getElementById("q")?.value||"").trim().toLowerCase();
+  const onlyAbil = document.getElementById("onlyAbil")?.checked;
+  const showVerbose = document.getElementById("verbose")?.checked;
+  const list = EVENTS.filter(e=>{
+    if(!visibleTo(e, curVP)) return false;
+    if(onlyAbil && e.kind!=="ability") return false;
+    if(!showVerbose && HIDE_KIND_DEFAULT.has(e.kind)) return false;
+    if(q){
+      const hay = (e.actor+" "+e.to.join(" ")+" "+e.ability+" "+e.text+" "+e.cat).toLowerCase();
+      if(!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  let html = `<div class="toolbar">
+    <input type="text" id="q" placeholder="🔎 내용·이름 검색" value="${escAttr(q)}">
+    <label><input type="checkbox" id="onlyAbil" ${onlyAbil?"checked":""}> ✨ 능력만 보기</label>
+    <label><input type="checkbox" id="verbose" ${showVerbose?"checked":""}> GM입력(상세) 표시</label>
+    <span class="pill">${list.length}건</span>
+    <span class="pill">시점: ${curVP==="__all__"?"전체":curVP}</span>
+  </div>`;
+
+  if(!list.length){ html += `<div class="empty">표시할 이벤트가 없습니다.</div>`; }
+  for(const e of list){
+    const who = e.actor ? `<span class="who">${esc(e.actor)}</span>` : "";
+    const toStr = e.to.filter(isPersonName).length ? `<span class="arrow">→ ${esc(e.to.join(", "))}</span>` : "";
+    const det = e.detail && e.kind==="ability" ? `<span class="badge">${esc(e.detail)}</span>` : "";
+    html += `<div class="ev k-${e.kind}">
+      <div class="top">
+        <span class="t">${esc(e.t)}</span>
+        <span class="badge">${esc(badgeFor(e))}</span>
+        ${det}${who}${toStr}
+      </div>
+      ${e.text?`<div class="body">${esc(e.text)}</div>`:""}
+    </div>`;
+  }
+  main.innerHTML = html;
+  // 토글 재바인딩
+  const q2=document.getElementById("q"); if(q2){ q2.oninput=renderMain; q2.focus(); q2.setSelectionRange(q2.value.length,q2.value.length); }
+  const a=document.getElementById("onlyAbil"); if(a) a.onchange=renderMain;
+  const v=document.getElementById("verbose"); if(v) v.onchange=renderMain;
+}
+
+function esc(s){ return String(s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
+function escAttr(s){ return esc(s).replace(/"/g,"&quot;"); }
+
+// ── 파싱 ──────────────────────────────────────────────
+function parseJSONL(text){
+  const out=[];
+  for(const line of text.split(/\r?\n/)){
+    const s=line.trim(); if(!s) continue;
+    try{ out.push(normalize(JSON.parse(s))); }catch(_){ /* 손상된 줄 건너뜀 */ }
+  }
+  return out;
+}
+function parseTXT(text){
+  const out=[]; let cur=null; let seq=0;
+  const head=/^\[(\d\d:\d\d:\d\d)\]\s*\[([^\]]+)\]\s?(.*)$/;
+  for(const raw of text.split(/\r?\n/)){
+    const line=raw;
+    const m=line.match(head);
+    if(m){
+      if(cur) out.push(normalize(cur));
+      cur={ seq:++seq, t:m[1], cat:m[2], who:"", text:m[3]||"" };
+    } else if(cur && line.trim()){
+      // 들여쓰기된 연속 줄
+      cur.text += (cur.text?"\n":"") + line.trim();
+    }
+  }
+  if(cur) out.push(normalize(cur));
+  return out;
+}
+
+function load(name, text){
+  const looksJson = /\.jsonl?$/i.test(name) || /^\s*\{/.test(text);
+  EVENTS = looksJson ? parseJSONL(text) : parseTXT(text);
+  // 손상/혼합 대비: JSONL 0건이면 txt로 재시도
+  if(!EVENTS.length && looksJson) EVENTS = parseTXT(text);
+  EVENTS.sort((a,b)=>(a.seq||0)-(b.seq||0));
+  buildViewpoints();
+  curVP="__all__";
+  const sess = EVENTS.find(e=>e.kind==="system" && /시작/.test(e.text));
+  document.getElementById("meta").textContent =
+    `${name} · ${EVENTS.length}개 이벤트 · 시점 ${VIEWPOINTS.length}` + (sess?` · ${sess.text}`:"");
+  renderSide(); renderMain();
+}
+
+// ── 입력 바인딩 ───────────────────────────────────────
+const fileEl=document.getElementById("file");
+document.getElementById("pick").onclick=()=>fileEl.click();
+fileEl.onchange=e=>{ const f=e.target.files[0]; if(f){ f.text().then(t=>load(f.name,t)); } };
+const drop=document.getElementById("drop");
+["dragenter","dragover"].forEach(ev=>document.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("drag");}));
+["dragleave","drop"].forEach(ev=>document.addEventListener(ev,e=>{e.preventDefault();if(ev==="dragleave"&&e.relatedTarget)return;drop.classList.remove("drag");}));
+document.addEventListener("drop",e=>{
+  const f=e.dataTransfer?.files?.[0]; if(f) f.text().then(t=>load(f.name,t));
+});
+</script>
+</body>
+</html>

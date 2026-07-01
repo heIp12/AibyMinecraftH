@@ -552,11 +552,34 @@ public class AiManager {
     // ======================================================
 
     public CompletableFuture<String> callAssistant(String task, String data) {
+        return callAssistant(task, data, ASST_MAX_TOKENS);
+    }
+
+    /** 출력 토큰 상한을 지정하는 보조 호출 — 긴 목록(직업 풀 등)이 잘리지 않도록. */
+    public CompletableFuture<String> callAssistant(String task, String data, int maxTokens) {
         return CompletableFuture.supplyAsync(() -> {
             try {
                 List<JsonObject> messages = List.of(msg("user", task + "\n\n" + data));
                 return send(assistantModel(),
                     "너는 간단한 데이터 처리 도우미야. 요청받은 작업만 수행해.",
+                    messages, maxTokens);
+            } catch (Exception e) {
+                return "§c[보조 AI 오류] " + e.getMessage();
+            }
+        });
+    }
+
+    /**
+     * 충실도가 중요한 1회성 호출(친숙 모드 실존 괴담·환상체 정전 선정)용 — 최고 품질 모델 사용.
+     * 저품질 모델은 실존 원전을 그럴듯하게 ★창작(환각)★하는 경향이 강해 정전 충실도가 깨진다.
+     * 시나리오당 1회뿐이라 비용 영향이 작다.
+     */
+    public CompletableFuture<String> callAssistantHiFi(String task, String data) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                List<JsonObject> messages = List.of(msg("user", task + "\n\n" + data));
+                return send(highModel(),
+                    "너는 정확한 자료 큐레이터다. ★검증된 실존 사실만★ 다루고, 불확실하면 가장 확실하고 유명한 것을 택하며, 그럴듯한 이름을 ★새로 지어내지 않는다★.",
                     messages, ASST_MAX_TOKENS);
             } catch (Exception e) {
                 return "§c[보조 AI 오류] " + e.getMessage();
@@ -682,7 +705,11 @@ public class AiManager {
     /** 태그를 제거한 순수 서술 텍스트 반환 */
     public String stripTags(String response) {
         return response
-            .replaceAll("<THOUGHT>[\\s\\S]*?</THOUGHT>", "")
+            // 사고(THOUGHT/THINKING) 블록 제거 — 여는·닫는 태그가 어긋나거나(<THOUGHT>…</THINKING>)
+            // 잘려도(닫는 태그 누락) 본문에 누출되지 않게 한다. (재미나이 등 추론 블록 대응)
+            .replaceAll("(?i)<(thought|thinking)>[\\s\\S]*?</(thought|thinking)>", "")
+            .replaceAll("(?i)<(thought|thinking)>[\\s\\S]*$", "")
+            .replaceAll("(?i)</?(thought|thinking)>", "")
             .replaceAll("<STATE_UPDATE>[\\s\\S]*?</STATE_UPDATE>", "")
             .replaceAll("<ITEM_GRANT>[\\s\\S]*?</ITEM_GRANT>", "")
             .replaceAll("<ITEM_USE>[\\s\\S]*?</ITEM_USE>", "")
@@ -719,9 +746,13 @@ public class AiManager {
         return response.substring(s + "<THOUGHT>".length(), e).trim();
     }
 
-    /** <THOUGHT>...</THOUGHT> 태그를 제거한 텍스트 반환 */
+    /** <THOUGHT>/<THINKING> 사고 블록 제거 (태그 어긋남·잘림 포함) */
     public String stripThought(String response) {
-        return response.replaceAll("<THOUGHT>[\\s\\S]*?</THOUGHT>", "").trim();
+        return response
+            .replaceAll("(?i)<(thought|thinking)>[\\s\\S]*?</(thought|thinking)>", "")
+            .replaceAll("(?i)<(thought|thinking)>[\\s\\S]*$", "")
+            .replaceAll("(?i)</?(thought|thinking)>", "")
+            .trim();
     }
 
     /** <WITNESS player="name">text</WITNESS> 태그를 파싱 → {playerName: witnessText} */

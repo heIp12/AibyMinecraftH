@@ -47,6 +47,16 @@ public class TurnManager {
      * @return false이면 이 플레이어는 현재 행동 처리 중 (중복 입력 차단)
      */
     public boolean handleAction(Player player, String message, String gmSystemPrompt) {
+        return handleAction(player, message, gmSystemPrompt, "");
+    }
+
+    /**
+     * 행동 처리 + 이번 턴 한정 GM 지시(turnCtx).
+     * turnCtx는 ★유저 메시지 쪽★에 얹는다(시스템 프롬프트를 변형하지 않음) →
+     * gmSystemPrompt가 항상 동일 문자열로 유지되어 프롬프트 캐시가 적중한다(능력 처리 시 입력비용 ~90%↓).
+     * 로그(narrativeLog·state.log)에는 순수 행동(message)만 남겨 지시문 오염을 막는다.
+     */
+    public boolean handleAction(Player player, String message, String gmSystemPrompt, String turnCtx) {
         PlayerData pd = state.getPlayer(player);
         if (pd == null || pd.isDead) return false;
 
@@ -64,6 +74,7 @@ public class TurnManager {
         }
 
         String turnInput = state.buildTurnInput(player, message);
+        if (turnCtx != null && !turnCtx.isEmpty()) turnInput = turnCtx + "\n\n" + turnInput;
 
         CompletableFuture<Void> future = ai.callGmAi(gmSystemPrompt, turnInput)
             .thenAccept(response -> {

@@ -130,7 +130,7 @@ effect: 효과를 한 문장으로 간결하게.
                     // 여러 특성의 id가 충돌해 '아무 버튼이나 눌러도 첫 특성만 발동'되는 버그가 생긴다. (AI id는 외부 미참조)
                     td.id          = UUID.randomUUID().toString().substring(0, 8);
                     td.name        = obj.has("name")        ? obj.get("name").getAsString()        : "알 수 없는 특성";
-                    td.grade       = obj.has("grade")       ? obj.get("grade").getAsString()       : "C";
+                    td.grade       = TraitData.normGrade(obj.has("grade") ? obj.get("grade").getAsString() : null, "C");
                     td.description = obj.has("description") ? obj.get("description").getAsString() : "";
                     td.active      = obj.has("active")      && obj.get("active").getAsBoolean();
                     td.effect      = obj.has("effect")      ? obj.get("effect").getAsString()      : "";
@@ -223,7 +223,7 @@ cooldown_turns: B~D급이므로 능동이면 0~2, 수동이면 반드시 0.
                     // id는 항상 고유 생성 (AI가 빈/중복 id를 주면 특성 발동이 첫 특성으로 쏠리는 버그 방지)
                     td.id          = UUID.randomUUID().toString().substring(0, 8);
                     td.name        = obj.has("name")        ? obj.get("name").getAsString()        : "알 수 없는 특성";
-                    td.grade       = obj.has("grade")       ? obj.get("grade").getAsString()       : "C";
+                    td.grade       = TraitData.normGrade(obj.has("grade") ? obj.get("grade").getAsString() : null, "C");
                     td.description = obj.has("description") ? obj.get("description").getAsString() : "";
                     td.active      = obj.has("active")      && obj.get("active").getAsBoolean();
                     td.effect      = obj.has("effect")      ? obj.get("effect").getAsString()      : "";
@@ -279,11 +279,12 @@ cooldown_turns: B~D급이므로 능동이면 0~2, 수동이면 반드시 0.
 - 이름은 강화된 느낌으로 바꿔도 좋음
 - description: 아주 짧은 명사구 한 줄(최대 18자). 장황 금지
 - effect: 강화된 효과를 한 문장으로
-- cooldown_turns: 원본보다 1 낮거나 같게 (최소 0). 수동이면 0 유지.
-- 스탯 보정: 강화 시 원본 대비 소폭 상향 가능 (과도한 보정 금지)
+- ★강화의 핵심은 '효과·위력·스탯'을 키우는 것이다 — 쿨다운만 줄이는 강화는 ★금지★(강화 낭비). cooldown_turns는 ★원본과 동일하게 유지★하고 효과·수치를 분명히 키워라. (원본이 이미 효과가 약하고 쿨다운만 길 때에 한해 예외적으로 1 단축 가능.)
+- 스탯 보정: 강화 시 원본 대비 ★분명히 상향★ (단, 등급에 맞는 예산 내)
 - 범용성: 다른 시나리오에서도 통하게, 특정 사건 직접 언급 금지
 - 스탯 약어(STR/HP/SAN/CHA/LUK/SPR) 금지. 한국어.
-""";
+""" + (scenarioFlavor.isBlank() ? "" : "\n\n" + scenarioFlavor
+            + "\n★강화 시 위 테마(E.G.O. 등)의 정체성을 유지하라 — 이름을 바꿔도 같은 결로, 이상한 것으로 변질 금지.");
         String prompt = "이번 테마(참고용, 직접 언급 금지): " + gdamTheme
             + "\n강화할 기존 특성:\n" + list
             + "\n위 각 특성의 강화 버전을 같은 순서로 JSON 배열로 생성해줘.";
@@ -507,11 +508,12 @@ cooldown_turns: B~D급이므로 능동이면 0~2, 수동이면 반드시 0.
 my_upgrade 규칙:
 - '내 특성 강화 대상'의 강화 버전. 대상이 없으면 새 범용 특성 생성.
 - grade는 반드시 '목표 등급'을 사용 (대상이 없으면 B).
-- 강화 방향은 특성의 단점 크기에 따라 선택:
-  A) 긍정 효과 강화·정교화 (단점이 없거나 작을 때 기본)
-  B) 단점 완화 — 쿨다운 단축, 패널티 스탯 개선, 발동 조건 완화 (단점이 클 때 우선)
-  C) 혼합 — 긍정 효과 소폭 강화 + 단점 소폭 완화
-- 반드시 긍정 효과만 키워야 하는 건 아님. 단점이 있으면 완화가 가장 가치 있는 강화일 수 있음.
+- ★강화의 기본은 '효과·위력·스탯'을 키우는 것이다. '쿨다운 단축만'으로 강화를 때우지 마라(강화 낭비).
+- 강화 방향:
+  A) 긍정 효과 강화·정교화 (기본 — 거의 항상 이쪽. 효과 범위·위력·스탯을 키운다)
+  B) 단점 완화 — 패널티 스탯 개선·발동 조건 완화. 쿨다운 단축은 ★원본 쿨다운이 과도하게 길어 그게 핵심 단점일 때만★, 그리고 ★효과 강화와 함께★ (쿨다운만 줄이지 말 것).
+  C) 혼합 — 효과 강화 + 단점 소폭 완화
+- 단점이 크면 완화가 가치 있을 수 있으나, 그 경우에도 효과·수치를 함께 키워 '강해졌다'가 체감되게 하라.
 - 같은 정체성·이름 유지. 범용성 유지.
 - ★능동/수동 성격(active)과 effect_type을 절대 바꾸지 마라. 원본이 발동형(active=true)이면 강화본도 반드시 active=true·같은 effect_type을 유지하라. 능동 스킬을 자동 패시브로 바꾸면 효과 예산이 급감해 오히려 약해진다. 같은 메커니즘을 '더 강하게'.
 
