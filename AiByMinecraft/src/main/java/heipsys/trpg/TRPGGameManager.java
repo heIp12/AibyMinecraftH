@@ -8129,6 +8129,39 @@ public class TRPGGameManager {
         }
     }
 
+    /** 그 모달리티의 통신 수단(기기·매체)을 실제로 갖췄는가 — 이름 키워드 매칭. */
+    private boolean holdsModalityItem(PlayerData pd, String modality) {
+        if (pd == null) return false;
+        java.util.Set<String> kws = "signal".equals(modality) ? SIGNAL_MEDIA_KEYWORDS
+                : "electronic".equals(modality) ? ELECTRONIC_MEDIA_KEYWORDS
+                : "psychic".equals(modality) ? PSYCHIC_MEDIA_KEYWORDS
+                : "text".equals(modality) ? WRITTEN_MEDIA_KEYWORDS
+                : VOICE_MEDIA_KEYWORDS;
+        for (String id : pd.heldItemIds) {
+            String low = itemDisplayName(id).toLowerCase();
+            for (String kw : kws) if (low.contains(kw.toLowerCase())) return true;
+        }
+        return false;
+    }
+
+    /**
+     * ★수신처 매체 보유★: 이 플레이어가 해당 모달리티로 주고받을 수단을 갖췄는가.
+     *  전화/이메일 등은 상대도 같은 매체가 있어야 성립한다(양쪽 다 보유 필요).
+     */
+    private boolean hasMediumOfModality(PlayerData pd, String modality) {
+        if (pd == null) return false;
+        switch (modality == null ? "voice" : modality) {
+            case "text":   return writtenCommAvailable() || writtenInPersonAvailable(); // 종이·서신·필담(기기 불필요)
+            case "signal": return true; // 시야 전제(같은 곳)는 호출부에서 판정
+            case "psychic":
+                return holdsModalityItem(pd, "psychic")
+                    || pd.traits.stream().anyMatch(t -> { String s = (t.id + " " + t.name).toLowerCase();
+                        return s.contains("정신") || s.contains("사이킥") || s.contains("텔레파") || s.contains("psychic") || s.contains("감응"); });
+            case "electronic": return holdsModalityItem(pd, "electronic") || (isPhoneUsable() && hasCommDevice(pd));
+            case "voice": default: return holdsModalityItem(pd, "voice") || (isPhoneUsable() && hasCommDevice(pd));
+        }
+    }
+
     /** 원격 ★서신(편지·서찰·전서구)★ 매체가 가능한가 — 멀리 있는 상대에게 글을 '전달'하려면 인편·우편·전서구 등 수단이 필요.
      *  전자 통신이 없는 시대·상황에서 종이로 대신한다. constraints.written_comm 플래그 우선, 없으면 시대(현대·미래가 아니면)로 판단.
      *  ※ 면전 필담(같은 공간에서 글로)과는 다르다 — 그건 시대 무관 언제나 가능(writtenInPersonAvailable). */
@@ -8258,7 +8291,9 @@ public class TRPGGameManager {
         sender.sendMessage(outLine); // 발신자는 자기가 한 말 그대로 본다
         Player target = Bukkit.getPlayer(targetPd.uuid);
         // ★통신 변조★: 매체 모달리티(음성/문서/신호/전자/정신)가 맞는 괴담이 원격 전달을 가로채 수신 내용을 바꾼다(30%).
-        boolean tampered = viaDevice && entityInterferes(commModality(media, written)) && new java.util.Random().nextInt(100) < 30;
+        String modality = commModality(media, written);
+        boolean interfered = viaDevice && entityInterferes(modality); // 이 채널이 괴담의 간섭권인가(채널 건강)
+        boolean tampered = interfered && new java.util.Random().nextInt(100) < 30;
         String heard = tampered ? tamperText(message, new java.util.Random()) : message;
         String inLine = tag + " §f" + commDisplayName(senderPd) + ": " + heard;
         if (target != null && target.isOnline()) target.sendMessage(inLine);
@@ -8275,6 +8310,13 @@ public class TRPGGameManager {
             gameLogger.logComm(kind, commDisplayName(senderPd),
                 java.util.List.of(commDisplayName(targetPd)), message, via);
         }
+
+        // (Phase1) ★채널 건강★: 이 매체가 괴담의 간섭권이면, 이번엔 온전히 갔더라도 채널이 불안정함을 GM에 알려 서술에 반영(잡음·지연·부분 왜곡 여지).
+        if (interfered && !tampered)
+            ai.injectGmSystem("[통신 채널 불안정] " + media + " 채널이 괴담의 간섭권 안이다 — 잡음·지연·부분 왜곡이 생길 수 있음을 은근히 반영(이번 내용 자체는 온전히 전달됨).");
+        // (Phase1) ★수신처 매체★: 상대가 그 매체로 받을 수단이 없으면 온전히 닿지 않았을 수 있음을 GM에 귀띔(전화는 상대도 전화가 있어야 성립).
+        if (viaDevice && !hasMediumOfModality(targetPd, modality))
+            ai.injectGmSystem("[수신 불확실] " + commDisplayName(targetPd) + "은(는) " + media + "을(를) 받을 수단이 마땅치 않다 — 제대로 닿지 않았거나 뒤늦게 전해질 수 있음(정황에 반영).");
 
         // ★괴담 정보 수집·성장★: 원격 통신(강)·대면 직접(중). 지능/소통/고위력 괴담이면 GM에 역이용 지시.
         noteEntityIntel(viaDevice ? 3 : 2, commDisplayName(senderPd), message, medium);
