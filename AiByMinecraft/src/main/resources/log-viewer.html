@@ -350,6 +350,7 @@ function toolbarHtml(list){
     <label><input type="checkbox" id="verbose" ${showVerbose}> GM입력</label>
     <button id="playBtn" class="${playing?"on":""}">${playing?"⏸ 멈춤":"▶ 재생"}</button>
     <label>속도 <input type="range" id="spd" min="0.4" max="3" step="0.2" value="${speed}"></label>
+    <label title="드래그해 그 지점까지 건너뛰고 거기서부터 재생">구간 <input type="range" id="seek" min="0" max="1000" step="1" value="0" style="width:120px"></label>
     <span class="pill" id="cnt">${list.length}건</span>
     <span class="pill">시점: ${curVP==="__all__"?"전체":curVP}</span>
   </div>`;
@@ -362,13 +363,14 @@ function bindToolbar(){
   const v=document.getElementById("verbose"); if(v)v.onchange=()=>{stopPlay();renderMain();};
   const pb=document.getElementById("playBtn"); if(pb)pb.onclick=togglePlay;
   const sp=document.getElementById("spd"); if(sp)sp.oninput=e=>{speed=parseFloat(e.target.value)||1;};
+  const sk=document.getElementById("seek"); if(sk)sk.oninput=e=>{ seekTo((parseFloat(e.target.value)||0)/1000); };
 }
 function renderMain(){
   const main=document.getElementById("main"); const list=filtered();
   main.innerHTML=toolbarHtml(list)+`<div id="stream"></div>`;
   const stream=document.getElementById("stream");
   if(!list.length) stream.innerHTML=`<div class="empty">표시할 이벤트가 없습니다.</div>`;
-  else stream.innerHTML=list.map(curVP==="__all__"?evHtml:evHtmlSplit).join(""); // 전체=이벤트단위, 현재시점=대사·방송 칸분리
+  else stream.innerHTML=list.map(evHtmlSplit).join(""); // 대사·방송(GM 서술 속 NPC 대사 포함)을 화자별 칸으로 분리 — 전체·시점 공통(#185)
   bindToolbar();
   const q2=document.getElementById("q"); if(q2){q2.focus();q2.setSelectionRange(q2.value.length,q2.value.length);}
 }
@@ -400,19 +402,42 @@ function startPlay(){
 }
 function pausePlay(){ if(qtimer){clearTimeout(qtimer);qtimer=null;} playing=false; playBtnOn(false); } // 위치 유지(이어재생 가능)
 function stopPlay(){ pausePlay(); qi=0; queue=[]; curBodyEl=null; }                                    // 완전 초기화(필터·시점 변경 시)
-function step(){
-  const stream=document.getElementById("stream"); if(!stream){stopPlay();return;}
-  if(qi>=queue.length){ pausePlay(); return; } // 끝 — 상태패널은 마지막 시점으로 남긴다(초기화 X)
-  const it=queue[qi++]; let len=40;
+// 큐 아이템 1개를 스트림에 그린다(instant=true면 애니메이션·스크롤 생략 — 시크 시 즉시 렌더). 길이(읽을 시간)를 반환.
+function renderQueueItem(stream,it,instant){
+  let len=40;
   if(it.whole){ stream.insertAdjacentHTML("beforeend",evHtml(it.e)); curBodyEl=null; len=(it.e.text||"").length||40; }
   else if(it.header){ const h=headHtml(it.e); const d=document.createElement("div"); d.className=h.cls;
     d.innerHTML=h.top+`<div class="body"></div>`; stream.appendChild(d); curBodyEl=d.querySelector(".body"); len=8; }
   else if(it.block){ if(curBodyEl) curBodyEl.insertAdjacentHTML("beforeend",blockHtml(it.block)); len=(it.block.text||"").length||20; }
-  stream.lastElementChild&&stream.lastElementChild.scrollIntoView({block:"end",behavior:"smooth"});
+  if(!instant) stream.lastElementChild&&stream.lastElementChild.scrollIntoView({block:"end",behavior:"smooth"});
+  return len;
+}
+// 진행 슬라이더 값 동기화(0~1000).
+function syncSeek(){ const s=document.getElementById("seek"); if(s&&queue.length) s.value=Math.round(qi/queue.length*1000); }
+function step(){
+  const stream=document.getElementById("stream"); if(!stream){stopPlay();return;}
+  if(qi>=queue.length){ pausePlay(); return; } // 끝 — 상태패널은 마지막 시점으로 남긴다(초기화 X)
+  const it=queue[qi++];
+  const len=renderQueueItem(stream,it,false);
   if(curVP!=="__all__" && it.e) updateLive(it.e.seq||0); // ★재생 위치에 맞춰 그 플레이어가 '지금' 아는 정보·상태만★
   const cnt=document.getElementById("cnt"); if(cnt)cnt.textContent=qi+"/"+queue.length;
+  syncSeek();
   const delay=Math.max(260,(360+len*24)/speed);   // 길수록 더 오래(읽을 시간)
   qtimer=setTimeout(step,delay);
+}
+// ★중간부터 재생(#184)★: 슬라이더 비율(0~1)로 그 지점까지 즉시 그려두고, 이후 ▶면 그 지점부터 이어재생.
+function seekTo(frac){
+  pausePlay();
+  const list=filtered(); if(!list.length)return;
+  if(!queue.length) queue=buildQueue();
+  const qTarget=Math.max(0,Math.min(queue.length,Math.round(frac*queue.length)));
+  const stream=document.getElementById("stream"); if(!stream)return;
+  stream.innerHTML=""; curBodyEl=null; let lastE=null;
+  for(let i=0;i<qTarget;i++){ renderQueueItem(stream,queue[i],true); if(queue[i].e)lastE=queue[i].e; }
+  qi=qTarget;
+  if(curVP!=="__all__" && lastE) updateLive(lastE.seq||0);
+  const cnt=document.getElementById("cnt"); if(cnt)cnt.textContent=qi+"/"+queue.length;
+  stream.lastElementChild&&stream.lastElementChild.scrollIntoView({block:"end"});
 }
 // 표시명 "이름(직업)" — buildAlias의 uni와 동일 규칙(상태 계산에서 replay 플레이어 매칭용).
 function uniName(nm,jb){nm=(nm||"").trim();jb=(jb||"").trim();return (nm&&jb)?nm+"("+jb+")":(nm||jb);}
