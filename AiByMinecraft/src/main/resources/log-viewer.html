@@ -243,7 +243,7 @@ function parseBody(text){
     if(m=line.match(/^\[([^\]]{1,16})\]\s*(.*)$/)){
       const tag=m[1].trim();
       if(BC_TAG.test(tag)){ out.push({type:"bc",text:m[2]||line}); continue; }
-      if(!DENY_TAG.test(tag) && /^[가-힣A-Za-z0-9_ ]{2,12}$/.test(tag) && m[2]){ out.push({type:"say",name:tag,text:m[2]}); continue; }
+      if(!DENY_TAG.test(tag) && /^[가-힣A-Za-z0-9_ ]{2,14}$/.test(tag) && m[2]){ out.push({type:"say",name:tag,text:m[2]}); continue; } // 단역 호칭(헤드셋 낀 남자 등)도 화자 칸 분리
       out.push({type:"narr",text:line}); continue;
     }
     if(m=line.match(/^<-\s*([\s\S]*?)\s*->$/)){ out.push({type:"mono",text:m[1]}); continue; }
