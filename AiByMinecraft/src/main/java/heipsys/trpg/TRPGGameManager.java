@@ -4004,13 +4004,17 @@ public class TRPGGameManager {
         if (chosen == null) chosen = rewindBuffer.peekFirst(); // 그만큼 못 돌아가면 가장 먼 시점
         applyTraitUsed(pd, td.id, state.getCurrentTurn());
         final RewindSnapshot snap = chosen;
+        gameLogger.section("시간 회귀 — 약 " + back + "턴 전(" + snap.turn + "턴)으로 되감김"); // 뷰어·재현: 파티 전원 되돌림 구획
         for (PlayerData op : state.getAllPlayers()) {
             int[] v = snap.vitals.get(op.uuid);
+            int bHp = op.hp[0], bSan = op.san[0];
             if (v != null) { op.hp[0] = v[0]; op.hp[1] = v[1]; op.san[0] = v[2]; op.san[1] = v[3]; }
             String st = snap.status.get(op.uuid); if (st != null) op.status = st;
             String z  = snap.zone.get(op.uuid);   if (z  != null) op.zone   = z;
             String sp = snap.spot.get(op.uuid);   if (sp != null) op.spot   = sp;
             Boolean d = snap.dead.get(op.uuid);   if (d  != null) op.isDead = d;
+            if (v != null && (op.hp[0] - bHp != 0 || op.san[0] - bSan != 0)) // 되돌아간 체력·정신 반영
+                gameLogger.logVital(op.gmDisplayName(), op.hp[0]-bHp, op.hp[0], op.hp[1], op.san[0]-bSan, op.san[0], op.san[1], "시간 회귀");
         }
         ai.truncateGmContext(snap.gmMark); // GM 기억을 그 시점으로(무상태 LLM이라 컨텍스트=기억)
         while (!rewindBuffer.isEmpty() && rewindBuffer.peekLast().turn >= snap.turn) rewindBuffer.removeLast();
@@ -7944,6 +7948,9 @@ public class TRPGGameManager {
         Player p = Bukkit.getPlayer(learner.uuid);
         if (p != null && p.isOnline())
             p.sendMessage("§a[연락처 입수] §f" + commDisplayName(subject) + " (" + subject.contactId + ")");
+        // 뷰어·재현: 연락처(전화번호) 입수는 '정보 획득' — 단서로 기록해 상태패널·타임라인에 반영.
+        gameLogger.logItem("clue", learner.gmDisplayName(),
+            "연락처: " + subject.gmDisplayName() + " (" + subject.contactId + ")", "연락처 입수");
     }
 
     private void announceKnownContacts(Player p, PlayerData pd) {
@@ -8354,6 +8361,7 @@ public class TRPGGameManager {
         pd.impersonated = true;
         pd.isDead       = true;     // 죽이고 대신 움직인다
         pd.status       = "dead";
+        gameLogger.logVital(pd.gmDisplayName(), 0, pd.hp[0], pd.hp[1], 0, pd.san[0], pd.san[1], "사망(괴담 정체 차용)"); // 뷰어·재현: 특수 사망 반영
         fireDeathRelay(pd);    // 정체 차용으로 제거돼도 사후 전언(death_relay)은 발동
         // ※ 정체 차용(impersonation) 사망에는 동물 소생을 적용하지 않는다 — 괴담이 본체를 차지한 특수 죽음이므로.
         Player p = Bukkit.getPlayer(pd.uuid);
@@ -8697,11 +8705,13 @@ public class TRPGGameManager {
             if ("faint".equals(pd.status) && pd.faintTurnsRemaining > 0) {
                 pd.faintTurnsRemaining--;
                 if (pd.faintTurnsRemaining <= 0) {
+                    int fHp = pd.hp[0], fSan = pd.san[0];
                     pd.status = "normal";
                     pd.hp[0]  = 1;
                     pd.san[0] = Math.min(pd.san[1], Math.max(2, pd.san[0])); // ★기절에서 깨어나면 정신력도 2까지 회복★
                     pd.faintTurnsRemaining = 0;
                     updateAllScoreboards();
+                    gameLogger.logVital(pd.gmDisplayName(), pd.hp[0]-fHp, pd.hp[0], pd.hp[1], pd.san[0]-fSan, pd.san[0], pd.san[1], "기절에서 깨어남"); // 뷰어·재현: 상태 회복 반영
                     Player rp = Bukkit.getPlayer(pd.uuid);
                     if (rp != null) rp.sendMessage("§a의식이 돌아왔다. 간신히 일어선다... §7(정신력 " + pd.san[0] + ")");
                     ai.injectGmSystem("[회복] " + commDisplayName(pd) + "이(가) 기절에서 깨어났다. 체력 1·정신력 " + pd.san[0] + "로 회복. 서술에 반영하라.");
@@ -8714,9 +8724,11 @@ public class TRPGGameManager {
                 Player rp = Bukkit.getPlayer(pd.uuid);
                 if (pd.puppetRecoveryTurns <= 0) {
                     // 자동 회복: SAN 1 복구, 관전 해제 (puppet 상태는 유지)
+                    int pSan = pd.san[0];
                     pd.san[0] = Math.max(1, pd.san[0]);
                     pd.puppetRecoveryTurns = 0;
                     updateAllScoreboards();
+                    gameLogger.logVital(pd.gmDisplayName(), 0, pd.hp[0], pd.hp[1], pd.san[0]-pSan, pd.san[0], pd.san[1], "조종 일부 풀림(관전 해제)"); // 뷰어·재현: 자아 회복 반영
                     if (rp != null) {
                         rp.sendMessage("§a정신의 실낱 같은 불꽃이 다시 타오릅니다...");
                         rp.sendMessage("§5아직 조종의 영향이 남아있지만 다시 행동할 수 있습니다.");
