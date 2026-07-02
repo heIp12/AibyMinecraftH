@@ -977,8 +977,7 @@ public class AiManager {
             JsonObject json = gson.fromJson(response.body(), JsonObject.class);
             accumulateUsage(json, model); // 실사용 토큰·비용 누적(/trpg status 표시용)
             return switch (apiType) {
-                case "claude" -> json.getAsJsonArray("content").get(0)
-                                     .getAsJsonObject().get("text").getAsString();
+                case "claude" -> claudeText(json);
                 case "gemini" -> json.getAsJsonArray("candidates").get(0)
                                      .getAsJsonObject().getAsJsonObject("content")
                                      .getAsJsonArray("parts").get(0)
@@ -990,6 +989,24 @@ public class AiManager {
         } catch (Exception e) {
             throw new RuntimeException("API 응답 파싱 실패: " + response.body().substring(0, Math.min(200, response.body().length())), e);
         }
+    }
+
+    /** Claude 응답 content[]에서 실제 텍스트를 추출한다.
+     *  ★Claude 5 계열(Sonnet 5 등)은 thinking 블록을 content[0]로 먼저 반환하므로, content[0]만 읽으면
+     *  없는 text 필드를 참조해 파싱 실패한다. type=="text" 블록만 골라 이어 붙인다(thinking·기타 블록 무시). */
+    private static String claudeText(JsonObject json) {
+        com.google.gson.JsonArray content = json.getAsJsonArray("content");
+        if (content == null) throw new RuntimeException("content 배열 없음");
+        StringBuilder sb = new StringBuilder();
+        for (com.google.gson.JsonElement el : content) {
+            if (el == null || !el.isJsonObject()) continue;
+            JsonObject block = el.getAsJsonObject();
+            String type = block.has("type") && !block.get("type").isJsonNull() ? block.get("type").getAsString() : "";
+            if ("text".equals(type) && block.has("text") && !block.get("text").isJsonNull())
+                sb.append(block.get("text").getAsString());
+        }
+        if (sb.length() == 0) throw new RuntimeException("text 블록 없음(thinking만 반환됐거나 max_tokens 소진)");
+        return sb.toString();
     }
 
     private JsonObject msg(String role, String content) {
