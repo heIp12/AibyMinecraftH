@@ -8781,6 +8781,19 @@ public class TRPGGameManager {
                     if (rp != null) rp.sendMessage("§8(관전 중 | §5완전 잠식 §8| 회복까지 약 §f" + pd.puppetRecoveryTurns + "§8턴)");
                 }
             }
+            // ★자아 완전 회복(#169)★: 관전 해제 후 '행동가능 puppet(아직 영향)' 중간상태(puppetRecoveryTurns==0)가
+            //   SAN이 안정 수준(≥2)으로 올라도 status="puppet"으로 남아 GM이 무한히 '조종됨'으로 서술하던 문제.
+            //   san_change 이벤트가 다시 와야만 풀리던 것을 → SAN이 회복되면 매 턴 자동으로 normal 복귀시킨다.
+            //   (완전 조종 -1은 heal 전용이라 제외 / 관전 중 >0은 위에서 처리 / 오직 중간상태 0만 대상.)
+            else if ("puppet".equals(pd.status) && pd.puppetRecoveryTurns == 0 && pd.san[0] >= 2 && !pd.isDead) {
+                pd.status = "normal";
+                updateAllScoreboards();
+                gameLogger.logVital(pd.gmDisplayName(), 0, pd.hp[0], pd.hp[1], 0, pd.san[0], pd.san[1], "조종에서 완전히 벗어남");
+                Player rp2 = Bukkit.getPlayer(pd.uuid);
+                if (rp2 != null) rp2.sendMessage("§a정신이 온전히 돌아왔습니다. 더 이상 조종의 영향을 받지 않습니다. §7(정신력 " + pd.san[0] + ")");
+                ai.injectGmSystem("[각성] " + commDisplayName(pd) + "의 자아가 완전히 돌아왔다(정신력 " + pd.san[0]
+                    + "). 더 이상 조종당하지 않는다(normal). 이제부터 이 인물을 조종 상태로 서술하지 마라.");
+            }
         }
     }
 
