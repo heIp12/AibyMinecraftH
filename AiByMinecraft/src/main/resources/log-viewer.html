@@ -209,20 +209,18 @@ function normalize(ev){
 // 특정 인물의 seq 시점 구역(마지막 이동 기준). 이동 기록이 없으면 null(불명).
 function zoneAtSeq(person,seq){ let z=null; for(const e of EVENTS){ if((e.seq||0)>seq)break; if(e.kind==="move"&&e.actor===person&&e.zone)z=e.zone; } return z; }
 function isPlayerVp(vp){ const v=VIEWPOINTS.find(x=>x.name===vp); return v?!!v.isPlayer:false; }
+// ★실제로 닿은 것만★ 표시(#174): 플레이어·NPC 공통. 전체(전역)는 플레이어만 받고 NPC는 못 본다(비용상 게임도 NPC 미수신).
 function visibleTo(e,vp){
   if(vp==="__all__")return true;
   if(e.actor===vp)return true;                         // 내가 한 것
-  if(e.to.includes(vp))return true;                    // 나를 수신자로 명시(통화·지목·전체발신 수신자)
+  if(e.to.includes(vp))return true;                    // 나를 수신자로 명시(통화·지목·전체발신 실제 수신자)
+  if(e.to.some(isGlobal))return isPlayerVp(vp);        // '전체' 대상 = 플레이어만(전체는 NPC가 못 봄)
   if(e.kind==="system")return true;                    // 세션·구획 표식(내용 아님)
-  if(isPlayerVp(vp)){                                   // 플레이어 시점: 기존 관대 규칙(전역·방송 노출)
-    if(e.to.some(isGlobal))return true;                // @전체 등 전역 수신
-    if(e.kind==="broadcast")return true;               // 방송(PA)은 넓게
-    if(e.kind==="nearby"){ const az=zoneAtSeq(e.actor,e.seq||0), vz=zoneAtSeq(vp,e.seq||0); return az==null||vz==null||az===vz; }
-    return false;
+  if(e.kind==="broadcast"){                            // 방송(PA): GM/시스템 안내방송은 플레이어 전원, 인물의 육성 방송은 같은 구역만
+    if(isGlobal(e.actor))return isPlayerVp(vp);
+    const az=zoneAtSeq(e.actor,e.seq||0), vz=zoneAtSeq(vp,e.seq||0); return az!=null&&vz!=null&&az===vz;
   }
-  // ★NPC 시점(#174): 실제로 그 NPC에게 '닿는' 것만★ — 지목 수신(위에서 처리)·같은 구역의 근처/방송만.
-  //   전역 @전체·타인끼리의 통화 등 NPC가 수신자로 명시되지 않은 것은 보이지 않는다.
-  if(e.kind==="broadcast"||e.kind==="nearby"){ const az=zoneAtSeq(e.actor,e.seq||0), vz=zoneAtSeq(vp,e.seq||0); return az!=null&&vz!=null&&az===vz; }
+  if(e.kind==="nearby"){ const az=zoneAtSeq(e.actor,e.seq||0), vz=zoneAtSeq(vp,e.seq||0); return az!=null&&vz!=null&&az===vz; } // 근처(면전)는 같은 구역만
   return false; }
 function buildViewpoints(){ const m=new Map();
   for(const e of EVENTS){ if(e.kind==="alias")continue; for(const c of [e.actor,...e.to])if(isPerson(c))m.set(c,(m.get(c)||0)+1); }
@@ -861,9 +859,10 @@ function renderInfo(){
       const zname={}; for(const z of SCENARIO.zones)if(z&&z.zone_id)zname[z.zone_id]=z.name||z.zone_id;
       const roleName={}; if(REPLAY&&Array.isArray(REPLAY.players))for(const p of REPLAY.players)if(p.roleId)roleName[p.roleId]=p.charName||p.roleId;
       h+=sh('zones','구역 (맵)');
+      h+=zoneMapSvg(SCENARIO.zones); // ★설계도(그림) 지도★ — 구역 박스 + 연결선 + 통신불가(📵) 표시
       for(const z of SCENARIO.zones){
         if(!z)continue;
-        const conns=(z.connections||[]).map(c=>zname[c]||c).filter(Boolean).join(" · ");
+        const conns=connTargets(z).map(ct=>{const nm=zname[ct.to]||ct.to; const dl=distLabel(ct.dist); return dl?`${nm}(${dl})`:nm;}).filter(Boolean).join(" · ");
         const who=(z.accessible_by||[]).map(r=>roleName[r]||r).filter(Boolean).join(", ");
         h+=`<div class="card"><b>${esc(z.name||z.zone_id||"?")}</b> <span class="dim2">${esc(z.area||"")}</span>`
           +(conns?`<br><span class="st">연결</span>${esc(conns)}`:"")
@@ -876,6 +875,49 @@ function renderInfo(){
   b.innerHTML=h||`<div class="empty">.replay(스탯)·.json/.gdam(시나리오)을 함께 불러오면 표시됩니다.</div>`;
   applyCollapsed(); // 접힌 섹션 상태 복원
   document.getElementById("toggleInfo").style.display=(REPLAY||SCENARIO)?"":"none";
+}
+// ── 구역 지도(설계도) SVG (#172) ── 구역=박스(대분류별 색), connections=선, 통신불가=📵 빨간 점선.
+function isCommDeadZone(z){
+  if(!z)return false;
+  if(z.no_comm||z.comm_blocked||z.comms_blocked||z.dead_zone||z.comm_dead||z.no_signal)return true;
+  const s=((z.name||"")+" "+(z.area||"")+" "+(z.note||"")+" "+(z.desc||"")).replace(/\s/g,"");
+  return /(통신불가|통신두절|통신차단|전파음영|음영지역|무선불가|연락두절|신호없)/.test(s);
+}
+function areaTint(a){ if(!a)return "#2a2450"; let h=0; for(let i=0;i<a.length;i++)h=(h*31+a.charCodeAt(i))>>>0; return `hsl(${h%360},36%,25%)`; }
+// 연결 대상 정규화 — 문자열 id 또는 {to,dist} 객체 + z.distances 보조. 거리 있으면 함께 반환(#172 거리).
+function connTargets(z){
+  const out=[];
+  for(const c of (z.connections||[])){
+    if(typeof c==="string") out.push({to:c,dist:null});
+    else if(c&&typeof c==="object"){ const to=c.to||c.zone||c.zone_id||c.id; if(to)out.push({to,dist:(c.dist!=null?c.dist:c.distance!=null?c.distance:c.time!=null?c.time:c.minutes!=null?c.minutes:null)}); }
+  }
+  if(z.distances&&typeof z.distances==="object")for(const k in z.distances){ const ex=out.find(o=>o.to===k); if(ex){ if(ex.dist==null)ex.dist=z.distances[k]; } else out.push({to:k,dist:z.distances[k]}); }
+  return out;
+}
+function distLabel(d){ if(d==null||d==="")return ""; return typeof d==="number"?(d+"분"):String(d); }
+function zoneMapSvg(zones){
+  const list=(zones||[]).filter(z=>z&&z.zone_id);
+  if(!list.length)return "";
+  const areas=[],byArea={};
+  for(const z of list){const a=z.area||"(구역)"; if(!byArea[a]){byArea[a]=[];areas.push(a);} byArea[a].push(z);}
+  const BW=140,BH=50,GX=168,GY=96,PADX=14,TOP=24; const pos={}; let maxCols=1;
+  areas.forEach((a,ai)=>{ byArea[a].forEach((z,ci)=>{ pos[z.zone_id]={x:PADX+ci*GX,y:TOP+ai*GY,z}; }); if(byArea[a].length>maxCols)maxCols=byArea[a].length; });
+  const W=PADX*2+(maxCols-1)*GX+BW, H=TOP+(areas.length-1)*GY+BH+14;
+  const cx=id=>pos[id].x+BW/2, cy=id=>pos[id].y+BH/2;
+  let edges="",seen={};
+  for(const z of list)for(const ct of connTargets(z)){ const c=ct.to; if(!pos[c])continue; const k=[z.zone_id,c].sort().join("|"); if(seen[k])continue; seen[k]=1;
+    const x1=cx(z.zone_id),y1=cy(z.zone_id),x2=cx(c),y2=cy(c);
+    edges+=`<line x1="${x1|0}" y1="${y1|0}" x2="${x2|0}" y2="${y2|0}" stroke="#6a5db0" stroke-width="2" opacity="0.5"/>`;
+    const dl=distLabel(ct.dist); if(dl)edges+=`<text x="${(x1+x2)/2|0}" y="${((y1+y2)/2-2)|0}" text-anchor="middle" font-size="9" fill="#cabfff">${esc(dl)}</text>`;
+  }
+  let boxes="";
+  for(const z of list){ const p=pos[z.zone_id],dead=isCommDeadZone(z),nm=z.name||z.zone_id,short=nm.length>9?nm.slice(0,8)+"…":nm;
+    boxes+=`<g><title>${esc(nm)}${z.area?" — "+esc(z.area):""}${dead?" · 통신불가":""}</title>`
+      +`<rect x="${p.x}" y="${p.y}" width="${BW}" height="${BH}" rx="8" fill="${areaTint(z.area||"")}" stroke="${dead?'#ff5a5a':'#8a7fd0'}" stroke-width="${dead?2.5:1.4}" ${dead?'stroke-dasharray="5 3"':''}/>`
+      +`<text x="${p.x+BW/2}" y="${p.y+BH/2+4}" text-anchor="middle" font-size="13" fill="#f0ecff">${esc(short)}${dead?' 📵':''}</text></g>`; }
+  let labels=""; areas.forEach((a,ai)=>{ labels+=`<text x="${PADX}" y="${TOP+ai*GY-6}" font-size="10" fill="#9b8fd6">${esc(a)}</text>`; });
+  return `<div class="zmap" style="overflow:auto;margin-bottom:6px"><svg viewBox="0 0 ${W} ${H}" width="100%" style="max-height:360px;min-width:${Math.min(W,320)}px">${edges}${boxes}${labels}</svg>`
+    +`<div class="dim2">📵 = 통신 불가 구역 · 선 = 연결 · 색 = 대분류(건물)</div></div>`;
 }
 function ingest(file){const nm=file.name.toLowerCase();
   if(nm.endsWith(".gdam")){return decryptGdamFile(file).then(j=>{if(j&&(j.entity||j.world_rules||j.npcs))SCENARIO=j;renderInfo();}).catch(()=>{renderInfo();});}
