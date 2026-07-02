@@ -137,9 +137,9 @@ public class TRPGGameManager {
     private final Map<UUID, String> pendingTraitActivation = new ConcurrentHashMap<>();
     private final Map<UUID, String> pendingPrayerInput = new ConcurrentHashMap<>(); // UUID → traitId
     private final Map<UUID, String> pendingOracleInput = new ConcurrentHashMap<>(); // UUID → traitId
+    /** 행운 능력으로 무장한 판정 보정 — ★다음 실제 판정(주사위)까지 유지★되고 playDiceResult가 굴림 시 1회 소비(#176).
+     *  예전엔 행동 처리 시점에 소비돼, 판정 없이 서술만 된 행동에서 보정이 증발했다. */
     private final Map<UUID, Integer> pendingLuckModifier   = new ConcurrentHashMap<>();
-    /** 행운 보정을 이번 행동의 ★실제 주사위 굴림★에 반영하기 위한 1회성 스태시(playDiceResult가 소비). */
-    private final Map<UUID, Integer> pendingDiceLuck        = new ConcurrentHashMap<>();
     private final Map<UUID, List<OracleChoice>> pendingOracleChoices = new ConcurrentHashMap<>();
     private final Map<UUID, String> pendingSaintTrait = new ConcurrentHashMap<>();
     private final Map<UUID, String> pendingAreaScanInput = new ConcurrentHashMap<>(); // UUID → traitId
@@ -1938,14 +1938,11 @@ public class TRPGGameManager {
         //   turnCtx로 넘기면 GM은 다 보되(입력 앞단), 표시·로그는 순수 행동만 남는다.
         StringBuilder gmCtx = new StringBuilder();
 
-        // 행운 보정 (이번 행동 1회 적용 후 소멸)
-        Integer luckMod = pendingLuckModifier.remove(player.getUniqueId());
-        if (luckMod != null) {
+        // 행운 보정 — ★판정(주사위)이 실제로 일어날 때까지 무장 유지★(#176). 여기서 소비하지 않고 GM 문맥에만 알린다:
+        //   예전엔 이 시점에 소비/이월정리해, '판정 없이 서술만 된' 행동에서 보정이 증발했다. 실제 소비는 playDiceResult의 굴림 시점.
+        Integer luckMod = pendingLuckModifier.get(player.getUniqueId());
+        if (luckMod != null)
             gmCtx.append(" [행운 보정 ").append(luckMod > 0 ? "+" : "").append(luckMod).append("]");
-            pendingDiceLuck.put(player.getUniqueId(), luckMod); // 이번 행동의 주사위 굴림에 실제 반영(playDiceResult가 소비)
-        } else {
-            pendingDiceLuck.remove(player.getUniqueId()); // 이월 방지: 이번 행동에 행운 없으면 스태시 정리
-        }
 
         // B1/C4: 확정성공·운명 등 '다음 행동 보정' 대기분 주입 (1회 적용 후 소멸)
         String actionBoost = pendingActionBoost.remove(player.getUniqueId());
@@ -3206,7 +3203,7 @@ public class TRPGGameManager {
         String color = modifier > 0 ? "§a" : (modifier < 0 ? "§c" : "§7");
         player.sendMessage("§e[" + td.name + "] 주사위(d" + dice + "): §f" + roll
             + "§e  →  " + color + (modifier > 0 ? "+" : "") + modifier + " 행운 보정");
-        player.sendMessage("§7다음 행동 1회에 행운 보정이 적용됩니다.");
+        player.sendMessage("§7다음 ★판정(주사위)★ 1회에 행운 보정이 적용됩니다. (판정 없이 넘어가도 사라지지 않고 다음 판정까지 유지)");
         gameLogger.logAbilityResult(pd.gmDisplayName(), td.name,
             "주사위 d" + dice + " = " + roll + " → 행운 보정 " + (modifier > 0 ? "+" : "") + modifier); // 뷰어: 능력 결과(주사위) 기록
     }
@@ -9847,8 +9844,9 @@ public class TRPGGameManager {
             statBonus = Math.max(-cap, Math.min(cap, statBonus));
             statLabel = diceStatLabel(statKey);
         }
-        // ★행운 보정★: 능력으로 건 행운 수치를 실제 굴림에 반영(1회 소비). GM 텍스트 주입만 하고 굴림엔 안 반영되던 공백 보완.
-        Integer luckAdj = pendingDiceLuck.remove(player.getUniqueId());
+        // ★행운 보정★: 능력으로 무장한 행운을 실제 굴림에 반영하고 ★이때 비로소 1회 소비★. 판정 없이 지나간 행동에선
+        //   유지돼(#176) 다음 판정에 적용된다. GM 텍스트 주입만 하고 굴림엔 안 반영되던 공백 보완.
+        Integer luckAdj = pendingLuckModifier.remove(player.getUniqueId());
         int luckB = (luckAdj != null ? luckAdj : 0);
         roll = Math.max(1, Math.min(max, roll + statBonus + luckB));
         // 보정 표기(기본 굴림 + 스탯/행운) — 판정 결과가 왜 이렇게 나왔는지 투명하게.
