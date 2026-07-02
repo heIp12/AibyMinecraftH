@@ -7233,35 +7233,21 @@ public class TRPGGameManager {
                 targets.add(op);
             }
         }
-        // ★@전체(개방)는 아는 번호의 NPC에게도 닿는다★ — 플레이어만 받던 누락 보완(폐쇄망 발신은 그 망 접속자만이라 NPC 제외).
-        java.util.List<String> npcHeard = new ArrayList<>();
-        if (senderNet == null) {
-            for (String nid : senderPd.everKnownNpcContacts) {
-                JsonObject npc = findNpcById(nid);
-                if (npc == null || (!bypass && !isNpcPhoneReachable(npc))) continue;
-                String nm = npc.has("name") ? npc.get("name").getAsString() : "";
-                if (!nm.isBlank() && !npcHeard.contains(nm)) npcHeard.add(nm);
-            }
-        }
-        if (targets.isEmpty() && npcHeard.isEmpty()) { sender.sendMessage(senderNet != null
+        // ★@전체는 플레이어(아는 번호)에게만★ — NPC까지 넣으면 다수 NPC가 반응해 비용 폭증(설계상 NPC는 전체 발신 미수신).
+        if (targets.isEmpty()) { sender.sendMessage(senderNet != null
                 ? "§7같은 " + senderNet + "망에 접속한 상대가 없습니다."
                 : "§7아는 번호가 없습니다. (먼저 연락처를 알아야 합니다)"); return; }
-        sender.sendMessage((senderNet != null ? "§7[" + senderNet + "망 발신 " : "§7[전체 발신 ") + (targets.size() + npcHeard.size()) + "명] §f" + message);
+        sender.sendMessage((senderNet != null ? "§7[" + senderNet + "망 발신 " : "§7[전체 발신 ") + targets.size() + "명] §f" + message);
         for (PlayerData op : targets) {
             Player op2 = Bukkit.getPlayer(op.uuid);
             if (op2 != null && op2.isOnline() && (bypass || hasCommDevice(op))) // 개방 시 수신자 기기 부재도 관통
                 op2.sendMessage("§b[📞 " + disp + " → " + (senderNet != null ? senderNet + "망" : "전체") + "] §f" + message);
         }
         state.log("comm", senderPd.name, "[" + (senderNet != null ? senderNet + "망발신" : "전체발신") + "] " + message);
-        // 뷰어 통화내역: 전체 발신도 ★수신자 전원(플레이어+NPC)을 기록★(그들 시점에도 보이게). 폐쇄망이면 via=망이름.
+        // 뷰어 통화내역: 전체 발신도 ★수신자 전원을 기록★(그들 시점에도 보이게). 폐쇄망이면 via=망이름.
         java.util.List<String> callNames = new ArrayList<>();
         for (PlayerData op : targets) callNames.add(op.gmDisplayName());
-        callNames.addAll(npcHeard);
         gameLogger.logComm("call", disp, callNames, message, senderNet);
-        // GM: 아는 번호의 NPC도 전체 발신을 들었음을 알려 회신·반응할 수 있게(자율 AI 주기·NPC_CALL로 콜백).
-        if (!npcHeard.isEmpty())
-            ai.injectGmSystem("[전체 발신 — NPC 수신] " + disp + "의 전체 발신을 아는 번호의 NPC도 들었다: "
-                + String.join(", ", npcHeard) + ". 이들은 내용을 듣고 필요하면 회신·반응할 수 있다(닿으면 콜백).");
         // 폐쇄망은 전자형 괴담이 그 망에 붙어야만 수집(아니면 0=미수집). 개방 전체발신은 항상 강(3).
         noteEntityIntel(senderNet != null ? (entityInterferes("electronic") ? 3 : 0) : 3, disp, message,
             senderNet != null ? senderNet + "망 발신" : "전체 발신");
