@@ -290,6 +290,7 @@ public class TRPGGameManager {
         this.itemMan    = new ItemManager(plugin, state);
         this.dialogMan         = new DialogManager();
         this.dialogMan.setImportantInfoOpener(this::openImportantInfo); // 중요 정보(전화번호·능력으로 밝힌 사실)
+        this.dialogMan.setCommMethodOpener(this::openCommMethodDialog);  // 소통수단 선언(#177) — 도구 없을 때 기록에서 여는 경로
         this.state.setSpawnedCheck(spawnedPlayers::contains); // 미등장 배역을 GM 서술에서 제외하기 위한 등장 판별 주입
         this.traitBtn          = new TraitButtonManager();
         this.corruptMan        = new CorruptionManager(state);
@@ -7280,11 +7281,12 @@ public class TRPGGameManager {
         boolean written = false;
         if (!senderPd.zone.isEmpty() && senderPd.zone.equals(targetPd.zone)) {
             viaDevice = false; // 같은 구역 → 대면 (번호 불필요)
-            // ★면전 필담★: 소리가 위험하면(소리형 괴담·침묵 요구) 말 대신 글(필담)로 조용히 전한다 — 시대·기기 무관 언제나 가능.
-            if (soundDangerous() && writtenInPersonAvailable()) {
-                written = true;
+            // ★면전 소통수단★: 선언(#177)이 있으면 우선(음성=소리내어/글=필담), 없으면 소리 위험 시 자동 필담.
+            written = resolveInPersonWritten(senderPd);
+            if (written && !"text".equals(senderPd.declaredCommMethod))
                 sender.sendMessage("§7(소리를 내기 위험하다 — 필담으로 조용히 전한다)");
-            }
+            else if ("voice".equals(senderPd.declaredCommMethod) && soundDangerous())
+                sender.sendMessage("§6(소리가 위험한 곳이지만, 선언대로 소리 내어 말한다 — 위험 감수)");
         } else {
             Set<UUID> channels = commChannels.get(sender.getUniqueId());
             boolean gmChannel = channels != null && channels.contains(targetPd.uuid);
@@ -7409,6 +7411,152 @@ public class TRPGGameManager {
         return false;
     }
 
+    // ── 소통수단 선언(#177) ──────────────────────────────────────────
+    /** 소통수단 우클릭 순환 디바운스 태스크(연속 우클릭 시 마지막 후보만 승인 요청). */
+    private final Map<UUID, org.bukkit.scheduler.BukkitTask> commDeclTasks = new ConcurrentHashMap<>();
+    private static final String[] COMM_METHOD_CYCLE = {"", "voice", "text", "signal", "electronic"};
+
+    /** 소통수단 키 → 한국어 라벨. */
+    private String commMethodLabel(String key) {
+        switch (key == null ? "" : key) {
+            case "voice":      return "말하기(음성)";
+            case "text":       return "필담·글";
+            case "signal":     return "수신호·몸짓";
+            case "electronic": return "전자통신";
+            default:           return "자동";
+        }
+    }
+
+    /** 클릭한 아이템이 통신 기기(전화·무전기·통신구 등)인가 — 우클릭 소통수단 순환 대상 판정. */
+    public boolean isCommDeviceItem(ItemStack item) {
+        if (item == null || !itemMan.isTrpgItem(item)) return false;
+        String id = itemMan.itemIdOf(item).toLowerCase();
+        String nm = item.hasItemMeta() && item.getItemMeta().hasDisplayName()
+            ? PlainTextComponentSerializer.plainText().serialize(item.getItemMeta().displayName()).toLowerCase() : "";
+        String hay = id + " " + nm;
+        for (String kw : COMM_ITEM_KEYWORDS) if (hay.contains(kw)) return true;
+        for (String kw : VOICE_MEDIA_KEYWORDS) if (hay.contains(kw.toLowerCase())) return true;
+        for (String kw : ELECTRONIC_MEDIA_KEYWORDS) if (hay.contains(kw.toLowerCase())) return true;
+        for (String kw : SIGNAL_MEDIA_KEYWORDS) if (hay.contains(kw.toLowerCase())) return true;
+        return false;
+    }
+
+    /** 통신 기기 우클릭 → 소통수단 후보 순환(즉시) + 잠시 후 GM 승인 요청(디바운스). */
+    public void cycleCommMethod(Player player) {
+        PlayerData pd = state.getPlayer(player);
+        if (pd == null) return;
+        String cur = pd.pendingCommMethod.isEmpty() ? pd.declaredCommMethod : pd.pendingCommMethod;
+        int idx = 0;
+        for (int i = 0; i < COMM_METHOD_CYCLE.length; i++) if (COMM_METHOD_CYCLE[i].equals(cur)) { idx = i; break; }
+        String next = COMM_METHOD_CYCLE[(idx + 1) % COMM_METHOD_CYCLE.length];
+        pd.pendingCommMethod = next;
+        player.sendMessage("§7[소통수단] 후보: §f" + commMethodLabel(next)
+            + " §8(계속 우클릭해 변경 · 잠시 후 GM이 승인 판단)");
+        // 디바운스: 마지막 우클릭 후 ~1.5초 뒤 후보를 승인 요청(연속 클릭 중엔 재예약)
+        var prev = commDeclTasks.remove(player.getUniqueId());
+        if (prev != null) prev.cancel();
+        var task = plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+            commDeclTasks.remove(player.getUniqueId());
+            PlayerData pd2 = state.getPlayer(player);
+            if (pd2 == null) return;
+            String want = pd2.pendingCommMethod;
+            pd2.pendingCommMethod = "";
+            if (want.equals(pd2.declaredCommMethod)) return; // 변화 없음
+            requestCommMethodApproval(player, pd2, want);
+        }, 30L);
+        commDeclTasks.put(player.getUniqueId(), task);
+    }
+
+    /** 기록에서 여는 소통수단 선택 다이얼로그(도구가 없을 때 경로). 선택 즉시 GM 승인 요청. */
+    public void openCommMethodDialog(Player player) {
+        PlayerData pd = state.getPlayer(player);
+        if (pd == null) { player.sendMessage("§c참여 중인 캐릭터가 없습니다."); return; }
+        dialogMan.showCommMethodPicker(player, commMethodLabel(pd.declaredCommMethod), picked ->
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                PlayerData pd2 = state.getPlayer(player);
+                if (pd2 == null) return;
+                if (picked.equals(pd2.declaredCommMethod)) { player.sendMessage("§7이미 '" + commMethodLabel(picked) + "'로 설정되어 있습니다."); return; }
+                requestCommMethodApproval(player, pd2, picked);
+            }));
+    }
+
+    /** 소통수단 선언 → ①물리 가능성 즉시 판정 → ②GM이 장면상 허락 여부 판단(비동기). 승인 시 declaredCommMethod 확정. */
+    private void requestCommMethodApproval(Player player, PlayerData pd, String method) {
+        if (method == null) method = "";
+        // '자동'은 승인 불필요 — 즉시 해제(엔진/GM 자동 선택으로 복귀)
+        if (method.isEmpty()) {
+            pd.declaredCommMethod = "";
+            player.sendMessage("§a[소통수단] 자동(상황에 맡김)으로 되돌렸습니다.");
+            return;
+        }
+        // ① 물리 가능성 — 수단 자체가 없으면 GM에 묻지 않고 로컬 차단
+        String unavailable = null;
+        switch (method) {
+            case "electronic": if (!(holdsModalityItem(pd, "electronic") || (isPhoneUsable() && hasCommDevice(pd)))) unavailable = "전자통신 수단(기기·신호)이 없습니다."; break;
+            case "text":       if (!(writtenInPersonAvailable() || writtenCommAvailable())) unavailable = "글로 전할 수단이 없습니다."; break;
+            case "signal":     break; // 몸짓은 언제나 시도 가능(시야는 상황)
+            case "voice":      break; // 발화는 언제나 시도 가능(위험은 GM 판단)
+            default: break;
+        }
+        if (unavailable != null) { player.sendMessage("§c[소통수단] " + commMethodLabel(method) + " 불가 — " + unavailable); return; }
+        final String m = method;
+        player.sendMessage("§7[소통수단] '" + commMethodLabel(m) + "' 선언 — GM이 상황을 살핍니다…");
+        // ② GM 승인 — 장면 위험/제약을 근거로 허락 여부 판단(간결 JSON)
+        String sys = "너는 괴담 TRPG의 GM이다. 플레이어가 '주 소통수단'을 바꾸겠다고 선언했다. 지금 장면에서 그 방식이 "
+            + "가능하고 자살행위가 아닌지 판단하라. 소리에 반응·공격하는 괴담이나 침묵이 요구되는 상황에서 '음성'은 위험하니 막을 수 있다. "
+            + "다른 방식도 장면상 불가능하면 막아라. 애매하면 플레이어의 선택을 존중해 허락하라. "
+            + "반드시 JSON 한 줄로만 답하라: {\"ok\":true/false,\"reason\":\"짧은 이유(20자 이내)\"}";
+        StringBuilder ctx = new StringBuilder();
+        ctx.append("선언 소통수단: ").append(commMethodLabel(m)).append(" (").append(m).append(")\n");
+        JsonObject g = state.getGdamData();
+        if (g != null && g.has("entity") && g.get("entity").isJsonObject()) {
+            JsonObject e = g.getAsJsonObject("entity");
+            if (e.has("name")) ctx.append("괴담: ").append(e.get("name").getAsString()).append("\n");
+            if (e.has("nature")) ctx.append("본성: ").append(e.get("nature").getAsString()).append("\n");
+        }
+        ctx.append("소리 위험: ").append(soundDangerous() ? "예(소리에 위험)" : "아니오").append("\n");
+        ctx.append("전자통신 가용: ").append(isPhoneUsable() ? "예" : "아니오(두절/부재)").append("\n");
+        ctx.append("현재 위치: ").append(pd.zone == null || pd.zone.isEmpty() ? "불명" : pd.zone).append("\n");
+        ai.callGmAiOnce(sys, ctx.toString()).thenAccept(resp ->
+            Bukkit.getScheduler().runTask(plugin, () -> applyCommMethodVerdict(player, m, resp)));
+    }
+
+    /** 대면 시 '필담(글) vs 음성' 결정 — 선언(#177)이 있으면 우선, 없으면 소리위험 자동판정.
+     *  선언 음성 = 소리 내어 말함(위험 감수·GM 승인됨) / 선언 글 = 필담 / 선언 없음 = 소리 위험하면 자동 필담. */
+    private boolean resolveInPersonWritten(PlayerData pd) {
+        String d = pd == null ? "" : pd.declaredCommMethod;
+        if ("voice".equals(d)) return false;
+        if ("text".equals(d))  return true;
+        return soundDangerous() && writtenInPersonAvailable();
+    }
+
+    /** GM 승인 응답(JSON) 파싱 → 적용/거부 안내. 파싱 실패 시 플레이어 선택 존중(fail-open). */
+    private void applyCommMethodVerdict(Player player, String method, String resp) {
+        PlayerData pd = state.getPlayer(player);
+        if (pd == null) return;
+        boolean ok = true; String reason = "";
+        try {
+            String s = resp == null ? "" : resp;
+            int a = s.indexOf('{'), b = s.lastIndexOf('}');
+            if (a >= 0 && b > a) {
+                com.google.gson.JsonObject j = com.google.gson.JsonParser.parseString(s.substring(a, b + 1)).getAsJsonObject();
+                if (j.has("ok") && !j.get("ok").isJsonNull()) ok = j.get("ok").getAsBoolean();
+                if (j.has("reason") && !j.get("reason").isJsonNull()) reason = j.get("reason").getAsString().trim();
+            }
+        } catch (Exception ignore) { ok = true; } // 파싱 실패 → 선택 존중
+        if (ok) {
+            pd.declaredCommMethod = method;
+            player.sendMessage("§a[소통수단] '" + commMethodLabel(method) + "'(으)로 선언이 승인되었습니다."
+                + (reason.isEmpty() ? "" : " §7(" + reason + ")"));
+            ai.injectGmSystem("[소통수단 선언] " + commDisplayName(pd) + "이(가) 주 소통수단을 '" + commMethodLabel(method)
+                + "'로 정했다(GM 승인). 이후 이 인물의 대화·연락은 이 방식으로 이뤄진다고 서술하라.");
+            gameLogger.logAbilityResult(pd.gmDisplayName(), "소통수단 선언", commMethodLabel(method) + " (승인)");
+        } else {
+            player.sendMessage("§c[소통수단] '" + commMethodLabel(method) + "' 선언이 거부되었습니다."
+                + (reason.isEmpty() ? " §7(지금은 그 방식이 위험하거나 불가능합니다)" : " §7— " + reason));
+        }
+    }
+
     private PlayerData findByContactId(String id) {
         // 정체 차용된(죽었지만 괴담이 행세 중인) 배역도 연결 대상에 포함
         return state.getAllPlayers().stream()
@@ -7519,9 +7667,13 @@ public class TRPGGameManager {
                 sender.sendMessage("§c" + npcName + "은(는) 같은 위치에 없고 연락으로도 닿지 않습니다. 직접 찾아가야 합니다.");
                 return;
             }
-        } else if (soundDangerous() && writtenInPersonAvailable()) {
-            written = true; // ★면전 필담★: 같은 공간이라도 소리가 위험하면 NPC와 글(필담)로 조용히 — 시대 무관.
-            sender.sendMessage("§7(소리를 내기 위험하다 — " + npcName + "에게 필담으로 조용히 전한다)");
+        } else {
+            // ★면전 소통수단★: 선언(#177) 우선(음성=소리내어/글=필담), 없으면 소리 위험 시 자동 필담.
+            written = resolveInPersonWritten(senderPd);
+            if (written && !"text".equals(senderPd.declaredCommMethod))
+                sender.sendMessage("§7(소리를 내기 위험하다 — " + npcName + "에게 필담으로 조용히 전한다)");
+            else if ("voice".equals(senderPd.declaredCommMethod) && soundDangerous())
+                sender.sendMessage("§6(소리가 위험하지만, 선언대로 " + npcName + "에게 소리 내어 말한다 — 위험 감수)");
         }
         final boolean remote = !sameZone;            // 원격 여부는 zone으로 판정(면전 필담은 원격 아님 — 변조·장면 처리 기준)
         final boolean inPerson = sameZone;

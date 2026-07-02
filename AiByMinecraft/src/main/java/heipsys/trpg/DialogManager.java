@@ -35,6 +35,10 @@ public class DialogManager {
     private Consumer<Player> importantInfoOpener;
     public void setImportantInfoOpener(Consumer<Player> opener) { this.importantInfoOpener = opener; }
 
+    /** '소통수단 변경'(#177) 다이얼로그를 여는 콜백 — 도구가 없을 때 기록에서 여는 경로. TRPGGameManager가 주입. */
+    private Consumer<Player> commMethodOpener;
+    public void setCommMethodOpener(Consumer<Player> opener) { this.commMethodOpener = opener; }
+
     // ──────────────────────────────────────────────────────────────
     //  캐릭터 시트 + 주사위 확인
     // ──────────────────────────────────────────────────────────────
@@ -889,6 +893,41 @@ public class DialogManager {
         player.showDialog(dialog);
     }
 
+    /**
+     * 소통수단 선언 다이얼로그(#177) — 도구가 없어 기록에서 여는 경로. 선택 방식은 GM 승인 후 적용된다.
+     * @param currentLabel 현재 선언된 방식 라벨(없으면 "자동")
+     * @param onPick 선택한 방식 키(""=자동, voice/text/signal/electronic)를 전달
+     */
+    public void showCommMethodPicker(Player player, String currentLabel, java.util.function.Consumer<String> onPick) {
+        String[][] opts = {
+            {"",           "🔄 자동(상황에 맡김)", "장면에 맞게 엔진·GM이 알아서 정합니다."},
+            {"voice",      "🗣 말하기(음성)",      "소리 내어 말합니다. 소리가 위험한 곳이면 GM이 막을 수 있습니다."},
+            {"text",       "✍ 필담·글",           "종이·바닥 등에 글로 조용히 전합니다."},
+            {"signal",     "✋ 수신호·몸짓",        "손짓·몸짓으로 소리 없이 전합니다(상대가 볼 수 있어야 함)."},
+            {"electronic", "📱 전자통신",           "전화·무전·메신저 등 기기로 전합니다(기기·신호 필요)."},
+        };
+        List<ActionButton> buttons = new ArrayList<>();
+        for (String[] o : opts) {
+            buttons.add(ActionButton.create(
+                Component.text(o[1], NamedTextColor.GREEN),
+                Component.text(o[2]), 220,
+                DialogAction.customClick((v, a) -> onPick.accept(o[0]),
+                    ClickCallback.Options.builder().uses(1).build())));
+        }
+        ActionButton closeBtn = ActionButton.create(Component.text("닫기", TextColor.color(0xAAAAAA)), null, 100, null);
+        Dialog dialog = Dialog.create(b -> b.empty()
+            .base(DialogBase.builder(Component.text("소통수단 선언"))
+                .body(List.of(DialogBody.plainMessage(Component.text()
+                    .append(Component.text("현재: ", NamedTextColor.GRAY))
+                    .append(Component.text(currentLabel == null || currentLabel.isEmpty() ? "자동" : currentLabel, NamedTextColor.WHITE))
+                    .appendNewline()
+                    .append(Component.text("원하는 소통 방식을 고르세요. 선언은 GM이 상황을 보고 허락해야 적용됩니다.", NamedTextColor.GRAY))
+                    .build())))
+                .build())
+            .type(DialogType.multiAction(buttons, closeBtn, 1)));
+        player.showDialog(dialog);
+    }
+
     // ──────────────────────────────────────────────────────────────
     //  기록 다이얼로그 (전체 대화 / 수집 정보 — 위치 이동 기준 페이지 넘김)
     // ──────────────────────────────────────────────────────────────
@@ -965,6 +1004,13 @@ public class DialogManager {
                 Component.text("⭐ 중요 정보", NamedTextColor.GOLD),
                 Component.text("전화번호 · 능력으로 밝혀낸 사실을 모아 봅니다."), 160,
                 DialogAction.customClick((v, a) -> importantInfoOpener.accept(player),
+                    ClickCallback.Options.builder().uses(1).build())));
+        }
+        if (commMethodOpener != null) {
+            buttons.add(ActionButton.create(
+                Component.text("＠ 소통수단 변경", NamedTextColor.GREEN),
+                Component.text("말하기 · 필담 · 수신호 등 소통 방식을 선언합니다(GM 승인)."), 160,
+                DialogAction.customClick((v, a) -> commMethodOpener.accept(player),
                     ClickCallback.Options.builder().uses(1).build())));
         }
 
