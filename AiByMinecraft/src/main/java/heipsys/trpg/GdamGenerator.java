@@ -485,8 +485,9 @@ type 값 규칙: "written_book"=책/일기/문서류, "paper"=쪽지/메모, "ma
 npcs 배열은 시나리오에 등장하는 주변 인물(플레이어 배역 외)을 정의한다.
 - critical: false (일반 NPC): GM AI가 서술에 통합하여 직접 조종. name·zone만 필수.
 - critical: true (중요 NPC): 독립 AI 인스턴스로 자율 행동. 스테이지당 1~2명으로 제한.
-  * personality: 성격·숨겨진 면 한 문장 (예: "겁쟁이지만 사건의 비밀을 알고 있다")
+  * personality: 성격·숨겨진 면 한 문장 (예: "겁쟁이지만 사건의 비밀을 알고 있다") — ★말투는 쓰지 마라(말투는 speech_style 전용)★.
   * motivation: 이 NPC의 목표 한 문장 (예: "살아남기 위해 진실을 숨기려 한다")
+  * speech_style: 이 인물의 목소리 — 서술형 ★딱 한 문장(40~70자)★. 어조·리듬 한 구절 + 입버릇 1~2개를 '경향'으로 녹여라(예: "느릿하게 뜸을 들이며 '뭐랄까'를 자주 붙인다"). 어미를 언급하면 '-거든(요)'처럼 존/반 중립 기본형으로 — ★존댓말/반말은 지정 금지★(게임이 상대 나이·관계로 그때그때 정한다). ★금지★: 어미 나열 목록 · 예시 대사 · 말끝 흐림/토막말/수수께끼투(‘온전한 문장’ 원칙 위반) · 감정별 복수 말투 · 과한 사투리·연극체·문어체. 긴장·공포 시 변화는 캐릭터 정의적일 때만 조건절 1개("놀라면 말이 빨라진다" 식, 그래도 온전한 문장). ★NPC끼리 말버릇 중복 금지★(텍스트만으로 화자 구분이 목적). 나이·지능·직업에 맞게(어린이는 쉬운 말씨).
   * knowledge: 이 NPC만 알고 있는 정보 목록 (GM 참고 — 직접 노출 금지, 힌트로만)
   * zone: NPC가 주로 머무는 zone_id (플레이어가 접근 가능한 zone이어야 한다)
 ★ critical NPC는 자신의 성격·목표에 따라 독자적으로 행동하므로 GM이 직접 조종하지 않는다.
@@ -644,7 +645,7 @@ critical NPC는 한자리 고정이 아니다 — 메인/사이드 사건에 참
   "zones": [{"zone_id":"zone_A","name":"","area":"","accessible_by":[],"exclusive":false,"connections":["zone_B"]}],
   "npcs": [
     {"id":"npc_A","name":"","zone":"zone_A","critical":false,"role_type":"무관"},
-    {"id":"npc_B","name":"","zone":"zone_B","critical":true,"role_type":"방어막","true_role":"","personality":"","motivation":"","knowledge":[],
+    {"id":"npc_B","name":"","zone":"zone_B","critical":true,"role_type":"방어막","true_role":"","personality":"","motivation":"","speech_style":"","knowledge":[],
      "schedule":[{"goal":"","time":"E1 이후 1턴","action":"","will":"강함"},{"goal":"","time":"반응","condition":"정체를 의심받으면","action":"","will":"상황"}]}
   ],
   "key_items": [

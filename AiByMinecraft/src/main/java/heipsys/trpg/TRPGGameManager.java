@@ -6469,14 +6469,23 @@ public class TRPGGameManager {
         int intel = npcId0.isEmpty() ? 3 : npcIntel.computeIfAbsent(npcId0, k -> ThreadLocalRandom.current().nextInt(1, 6));
         int npcAge = npcObj.has("age") && !npcObj.get("age").isJsonNull() ? npcObj.get("age").getAsInt() : -1;
         if (npcAge >= 0 && npcAge < 13) intel = Math.min(intel, 2); // 어린이는 쉬운 말만
-        String speech = switch (intel) {
-            case 1  -> "말솜씨가 서툴다 — 쉽고 짧은 말, 어려운 말은 모르지만 감정·진심은 솔직히(기계처럼 토막 내지 말 것).";
-            case 2  -> "말이 소박하다 — 쉬운 일상어 위주 짧은 문장, 따뜻하고 자연스럽게.";
-            case 3  -> "평범하게 말한다 — 보통 사람의 일상 회화 수준.";
-            case 4  -> "또렷하게 말한다 — 조리 있고 어휘가 제법 풍부(현학·잘난 척 금지).";
-            default -> "매우 유창하다 — 논리적·표현 풍부(전문어 남발 금지).";
-        };
-        sb.append("- 말투·언어 수준: ").append(speech).append(" 이 수준을 일관되게(갑자기 유창해지거나 어려운 말 쓰지 마라).\n");
+        // ★speech_style(설계 채택: Fable5 검토)★: 생성 시 확정된 서술형 말씨 한 문장이 있으면 주사위 유창도 문장을 ★대체★(병기 금지).
+        //   없으면(구 .gdam·일반 NPC) 기존 주사위 문장으로 폴백 — 하위호환·내구성.
+        String speechStyle = getStr(npcObj, "speech_style");
+        if (!speechStyle.isBlank()) {
+            sb.append("- 말투: ").append(speechStyle)
+              .append(" — 몸에 밴 기본 말씨다. 존댓말/반말은 아래 나이·관계 규칙이 정하고, 이 버릇은 그 결정 위에 얹는다. 이 말씨·언어 수준을 끝까지 일관되게.\n");
+            sb.append("- 말버릇은 네가 ★하는 말(대사·통화·글 — 글에선 옅게)★에만: 평소엔 은은하게, 감정이 실릴 때 짙게 — 매 문장을 같은 어미로 끝내지 마라. 괄호 지문·3인칭 서술·태그 안은 평범한 문체로.\n");
+        } else {
+            String speech = switch (intel) {
+                case 1  -> "말솜씨가 서툴다 — 쉽고 짧은 말, 어려운 말은 모르지만 감정·진심은 솔직히(기계처럼 토막 내지 말 것).";
+                case 2  -> "말이 소박하다 — 쉬운 일상어 위주 짧은 문장, 따뜻하고 자연스럽게.";
+                case 3  -> "평범하게 말한다 — 보통 사람의 일상 회화 수준.";
+                case 4  -> "또렷하게 말한다 — 조리 있고 어휘가 제법 풍부(현학·잘난 척 금지).";
+                default -> "매우 유창하다 — 논리적·표현 풍부(전문어 남발 금지).";
+            };
+            sb.append("- 말투·언어 수준: ").append(speech).append(" 이 수준을 일관되게(갑자기 유창해지거나 어려운 말 쓰지 마라).\n");
+        }
         sb.append("- 너의 나이: ").append(npcAge >= 0 ? npcAge + "세" : "불명")
           .append(" — 존댓말/반말은 한국어 통념대로: 손위·초면엔 존댓말(또는 거리 둔 말투), 손아래·또래·가까운 사이엔 반말. 상대 나이·관계는 입력 머리말에 표기된다. 한 대사 안에서 존댓말↔반말이 오락가락하지 않게 끝까지 일관.\n");
         // ── 보편 규칙(양 모드 공통) ──
@@ -6554,7 +6563,8 @@ public class TRPGGameManager {
         String facts = worldStateFacts(npcObj);
         if (!facts.isEmpty()) sb.append("[지금 세계 현황 — 네 계획이 이미 무의미해졌는지 참고할 ★사실★]\n").append(facts);
         if (npcObj.has("personality"))
-            sb.append("성격(말투에 반영): ").append(npcObj.get("personality").getAsString()).append("\n");
+            // speech_style이 말투를 전담하면 성격 라벨에서 '말투에 반영'을 뗀다(말투 규정 창구 단일화 — 이중 권위 방지).
+            sb.append(getStr(npcObj, "speech_style").isBlank() ? "성격(말투에 반영): " : "성격: ").append(npcObj.get("personality").getAsString()).append("\n");
         if (npcObj.has("motivation"))
             sb.append("목적(무엇을·얼마나 말할지 좌우): ").append(npcObj.get("motivation").getAsString()).append("\n");
         // ② 지식 게이팅 — '상시 전량 주입'을 막는다. 지금 상황과 ★관련된 기억만★(관련 없으면 신뢰도 높은 것 위주로)
@@ -9456,6 +9466,9 @@ public class TRPGGameManager {
                 String nzone = npc.has("zone") ? npc.get("zone").getAsString() : "?";
                 sb.append("- ").append(nname).append(" (").append(nzone).append(")");
                 if (npc.has("motivation")) sb.append(" — ").append(npc.get("motivation").getAsString());
+                // 자율 행동은 GM 재서술로만 전달되므로, 인용 대사에 쓸 말씨를 병기(직접 대화 채널과 목소리 이음새 봉합).
+                String nss = getStr(npc, "speech_style");
+                if (!nss.isBlank()) sb.append(" · 말씨(인용 대사에만): ").append(nss);
                 sb.append("\n");
             }
         }
