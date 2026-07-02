@@ -115,6 +115,7 @@
 "use strict";
 let EVENTS=[], VIEWPOINTS=[], curVP="__all__";
 let ALIAS={}, REPLAY=null, SCENARIO=null, RAWCACHE=[], KNOWN=new Set(), CONTACTS={};
+let HAS_NATIVE_COMM=false; // 로그에 통신(통신/call…) 이벤트가 이미 있으면 @입력을 통화로 재분류 안 함(통화 이중표시 방지)
 let FILES={logs:[],replays:[],scenarios:[],gdams:[]};
 let playing=false, speed=1, queue=[], qi=0, qtimer=null, curBodyEl=null;
 let COLLAPSED=new Set(); // 정보 패널에서 접어둔 섹션 id — 재렌더(실시간 갱신 포함)에도 상태 유지
@@ -148,14 +149,19 @@ function normalize(ev){
     if(cat==="입력"){kind=kind||"input";if(!actor)actor=who;
       // 구형 txt '[입력] <계정> <내용>' — 첫 토큰=발화자(계정명은 본문에서 제거해 메타 노출 차단)
       if(!actor){const mm=text.match(/^(\S+)(?:\s+([\s\S]*))?$/);if(mm){actor=mm[1];bodyText=mm[2]||"";}}
-      // @전체/@근처/@<대상> → 통신(방송/근처/통화)으로 분류(통화내역 필터·가시성에 반영)
+      // @전체/@근처/@<대상> 입력 처리. 번호→이름은 항상 치환(가독성).
+      //  ★단, 로그에 네이티브 통신(통신/call 등) 이벤트가 이미 있으면 입력을 통신으로 재분류하지 않는다★
+      //  — 그러지 않으면 같은 통화가 '입력→통화'와 '통신' 두 번(통화 두번) 잡힌다. (구형 txt엔 통신 이벤트가 없어 그대로 변환.)
       const mc=bodyText.match(/^@(\S+)\s*([\s\S]*)$/);
       if(mc){const tg=mc[1];
-        if(/^(전체|전원|모두|all)$/i.test(tg))kind="broadcast";
-        else if(/^(근처|주변|주위)$/.test(tg))kind="nearby";
-        else if(CONTACTS[tg]){kind="call";target=CONTACTS[tg];bodyText="@"+CONTACTS[tg]+(mc[2]?" "+mc[2]:"");} // 연락처 번호 → 이름으로 표시
-        else if(!/^(GM|시스템|SYSTEM)$/i.test(tg) && (KNOWN.has(tg)||KNOWN.has(canon(tg)))){kind="call";if(!target)target=tg;}
-        // 미지의 @이름(오타·없는 대상)은 통화로 인식하지 않음 → 유령 대상·시점 생성 방지(입력 그대로)
+        if(CONTACTS[tg])bodyText="@"+CONTACTS[tg]+(mc[2]?" "+mc[2]:""); // 연락처 번호 → 이름으로 표시(가독성)
+        if(!HAS_NATIVE_COMM){
+          if(/^(전체|전원|모두|all)$/i.test(tg))kind="broadcast";
+          else if(/^(근처|주변|주위)$/.test(tg))kind="nearby";
+          else if(CONTACTS[tg]){kind="call";target=CONTACTS[tg];}
+          else if(!/^(GM|시스템|SYSTEM)$/i.test(tg) && (KNOWN.has(tg)||KNOWN.has(canon(tg)))){kind="call";if(!target)target=tg;}
+          // 미지의 @이름(오타·없는 대상)은 통화로 인식하지 않음 → 유령 대상·시점 생성 방지(입력 그대로)
+        }
       }}
     else if(cat==="GM입력"){kind=kind||"gm_input";actor=actor||who;}
     else if(cat.startsWith("GM→")){let x=cat.slice(3);
@@ -569,7 +575,10 @@ function buildAlias(){
       if(best&&bestN>0) setAll(canon(best),acct); } // 계정→캐릭터 표시명으로 통합
   })();
 }
-function rebuild(raw){ EVENTS=raw.map(normalize).sort((a,b)=>(a.seq||0)-(b.seq||0)); buildViewpoints(); curVP="__all__"; stopPlay(); }
+function rebuild(raw){
+  // 로그에 네이티브 통신 이벤트가 있으면(신형) @입력을 통화로 재분류하지 않는다 — '통화 두번' 방지. (구형 txt엔 없어 그대로 변환)
+  HAS_NATIVE_COMM=raw.some(e=>e&&((e.kind&&COMM_KINDS.has(e.kind))||e.cat==="통신"));
+  EVENTS=raw.map(normalize).sort((a,b)=>(a.seq||0)-(b.seq||0)); buildViewpoints(); curVP="__all__"; stopPlay(); }
 // 로그에서 괴담(시나리오) 이름 파싱 — 세션 이벤트의 title 필드(JSONL) 또는 '괴담: X' 라인(.txt)
 function parseScenarioTitle(text){
   const m=(text||"").match(/"title"\s*:\s*"((?:[^"\\]|\\.)*)"/);
