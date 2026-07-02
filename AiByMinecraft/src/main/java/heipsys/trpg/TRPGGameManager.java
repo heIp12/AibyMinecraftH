@@ -4895,7 +4895,15 @@ public class TRPGGameManager {
             player.sendMessage("§7이 시나리오는 단일 구역으로 구성되어 있습니다.");
             return;
         }
-        dialogMan.showMapSelector(player, mapMan.areaNames(),
+        // ★스포 방지★: 아직 발견하지 못한 대분류(백룸 등)는 목록에서 제외 — 방문·인접으로 안 구역이 있는 곳만.
+        java.util.List<String> areas = mapMan.knownAreaNames(pd);
+        if (areas.isEmpty()) { player.sendMessage("§7아직 지도에 표시할 만큼 둘러본 곳이 없습니다."); return; }
+        if (areas.size() < 2) { // 아는 대분류가 하나뿐 → 선택 의미 없이 바로 그 지도로 전환
+            String only = areas.get(0);
+            Bukkit.getScheduler().runTask(plugin, () -> mapMan.swapMapView(player, only));
+            return;
+        }
+        dialogMan.showMapSelector(player, areas,
             area -> Bukkit.getScheduler().runTask(plugin, () -> mapMan.swapMapView(player, area)));
     }
 

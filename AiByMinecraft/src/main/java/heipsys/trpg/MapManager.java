@@ -164,6 +164,17 @@ public class MapManager {
     public boolean hasZones()       { return !zoneOrder.isEmpty(); }
     public boolean hasMultiAreas()  { return areaOrder.size() >= 2; }
     public List<String> areaNames() { return Collections.unmodifiableList(areaOrder); }
+    /**
+     * 플레이어가 아는(방문·현재구역) 대분류(area)만 areaOrder 순으로 반환 — 지도 다이얼로그가
+     * 미발견 장소(백룸 등)를 노출해 스포하던 문제 방지. 지도 이미지(overview)와 ★같은 visibleAreas★ 기준.
+     */
+    public List<String> knownAreaNames(PlayerData pd) {
+        if (pd == null) return new ArrayList<>();
+        Set<String> vis = visibleAreas(pd, pd.hasFullMap);
+        List<String> out = new ArrayList<>();
+        for (String area : areaOrder) if (vis.contains(area)) out.add(area);
+        return out;
+    }
     public boolean isMapItem(ItemStack it) { return isOurMap(it); }
     public Set<String> getAdjacentZones(String zoneId) {
         return Collections.unmodifiableSet(adj.getOrDefault(zoneId, Set.of()));
