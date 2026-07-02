@@ -897,7 +897,10 @@ public class TRPGGameManager {
     //  시작 설정 (/trpg setting) — 자동 사전생성 토글 + 시작 스테이지 보정
     // ──────────────────────────────────────────────────────────────
 
-    /** /trpg setting [pregen on|off | stage N] — 인자 없으면 현재 설정 표시. */
+    /** 시작 설정: 다음 생성 괴담의 유형/성격 힌트(종류별 테스트용, ""=무작위). GdamGenerator에 즉시 반영. */
+    private String conceptTypeHint = "";
+
+    /** /trpg setting [pregen on|off | stage N | type <유형>] — 인자 없으면 현재 설정 표시. */
     public void handleStartSetting(Player player, String[] sub) {
         if (sub == null || sub.length == 0) { openStartSettings(player); return; }
         String key = sub[0].toLowerCase();
@@ -915,6 +918,23 @@ public class TRPGGameManager {
                     + (startStage > 1 ? " §7(시작 보정 " + (startStage - 1) + "단계: 단계당 올스탯+2 & 특성 추가/등급↑)" : " §7(보정 없음)"));
                 player.sendMessage("§7다음 §f/trpg start §7부터 적용됩니다.");
             } catch (NumberFormatException e) { player.sendMessage("§c숫자를 입력하세요: §f/trpg setting stage <1-6>"); }
+        } else if (key.equals("type") || key.equals("유형") || key.equals("괴담")) {
+            // 괴담 유형/성격 선택(종류별 테스트용): 인자 있으면 자유 텍스트 지정, 없으면 선택 다이얼로그.
+            if (sub.length >= 2) {
+                String v = String.join(" ", java.util.Arrays.copyOfRange(sub, 1, sub.length)).trim();
+                if (v.equalsIgnoreCase("random") || v.equals("무작위") || v.equals("없음") || v.equalsIgnoreCase("off")) v = "";
+                conceptTypeHint = v;
+                gdamGen.setConceptTypeHint(v);
+                player.sendMessage("§6[설정] 괴담 유형/성격: " + (v.isEmpty() ? "§7무작위(기본)" : "§d" + v)
+                    + " §7— 다음 생성부터 적용");
+            } else {
+                dialogMan.showEntityTypeChoice(player, picked -> {
+                    conceptTypeHint = picked == null ? "" : picked;
+                    gdamGen.setConceptTypeHint(conceptTypeHint);
+                    player.sendMessage("§6[설정] 괴담 유형/성격: "
+                        + (conceptTypeHint.isEmpty() ? "§7무작위(기본)" : "§d" + conceptTypeHint) + " §7— 다음 생성부터 적용");
+                });
+            }
         } else {
             openStartSettings(player);
         }
@@ -928,6 +948,13 @@ public class TRPGGameManager {
         player.sendMessage("§f· 시작 스테이지: §b" + startStage
             + (startStage > 1 ? " §7(보정 " + (startStage - 1) + "단계)" : "")
             + "  §7→ §f/trpg setting stage <1-6>");
+        player.sendMessage("§f· 괴담 유형/성격: " + (conceptTypeHint.isEmpty() ? "§7무작위" : "§d" + conceptTypeHint)
+            + "  §7→ §f/trpg setting type");
+        // 추가버튼(종류별 테스트용): 클릭 → 유형/성격 선택 다이얼로그
+        player.sendMessage(Component.text("  [괴담 유형/성격 선택]", NamedTextColor.LIGHT_PURPLE)
+            .clickEvent(net.kyori.adventure.text.event.ClickEvent.runCommand("/trpg setting type"))
+            .hoverEvent(net.kyori.adventure.text.event.HoverEvent.showText(
+                Component.text("클릭: 다음 생성 괴담의 유형/성격을 고릅니다 (테스트용, 무작위로 되돌리기 가능)"))));
         player.sendMessage("§7시작 스테이지 보정: 단계당 올스탯 총합 +2, 그리고 무작위로");
         player.sendMessage("§7  [특성 1개 추가 — 시작 스테이지↑일수록 높은 등급] 또는 [보유 특성 등급 1단계↑] 중 하나.");
         player.sendMessage("§7설정은 다음 §f/trpg start§7 부터 적용됩니다.");
@@ -1886,6 +1913,9 @@ public class TRPGGameManager {
             }
             String traitMsg = traitBtn.buildTraitUseMessage(pd, pendingTrait);
             if (traitMsg != null) {
+                // 행동과 결합된 비시스템 특성 발동도 [능력] 이벤트로 기록(발동 선언이 로그에서 사라지던 누락 방지).
+                gameLogger.logAbility(pd.gmDisplayName(), ptd != null ? ptd.name : pendingTrait, "",
+                    ptd != null && ptd.effectType != null ? ptd.effectType : "", "발동");
                 applyTraitUsed(pd, pendingTrait, state.getCurrentTurn());
                 actionMessage = traitMsg + "\n플레이어 추가 행동: " + actionMessage;
             }
@@ -2830,6 +2860,9 @@ public class TRPGGameManager {
         }
         String msg = traitBtn.buildTraitUseMessage(pd, traitId);
         if (msg != null) {
+            // 비시스템(순수 서술형·effectType 없음) 특성 발동도 [능력] 이벤트로 기록 — 시스템 특성 경로와 동일하게 뷰어·기록에 남게(누락 방지).
+            gameLogger.logAbility(pd.gmDisplayName(), td != null ? td.name : traitId, "",
+                td != null && td.effectType != null ? td.effectType : "", "발동");
             applyTraitUsed(pd, traitId, state.getCurrentTurn());
             boolean accepted = turnMan.handleAction(player, msg, gmSystemPrompt);
             player.sendMessage(accepted ? "§7[특성 발동 중...]" : "§7행동 처리 중입니다. 잠시 후 다시 시도하세요.");
@@ -7804,6 +7837,7 @@ public class TRPGGameManager {
         sb.append("- 성격·목표에 충실하되 ★실제 사람이 할 법한 말투★로 답하라(소설 문어체·의미심장한 연출 금지).\n");
         sb.append("- ★치명적 비밀·진상★만 통째로 드러내지 마라(그 외엔 솔직하게 사람답게 답해도 된다). 가끔 얼버무리거나 되물을 수 있지만, 매 대답을 빙빙 돌리거나 수수께끼로 만들지 마라.\n");
         sb.append("- ★정보 공개는 '금지'가 아니라 '현실적 꺼림'으로★: 너는 해법·비밀도 말할 수 있다. 다만 사람이라 잘 안 말하는 이유가 있다 — ①본인도 그게 진실인지 확신 못 함 ②초면·낯선 사람은 못 믿어 중요한 걸 안 줌(신뢰가 쌓여야) ③위험한 정보라 아는 사이라도 망설임 ④자기 비밀·생존·이해관계가 걸림. 그래서 기본은 머뭇·일부만·조건부. 단 관계·설득·매력이 충분하거나, ⑤자기 목적을 위해 일부러 (틀리거나 위험한 정보를 섞어) 흘리기도 한다. 핵심: 통째로 '정답 읊기'를 막는 게 아니라, 말해도 ★불확실·조건부·때론 틀리거나 의도된 정보★라 곧이곧대로 못 믿게 하라.\n");
+        sb.append("- ★질문엔 먼저 '답'부터 — 관공서식 회피 금지★: 절차·규정·목적 확인('목적부터 말해요'·'절차가 먼저예요'류)을 앞세워 답을 미루는 화법은 ★한 번★만 허용된다. 상대가 같은 것을 다시 물으면 그땐 반드시 실질적으로 답하거나(아는 만큼, 불확실 표시 가능) 명확히 거절하고 ★진짜 이유★를 말하라 — 같은 절차 요구를 반복하며 대화를 제자리에 붙잡지 마라.\n");
         sb.append("- ★상대의 '설득력·존재감'(위 대화 머리말 표기)이 강할수록 너는 더 쉽게 마음이 흔들려 협조·양보하고, "
                  + "약할수록 잘 먹히지 않는다. 단, 네 핵심 비밀·생존이 걸린 사안은 설득력만으로 단번에 무너지지 않는다 — 정도를 조절하라.\n");
         sb.append("- ★'너와의 관계'(위 머리말 표기)에 따라 반응의 온도와 협조·도움의 정도를 정하라:\n"

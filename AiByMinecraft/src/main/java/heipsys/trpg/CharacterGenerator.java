@@ -351,6 +351,9 @@ public class CharacterGenerator {
             buildAdjustPrompt(pd, roleContext)
         ).thenCompose(raw -> {
             applyAiAdjustment(pd, raw);
+            // AI 보정(hp/san_max_adj 최대 -3)이 rollStats의 생존 최저선(2)을 다시 깨는 경로 차단
+            // (SAN 1/1로 생성돼 정신피해 1에 즉시 홀림·조종되는 캐릭터 방지).
+            ensureSurvivalFloor(pd);
             return generateInitialTraits(pd, roleContext, tier);
         }).thenApply(traits -> {
             pd.traits.addAll(traits);

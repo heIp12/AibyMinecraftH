@@ -309,6 +309,49 @@ public class DialogManager {
         player.showDialog(dialog);
     }
 
+    /** 시작 설정 — 괴담 유형/성격 선택(종류별 테스트용). onPick에 컨셉 제약 문구 전달(""=무작위). */
+    public void showEntityTypeChoice(Player player, java.util.function.Consumer<String> onPick) {
+        String[][] opts = {
+            {"", "무작위 (기본)", "유형 제약 없이 매번 자유 생성"},
+            {"추격·살인마형 — 물리적으로 쫓고 해치는 위협 중심", "추격·살인마형", "물리 위협·도주·제압 중심"},
+            {"규칙·금기형 — 지켜야 할 규칙/금기가 있고 어기면 화를 입는", "규칙·금기형", "규칙 파악과 준수가 생존의 열쇠"},
+            {"인지·정신형 — 보거나 알수록 위험해지는 인지 기반 위협", "인지·정신형", "시선·관심·인지가 매개 (예: 보라색 여인)"},
+            {"사물·저주물건형 — 특정 물건에 깃든 저주가 중심", "사물·저주물건형", "물건의 내력·처분이 핵심"},
+            {"장소·공간형 — 공간 자체가 뒤틀리는(루프·이계) 유형", "장소·공간형", "이상 공간·무한 복도·백룸류"},
+            {"정보격리·통신형 — 통신을 끊거나 왜곡하는 유형", "정보격리·통신형", "연락 두절·변조가 공포의 축"},
+            {"빙의·정체차용형 — 사람 몸이나 정체를 빼앗는 유형", "빙의·정체차용형", "누가 진짜인지 의심하게 되는"},
+            {"시간·인과형 — 시간루프·인과 역전을 다루는 유형", "시간·인과형", "루프·예언·역행"},
+            {"집단·감염형 — 사람 사이로 번지는 전파형 위협", "집단·감염형", "감염·소문·집단 환각"},
+            {"유희형 성격 — 사람을 갖고 노는 장난스러운 괴담", "성격: 유희형", "낄낄대며 판을 짜는 유형"},
+            {"심판자형 성격 — 죄·위선을 심판하려 드는 괴담", "성격: 심판자형", "죄책감·고해를 파고드는 유형"}
+        };
+        List<ActionButton> buttons = new ArrayList<>();
+        for (String[] o : opts) {
+            final String hint = o[0];
+            buttons.add(ActionButton.create(
+                Component.text(o[1], hint.isEmpty() ? NamedTextColor.GRAY : NamedTextColor.LIGHT_PURPLE),
+                Component.text(o[2]),
+                150,
+                DialogAction.customClick((v, a) -> onPick.accept(hint),
+                    ClickCallback.Options.builder().uses(1).build())));
+        }
+        ActionButton cancel = ActionButton.create(
+            Component.text("닫기", TextColor.color(0xAAAAAA)),
+            Component.text("설정을 바꾸지 않습니다."), 100, null);
+        Component body = Component.text()
+            .append(Component.text("다음에 생성될 괴담의 유형/성격을 고정합니다. (종류별 테스트용)", NamedTextColor.WHITE))
+            .appendNewline()
+            .append(Component.text("선택은 다음 생성부터 계속 적용 — '무작위'로 되돌릴 수 있습니다.", NamedTextColor.GRAY))
+            .build();
+        Dialog dialog = Dialog.create(b -> b.empty()
+            .base(DialogBase.builder(Component.text("시작 설정  —  괴담 유형/성격 선택"))
+                .body(List.of(DialogBody.plainMessage(body)))
+                .build())
+            .type(DialogType.multiAction(buttons, cancel, 2))
+        );
+        player.showDialog(dialog);
+    }
+
     // ──────────────────────────────────────────────────────────────
     //  캐릭터 정보 GUI (게임 중 열람 — 기본/배역 분리, 능동 특성 사용)
     // ──────────────────────────────────────────────────────────────
