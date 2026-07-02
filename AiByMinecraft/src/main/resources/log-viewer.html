@@ -118,6 +118,7 @@ let ALIAS={}, REPLAY=null, SCENARIO=null, RAWCACHE=[], KNOWN=new Set(), CONTACTS
 let FILES={logs:[],replays:[],scenarios:[],gdams:[]};
 let playing=false, speed=1, queue=[], qi=0, qtimer=null, curBodyEl=null;
 let COLLAPSED=new Set(); // 정보 패널에서 접어둔 섹션 id — 재렌더(실시간 갱신 포함)에도 상태 유지
+let ITEM_OPEN=new Set(); // 가진 아이템 중 세부정보를 펼쳐둔 이름 — 재렌더·재생 갱신에도 유지
 let collapsedSeeded=false; // 최초 렌더 시 '플레이어 외 정보'는 접힌 상태로 시작(1회 시드 후 사용자 토글 존중)
 
 const GLOBAL_RE=/전체|전원|모두|모든|방송|broadcast|^\*$|all/i;
@@ -396,7 +397,7 @@ function step(){
 function uniName(nm,jb){nm=(nm||"").trim();jb=(jb||"").trim();return (nm&&jb)?nm+"("+jb+")":(nm||jb);}
 // 특정 시점(seq) 기준, 그 플레이어가 '지금까지' 아는 상태를 접어서 계산(체력·정신·능력발동수·단서·아이템).
 function stateAt(vp,seq){
-  let hp=null,hpMax=null,san=null,sanMax=null,abil=0,loc=null; const items=[],clues=[];
+  let hp=null,hpMax=null,san=null,sanMax=null,abil=0,loc=null; const items=[],clues=[]; const itemMeta={};
   const rp=((REPLAY&&REPLAY.players)||[]).find(p=>uniName(p.charName,p.job)===vp||p.charName===vp||canon(p.charName)===vp);
   if(rp){ if(Array.isArray(rp.hp)){hp=rp.hp[0];hpMax=rp.hp[1];} if(Array.isArray(rp.san)){san=rp.san[0];sanMax=rp.san[1];} }
   for(const e of EVENTS){ if((e.seq||0)>seq)break;
@@ -404,13 +405,16 @@ function stateAt(vp,seq){
     if(e.kind==="vital"&&mine){ if(e.hpAfter!=null){hp=e.hpAfter;hpMax=e.hpMax;} if(e.sanAfter!=null){san=e.sanAfter;sanMax=e.sanMax;} }
     else if(e.kind==="ability"&&mine&&e.phase!=="result")abil++;
     else if(e.kind==="item"&&(mine||tome)){ // 획득은 추가, 제거(remove)는 목록에서 뺀다 — 부가표기 '(…)'는 이름 매칭 위해 벗긴다
-      const nm=(e.item||e.text||"아이템").replace(/^→\S+\s*/,"").replace(/\s+\([^)]*\)\s*$/,"").trim();
+      const raw=(e.item||e.text||"아이템").replace(/^→\S+\s*/,"");
+      const nm=raw.replace(/\s+\([^)]*\)\s*$/,"").trim();
       if(e.remove){ const i=items.lastIndexOf(nm); if(i>=0)items.splice(i,1); }
-      else if(nm)items.push(nm); }
+      else if(nm){ items.push(nm);
+        const noteM=raw.match(/\(([^)]*)\)\s*$/); // 획득 경위(시작 소지·제작 등) + 시각 — 클릭 시 세부정보
+        itemMeta[nm]={note:(e.note||(noteM?noteM[1]:"")||""), t:e.t||""}; } }
     else if(e.kind==="clue"&&(mine||tome))clues.push((e.text||"단서").replace(/^→\S+\s*/,""));
     else if(e.kind==="move"&&mine)loc=e.zone||(e.text||"").replace(/^→\s*/,"").replace(/\s*\(.*$/,"").trim();
   }
-  return {hp,hpMax,san,sanMax,abil,items,clues,loc};
+  return {hp,hpMax,san,sanMax,abil,items,clues,loc,itemMeta};
 }
 function livePanelHtml(vp,st){
   let h=sh('live-state','재생 시점 — 아는 만큼만 <span class="live">● LIVE</span>');
@@ -420,8 +424,36 @@ function livePanelHtml(vp,st){
   const list=(arr,cls,id,label,icon)=>{ const uq=[...new Set((arr||[]).filter(Boolean))]; if(!uq.length)return "";
     return sh(id,`${icon} ${esc(label)} (${uq.length})`)+`<div class="know ${cls}">`+uq.map(x=>`<div>· ${esc(x)}</div>`).join("")+`</div>`;};
   h+=list(st.clues,"kclue","live-clue","알아낸 단서","🔍");
-  h+=list(st.items,"kitem","live-item","가진 아이템","🎒");
+  // ★가진 아이템: 클릭하면 펼쳐져 플레이어 시점에서 아는 세부정보(획득 경위·종류·설명·관련 단서)를 보여준다★
+  const uqItems=[...new Set((st.items||[]).filter(Boolean))];
+  if(uqItems.length){
+    h+=sh('live-item',`🎒 가진 아이템 (${uqItems.length})`)+`<div class="know kitem">`;
+    for(const nm of uqItems){ const open=ITEM_OPEN.has(nm);
+      h+=`<div class="iexp" data-item="${escAttr(nm)}" onclick="toggleItem(this)" style="cursor:pointer"><span class="iarrow" style="color:var(--dim);font-size:11px">${open?"▾":"▸"}</span> ${esc(nm)}</div>`
+        +`<div class="idet" style="display:${open?"":"none"};margin:1px 0 6px 15px;font-size:12px;color:#b9c2cf">${itemDetailHtml(nm,st)}</div>`;
+    }
+    h+=`</div>`;
+  }
   return h;
+}
+// 아이템 세부정보(플레이어 시점 공개분): 획득 경위 + 시나리오의 '보이는' 설명(종류·설명) + 이 아이템을 언급한 알아낸 단서. GM 전용(단서가치·내막)은 제외.
+function itemDetailHtml(nm,st){
+  const S=v=>v==null?"":String(v).trim();
+  const parts=[]; const meta=(st.itemMeta||{})[nm];
+  if(meta&&meta.note) parts.push(`<span class="st">획득</span>${esc(meta.note)}${meta.t?` <span class="dim2">${esc(meta.t)}</span>`:""}`);
+  let ki=null;
+  if(SCENARIO&&Array.isArray(SCENARIO.key_items)) ki=SCENARIO.key_items.find(it=>{const n=(it&&(it.name||it.id))||"";return n===nm||(n&&(n.includes(nm)||nm.includes(n)));});
+  if(ki){ const ty=S(ki.item_type||ki.type); if(ty)parts.push(`<span class="st">종류</span>${esc(ty)}`);
+    if(S(ki.description))parts.push(esc(ki.description)); }
+  const rel=[...new Set((st.clues||[]).filter(c=>c&&nm&&c.includes(nm)))];
+  for(const c of rel)parts.push(`<span class="st">단서</span>${esc(c)}`);
+  return parts.length?parts.join("<br>"):`<span class="dim2">아직 이 물건에 대해 알아낸 정보가 없다.</span>`;
+}
+function toggleItem(el){ const nm=el.dataset.item; if(!nm)return;
+  if(ITEM_OPEN.has(nm))ITEM_OPEN.delete(nm); else ITEM_OPEN.add(nm);
+  const open=ITEM_OPEN.has(nm), d=el.nextElementSibling, ar=el.querySelector(".iarrow");
+  if(d&&d.classList.contains("idet"))d.style.display=open?"":"none";
+  if(ar)ar.textContent=open?"▾":"▸";
 }
 function updateLive(seq){
   if(curVP==="__all__")return;
@@ -474,6 +506,27 @@ function buildAlias(){
     if(mm=c.match(/NPC\(([^)]+)\)/))KNOWN.add(mm[1].trim());
     if(c.startsWith("GM→")){const t=stripPhase(c.slice(3)).replace(/^NPC\(/,"").replace(/\)$/,"").trim();if(t&&!isGlobal(t))KNOWN.add(t);}
   }
+  // ★별칭 없는 로그 보강(재도전·이어하기·재현 등 배역 재배정 없이 시작한 실행)★:
+  //  [배역] 줄이 없어 계정(heIp12)과 캐릭터(민가람)가 갈라져 왼쪽바에 인물이 2개로 뜨는 걸 막는다.
+  //  단서·상태로 로그에 남은 캐릭터명을 GM→<계정> 서술에서 찾아 계정→캐릭터로 잇는다(플레이어 이름은 로그 안에 있다).
+  (function deriveAcctFromNarrative(){
+    const chars=new Set();
+    for(const ev of RAWCACHE){const c=ev.cat||"";
+      if(c.startsWith("능력")||c==="단서"||c==="상태"||c==="아이템"||c==="이동"){
+        const mm=(ev.text||"").match(/^(\S+)\s/); if(mm)chars.add(mm[1]); }}
+    if(REPLAY&&Array.isArray(REPLAY.players))for(const p of REPLAY.players)if(p.charName)chars.add(p.charName);
+    const charList=[...chars].map(c=>String(c).replace(/[(（].*$/,"").trim()).filter(c=>c.length>=2);
+    if(!charList.length)return;
+    const acctText={};
+    for(const ev of RAWCACHE){const c=ev.cat||"";
+      if(c.startsWith("GM→")){const acct=c.slice(3).replace(/[(（].*$/,"").trim();
+        if(acct&&!isGlobal(acct)&&!acct.startsWith("NPC")) acctText[acct]=(acctText[acct]||"")+" "+(ev.text||""); }}
+    for(const acct in acctText){ if(ALIAS[acct])continue; // 정상 로그(별칭 존재)는 건드리지 않음
+      let best="",bestN=0;
+      for(const ch of charList){ const re=new RegExp(ch.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"),"g");
+        const n=(acctText[acct].match(re)||[]).length; if(n>bestN){bestN=n;best=ch;} }
+      if(best&&bestN>0) setAll(canon(best),acct); } // 계정→캐릭터 표시명으로 통합
+  })();
 }
 function rebuild(raw){ EVENTS=raw.map(normalize).sort((a,b)=>(a.seq||0)-(b.seq||0)); buildViewpoints(); curVP="__all__"; stopPlay(); }
 // 로그에서 괴담(시나리오) 이름 파싱 — 세션 이벤트의 title 필드(JSONL) 또는 '괴담: X' 라인(.txt)
