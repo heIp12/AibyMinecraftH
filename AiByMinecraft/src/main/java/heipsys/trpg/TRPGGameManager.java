@@ -9590,9 +9590,28 @@ public class TRPGGameManager {
         // ★공정성★: roll·outcome은 AI가 아니라 ★코드가 직접★ 정한다.
         //   (AI가 유리한 값만 고르던 문제[거의 다 성공] + '주사위는 성공인데 서술은 실패' 불일치를 동시에 제거)
         int roll = ThreadLocalRandom.current().nextInt(1, max + 1);
-        // ★행운 보정★: 능력으로 건 행운 수치를 실제 굴림에 반영(1~max로 클램프, 1회 소비). GM 텍스트 주입만 하고 굴림엔 안 반영되던 공백 보완.
+        final int baseRoll = roll;
+        // ★스탯 보정★: 이번 판정을 지배하는 능력치(DICE.stat 우선, 없으면 reason 키워드로 추정)를 굴림에 반영한다 —
+        //   높은 스탯이 실제로 유리해지도록(스탯이 굴림에 전혀 안 쓰이던 문제 해결). die 크기에 비례·상한(±max*0.35), 최종 1~max 클램프.
+        PlayerData dpd = state.getPlayer(player);
+        String statKey = pickDiceStat(dice, reason);
+        int statBonus = 0; String statLabel = "";
+        if (statKey != null && dpd != null) {
+            int sv = diceStatValue(dpd, statKey);            // 1~20 스케일(5=평균)
+            statBonus = (int) Math.round((sv - 5) * 0.6 * (max / 20.0));
+            int cap = Math.max(1, (int) Math.round(max * 0.35));
+            statBonus = Math.max(-cap, Math.min(cap, statBonus));
+            statLabel = diceStatLabel(statKey);
+        }
+        // ★행운 보정★: 능력으로 건 행운 수치를 실제 굴림에 반영(1회 소비). GM 텍스트 주입만 하고 굴림엔 안 반영되던 공백 보완.
         Integer luckAdj = pendingDiceLuck.remove(player.getUniqueId());
-        if (luckAdj != null && luckAdj != 0) roll = Math.max(1, Math.min(max, roll + luckAdj));
+        int luckB = (luckAdj != null ? luckAdj : 0);
+        roll = Math.max(1, Math.min(max, roll + statBonus + luckB));
+        // 보정 표기(기본 굴림 + 스탯/행운) — 판정 결과가 왜 이렇게 나왔는지 투명하게.
+        StringBuilder modSb = new StringBuilder();
+        if (statBonus != 0 && !statLabel.isEmpty()) modSb.append(" ").append(statBonus > 0 ? "+" : "").append(statBonus).append(statLabel);
+        if (luckB != 0) modSb.append(" ").append(luckB > 0 ? "+" : "").append(luckB).append("행운");
+        String modNote = modSb.length() > 0 ? (" (기본 " + baseRoll + modSb + ")") : "";
         // ★난이도 상향★: 기본 DC 0.55→0.62 + 후반 스테이지(3+)·오염도 비례 가산(성공은 항상 가능하도록 max-1 캡).
         int diffStage = state.getTimelineStage();
         int diffCorr  = corruptMan.getLevel();
@@ -9600,26 +9619,44 @@ public class TRPGGameManager {
         int diffBump = Math.max(0, diffStage - 2) + diffCorr;
         if (diffBump > 0) effDc = Math.min(max - 1, effDc + Math.min(diffBump, Math.max(2, max / 6)));
         int band = Math.max(1, max / 10);
-        boolean success = roll >= effDc;
-        boolean fail    = roll <  effDc - band;
-        boolean partial = !success && !fail;
-        String outcome = success ? "성공" : partial ? "부분성공" : "실패";
-        NamedTextColor col = success ? NamedTextColor.GREEN : fail ? NamedTextColor.RED : NamedTextColor.GOLD;
+        // ★대성공/대실패★: ★기본(raw) 굴림★으로만 판정한다 — 스탯·행운 보정과 무관하게 자연 최대치=대성공, 자연 최소치=대실패.
+        //   덕분에 스탯이 아무리 높아도 대실패가, 아무리 낮아도 대성공이 항상 나올 수 있다(약 상·하위 5%).
+        int critWin = Math.max(1, (int) Math.round(max * 0.05));
+        boolean critSuccess = baseRoll >= max - critWin + 1;
+        boolean critFail    = baseRoll <= critWin;
+        boolean success, fail, partial;
+        String outcome; NamedTextColor col;
+        if (critSuccess) {           // 대성공: DC·스탯 무관 성공(기대 이상). 자연 굴림값을 그대로 표시(보정 무의미).
+            success = true; fail = false; partial = false; outcome = "대성공"; col = NamedTextColor.AQUA;
+            roll = baseRoll; modNote = "";
+        } else if (critFail) {       // 대실패: DC·스탯 무관 실패(추가 대가). 자연 굴림값을 그대로 표시(보정 무의미).
+            success = false; fail = true; partial = false; outcome = "대실패"; col = NamedTextColor.DARK_RED;
+            roll = baseRoll; modNote = "";
+        } else {
+            success = roll >= effDc;
+            fail    = roll <  effDc - band;
+            partial = !success && !fail;
+            outcome = success ? "성공" : partial ? "부분성공" : "실패";
+            col = success ? NamedTextColor.GREEN : fail ? NamedTextColor.RED : NamedTextColor.GOLD;
+        }
         // '왜 굴리는지'를 먼저 알려준다(요청 사항)
         player.sendMessage("§e[판정] " + (reason.isEmpty() ? "행동 판정" : reason)
-            + " §7— 주사위 d" + max + (dc > 0 ? " (" + dc + " 이상 성공)" : "") + " 굴립니다…");
+            + " §7— 주사위 d" + max + (dc > 0 ? " (" + dc + " 이상 성공)" : "")
+            + (statLabel.isEmpty() ? "" : " §8[" + statLabel + " 반영]") + "§7 굴립니다…");
         // 서브타이틀: 굴린 주사위 크기(d{max})와 '어디까지가 성공인지(DC)'를 명확히
         String thresh = dc > 0 ? (dc + " 이상이면 성공") : "판정";
         String sub = "d" + max + "  ·  " + thresh + "  ·  " + outcome;
         final int fmax = max;
         // ★GM 다음 전개 일관성★: 코드가 정한 결과를 컨텍스트에 주입 — 다음 서술이 이 결과와 어긋나지 않게.
+        String critHint = critSuccess ? " ★대성공★이므로 기대 이상으로 훌륭히 해내고 추가 이득(예상 밖 성과·유리한 기회)을 곁들여 서술하라."
+                        : critFail    ? " ★대실패★이므로 크게 그르쳐 추가 대가(부상·소음·새 위협 노출·자원/단서 손실 등)를 함께 서술하라."
+                        : "";
         ai.injectGmSystem("[판정 결과] " + (reason.isEmpty() ? "" : reason + " — ")
-            + "주사위 d" + max + "=" + roll + (dc > 0 ? (", 성공기준 " + dc) : "") + " → ★" + outcome + "★. "
-            + "이 결과대로 다음 전개를 이어서 서술하라. 결과와 어긋나게(실패인데 성공한 듯, 또는 그 반대로) 쓰지 마라.");
-        // ★로그/실시간 뷰어·재현 충실도★: 코드가 정한 판정을 기록(주사위·성공기준·결과) — 인게임에 뜨던 판정이 로그엔 없던 공백 보완.
-        PlayerData dpd = state.getPlayer(player);
+            + "주사위 d" + max + "=" + roll + modNote + (dc > 0 ? (", 성공기준 " + dc) : "") + " → ★" + outcome + "★." + critHint
+            + " 이 결과대로 다음 전개를 이어서 서술하라. 결과와 어긋나게(실패인데 성공한 듯, 또는 그 반대로) 쓰지 마라.");
+        // ★로그/실시간 뷰어·재현 충실도★: 코드가 정한 판정을 기록(주사위·스탯보정·성공기준·결과) — 인게임에 뜨던 판정이 로그엔 없던 공백 보완.
         gameLogger.logAbilityResult(dpd != null ? dpd.gmDisplayName() : player.getName(), "주사위 판정",
-            (reason.isEmpty() ? "행동 판정" : reason) + " — d" + max + "=" + roll
+            (reason.isEmpty() ? "행동 판정" : reason) + " — d" + max + "=" + roll + modNote
             + " (기준 " + effDc + " 이상 성공) → " + outcome);
         // 1) 숫자가 바뀌는 연출(약 1.5초, d{max} 무작위) — 3틱 간격
         final int FRAMES = 10;
@@ -9634,6 +9671,7 @@ public class TRPGGameManager {
         }
         // 2) 최종 결과 강조 — 《N》 3초 유지 + 성공 기준 서브타이틀
         final int froll = roll, fdc = dc;
+        final String fmodNote = modNote;
         plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
             if (!player.isOnline()) return;
             player.showTitle(Title.title(
@@ -9641,6 +9679,7 @@ public class TRPGGameManager {
                 Component.text(sub, col),
                 Title.Times.times(Duration.ofMillis(150), Duration.ofMillis(3000), Duration.ofMillis(600))));
             player.sendMessage("§7[판정] 주사위 d" + fmax + " " + colorCode(col) + "《" + froll + "》"
+                + (fmodNote.isEmpty() ? "" : " §8" + fmodNote)
                 + (fdc > 0 ? " §8(성공 기준 " + fdc + " 이상)" : "")
                 + " §7→ " + colorCode(col) + (outcome.isEmpty() ? "판정" : outcome));
         }, FRAMES * 3L + 2L);
@@ -9648,9 +9687,62 @@ public class TRPGGameManager {
 
     /** NamedTextColor → §코드 (채팅 기록 강조용) */
     private static String colorCode(NamedTextColor c) {
-        if (c == NamedTextColor.GREEN) return "§a";
-        if (c == NamedTextColor.RED)   return "§c";
+        if (c == NamedTextColor.GREEN)    return "§a";
+        if (c == NamedTextColor.RED)      return "§c";
+        if (c == NamedTextColor.AQUA)     return "§b"; // 대성공
+        if (c == NamedTextColor.DARK_RED) return "§4"; // 대실패
         return "§6";
+    }
+
+    // ── 판정 스탯 결정 (주사위 굴림에 반영할 능력치) ──
+    /** 이번 판정을 지배하는 능력치 키(str/cha/luk/spr/hp/san). DICE.stat 우선 → reason 키워드 추정 → 못 정하면 null(보정 0). */
+    private static String pickDiceStat(JsonObject dice, String reason) {
+        String key = dice != null && dice.has("stat") && !dice.get("stat").isJsonNull() ? dice.get("stat").getAsString() : "";
+        String m = mapStatToken(key);
+        if (m != null) return m;
+        String r = reason == null ? "" : reason;
+        if (r.matches(".*(근력|완력|힘으로|힘껏|부수|부순|박살|밀어|밀치|들어[ ]?올|당겨|잡아당|뽑아|비틀|제압|짓눌|짓밟|버텨 막|들이받|끌어|짓이|목을 조|조르|파괴|넘어뜨|메다꽂).*")) return "str";
+        if (r.matches(".*(매력|설득|호감|유혹|꼬드|달래|협상|흥정|부탁|사정|거래|회유|구슬|으름장|둘러대|속이|거짓말|사교|친해지|환심|위압|허세).*")) return "cha";
+        if (r.matches(".*(영감|직감|육감|예감|통찰|간파|꿰뚫|알아차|눈치|낌새|기척|살펴|관찰|추리|해석|읽어내|감지|위화감|수상|의심).*")) return "spr";
+        if (r.matches(".*(행운|운에|운으로|요행|도박|찍어|무작정|우연|운 좋|운을).*")) return "luk";
+        if (r.matches(".*(체력|지구력|오래 버|숨을 참|참고 견|견뎌|버텨내|달아나|도망|도주|질주|뛰어|기어올|헤엄|매달려|끌고 가|안아 들).*")) return "hp";
+        if (r.matches(".*(정신력|의지로|이성을|공포를|두려움을|겁을|현혹|환각|잠식|홀림|정신을 붙|마음을 다|평정|이겨내).*")) return "san";
+        return null;
+    }
+    /** 스탯 명칭 토큰(한/영) → 정규 키. 알 수 없으면 null. */
+    private static String mapStatToken(String s) {
+        if (s == null) return null;
+        s = s.trim().toLowerCase();
+        switch (s) {
+            case "근력": case "힘": case "완력": case "str": case "strength": case "power": return "str";
+            case "매력": case "사교": case "cha": case "charisma": case "charm": return "cha";
+            case "행운": case "운": case "luk": case "luck": case "fortune": return "luk";
+            case "영감": case "직감": case "통찰": case "spr": case "inspiration": case "insight": return "spr";
+            case "체력": case "지구력": case "hp": case "con": case "constitution": case "stamina": return "hp";
+            case "정신력": case "정신": case "의지": case "san": case "will": case "sanity": return "san";
+            default: return null;
+        }
+    }
+    /** 정규 키 → 해당 능력치 값(1~20 스케일, 5=평균). */
+    private static int diceStatValue(PlayerData pd, String key) {
+        if (pd == null || key == null) return 5;
+        switch (key) {
+            case "str": return pd.str;
+            case "cha": return pd.cha;
+            case "luk": return pd.luk;
+            case "spr": return pd.spr;
+            case "hp":  return pd.hp[1];
+            case "san": return pd.san[1];
+            default: return 5;
+        }
+    }
+    /** 정규 키 → 한국어 표시 라벨. */
+    private static String diceStatLabel(String key) {
+        switch (key == null ? "" : key) {
+            case "str": return "근력"; case "cha": return "매력"; case "luk": return "행운";
+            case "spr": return "영감"; case "hp": return "체력"; case "san": return "정신력";
+            default: return "";
+        }
     }
 
     // ══════════════════════════════════════════════════════════════
