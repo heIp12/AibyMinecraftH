@@ -118,6 +118,7 @@ let ALIAS={}, REPLAY=null, SCENARIO=null, RAWCACHE=[], KNOWN=new Set(), CONTACTS
 let FILES={logs:[],replays:[],scenarios:[],gdams:[]};
 let playing=false, speed=1, queue=[], qi=0, qtimer=null, curBodyEl=null;
 let COLLAPSED=new Set(); // 정보 패널에서 접어둔 섹션 id — 재렌더(실시간 갱신 포함)에도 상태 유지
+let collapsedSeeded=false; // 최초 렌더 시 '플레이어 외 정보'는 접힌 상태로 시작(1회 시드 후 사용자 토글 존중)
 
 const GLOBAL_RE=/전체|전원|모두|모든|방송|broadcast|^\*$|all/i;
 const PHASE_SUFFIX=/\s*\((프롤로그|전환|목격|대기|뒷이야기|에필로그|배드엔딩|시간\s*경과)\)\s*$/;
@@ -539,19 +540,29 @@ function scNameOf(rid){
 function scRelSvg(rels){
   const ids=[]; for(const rr of rels) for(const rid of (rr.roles||[])) if(rid&&!ids.includes(rid)) ids.push(rid);
   if(ids.length<2) return "";
-  const W=310, H=Math.max(210,70+ids.length*24), cx=W/2, cy=H/2, R=Math.min(cx,cy)-48;
+  // 관계 '유형'별로 선 색을 배정하고, 유형 라벨은 선 위(겹침)가 아니라 아래 범례로 뺀다.
+  const PAL=["#7fb2ff","#ff9a8f","#8fe0a8","#ffd479","#c9a0ff","#7fe0d8","#ff9ecb","#b7c47f"];
+  const typeColor={}; let ci=0;
+  for(const rr of rels){const t=(rr.type||"기타"); if(!(t in typeColor)){typeColor[t]=PAL[ci%PAL.length];ci++;}}
+  const W=320, H=Math.max(240,90+ids.length*30), cx=W/2, cy=H/2-4, R=Math.min(cx,cy)-56;
   const pos={}; ids.forEach((id,i)=>{const a=-Math.PI/2+2*Math.PI*i/ids.length; pos[id]=[cx+R*Math.cos(a), cy+R*Math.sin(a)];});
-  let s=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="background:var(--panel2);border:1px solid var(--line);border-radius:8px;margin-bottom:6px">`;
+  let s=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="background:var(--panel2);border:1px solid var(--line);border-radius:8px;margin-bottom:4px">`;
   for(const rr of rels){const rs=rr.roles||[]; if(rs.length<2)continue; const a=pos[rs[0]],b2=pos[rs[1]]; if(!a||!b2)continue;
-    const mx=(a[0]+b2[0])/2, my=(a[1]+b2[1])/2;
-    s+=`<line x1="${a[0].toFixed(0)}" y1="${a[1].toFixed(0)}" x2="${b2[0].toFixed(0)}" y2="${b2[1].toFixed(0)}" stroke="#4a5266" stroke-width="1.5"/>`;
-    s+=`<text x="${mx.toFixed(0)}" y="${my.toFixed(0)}" fill="#9aa1b1" font-size="10" text-anchor="middle">${esc(rr.type||"")}</text>`;
+    s+=`<line x1="${a[0].toFixed(0)}" y1="${a[1].toFixed(0)}" x2="${b2[0].toFixed(0)}" y2="${b2[1].toFixed(0)}" stroke="${typeColor[rr.type||"기타"]}" stroke-width="2" opacity="0.85"/>`;
   }
   for(const id of ids){const p=pos[id], nm=scNameOf(id);
-    s+=`<circle cx="${p[0].toFixed(0)}" cy="${p[1].toFixed(0)}" r="6" fill="${colorFor(nm)}"/>`;
-    s+=`<text x="${p[0].toFixed(0)}" y="${(p[1]-10).toFixed(0)}" fill="#e7e9ee" font-size="11" text-anchor="middle">${esc(nm)}</text>`;
+    s+=`<circle cx="${p[0].toFixed(0)}" cy="${p[1].toFixed(0)}" r="6" fill="${colorFor(nm)}" stroke="#1a1d26" stroke-width="1.5"/>`;
+    // 노드 라벨: 위쪽 반원은 노드 위, 아래쪽 반원은 노드 아래에 둬 중앙 겹침을 완화.
+    const ly=(p[1]>cy)?p[1]+15:p[1]-10;
+    s+=`<text x="${p[0].toFixed(0)}" y="${ly.toFixed(0)}" fill="#e7e9ee" font-size="10" text-anchor="middle">${esc(nm)}</text>`;
   }
-  return s+`</svg>`;
+  s+=`</svg>`;
+  // 색별 관계 범례(선 색 = 관계 유형)
+  let leg=`<div style="display:flex;flex-wrap:wrap;gap:5px 12px;margin:0 0 6px;font-size:11px">`;
+  for(const t in typeColor)
+    leg+=`<span style="white-space:nowrap"><span style="display:inline-block;width:11px;height:3px;border-radius:2px;background:${typeColor[t]};margin-right:5px;vertical-align:middle"></span>${esc(t)}</span>`;
+  leg+=`</div>`;
+  return s+leg;
 }
 // 시나리오의 나머지 표시 가능한 모든 것: 관계도·NPC 상세(할일)·배역·타임라인·단서·아이템·제약.
 function scenarioExtraHtml(){
@@ -578,8 +589,17 @@ function scenarioExtraHtml(){
         h+=`<div class="sub">할 일 · 일정</div>`;
         for(const s of sched){
           if(typeof s==="string"){h+=`<div class="tdesc">· ${esc(s)}</div>`;continue;}
-          const when=S(s.time||s.when||s.turn||s.condition), what=S(s.action||s.goal||s.intent||s.what||s.plan), will=S(s.will);
-          h+=`<div class="tdesc">· ${when?`<span class="dim2">[${esc(when)}]</span> `:""}${esc(what)}${will?` <span class="dim2">(의지:${esc(will)})</span>`:""}</div>`;
+          // 시간·목표·행동·조건·의지를 각각 표시(기존엔 목표·조건이 누락됐음).
+          const when=S(s.time||s.when||s.turn), goal=S(s.goal||s.intent), act=S(s.action||s.what||s.plan),
+                cond=S(s.condition), will=S(s.will), dur=S(s.duration_turns);
+          let ln="· ";
+          if(when) ln+=`<span class="dim2">[${esc(when)}]</span> `;
+          if(goal) ln+=`<b>${esc(goal)}</b>`;
+          if(act)  ln+=`${goal?" — ":""}${esc(act)}`;
+          if(cond) ln+=` <span class="dim2">(조건: ${esc(cond)})</span>`;
+          if(will) ln+=` <span class="dim2">(의지:${esc(will)})</span>`;
+          if(dur)  ln+=` <span class="dim2">(${esc(dur)}턴)</span>`;
+          h+=`<div class="tdesc">${ln}</div>`;
         }
       }
       const sp=[];
@@ -647,6 +667,8 @@ function scenarioExtraHtml(){
   return h;
 }
 function renderInfo(){
+  // 플레이어 정보만 펼치고 나머지(괴담·구역·관계·NPC·배역·타임라인·단서·아이템·제약)는 접은 상태로 시작.
+  if(!collapsedSeeded){ ['entity','solution','zones','rel','npc','roles','timeline','clues','items','cons'].forEach(id=>COLLAPSED.add(id)); collapsedSeeded=true; }
   const b=document.getElementById("infoBody");let h="";
   const S=v=>v==null?"":String(v).trim();
   const row=(label,val)=>{const s=S(val);return s?`<br><span class="st">${esc(label)}</span>${esc(s)}`:"";};
