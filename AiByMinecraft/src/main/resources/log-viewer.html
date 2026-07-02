@@ -916,8 +916,24 @@ function zoneMapSvg(zones){
       +`<rect x="${p.x}" y="${p.y}" width="${BW}" height="${BH}" rx="8" fill="${areaTint(z.area||"")}" stroke="${dead?'#ff5a5a':'#8a7fd0'}" stroke-width="${dead?2.5:1.4}" ${dead?'stroke-dasharray="5 3"':''}/>`
       +`<text x="${p.x+BW/2}" y="${p.y+BH/2+4}" text-anchor="middle" font-size="13" fill="#f0ecff">${esc(short)}${dead?' 📵':''}</text></g>`; }
   let labels=""; areas.forEach((a,ai)=>{ labels+=`<text x="${PADX}" y="${TOP+ai*GY-6}" font-size="10" fill="#9b8fd6">${esc(a)}</text>`; });
-  return `<div class="zmap" style="overflow:auto;margin-bottom:6px"><svg viewBox="0 0 ${W} ${H}" width="100%" style="max-height:360px;min-width:${Math.min(W,320)}px">${edges}${boxes}${labels}</svg>`
+  return `<div class="zmap" style="overflow:auto;margin-bottom:6px;cursor:zoom-in" onclick="mapZoom(this)" title="클릭하면 크게 보기">`
+    +`<div class="dim2" style="margin-bottom:3px">구역 지도 <span style="background:#2a2450;border:1px solid #4a3f80;border-radius:6px;padding:0 7px;color:#cabfff">🔍 크게 보기</span></div>`
+    +`<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-height:360px;min-width:${Math.min(W,320)}px">${edges}${boxes}${labels}</svg>`
     +`<div class="dim2">📵 = 통신 불가 구역 · 선 = 연결 · 색 = 대분류(건물)</div></div>`;
+}
+// 지도 클릭 → 전체화면 오버레이로 ★크게★ 보기(스크롤 가능). 아무 곳이나 누르면 닫힘. (뷰어 맵이 작다는 피드백)
+function mapZoom(el){
+  const svg=el&&el.querySelector&&el.querySelector('svg'); if(!svg)return;
+  const vb=(svg.getAttribute('viewBox')||'').split(/\s+/), w=+vb[2]||800, h=+vb[3]||600;
+  const scale=Math.min(3,Math.max(1.7,1000/w));
+  let ov=document.getElementById('mapzoom');
+  if(!ov){ ov=document.createElement('div'); ov.id='mapzoom';
+    ov.style.cssText='position:fixed;inset:0;background:rgba(8,6,20,.93);z-index:99999;display:flex;align-items:center;justify-content:center;padding:18px;cursor:zoom-out';
+    ov.onclick=function(){ ov.style.display='none'; }; document.body.appendChild(ov); }
+  ov.innerHTML='<div style="max-width:96vw;max-height:93vh;overflow:auto;background:#141024;border:1px solid #4a3f80;border-radius:10px;padding:12px">'
+    +'<svg viewBox="0 0 '+w+' '+h+'" width="'+Math.round(w*scale)+'" height="'+Math.round(h*scale)+'">'+svg.innerHTML+'</svg>'
+    +'<div style="text-align:center;color:#9b8fd6;font-size:11px;margin-top:6px">아무 곳이나 눌러 닫기</div></div>';
+  ov.style.display='flex';
 }
 function ingest(file){const nm=file.name.toLowerCase();
   if(nm.endsWith(".gdam")){return decryptGdamFile(file).then(j=>{if(j&&(j.entity||j.world_rules||j.npcs))SCENARIO=j;renderInfo();}).catch(()=>{renderInfo();});}
