@@ -116,7 +116,7 @@ public class AiManager {
 
     // ── provider별 등급 기본 모델 (네트워크 없음) ──
     private String defHigh()   { return switch (apiType) { case "claude" -> "claude-opus-4-8";          case "openai" -> "gpt-5.5";      default -> "gemini-2.5-pro"; }; }
-    private String defMedium() { return switch (apiType) { case "claude" -> "claude-sonnet-4-6";        case "openai" -> "gpt-5.4";      default -> "gemini-2.5-flash"; }; }
+    private String defMedium() { return switch (apiType) { case "claude" -> "claude-sonnet-5";          case "openai" -> "gpt-5.4";      default -> "gemini-2.5-flash"; }; }
     private String defLow()    { return switch (apiType) { case "claude" -> "claude-haiku-4-5-20251001"; case "openai" -> "gpt-5.4-nano"; default -> "gemini-2.5-flash-lite"; }; }
 
     /** 백그라운드 워밍업 — 시작 시 호출하면 최신 모델 탐지가 메인 스레드를 막지 않는다. */
