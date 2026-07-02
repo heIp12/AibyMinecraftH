@@ -208,7 +208,7 @@ public class MapManager {
             lastSig.remove(p.getUniqueId());
             p.sendMessage("§7약도는 이미 손에 있습니다. §8(우클릭 → 구역 전환)"); return;
         }
-        give(p, buildMapItem(defaultView(p.getWorld()), "전체"));
+        give(p, buildMapItem(pd, defaultView(p.getWorld()), "전체"));
         p.sendMessage("§a약도를 손에 넣었습니다. §7우클릭으로 구역 전환, 현위치는 §c깃발§7로 표시됩니다.");
     }
 
@@ -217,7 +217,7 @@ public class MapManager {
         if (!hasZones()) return;
         lastSig.remove(p.getUniqueId());
         if (hasOurMap(p)) return;
-        give(p, buildMapItem(defaultView(p.getWorld()), "전체"));
+        give(p, buildMapItem(state.getPlayer(p), defaultView(p.getWorld()), "전체"));
     }
 
     /** &lt;MAP_GRANT&gt; — 스토리에서 전체 지도 입수. */
@@ -225,7 +225,7 @@ public class MapManager {
         PlayerData pd = state.getPlayer(p); if (pd == null) return;
         pd.hasFullMap = true;
         lastSig.remove(p.getUniqueId());
-        if (!hasOurMap(p)) give(p, buildMapItem(defaultView(p.getWorld()), "전체"));
+        if (!hasOurMap(p)) give(p, buildMapItem(pd, defaultView(p.getWorld()), "전체"));
         p.sendMessage("§a지도를 입수했습니다. §7전체 구역이 약도에 드러납니다.");
     }
 
@@ -280,18 +280,28 @@ public class MapManager {
     }
 
     private void replaceOrGive(Player player, MapView target, String label) {
+        PlayerData pd = state.getPlayer(player);
         var inv = player.getInventory();
         for (int i = 0; i < inv.getSize(); i++) {
             ItemStack it = inv.getItem(i);
             if (!isOurMap(it)) continue;
             MapMeta mm = (MapMeta) it.getItemMeta();
             mm.setMapView(target);
-            mm.displayName(Component.text("§e현장 약도 §7[" + label + "]"));
+            mm.displayName(mapItemName(pd, label));
             it.setItemMeta(mm);
             inv.setItem(i, it);
             return;
         }
-        give(player, buildMapItem(target, label));
+        give(player, buildMapItem(pd, target, label));
+    }
+
+    /** 지도 아이템 표시명 — ★스포 방지★: 아는 대분류가 하나뿐이면 대분류 이름(현실 등)을 숨긴다
+     *  (그 이름 자체가 '다른 세계·구역이 있다'는 스포일러). 대분류를 2개 이상 알게 되면 그때부터 표기. */
+    private Component mapItemName(PlayerData pd, String rawLabel) {
+        boolean isAreaName = rawLabel != null && areaOrder.contains(rawLabel);
+        boolean reveal = !isAreaName || (pd != null && knownAreaNames(pd).size() >= 2);
+        String shown = (reveal && rawLabel != null && !rawLabel.isEmpty()) ? " §7[" + rawLabel + "]" : "";
+        return Component.text("§e현장 약도" + shown);
     }
 
     private boolean hasOurMap(Player p) {
@@ -304,12 +314,12 @@ public class MapManager {
         return it.getItemMeta().getPersistentDataContainer().has(mapKey, PersistentDataType.BYTE);
     }
 
-    private ItemStack buildMapItem(MapView view, String label) {
+    private ItemStack buildMapItem(PlayerData pd, MapView view, String label) {
         ItemStack item = new ItemStack(Material.FILLED_MAP);
         MapMeta meta = (MapMeta) item.getItemMeta();
         if (meta == null) return item;
         meta.setMapView(view);
-        meta.displayName(Component.text("§e현장 약도 §7[" + label + "]"));
+        meta.displayName(mapItemName(pd, label));
         meta.lore(List.of(
             Component.text("§7[지도]"),
             Component.text("§f펼쳐서 구역과 통로를 확인합니다."),
@@ -344,12 +354,13 @@ public class MapManager {
         @Override public void render(MapView v, MapCanvas c, Player viewer) {
             PlayerData pd = state.getPlayer(viewer); if (pd == null) return;
             boolean full = pd.hasFullMap;
+            boolean revealName = knownAreaNames(pd).size() >= 2; // 아는 대분류 2개+부터 이름 표기(스포 방지)
             Set<String> rev = visibleZones(pd, full, area);
             String cur = area.equals(zoneArea.get(pd.zone)) ? pd.zone : "";
-            String sig = "area|" + area + "|" + full + "|" + cur + "|" + new TreeSet<>(rev);
+            String sig = "area|" + area + "|" + full + "|" + cur + "|" + revealName + "|" + new TreeSet<>(rev);
             if (sig.equals(lastSig.get(viewer.getUniqueId()))) return;
             lastSig.put(viewer.getUniqueId(), sig);
-            c.drawImage(0, 0, drawArea(area, rev, cur));
+            c.drawImage(0, 0, drawArea(area, rev, cur, revealName));
         }
     }
 
@@ -360,6 +371,17 @@ public class MapManager {
             boolean full = pd.hasFullMap;
             Set<String> revAreas = visibleAreas(pd, full);
             String curArea = pd.zone != null ? zoneArea.get(pd.zone) : null;
+            // ★스포 방지★: 아는 대분류가 하나뿐이면 대분류 개요(현실/꿈 등 이름 노출) 대신
+            //  그 구역의 zone 약도를 중립 헤더로 그린다 — 대분류를 2개+ 알게 되면 개요로 전환.
+            if (revAreas.size() < 2 && curArea != null) {
+                Set<String> rev = visibleZones(pd, full, curArea);
+                String cur = pd.zone == null ? "" : pd.zone;
+                String sig = "ov1|" + full + "|" + curArea + "|" + cur + "|" + new TreeSet<>(rev);
+                if (sig.equals(lastSig.get(viewer.getUniqueId()))) return;
+                lastSig.put(viewer.getUniqueId(), sig);
+                c.drawImage(0, 0, drawArea(curArea, rev, cur, false));
+                return;
+            }
             String sig = "overview|" + full + "|" + curArea + "|" + new TreeSet<>(revAreas);
             if (sig.equals(lastSig.get(viewer.getUniqueId()))) return;
             lastSig.put(viewer.getUniqueId(), sig);
@@ -400,11 +422,11 @@ public class MapManager {
         g.dispose(); return img;
     }
 
-    private BufferedImage drawArea(String area, Set<String> rev, String cur) {
+    private BufferedImage drawArea(String area, Set<String> rev, String cur, boolean revealName) {
         BufferedImage img = new BufferedImage(SIZE, SIZE, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = setup(img);
         FontMetrics fm = g.getFontMetrics();
-        drawHeader(g, fm, "▸ " + area);
+        drawHeader(g, fm, revealName ? "▸ " + area : "▸ 현장 약도");
         if (rev.isEmpty()) drawEmpty(g, fm, SIZE / 2, (SIZE + HEADER_H) / 2);
         else {
             Map<String, int[]> layout = areaLayouts.getOrDefault(area, Map.of());

@@ -934,14 +934,14 @@ public class DialogManager {
     }
 
     /**
-     * 소통수단 선언 다이얼로그(#177) — 도구가 없어 기록에서 여는 경로. 선택 방식은 GM 승인 후 적용된다.
+     * 소통수단 선언 다이얼로그(#177) — 도구가 없어 기록에서 여는 경로. 기본 4종은 필드로 즉시 확정된다.
      * @param currentLabel 현재 선언된 방식 라벨(없으면 "자동")
      * @param onPick 선택한 방식 키(""=자동, voice/text/signal/electronic)를 전달
      */
     public void showCommMethodPicker(Player player, String currentLabel, java.util.function.Consumer<String> onPick) {
         String[][] opts = {
             {"",           "🔄 자동(상황에 맡김)", "장면에 맞게 엔진·GM이 알아서 정합니다."},
-            {"voice",      "🗣 말하기(음성)",      "소리 내어 말합니다. 소리가 위험한 곳이면 GM이 막을 수 있습니다."},
+            {"voice",      "🗣 말하기(음성)",      "소리 내어 말합니다. 소리가 위험한 곳이면 위험을 감수하는 선언입니다."},
             {"text",       "✍ 필담·글",           "종이·바닥 등에 글로 조용히 전합니다."},
             {"signal",     "✋ 수신호·몸짓",        "손짓·몸짓으로 소리 없이 전합니다(상대가 볼 수 있어야 함)."},
             {"electronic", "📱 전자통신",           "전화·무전·메신저 등 기기로 전합니다(기기·신호 필요)."},
@@ -961,7 +961,7 @@ public class DialogManager {
                     .append(Component.text("현재: ", NamedTextColor.GRAY))
                     .append(Component.text(currentLabel == null || currentLabel.isEmpty() ? "자동" : currentLabel, NamedTextColor.WHITE))
                     .appendNewline()
-                    .append(Component.text("원하는 소통 방식을 고르세요. 선언은 GM이 상황을 보고 허락해야 적용됩니다.", NamedTextColor.GRAY))
+                    .append(Component.text("원하는 소통 방식을 고르세요. 고르면 바로 적용됩니다(쓸 수 없는 방식만 막힘).", NamedTextColor.GRAY))
                     .build())))
                 .build())
             .type(DialogType.multiAction(buttons, closeBtn, 1)));
@@ -1049,7 +1049,7 @@ public class DialogManager {
         if (commMethodOpener != null) {
             buttons.add(ActionButton.create(
                 Component.text("＠ 소통수단 변경", NamedTextColor.GREEN),
-                Component.text("말하기 · 필담 · 수신호 등 소통 방식을 선언합니다(GM 승인)."), 160,
+                Component.text("말하기 · 필담 · 수신호 등 소통 방식을 선언합니다(바로 적용)."), 160,
                 DialogAction.customClick((v, a) -> commMethodOpener.accept(player),
                     ClickCallback.Options.builder().uses(1).build())));
         }

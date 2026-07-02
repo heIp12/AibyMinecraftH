@@ -17,6 +17,29 @@ public class TraitManager {
     private final AiManager aiManager;
     private final Gson gson = new Gson();
 
+    /** 최근 생성된 특성 이름(세션 스코프) — 인물마다 같은 이름·뻔한 능력이 반복되는 걸 줄이려 회피 목록으로 넘긴다. */
+    private final java.util.Deque<String> recentTraitNames = new java.util.concurrent.ConcurrentLinkedDeque<>();
+    private static final int RECENT_TRAIT_CAP = 24;
+    private void rememberTraitName(String n) {
+        if (n == null || n.isBlank()) return;
+        recentTraitNames.remove(n.trim());
+        recentTraitNames.addFirst(n.trim());
+        while (recentTraitNames.size() > RECENT_TRAIT_CAP) recentTraitNames.removeLast();
+    }
+    private String recentTraitNamesHint() {
+        if (recentTraitNames.isEmpty()) return "";
+        return "\n최근 다른 인물에게 이미 나온 특성 이름(★겹치지도, 비슷하게 짓지도 마라★): "
+            + String.join(", ", recentTraitNames);
+    }
+
+    /** 특성 다양성 지침(공통) — 예언자류 감지 능력 남발·같은 이름 반복 방지. */
+    private static final String DIVERSITY_RULE = """
+
+## 다양성 (★중요)
+- 같은 능력·이름을 반복하지 마라. 특히 '예언·예지·미래를 본다·직감·육감·통찰·꿰뚫어 본다' 같은 ★예언자류 감지 능력은 남발 금지★ — 정말 그 인물에 꼭 맞을 때만 쓰고, 대개는 서로 다른 감각·기술·재능·사회성으로 폭넓게 다양화하라.
+- 이름은 매번 새롭게 지어라. 뻔한 이름('예언자'·'통찰'·'육감' 등)을 재사용하지 말고 그 인물 고유의 표현으로.
+""";
+
     /** 친숙 모드(프로젝트 문·게임) 보상 특성 테마 지침. 일반 시나리오면 빈 문자열. TRPGGameManager가 스테이지 시작 시 주입. */
     private volatile String scenarioFlavor = "";
 
@@ -105,7 +128,7 @@ effect: 효과를 한 문장으로 간결하게.
   특정 괴담·장소·사건에 묶이지 않는 범용 능력으로 작성하되, 이번 테마에서 특히 빛나도록 한다.
 한국어로 작성. 창의적인 특성 3개.
 
-""" + SystemTraitRegistry.buildAiCatalog()
+""" + DIVERSITY_RULE + SystemTraitRegistry.buildAiCatalog()
             + (scenarioFlavor.isBlank() ? "" : "\n\n" + scenarioFlavor);
 
         String prompt = "클리어 등급: " + clearGrade
@@ -113,6 +136,7 @@ effect: 효과를 한 문장으로 간결하게.
             + "\n플레이어 직업: " + pd.job
             + "\n플레이어 나이: " + pd.age + "세"
             + "\n이번 괴담 테마(참고용, 직접 언급 금지): " + gdamTheme
+            + recentTraitNamesHint()
             + "\n\n다른 시나리오에서도 통하는 범용 특성 3개를 JSON 배열로 생성해줘. "
             + "이번 테마에서 특히 유용하되, 설명에 이번 사건을 직접 언급하지 마.";
 
@@ -142,6 +166,7 @@ effect: 효과를 한 문장으로 간결하게.
                     td.hp_max_add = obj.has("hp_max_add") ? obj.get("hp_max_add").getAsInt() : 0;
                     td.san_max_add = obj.has("san_max_add") ? obj.get("san_max_add").getAsInt() : 0;
                     parseEffect(td, obj);
+                    rememberTraitName(td.name); // 다음 생성에서 같은 이름 회피
                     result.add(td);
                 }
                 return result;
@@ -203,12 +228,12 @@ cooldown_turns: B~D급이므로 능동이면 0~2, 수동이면 반드시 0.
   영구 능력치를 올리지 않는다 — 능력치 대신 ★상황 효과(effect/effect_type)★에 가치를 담아라.
 한국어로 작성.
 
-""" + SystemTraitRegistry.buildAiCatalog()
+""" + DIVERSITY_RULE + SystemTraitRegistry.buildAiCatalog()
             + (roleFlavor.isBlank() ? "" : "\n\n" + roleFlavor);
 
         String prompt = "직업: " + pd.job + "\n나이: " + pd.age + "세\n"
             + "기존 특성(중복 금지): " + existingTraits + "\n"
-            + roleCtx + "\n\n위 배역에 맞는 추가 특성 1~2개를 JSON 배열로 생성해줘.";
+            + roleCtx + recentTraitNamesHint() + "\n\n위 배역에 맞는 추가 특성 1~2개를 JSON 배열로 생성해줘.";
 
         return aiManager.callAssistant(system, prompt).thenApply(raw -> {
             try {
