@@ -2406,39 +2406,10 @@ public class TRPGGameManager {
         currentPhase = Phase.HORROR;
         lastPlayerActionMs = System.currentTimeMillis(); // 무행동 가속 기준점 초기화
         lastIdleAccelMs = 0L;
-        // 전환을 직접 고지하지 않는다(스포일러 방지). GM의 환경 서술로만 분위기를 바꾼다.
-        // ★노출 게이트★: 괴담에 '직접 노출된'(괴담과 같은 구역, 또는 괴담이 편재) 플레이어에게만 전환 분위기를 전한다.
-        //   괴담이 없는 먼 곳의 플레이어에게 불길함을 미리 흘리면 스포일러다 — 그들은 일상을 잇고, 괴담이 닿을 때
-        //   (구역 진입·사건 발화) GM 본 서술이 분위기를 바꾼다.
-        JsonObject gdamH = state.getGdamData();
-        JsonObject entityH = (gdamH != null && gdamH.has("entity") && gdamH.get("entity").isJsonObject())
-            ? gdamH.getAsJsonObject("entity") : null;
-        String entityZone = entityH != null ? getStr(entityH, "zone") : ""; // 빈값 = 편재(전역, 전원 노출로 간주)
-
-        compressor.compressDailyPhase().thenRun(() ->
-            spawnedPlayers.forEach(uuid -> {
-                Player p = Bukkit.getPlayer(uuid);
-                if (p == null) return;
-                PlayerData pd = state.getPlayer(uuid);
-                boolean exposed = entityZone.isEmpty() || (pd != null && entityZone.equals(pd.zone));
-                if (!exposed) return; // 괴담에 노출 안 된 플레이어에겐 전환 불길함을 전하지 않는다(스포일러 방지)
-                String name = pd != null ? pd.gmDisplayName() : "?";
-                ai.callGmAiOnce(gmSystemPrompt,
-                    "분위기가 서서히 변하는 전환 시점이다. 플레이어(" + name + ")의 시점에서 "
-                    + "환경 변화(소리·냄새·온도 등)로만 불길함을 암시해줘. 제목 금지, 직접 언급 금지.")
-                  .thenAccept(r -> plugin.getServer().getScheduler().runTask(plugin, () -> {
-                      if (p.isOnline()) {
-                          String narrative = ai.stripTags(r);
-                          if (!narrative.isBlank()) {
-                              narrativeDelivery.deliver(p, narrative);
-                              // 채팅에만 뜨고 기록에 안 남던 문제 방지 — 전환 연출도 동일하게 저장한다.
-                              gameLogger.logGmOutput(p.getName() + "(전환)", narrative);
-                              if (pd != null) appendNarrativeLog(pd, narrative);
-                          }
-                      }
-                  }));
-            })
-        );
+        // 파트는 나뉘되(공포 파트 진입) ★전환 연출은 하지 않는다★ — 별도의 '불길함 암시' 서술을 따로 보내지 않는다.
+        //   분위기 변화는 GM이 이후 본 서술에서(플레이어가 실제로 괴담에 노출되는 순간) 자연스럽게 드러낸다.
+        //   미노출 플레이어에게 전환 불길함을 미리 흘리던 스포일러 제거. (파트 구분·타임라인·엔티티 AI는 그대로 동작.)
+        compressor.compressDailyPhase(); // 일상 파트 로그 압축(GM 컨텍스트 정리) — 플레이어 대상 서술은 없음
     }
 
     // ──────────────────────────────────────────────────────────────
