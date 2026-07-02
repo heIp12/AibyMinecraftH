@@ -42,6 +42,10 @@ public class PlayerData {
     public int faintTurnsRemaining = 0;
     /** 완전 잠식(관전) 상태 자동회복 카운터 (0=행동가능, >0=관전 중 — 0이 되면 SAN 1 회복) */
     public int puppetRecoveryTurns = 0;
+    /** 조종(홀림·완전잠식) 누적 턴 — 상한 도달 시 강제 완전회복(무행동 루프 방지, #1). normal 복귀 시 0. */
+    public int puppetTotalTurns = 0;
+    /** 조종 회복 직후 재조종 유예 턴 — >0이면 SAN이 낮아져도 재조종 트리거 안 됨(연속 조종 루프 차단). 매 턴 감소. */
+    public int puppetGraceTurns = 0;
 
     public String    status       = "normal";  // normal / puppet / dead
     /** 소통수단 선언(#177): GM 승인된 소통 모달리티(""=자동). voice/text/signal/electronic. 대면 시 엔진 자동선택(예: 소리위험→필담)을 이 선언이 우선한다. */
@@ -189,6 +193,8 @@ public class PlayerData {
         status              = "normal";
         faintTurnsRemaining = 0;
         puppetRecoveryTurns = 0;
+        puppetTotalTurns = 0;
+        puppetGraceTurns = 0;
         declaredCommMethod  = "";
         pendingCommMethod   = "";
         spot                = "";

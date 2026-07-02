@@ -2291,12 +2291,14 @@ public class TRPGGameManager {
                     else if ("puppet".equals(pd.status) && pd.san[0] > 0 && pd.puppetRecoveryTurns != -1) {
                         // 완전 조종(-1)은 자연 SAN 회복으로 풀리지 않는다(치유 능력 전용) — 그 외 홀림만 각성 처리.
                         pd.status = "normal";
+                        pd.puppetTotalTurns = 0;
                         Player t3 = Bukkit.getPlayer(pd.uuid);
                         if (t3 != null) t3.sendMessage("§a정신이 돌아왔다. 다시 자신의 의지로 행동할 수 있습니다.");
                         ai.injectGmSystem("[각성] " + commDisplayName(pd) + "의 자아가 완전히 돌아왔다. 더 이상 조종당하지 않는다(normal). 이제부터 조종 서술 금지.");
                     }
                     // ★정신력 사망 모델★: 1 → 홀림(행동불가, 회복) / 0 → 완전 조종(괴담팀 편입, 치유 능력으로만 복구).
-                    if (horrorActive && pd.san[0] <= 1 && !pd.isDead) {
+                    //   단 재조종 유예(puppetGraceTurns) 중이면 낮은 SAN이어도 재조종하지 않는다(연속 조종 루프 차단, #1).
+                    if (horrorActive && pd.san[0] <= 1 && !pd.isDead && pd.puppetGraceTurns <= 0) {
                         Player target = Bukkit.getPlayer(pd.uuid);
                         if (pd.san[0] <= 0) {
                             // ★정신력 0 → 완전 조종(괴담팀)★: 괴담이 몸·능력을 마음대로 부린다. 죽지 않으며 ★치유(회복) 능력으로만★ 복구.
@@ -4715,6 +4717,7 @@ public class TRPGGameManager {
         target.status = "normal";
         target.isDead = false;
         target.puppetRecoveryTurns = 0; // 완전 잠식(관전) 해제 — 아군 회복이 조종을 완전히 풀어준다
+        target.puppetTotalTurns = 0;    // 누적 조종 턴 리셋(#1)
         target.faintTurnsRemaining = 0; // 기절 타이머도 해제
         restorePlaying(target); // 부활 시 관전(스펙테이터) 해제 → 생존 복귀
         applyTraitUsed(pd, traitId, state.getCurrentTurn());
@@ -8928,15 +8931,37 @@ public class TRPGGameManager {
                 }
             }
 
+            // #1 조종 무행동 루프 방지: 재조종 유예 감소 + 누적 조종 턴 상한 도달 시 강제 완전회복.
+            //   (부분회복→재조종 반복으로 한 턴도 못 쓰던 문제 — 상한을 넘기면 아군 없이도 스스로 벗어난다.)
+            if (pd.puppetGraceTurns > 0) pd.puppetGraceTurns--;
+            if ("puppet".equals(pd.status) && !pd.isDead) {
+                pd.puppetTotalTurns++;
+                int puppetCap = Math.max(6, pd.san[1] + 1); // 대략 정신력 최대치 + 여유
+                if (pd.puppetTotalTurns >= puppetCap) {
+                    int pSan0 = pd.san[0];
+                    pd.san[0] = Math.min(pd.san[1], Math.max(2, pd.san[1] / 2));
+                    pd.status = "normal";
+                    pd.puppetRecoveryTurns = 0;
+                    pd.puppetTotalTurns = 0;
+                    pd.puppetGraceTurns = 3; // 잠시 재조종 면역(연속 루프 차단)
+                    updateAllScoreboards();
+                    gameLogger.logVital(pd.gmDisplayName(), 0, pd.hp[0], pd.hp[1], pd.san[0] - pSan0, pd.san[0], pd.san[1], "자아 회복(장기 조종 한계)");
+                    Player rp0 = Bukkit.getPlayer(pd.uuid);
+                    if (rp0 != null) rp0.sendMessage("§a오랜 조종 끝에 자아가 되돌아옵니다. 다시 스스로 움직일 수 있습니다. §7(정신력 " + pd.san[0] + ")");
+                    ai.injectGmSystem("[자아 회복] " + commDisplayName(pd) + "이(가) 오랜 조종에서 스스로 벗어났다(정신력 " + pd.san[0]
+                        + "). 더는 조종당하지 않는다(normal). 잠시 다시 삼켜지지 않는다. 이제부터 이 인물을 조종 상태로 서술하지 마라.");
+                }
+            }
             // 완전 잠식(관전) 자동회복 카운터
             if ("puppet".equals(pd.status) && pd.puppetRecoveryTurns > 0) {
                 pd.puppetRecoveryTurns--;
                 Player rp = Bukkit.getPlayer(pd.uuid);
                 if (pd.puppetRecoveryTurns <= 0) {
-                    // 자동 회복: SAN 1 복구, 관전 해제 (puppet 상태는 유지)
+                    // 자동 회복: SAN을 최소 2로 복구(1이면 한 대에 재조종 → 루프) + 재조종 유예. 다음 턴 normal 승격.
                     int pSan = pd.san[0];
-                    pd.san[0] = Math.max(1, pd.san[0]);
+                    pd.san[0] = Math.min(pd.san[1], Math.max(2, pd.san[0]));
                     pd.puppetRecoveryTurns = 0;
+                    pd.puppetGraceTurns = Math.max(pd.puppetGraceTurns, 2); // 관전 해제 직후 재조종 유예
                     updateAllScoreboards();
                     gameLogger.logVital(pd.gmDisplayName(), 0, pd.hp[0], pd.hp[1], pd.san[0]-pSan, pd.san[0], pd.san[1], "조종 일부 풀림(관전 해제)"); // 뷰어·재현: 자아 회복 반영
                     if (rp != null) {
@@ -8955,6 +8980,7 @@ public class TRPGGameManager {
             //   (완전 조종 -1은 heal 전용이라 제외 / 관전 중 >0은 위에서 처리 / 오직 중간상태 0만 대상.)
             else if ("puppet".equals(pd.status) && pd.puppetRecoveryTurns == 0 && pd.san[0] >= 2 && !pd.isDead) {
                 pd.status = "normal";
+                pd.puppetTotalTurns = 0;
                 updateAllScoreboards();
                 gameLogger.logVital(pd.gmDisplayName(), 0, pd.hp[0], pd.hp[1], 0, pd.san[0], pd.san[1], "조종에서 완전히 벗어남");
                 Player rp2 = Bukkit.getPlayer(pd.uuid);
