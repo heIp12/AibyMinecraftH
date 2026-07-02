@@ -1970,7 +1970,7 @@ public class TRPGGameManager {
                     // 해결판정 여부: 태그의 resolved 우선, 없으면 등급으로 추론(C 이상=해결, D=생존)
                     boolean resolved = clearTag.has("resolved")
                         ? clearTag.get("resolved").getAsBoolean()
-                        : gradeIdx(grade) >= gradeIdx("C");
+                        : gradeIdx(grade) >= gradeIdx("B"); // 명시 없으면 B+만 해결판정 인정(C=생존판정으로 하향, 진출 문턱↑)
                     deliverNarrative(player, raw); // 클리어 서술은 행동 플레이어에게
                     onClearEnding(grade, reason, resolved, by);
                     return;
@@ -9477,7 +9477,12 @@ public class TRPGGameManager {
         // ★행운 보정★: 능력으로 건 행운 수치를 실제 굴림에 반영(1~max로 클램프, 1회 소비). GM 텍스트 주입만 하고 굴림엔 안 반영되던 공백 보완.
         Integer luckAdj = pendingDiceLuck.remove(player.getUniqueId());
         if (luckAdj != null && luckAdj != 0) roll = Math.max(1, Math.min(max, roll + luckAdj));
-        int effDc = dc > 0 ? Math.max(2, Math.min(max, dc)) : (int) Math.ceil(max * 0.55); // dc 미지정 시 중앙값보다 약간 높게
+        // ★난이도 상향★: 기본 DC 0.55→0.62 + 후반 스테이지(3+)·오염도 비례 가산(성공은 항상 가능하도록 max-1 캡).
+        int diffStage = state.getTimelineStage();
+        int diffCorr  = corruptMan.getLevel();
+        int effDc = dc > 0 ? Math.max(2, Math.min(max, dc)) : (int) Math.ceil(max * 0.62); // dc 미지정 시 중앙보다 높게(난도↑)
+        int diffBump = Math.max(0, diffStage - 2) + diffCorr;
+        if (diffBump > 0) effDc = Math.min(max - 1, effDc + Math.min(diffBump, Math.max(2, max / 6)));
         int band = Math.max(1, max / 10);
         boolean success = roll >= effDc;
         boolean fail    = roll <  effDc - band;
