@@ -845,7 +845,8 @@ function ingest(file){const nm=file.name.toLowerCase();
   if(nm.endsWith(".json")){try{const j=JSON.parse(t);if(j.entity||j.world_rules||j.npcs)SCENARIO=j;else if(j.players)REPLAY=j;}catch(_){}if(REPLAY&&RAWCACHE.length){buildAlias();rebuild(RAWCACHE);renderSide();renderMain();}renderInfo();return;}
   loadLogText(file.name,t);renderInfo();});}
 function ingestAll(fl){const files=[...fl];const meta=files.filter(f=>/\.(replay|json|gdam)$/i.test(f.name));const logs=files.filter(f=>/\.(jsonl|txt)$/i.test(f.name));
-  Promise.all(meta.map(ingest)).then(()=>{if(logs[0])ingest(logs[0]);});}
+  // 같은 세션의 .txt + .events.jsonl 을 함께 올리면 ★하나만★ 쓴다(더 풍부한 .events.jsonl 우선) — 이중 출력 방지.
+  Promise.all(meta.map(ingest)).then(()=>{const log=logs.find(f=>/\.jsonl$/i.test(f.name))||logs[0];if(log)ingest(log);});}
 // ★폴더 누적★: logs·replays·gdam이 서로 다른 폴더면, 각 폴더를 차례로 열어도 합쳐진다(초기화하지 않고 병합).
 //  logs 폴더를 먼저 열고 → replays 폴더를 열면 이미 보던 로그가 이름·스탯까지 갖춰 다시 렌더된다.
 function ingestFolder(fl){
@@ -853,6 +854,10 @@ function ingestFolder(fl){
   const add=(arr,f)=>{ if(!arr.some(x=>x.name===f.name&&x.size===f.size))arr.push(f); };
   for(const f of fl){if(/\.(jsonl|txt)$/i.test(f.name))add(FILES.logs,f);else if(/\.replay$/i.test(f.name))add(FILES.replays,f);else if(/\.gdam$/i.test(f.name))add(FILES.gdams,f);else if(/\.json$/i.test(f.name))add(FILES.scenarios,f);}
   FILES.logs.sort((a,b)=>a.name.localeCompare(b.name));
+  // ★같은 세션 중복 제거★: 같은 씨드#회차의 .txt 와 .events.jsonl 이 모두 있으면 목록엔 .events.jsonl(더 풍부) 하나만 — '파일 두 개로 뜨는' 문제 해소.
+  {const baseOf=n=>n.replace(/\.events\.jsonl$/i,"").replace(/\.jsonl$/i,"").replace(/\.txt$/i,"");
+   const jsonlBases=new Set(FILES.logs.filter(f=>/\.jsonl$/i.test(f.name)).map(f=>baseOf(f.name)));
+   FILES.logs=FILES.logs.filter(f=>!(/\.txt$/i.test(f.name)&&jsonlBases.has(baseOf(f.name))));}
   if(!FILES.logs.length){document.getElementById("meta").textContent="이 폴더엔 로그가 없습니다 — 먼저 logs 폴더를 여세요(replays·gdam은 이어서 열면 자동 결합).";resolveFolderTitles().then(renderSide);return;}
   const cur=FILES.logs.find(f=>f.__on)||FILES.logs.find(f=>/\.events\.jsonl$/i.test(f.name))||FILES.logs[0];
   openFolderLog(cur); // 보던 로그 유지 — 새로 합쳐진 replay/gdam을 반영해 다시 연다
