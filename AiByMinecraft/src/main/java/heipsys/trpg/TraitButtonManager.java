@@ -31,8 +31,8 @@ public class TraitButtonManager {
             if (!t.active) continue;
             boolean onCooldown = t.remainingCooldown > 0
                 || (t.cooldownTurns == -1 && t.usedThisStage > 0);
-            String cdText = t.remainingCooldown > 0 ? " [" + t.remainingCooldown + "턴]"
-                : (t.cooldownTurns == -1 && t.usedThisStage > 0 ? " [스테이지 소진]" : "");
+            String cdText = (t.cooldownTurns == -1 && t.usedThisStage > 0) ? " [스테이지 소진]"
+                : (t.remainingCooldown > 0 ? " [" + t.remainingCooldown + "턴]" : "");
             String rapidWarn = (t.usedThisStage >= 1) ? " ⚠연속" : "";
 
             if (onCooldown) {

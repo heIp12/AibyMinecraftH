@@ -24,17 +24,15 @@ public class GameStateManager {
         /** 괴담이 학습한 플레이어별 말투·행동 (이름 → 관찰 기록) */
         public Map<String, List<String>> playerProfiles = new HashMap<>();
 
-        public void onRetry() {
+        public void onRetry(int maxLevel) {
             attempts++;
-            level = calcLevel();
+            level = calcLevel(maxLevel);
         }
 
-        private int calcLevel() {
+        /** 재도전 2회당 오염 1단계, 상한은 시나리오 규모별 최고 단계(CODE-17)에 맞춘다(기본 4). */
+        private int calcLevel(int maxLevel) {
             if (attempts == 0) return 0;
-            if (attempts <= 2) return 1;
-            if (attempts <= 4) return 2;
-            if (attempts <= 6) return 3;
-            return 4;
+            return Math.min(maxLevel, (attempts + 1) / 2);
         }
 
         /** 다음 스테이지 이동 시 부분 리셋 — entity 메모리·오염도만, 플레이어 프로파일 유지 */
@@ -82,7 +80,7 @@ public class GameStateManager {
     private JsonObject gdamData = null;
 
     private final CorruptionData                 corruption = new CorruptionData();
-    private final Map<UUID, PlayerData>          players    = new LinkedHashMap<>();
+    private final Map<UUID, PlayerData>          players    = Collections.synchronizedMap(new LinkedHashMap<>());
     private final List<String>                   activeNpcs = new ArrayList<>();
     private final List<String>                   discoveredClues = new ArrayList<>();
     private final List<String>                   foundItems = new ArrayList<>();
@@ -146,7 +144,7 @@ public class GameStateManager {
 
     /** 재도전: 오염도 상승, 플레이어 상태 리셋, 파일은 다시 로드 */
     public void onRetry() {
-        corruption.onRetry();
+        corruption.onRetry(getMaxCorruptionLevel());
         timelineStage     = 0;
         turnsSinceAdvance = 0;
         currentTurn       = 0;
@@ -158,7 +156,9 @@ public class GameStateManager {
         archiveStageLog();   // 재도전 — 이번 시도 로그도 캠페인 로그에 보관
         eventLog.clear();
         loadTimelineConfig(gdamData);
-        players.values().forEach(PlayerData::resetToBase);
+        // 재도전 시에도 영구(비배역) 특성의 스탯 보정을 복원한다 — clearRoleData(다음 스테이지)와 동일한 불변식.
+        // (resetToBase만 하면 클리어 보상 특성의 str/hp 등이 재도전마다 사라진다.)
+        getAllPlayers().forEach(pd -> { pd.resetToBase(); pd.reapplyTraitStats(); });
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -194,10 +194,11 @@ public class GameStateManager {
         o.add("activeNpcs", SNAP_GSON.toJsonTree(activeNpcs));
         o.add("corruption", SNAP_GSON.toJsonTree(corruption));
         JsonObject ps = new JsonObject();
-        for (Map.Entry<UUID, PlayerData> e : players.entrySet())
-            ps.add(e.getKey().toString(), SNAP_GSON.toJsonTree(e.getValue()));
+        for (PlayerData pd : getAllPlayers())
+            ps.add(pd.uuid.toString(), SNAP_GSON.toJsonTree(pd));
         o.add("players", ps);
         synchronized (eventLog) { o.add("eventLog", SNAP_GSON.toJsonTree(eventLog)); } // 종료 평가·최근 장면 맥락
+        synchronized (campaignLog) { o.add("campaignLog", SNAP_GSON.toJsonTree(campaignLog)); } // 전 스테이지 총평 로그(이어하기 시 보존)
         JsonObject tko = new JsonObject();
         timeKnownOverride.forEach((u, b) -> tko.addProperty(u.toString(), b));
         o.add("timeKnownOverride", tko); // 플레이어별 시간 인지 토글(GM TIME_VISIBLE)
@@ -254,6 +255,14 @@ public class GameStateManager {
                 if (arr != null) for (EventLogEntry el : arr) if (el != null) eventLog.add(el);
             }
         }
+        synchronized (campaignLog) {
+            campaignLog.clear();
+            if (o.has("campaignLog") && o.get("campaignLog").isJsonArray()) {
+                EventLogEntry[] arr = SNAP_GSON.fromJson(o.get("campaignLog"), EventLogEntry[].class);
+                if (arr != null) for (EventLogEntry el : arr) if (el != null) campaignLog.add(el);
+            }
+        }
+        justFiredEvents.clear(); // 소비성 버퍼(스냅샷에 없음) — 재사용 인스턴스에 이전 사건이 잔류하지 않도록 정리
         timeKnownOverride.clear();
         if (o.has("timeKnownOverride") && o.get("timeKnownOverride").isJsonObject()) {
             for (Map.Entry<String, JsonElement> e : o.getAsJsonObject("timeKnownOverride").entrySet()) {
@@ -279,12 +288,13 @@ public class GameStateManager {
     public PlayerData getPlayer(UUID uuid)          { return players.get(uuid); }
     public PlayerData getPlayer(Player p)           { return players.get(p.getUniqueId()); }
     public boolean    hasPlayer(UUID uuid)          { return players.containsKey(uuid); }
-    public Collection<PlayerData> getAllPlayers()   { return players.values(); }
+    // 방어 복사본 반환 — AI 완료 스레드가 순회하는 동안 메인 스레드가 put/clear 해도 CME가 나지 않게(순회는 락 없이 스냅샷으로).
+    public Collection<PlayerData> getAllPlayers()   { synchronized (players) { return new ArrayList<>(players.values()); } }
 
     public int getAliveCount() {
         // 동물 형태(revive_as_animal)는 정상 행동·해결이 불가하므로 생존자로 세지 않는다
         // (동물만 남으면 사실상 패배 → 배드엔딩·워치독이 정상 작동하도록).
-        return (int) players.values().stream().filter(p -> !p.isDead && !"animal".equals(p.status)).count();
+        return (int) getAllPlayers().stream().filter(p -> !p.isDead && !"animal".equals(p.status)).count();
     }
     public int getTotalCount() { return players.size(); }
 
@@ -448,6 +458,7 @@ public class GameStateManager {
         if (dailyPhase || clockMinutes < 0) return;
         clockMinutes += minutesPerTurn;
         fireDueEvents();
+        syncStageToClock(); // 정상 턴에서도 시계 진행에 맞춰 추상 단계를 최소 보장(idleAdvance와 동일 정렬)
     }
 
     /** 현재 시각에 도달한 main_events를 1회씩 발화하여 justFiredEvents에 누적 */
@@ -505,7 +516,7 @@ public class GameStateManager {
     /** GM TIME_VISIBLE: 특정 플레이어의 시간 인지 여부 토글 */
     public void setTimeKnown(String playerName, boolean known) {
         if (playerName == null) return;
-        players.values().stream()
+        getAllPlayers().stream()
             .filter(p -> p.name.equals(playerName) || playerName.equals(p.charName))
             .findFirst()
             .ifPresent(p -> timeKnownOverride.put(p.uuid, known));
@@ -679,7 +690,7 @@ public class GameStateManager {
         List<PlayerData> sameZone  = new ArrayList<>();
         List<PlayerData> otherZone = new ArrayList<>();
         int notSpawnedCount = 0;
-        for (PlayerData p : players.values()) {
+        for (PlayerData p : getAllPlayers()) {
             if (p.uuid.equals(actor.getUniqueId()) || p.isDead) continue;
             if (!spawnedCheck.test(p.uuid)) { notSpawnedCount++; continue; }
             if (!actorZone.isEmpty() && actorZone.equals(p.zone)) sameZone.add(p);
@@ -728,7 +739,7 @@ public class GameStateManager {
     /** 로그 player 필드(계정명 또는 캐릭터명)로 PlayerData를 찾는다. 없으면 null(NPC·괴담·시스템 등). */
     private PlayerData playerOf(String who) {
         if (who == null) return null;
-        return players.values().stream()
+        return getAllPlayers().stream()
             .filter(p -> p.name.equals(who)
                 || (p.charName != null && !p.charName.isEmpty() && p.charName.equals(who)))
             .findFirst().orElse(null);
@@ -803,7 +814,7 @@ public class GameStateManager {
                 lines.add("[" + resolveDisplayName(e.player) + "] " + e.content);
             }
         }
-        int from = Math.max(0, lines.size() - limit);
+        int from = Math.max(0, lines.size() - Math.max(0, limit)); // limit 음수 방어(subList 경계 위반 방지)
         StringBuilder sb = new StringBuilder();
         for (String l : lines.subList(from, lines.size())) sb.append(l).append("\n");
         return sb.toString();

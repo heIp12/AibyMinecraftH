@@ -118,6 +118,9 @@ let ALIAS={}, REPLAY=null, SCENARIO=null, RAWCACHE=[], KNOWN=new Set(), CONTACTS
 let FILES={logs:[],replays:[],scenarios:[],gdams:[]};
 let playing=false, speed=1, queue=[], qi=0, qtimer=null, curBodyEl=null;
 let COLLAPSED=new Set(); // 정보 패널에서 접어둔 섹션 id — 재렌더(실시간 갱신 포함)에도 상태 유지
+let ITEM_OPEN=new Set(); // 가진 아이템 중 세부정보를 펼쳐둔 이름 — 재렌더·재생 갱신에도 유지
+let ABIL_OPEN=new Set(); // 내 능력 중 세부정보를 펼쳐둔 이름 — 재렌더·재생 갱신에도 유지
+let collapsedSeeded=false; // 최초 렌더 시 '플레이어 외 정보'는 접힌 상태로 시작(1회 시드 후 사용자 토글 존중)
 
 const GLOBAL_RE=/전체|전원|모두|모든|방송|broadcast|^\*$|all/i;
 const PHASE_SUFFIX=/\s*\((프롤로그|전환|목격|대기|뒷이야기|에필로그|배드엔딩|시간\s*경과)\)\s*$/;
@@ -134,6 +137,13 @@ function colorFor(name){ if(!name)return "#cdbbff"; let h=0; for(let i=0;i<name.
 function normalize(ev){
   let kind=ev.kind||"", actor=ev.actor||"", to=Array.isArray(ev.to)?ev.to.slice():[];
   const cat=ev.cat||"", who=ev.who||"", text=ev.text||""; let target="", bodyText=text; let viaName=ev.via||"";
+  // 상태(체력·정신)·이동·아이템 제거는 JSONL이면 구조화 필드가 있고, 구형 .txt면 본문에서 복원한다.
+  let hpAfter=ev.hpAfter,hpMax=ev.hpMax,sanAfter=ev.sanAfter,sanMax=ev.sanMax,hpDelta=ev.hpDelta,sanDelta=ev.sanDelta;
+  let zone=ev.zone||"", remove=ev.remove||false, ability=ev.ability||"";
+  // 구형 .txt: [상태]/[아이템]/[단서]/[능력]/[이동] 줄은 본문 첫 토큰이 행위자(who 비어있음) → 앞 토큰을 actor로 분리해 시점 귀속을 살린다.
+  if((!ev.actor&&!who)&&(/^(상태|아이템|단서|이동)$/.test(cat)||cat.startsWith("능력"))){
+    const mm=bodyText.match(/^(\S+)\s+([\s\S]*)$/); if(mm){actor=mm[1];bodyText=mm[2];}
+  }
   if(!kind||!actor){
     if(cat==="입력"){kind=kind||"input";if(!actor)actor=who;
       // 구형 txt '[입력] <계정> <내용>' — 첫 토큰=발화자(계정명은 본문에서 제거해 메타 노출 차단)
@@ -153,7 +163,7 @@ function normalize(ev){
       else if(x.startsWith("NPC")){kind=kind||"npc";const m=x.match(/\(([^)]*)\)/);if(m)actor=actor||m[1];const a=x.indexOf("→");if(a>=0)target=x.slice(a+1);}
       else{kind=kind||"gm";actor=actor||"GM";target=x;}}
     else if(cat.startsWith("NPC")){kind=kind||"npc";const m=cat.match(/\(([^)]*)\)/);if(m)actor=actor||m[1];const a=cat.indexOf("→");if(a>=0)target=cat.slice(a+1);}
-    else if(cat.startsWith("능력")){kind=kind||"ability";actor=actor||who;}
+    else if(cat.startsWith("능력")){kind=kind||"ability";actor=actor||who; const am=cat.match(/^능력\(([^)]*)\)/); if(am&&!ability)ability=am[1].trim();} // .txt: 능력명은 카테고리 '능력(이름)'에 있음 → 사용횟수 집계용으로 추출
     else if(cat==="통신"){
       // 통신 이벤트 — 본문 앞 [통화]/[근처]/[방송]/[외침]/[편지]/[귓속말](+·구체매체명) 라벨로 ★대화방식(매체)★을 인식.
       //  JSONL은 kind가 이미 있어 라벨은 중복 제거용 / 구형 .txt는 라벨에서 kind·매체명을 유추한다. 예: [편지·전서구]
@@ -165,8 +175,12 @@ function normalize(ev){
         bodyText=cm[4]; // 중복 라벨 제거 — 매체는 뱃지로만 표시
       } else { if(!actor)actor=who; if(!kind)kind="call"; }
     }
-    else if(cat==="아이템"){kind=kind||"item";actor=actor||who;}
+    else if(cat==="아이템"){kind=kind||"item";actor=actor||who; if(!remove&&/\s\(제거/.test(bodyText))remove=true;} // .txt: '(제거…)' 표기면 제거 이벤트
     else if(cat==="단서"){kind=kind||"clue";actor=actor||who;}
+    else if(cat==="상태"){kind=kind||"vital";actor=actor||who; // 체력·정신 변화 — JSONL엔 필드가 있고, .txt는 본문에서 숫자 복원
+      if(hpAfter==null){const m=bodyText.match(/체력\s*([+-]?\d+)\(→(\d+)\/(\d+)\)/);if(m){hpDelta=+m[1];hpAfter=+m[2];hpMax=+m[3];}}
+      if(sanAfter==null){const m=bodyText.match(/정신력\s*([+-]?\d+)\(→(\d+)\/(\d+)\)/);if(m){sanDelta=+m[1];sanAfter=+m[2];sanMax=+m[3];}}}
+    else if(cat==="이동"){kind=kind||"move";actor=actor||who; if(!zone){const m=bodyText.match(/→\s*([^(]+?)(?:\s*\(|$)/);if(m)zone=m[1].trim();}}
     else if(cat==="배역"){kind=kind||"alias";}
     else if(cat==="개인"){
       if(/배역 배정 →/.test(text)){kind="assign";if(!actor)actor=who;} // 신형 배역배정(당사자 개인 로그) — 시점 한정
@@ -182,9 +196,9 @@ function normalize(ev){
   if(target&&!to.length)to=[target];
   actor=canon(actor); to=to.map(canon);
   if(kind==="assign")bodyText=(/등장/.test(text)?"배역 등장: ":"배역 배정: ")+(actor||"?"); // 계정→role_id·zone_id 메타 제거 + 표시명으로
-  return {seq:ev.seq||0,t:ev.t||"",kind,actor,to,ability:ev.ability||"",detail:ev.detail||"",phase:ev.phase||"",cause:ev.cause||"",
-          text:bodyText,cat,orig:ev.orig||"",via:viaName,item:ev.item||"",
-          hpAfter:ev.hpAfter,hpMax:ev.hpMax,sanAfter:ev.sanAfter,sanMax:ev.sanMax,hpDelta:ev.hpDelta,sanDelta:ev.sanDelta};
+  return {seq:ev.seq||0,t:ev.t||"",kind,actor,to,ability,detail:ev.detail||"",phase:ev.phase||"",cause:ev.cause||"",
+          text:bodyText,cat,orig:ev.orig||"",via:viaName,item:ev.item||"",zone,remove,
+          hpAfter,hpMax,sanAfter,sanMax,hpDelta,sanDelta};
 }
 function visibleTo(e,vp){ if(vp==="__all__")return true; if(e.kind==="system"||e.kind==="broadcast"||e.kind==="nearby")return true;
   if(e.actor===vp)return true; if(e.to.includes(vp))return true; if(e.to.some(isGlobal))return true; return false; }
@@ -278,7 +292,8 @@ function renderSide(){
 }
 function badgeFor(e){ return e.kind==="ability"?(e.phase==="result"?"✨ "+(e.ability||"능력")+" 결과":(e.ability?"✨ "+e.ability:"✨ 능력"))
   :e.kind==="vital"?"❤ 상태"
-  :e.kind==="item"?"🎒 아이템":e.kind==="clue"?"🔍 단서"
+  :e.kind==="move"?"🚶 이동"
+  :e.kind==="item"?(e.remove?"🎒 아이템 −":"🎒 아이템"):e.kind==="clue"?"🔍 단서"
   :e.kind==="input"?"입력":e.kind==="call"?("📞 "+(e.via||"통화")):e.kind==="nearby"?"👥 근처":e.kind==="shout"?"📣 외침":e.kind==="letter"?("✉ "+(e.via||"편지")):e.kind==="whisper"?"🤫 귓속말"
   :e.kind==="signal"?("🚩 "+(e.via||"수신호")):e.kind==="psychic"?("🧠 "+(e.via||"정신감응"))
   :e.kind==="gm"?"GM 서술":e.kind==="broadcast"?"📢 방송":e.kind==="npc"?"☎ NPC"
@@ -383,28 +398,103 @@ function step(){
 function uniName(nm,jb){nm=(nm||"").trim();jb=(jb||"").trim();return (nm&&jb)?nm+"("+jb+")":(nm||jb);}
 // 특정 시점(seq) 기준, 그 플레이어가 '지금까지' 아는 상태를 접어서 계산(체력·정신·능력발동수·단서·아이템).
 function stateAt(vp,seq){
-  let hp=null,hpMax=null,san=null,sanMax=null,abil=0; const items=[],clues=[];
+  let hp=null,hpMax=null,san=null,sanMax=null,abil=0,loc=null; const items=[],clues=[]; const itemMeta={}; const usedByName={};
   const rp=((REPLAY&&REPLAY.players)||[]).find(p=>uniName(p.charName,p.job)===vp||p.charName===vp||canon(p.charName)===vp);
   if(rp){ if(Array.isArray(rp.hp)){hp=rp.hp[0];hpMax=rp.hp[1];} if(Array.isArray(rp.san)){san=rp.san[0];sanMax=rp.san[1];} }
   for(const e of EVENTS){ if((e.seq||0)>seq)break;
     const mine=e.actor===vp, tome=e.to&&e.to.includes(vp);
     if(e.kind==="vital"&&mine){ if(e.hpAfter!=null){hp=e.hpAfter;hpMax=e.hpMax;} if(e.sanAfter!=null){san=e.sanAfter;sanMax=e.sanMax;} }
-    else if(e.kind==="ability"&&mine&&e.phase!=="result")abil++;
-    else if(e.kind==="item"&&(mine||tome))items.push((e.item||e.text||"아이템").replace(/^→\S+\s*/,""));
+    else if(e.kind==="ability"&&mine&&e.phase!=="result"){abil++; if(e.ability)usedByName[e.ability]=(usedByName[e.ability]||0)+1;} // 능력별 사용횟수 집계
+    else if(e.kind==="item"&&(mine||tome)){ // 획득은 추가, 제거(remove)는 목록에서 뺀다 — 부가표기 '(…)'는 이름 매칭 위해 벗긴다
+      const raw=(e.item||e.text||"아이템").replace(/^→\S+\s*/,"");
+      const nm=raw.replace(/\s+\([^)]*\)\s*$/,"").trim();
+      if(e.remove){ const i=items.lastIndexOf(nm); if(i>=0)items.splice(i,1); }
+      else if(nm){ items.push(nm);
+        const noteM=raw.match(/\(([^)]*)\)\s*$/); // 획득 경위(시작 소지·제작 등) + 시각 — 클릭 시 세부정보
+        itemMeta[nm]={note:(e.note||(noteM?noteM[1]:"")||""), t:e.t||""}; } }
     else if(e.kind==="clue"&&(mine||tome))clues.push((e.text||"단서").replace(/^→\S+\s*/,""));
+    else if(e.kind==="move"&&mine)loc=e.zone||(e.text||"").replace(/^→\s*/,"").replace(/\s*\(.*$/,"").trim();
   }
-  return {hp,hpMax,san,sanMax,abil,items,clues};
+  // 내 능력(자신 시점) — replay의 특성 + 로그로 센 사용횟수. 남은 사용/쿨다운(스펙) 표시.
+  const abilList=[];
+  if(rp&&Array.isArray(rp.traits))for(const t of rp.traits){
+    const maxUses=(t.effectParams&&t.effectParams.uses!=null)?t.effectParams.uses:null;
+    abilList.push({name:t.name||"?",grade:t.grade||"",active:!!t.active,desc:t.description||"",effect:t.effect||"",
+      origin:t.origin||"",cd:t.cooldownTurns||0,maxUses,used:usedByName[t.name]||0});
+  }
+  return {hp,hpMax,san,sanMax,abil,items,clues,loc,itemMeta,abilList};
 }
 function livePanelHtml(vp,st){
   let h=sh('live-state','재생 시점 — 아는 만큼만 <span class="live">● LIVE</span>');
   h+=`<div class="know"><div class="khead" style="color:${colorFor(vp)}">${esc(vp)}</div>`;
   h+=`<span class="hp">체력 ${st.hp??"?"}${st.hpMax!=null?"/"+st.hpMax:""}</span> &nbsp; <span class="san">정신 ${st.san??"?"}${st.sanMax!=null?"/"+st.sanMax:""}</span><br>`;
-  h+=`<span class="st">능력 발동</span>${st.abil}회</div>`;
+  h+=`<span class="st">능력 발동</span>${st.abil}회${st.loc?` &nbsp; <span class="st">위치</span>${esc(st.loc)}`:""}</div>`;
+  // ★내 능력(자신 시점): 능력별 접기 — 접으면 이름+횟수만, 펴면 등급·설명·효과·쿨다운·남은사용★
+  if(st.abilList&&st.abilList.length){
+    h+=sh('live-abil',`✦ 내 능력 (${st.abilList.length})`)+`<div class="know kabil">`;
+    for(const a of st.abilList){ const open=ABIL_OPEN.has(a.name);
+      const cnt = a.maxUses!=null ? `남은 ${Math.max(0,a.maxUses-a.used)}/${a.maxUses}회`
+                : a.cd>0 ? `쿨 ${a.cd}턴` : (a.active?"발동형":"패시브");
+      h+=`<div class="aexp" data-abil="${escAttr(a.name)}" onclick="toggleAbil(this)" style="cursor:pointer">`
+        +`<span class="aarrow" style="color:var(--dim);font-size:11px">${open?"▾":"▸"}</span> ${a.active?"✦":"·"} ${esc(a.name)}`
+        +`${a.grade?` <span class="grd">${esc(a.grade)}</span>`:""} <span class="dim2">${esc(cnt)}</span></div>`
+        +`<div class="adet" style="display:${open?"":"none"};margin:1px 0 6px 15px;font-size:12px;color:#b9c2cf">${abilDetailHtml(a)}</div>`;
+    }
+    h+=`</div>`;
+  }
   const list=(arr,cls,id,label,icon)=>{ const uq=[...new Set((arr||[]).filter(Boolean))]; if(!uq.length)return "";
     return sh(id,`${icon} ${esc(label)} (${uq.length})`)+`<div class="know ${cls}">`+uq.map(x=>`<div>· ${esc(x)}</div>`).join("")+`</div>`;};
   h+=list(st.clues,"kclue","live-clue","알아낸 단서","🔍");
-  h+=list(st.items,"kitem","live-item","가진 아이템","🎒");
+  // ★가진 아이템: 클릭하면 펼쳐져 플레이어 시점에서 아는 세부정보(획득 경위·종류·설명·관련 단서)를 보여준다★
+  const uqItems=[...new Set((st.items||[]).filter(Boolean))];
+  if(uqItems.length){
+    h+=sh('live-item',`🎒 가진 아이템 (${uqItems.length})`)+`<div class="know kitem">`;
+    for(const nm of uqItems){ const open=ITEM_OPEN.has(nm);
+      h+=`<div class="iexp" data-item="${escAttr(nm)}" onclick="toggleItem(this)" style="cursor:pointer"><span class="iarrow" style="color:var(--dim);font-size:11px">${open?"▾":"▸"}</span> ${esc(nm)}</div>`
+        +`<div class="idet" style="display:${open?"":"none"};margin:1px 0 6px 15px;font-size:12px;color:#b9c2cf">${itemDetailHtml(nm,st)}</div>`;
+    }
+    h+=`</div>`;
+  }
   return h;
+}
+// 아이템 세부정보(플레이어 시점 공개분): 획득 경위 + 시나리오의 '보이는' 설명(종류·설명) + 이 아이템을 언급한 알아낸 단서. GM 전용(단서가치·내막)은 제외.
+function itemDetailHtml(nm,st){
+  const S=v=>v==null?"":String(v).trim();
+  const parts=[]; const meta=(st.itemMeta||{})[nm];
+  if(meta&&meta.note) parts.push(`<span class="st">획득</span>${esc(meta.note)}${meta.t?` <span class="dim2">${esc(meta.t)}</span>`:""}`);
+  let ki=null;
+  if(SCENARIO&&Array.isArray(SCENARIO.key_items)) ki=SCENARIO.key_items.find(it=>{const n=(it&&(it.name||it.id))||"";return n===nm||(n&&(n.includes(nm)||nm.includes(n)));});
+  if(ki){ const ty=S(ki.item_type||ki.type); if(ty)parts.push(`<span class="st">종류</span>${esc(ty)}`);
+    if(S(ki.description))parts.push(esc(ki.description)); }
+  const rel=[...new Set((st.clues||[]).filter(c=>c&&nm&&c.includes(nm)))];
+  for(const c of rel)parts.push(`<span class="st">단서</span>${esc(c)}`);
+  return parts.length?parts.join("<br>"):`<span class="dim2">아직 이 물건에 대해 알아낸 정보가 없다.</span>`;
+}
+function toggleItem(el){ const nm=el.dataset.item; if(!nm)return;
+  if(ITEM_OPEN.has(nm))ITEM_OPEN.delete(nm); else ITEM_OPEN.add(nm);
+  const open=ITEM_OPEN.has(nm), d=el.nextElementSibling, ar=el.querySelector(".iarrow");
+  if(d&&d.classList.contains("idet"))d.style.display=open?"":"none";
+  if(ar)ar.textContent=open?"▾":"▸";
+}
+// 능력 세부정보(펼침): 분류·등급·설명·효과·쿨다운·사용횟수·유래.
+function abilDetailHtml(a){
+  const parts=[];
+  parts.push(`<span class="st">분류</span>${a.active?"발동형":"패시브"}${a.grade?" · "+esc(a.grade)+"급":""}`);
+  if(a.desc)parts.push(esc(a.desc));
+  if(a.effect)parts.push(`<span class="st">효과</span>${esc(a.effect)}`);
+  const use=[];
+  if(a.maxUses!=null)use.push(`사용 ${a.used}/${a.maxUses}회 (남은 ${Math.max(0,a.maxUses-a.used)})`);
+  else if(a.used)use.push(`사용 ${a.used}회`);
+  if(a.cd>0)use.push(`쿨다운 ${a.cd}턴`);
+  if(use.length)parts.push(`<span class="st">사용</span>${esc(use.join(" · "))}`);
+  if(a.origin)parts.push(`<span class="dim2">유래: ${esc(a.origin)}</span>`);
+  return parts.join("<br>");
+}
+function toggleAbil(el){ const nm=el.dataset.abil; if(!nm)return;
+  if(ABIL_OPEN.has(nm))ABIL_OPEN.delete(nm); else ABIL_OPEN.add(nm);
+  const open=ABIL_OPEN.has(nm), d=el.nextElementSibling, ar=el.querySelector(".aarrow");
+  if(d&&d.classList.contains("adet"))d.style.display=open?"":"none";
+  if(ar)ar.textContent=open?"▾":"▸";
 }
 function updateLive(seq){
   if(curVP==="__all__")return;
@@ -457,6 +547,27 @@ function buildAlias(){
     if(mm=c.match(/NPC\(([^)]+)\)/))KNOWN.add(mm[1].trim());
     if(c.startsWith("GM→")){const t=stripPhase(c.slice(3)).replace(/^NPC\(/,"").replace(/\)$/,"").trim();if(t&&!isGlobal(t))KNOWN.add(t);}
   }
+  // ★별칭 없는 로그 보강(재도전·이어하기·재현 등 배역 재배정 없이 시작한 실행)★:
+  //  [배역] 줄이 없어 계정(heIp12)과 캐릭터(민가람)가 갈라져 왼쪽바에 인물이 2개로 뜨는 걸 막는다.
+  //  단서·상태로 로그에 남은 캐릭터명을 GM→<계정> 서술에서 찾아 계정→캐릭터로 잇는다(플레이어 이름은 로그 안에 있다).
+  (function deriveAcctFromNarrative(){
+    const chars=new Set();
+    for(const ev of RAWCACHE){const c=ev.cat||"";
+      if(c.startsWith("능력")||c==="단서"||c==="상태"||c==="아이템"||c==="이동"){
+        const mm=(ev.text||"").match(/^(\S+)\s/); if(mm)chars.add(mm[1]); }}
+    if(REPLAY&&Array.isArray(REPLAY.players))for(const p of REPLAY.players)if(p.charName)chars.add(p.charName);
+    const charList=[...chars].map(c=>String(c).replace(/[(（].*$/,"").trim()).filter(c=>c.length>=2);
+    if(!charList.length)return;
+    const acctText={};
+    for(const ev of RAWCACHE){const c=ev.cat||"";
+      if(c.startsWith("GM→")){const acct=c.slice(3).replace(/[(（].*$/,"").trim();
+        if(acct&&!isGlobal(acct)&&!acct.startsWith("NPC")) acctText[acct]=(acctText[acct]||"")+" "+(ev.text||""); }}
+    for(const acct in acctText){ if(ALIAS[acct])continue; // 정상 로그(별칭 존재)는 건드리지 않음
+      let best="",bestN=0;
+      for(const ch of charList){ const re=new RegExp(ch.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"),"g");
+        const n=(acctText[acct].match(re)||[]).length; if(n>bestN){bestN=n;best=ch;} }
+      if(best&&bestN>0) setAll(canon(best),acct); } // 계정→캐릭터 표시명으로 통합
+  })();
 }
 function rebuild(raw){ EVENTS=raw.map(normalize).sort((a,b)=>(a.seq||0)-(b.seq||0)); buildViewpoints(); curVP="__all__"; stopPlay(); }
 // 로그에서 괴담(시나리오) 이름 파싱 — 세션 이벤트의 title 필드(JSONL) 또는 '괴담: X' 라인(.txt)
@@ -519,7 +630,11 @@ function applyCollapsed(){
     const collapsed=COLLAPSED.has(h.dataset.sid);
     const ar=h.querySelector(".secarrow"); if(ar)ar.textContent=collapsed?"▸":"▾";
     let el=h.nextElementSibling;
-    while(el && !(el.tagName==="H3"&&el.classList.contains("sech"))){ el.style.display=collapsed?"none":""; el=el.nextElementSibling; }
+    while(el && !(el.tagName==="H3"&&el.classList.contains("sech"))){
+      // 중첩 섹션 헤더(스포일러로 감싼 GM 전용 하위 섹션)를 품은 요소는 통째로 숨기지 않는다 — 그 하위 섹션은 자기 헤더로 독립 접힘.
+      if(!(el.querySelector&&el.querySelector("h3.sech"))) el.style.display=collapsed?"none":"";
+      el=el.nextElementSibling;
+    }
   }
 }
 function toggleSec(h){ const id=h.dataset.sid; if(COLLAPSED.has(id))COLLAPSED.delete(id); else COLLAPSED.add(id); applyCollapsed(); }
@@ -535,19 +650,29 @@ function scNameOf(rid){
 function scRelSvg(rels){
   const ids=[]; for(const rr of rels) for(const rid of (rr.roles||[])) if(rid&&!ids.includes(rid)) ids.push(rid);
   if(ids.length<2) return "";
-  const W=310, H=Math.max(210,70+ids.length*24), cx=W/2, cy=H/2, R=Math.min(cx,cy)-48;
+  // 관계 '유형'별로 선 색을 배정하고, 유형 라벨은 선 위(겹침)가 아니라 아래 범례로 뺀다.
+  const PAL=["#7fb2ff","#ff9a8f","#8fe0a8","#ffd479","#c9a0ff","#7fe0d8","#ff9ecb","#b7c47f"];
+  const typeColor={}; let ci=0;
+  for(const rr of rels){const t=(rr.type||"기타"); if(!(t in typeColor)){typeColor[t]=PAL[ci%PAL.length];ci++;}}
+  const W=320, H=Math.max(240,90+ids.length*30), cx=W/2, cy=H/2-4, R=Math.min(cx,cy)-56;
   const pos={}; ids.forEach((id,i)=>{const a=-Math.PI/2+2*Math.PI*i/ids.length; pos[id]=[cx+R*Math.cos(a), cy+R*Math.sin(a)];});
-  let s=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="background:var(--panel2);border:1px solid var(--line);border-radius:8px;margin-bottom:6px">`;
+  let s=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="background:var(--panel2);border:1px solid var(--line);border-radius:8px;margin-bottom:4px">`;
   for(const rr of rels){const rs=rr.roles||[]; if(rs.length<2)continue; const a=pos[rs[0]],b2=pos[rs[1]]; if(!a||!b2)continue;
-    const mx=(a[0]+b2[0])/2, my=(a[1]+b2[1])/2;
-    s+=`<line x1="${a[0].toFixed(0)}" y1="${a[1].toFixed(0)}" x2="${b2[0].toFixed(0)}" y2="${b2[1].toFixed(0)}" stroke="#4a5266" stroke-width="1.5"/>`;
-    s+=`<text x="${mx.toFixed(0)}" y="${my.toFixed(0)}" fill="#9aa1b1" font-size="10" text-anchor="middle">${esc(rr.type||"")}</text>`;
+    s+=`<line x1="${a[0].toFixed(0)}" y1="${a[1].toFixed(0)}" x2="${b2[0].toFixed(0)}" y2="${b2[1].toFixed(0)}" stroke="${typeColor[rr.type||"기타"]}" stroke-width="2" opacity="0.85"/>`;
   }
   for(const id of ids){const p=pos[id], nm=scNameOf(id);
-    s+=`<circle cx="${p[0].toFixed(0)}" cy="${p[1].toFixed(0)}" r="6" fill="${colorFor(nm)}"/>`;
-    s+=`<text x="${p[0].toFixed(0)}" y="${(p[1]-10).toFixed(0)}" fill="#e7e9ee" font-size="11" text-anchor="middle">${esc(nm)}</text>`;
+    s+=`<circle cx="${p[0].toFixed(0)}" cy="${p[1].toFixed(0)}" r="6" fill="${colorFor(nm)}" stroke="#1a1d26" stroke-width="1.5"/>`;
+    // 노드 라벨: 위쪽 반원은 노드 위, 아래쪽 반원은 노드 아래에 둬 중앙 겹침을 완화.
+    const ly=(p[1]>cy)?p[1]+15:p[1]-10;
+    s+=`<text x="${p[0].toFixed(0)}" y="${ly.toFixed(0)}" fill="#e7e9ee" font-size="10" text-anchor="middle">${esc(nm)}</text>`;
   }
-  return s+`</svg>`;
+  s+=`</svg>`;
+  // 색별 관계 범례(선 색 = 관계 유형)
+  let leg=`<div style="display:flex;flex-wrap:wrap;gap:5px 12px;margin:0 0 6px;font-size:11px">`;
+  for(const t in typeColor)
+    leg+=`<span style="white-space:nowrap"><span style="display:inline-block;width:11px;height:3px;border-radius:2px;background:${typeColor[t]};margin-right:5px;vertical-align:middle"></span>${esc(t.replace(/_/g," "))}</span>`;
+  leg+=`</div>`;
+  return s+leg;
 }
 // 시나리오의 나머지 표시 가능한 모든 것: 관계도·NPC 상세(할일)·배역·타임라인·단서·아이템·제약.
 function scenarioExtraHtml(){
@@ -558,7 +683,7 @@ function scenarioExtraHtml(){
   if(Array.isArray(rels)&&rels.length){
     h+=sh('rel','관계도'); const svg=scRelSvg(rels); if(svg)h+=svg;
     for(const r of rels){const names=(r.roles||[]).map(scNameOf).filter(Boolean).join(" ↔ ");
-      h+=`<div class="card"><b>${esc(names||"?")}</b> <span class="dim2">${esc(S(r.type))}</span>`
+      h+=`<div class="card"><b>${esc(names||"?")}</b> <span class="dim2">${esc(S(r.type).replace(/_/g," "))}</span>`
         +(S(r.description)?`<br>${esc(r.description)}`:"")
         +((r.mutual_contact||r.same_start_zone)?`<br><span class="dim2">${[r.mutual_contact?"서로 연락처 앎":"",r.same_start_zone?"같은 시작 구역":""].filter(Boolean).join(" · ")}</span>`:"")
         +`</div>`;}
@@ -574,8 +699,17 @@ function scenarioExtraHtml(){
         h+=`<div class="sub">할 일 · 일정</div>`;
         for(const s of sched){
           if(typeof s==="string"){h+=`<div class="tdesc">· ${esc(s)}</div>`;continue;}
-          const when=S(s.time||s.when||s.turn||s.condition), what=S(s.action||s.goal||s.intent||s.what||s.plan), will=S(s.will);
-          h+=`<div class="tdesc">· ${when?`<span class="dim2">[${esc(when)}]</span> `:""}${esc(what)}${will?` <span class="dim2">(의지:${esc(will)})</span>`:""}</div>`;
+          // ★한눈에 보이게 [조건]/[행동]/[목적] 라벨 줄로 정리★ (있는 것만).
+          const when=S(s.time||s.when||s.turn), goal=S(s.goal||s.intent), act=S(s.action||s.what||s.plan),
+                cond=S(s.condition), will=S(s.will), dur=S(s.duration_turns);
+          const lab=(k,v,c)=>v?`<div><span style="color:${c};font-weight:600">[${k}]</span> ${esc(v)}</div>`:"";
+          let blk=`<div style="margin:3px 0 6px;padding-left:7px;border-left:2px solid #3a4252">`;
+          if(when||dur) blk+=`<div class="dim2">⏱ ${esc(when||"")}${dur?(when?" · ":"")+esc(dur)+"턴":""}</div>`;
+          blk+=lab("조건",cond,"#e0b060")+lab("행동",act,"#7fc7ff")+lab("목적",goal,"#8fd98f");
+          if(will) blk+=`<div class="dim2">[의지] ${esc(will)}</div>`;
+          if(!cond&&!act&&!goal&&!when&&!will) blk+=`<div>· ${esc(JSON.stringify(s))}</div>`; // 알수없는 형식 폴백
+          blk+=`</div>`;
+          h+=blk;
         }
       }
       const sp=[];
@@ -598,12 +732,26 @@ function scenarioExtraHtml(){
   const tl=SCENARIO.timeline;
   if(tl&&typeof tl==="object"){
     h+=sh('timeline','사건 타임라인')+`<div class="card"><span class="dim2">${esc(S(tl.start_time))}~${esc(S(tl.end_time))} · 1턴 ${esc(S(tl.minutes_per_turn))}분 · 일상 ${esc(S(tl.daily_turns))}턴</span>`;
-    if(Array.isArray(tl.main_events))for(const ev of tl.main_events){
-      if(typeof ev==="string"){h+=`<br>· ${esc(ev)}`;continue;}
-      h+=`<br>· ${S(ev.time)?`<span class="dim2">[${esc(S(ev.time))}]</span> `:""}<b>${esc(S(ev.label||ev.id))}</b>${S(ev.effect)?` — ${esc(S(ev.effect))}`:""}${ev.blockable?` <span class="dim2">(막을수있음)</span>`:""}`;
+    if(Array.isArray(tl.main_events)&&tl.main_events.length){
+      h+=`<div class="sub">주요 사건 (시간순)</div>`;
+      for(const ev of tl.main_events){
+        if(typeof ev==="string"){h+=`<div class="tdesc">· ${esc(ev)}</div>`;continue;}
+        h+=`<div class="tdesc">${S(ev.time)?`<span class="dim2">[${esc(S(ev.time))}]</span> `:""}<b>${esc(S(ev.label||ev.id))}</b>${S(ev.effect)?` — ${esc(S(ev.effect))}`:""}${ev.blockable?` <span class="dim2">(막을 수 있음)</span>`:""}</div>`;
+      }
     }
-    for(const k of ["1","2","3","4","5","6"]){const st=tl[k]; if(st&&(st.condition||st.effect))
-      h+=`<br><span class="st">${k}단계</span>${esc(S(st.condition))}${S(st.effect)?" → "+esc(S(st.effect)):""}`;}
+    // ★단계 진행을 분기 사다리로 — 각 단계가 [조건]→[결과] 블록으로 갈라져 한눈에 진행이 보이게★
+    const stages=[]; for(const k of ["1","2","3","4","5","6"]){const st=tl[k]; if(st&&(S(st.condition)||S(st.effect)))stages.push([k,st]);}
+    if(stages.length){
+      h+=`<div class="sub">단계 진행 (조건 → 결과)</div>`;
+      for(let i=0;i<stages.length;i++){const k=stages[i][0],st=stages[i][1];
+        h+=`<div style="margin:2px 0;padding:4px 8px;border-left:3px solid #6a5a9a;background:#22262e;border-radius:0 4px 4px 0">`
+          +`<b style="color:#c9b6ff">▸ ${esc(k)}단계</b>`
+          +(S(st.condition)?`<div><span style="color:#e0b060;font-weight:600">[조건]</span> ${esc(S(st.condition))}</div>`:"")
+          +(S(st.effect)?`<div><span style="color:#8fd98f;font-weight:600">[결과]</span> ${esc(S(st.effect))}</div>`:"")
+          +`</div>`;
+        if(i<stages.length-1)h+=`<div style="text-align:center;color:#6a5a9a;font-size:11px;line-height:1">↓</div>`;
+      }
+    }
     h+=`</div>`;
   }
   if(Array.isArray(SCENARIO.clues)&&SCENARIO.clues.length){
@@ -643,6 +791,8 @@ function scenarioExtraHtml(){
   return h;
 }
 function renderInfo(){
+  // 플레이어 정보만 펼치고 나머지(괴담·구역·관계·NPC·배역·타임라인·단서·아이템·제약)는 접은 상태로 시작.
+  if(!collapsedSeeded){ ['entity','solution','zones','rel','npc','roles','timeline','clues','items','cons'].forEach(id=>COLLAPSED.add(id)); collapsedSeeded=true; }
   const b=document.getElementById("infoBody");let h="";
   const S=v=>v==null?"":String(v).trim();
   const row=(label,val)=>{const s=S(val);return s?`<br><span class="st">${esc(label)}</span>${esc(s)}`:"";};
@@ -662,6 +812,13 @@ function renderInfo(){
           if(boosts)h+=`<div class="tboost">스탯 ${esc(boosts)}</div>`;
           if(S(t.effect))h+=`<div class="teff">⚙ ${esc(t.effect)}</div>`;
           h+=`</div>`;}}
+      // 시작 소지품 + 시작 정보(아는 것) — 시나리오 역할(role) 조인, 없으면 replay heldItemIds(코드 id 중복 제거)
+      {const role=(SCENARIO&&Array.isArray(SCENARIO.roles))?SCENARIO.roles.find(r=>r&&(r.role_id===p.roleId||r.char_name===p.charName)):null;
+        let si=(role&&Array.isArray(role.start_item))?role.start_item.slice():null;
+        if(!si&&Array.isArray(p.heldItemIds)){const seen=new Set();si=[];for(const it of p.heldItemIds){const s=S(it);if(!s||/^[A-Za-z0-9_]+$/.test(s)||seen.has(s))continue;seen.add(s);si.push(s);}}
+        if(si&&si.length)h+=`<div class="sub">시작 소지품</div><div class="dim2">${si.map(esc).join(" · ")}</div>`;
+        const ii=(role&&Array.isArray(role.initial_info))?role.initial_info:[];
+        if(ii.length){h+=`<div class="sub">시작 정보 (아는 것)</div>`;for(const inf of ii){const s=S(inf);if(s)h+=`<div style="font-size:12px;color:#b9c2cf;margin:1px 0">· ${esc(s)}</div>`;}}}
       h+=`</div>`;}}
   if(SCENARIO){const e=SCENARIO.entity||{},ai=e.ai_context||{},ph=e.physical||{};
     h+=sh('entity','괴담 개요')+`<div class="card"><b>${esc(e.name||"?")}</b> <span style="color:var(--dim)">${esc(S(SCENARIO.scale))}${e.type?" · "+esc(e.type):""}</span>`;
@@ -680,6 +837,7 @@ function renderInfo(){
       const roleName={}; if(REPLAY&&Array.isArray(REPLAY.players))for(const p of REPLAY.players)if(p.roleId)roleName[p.roleId]=p.charName||p.roleId;
       h+=sh('zones','구역 (맵)');
       for(const z of SCENARIO.zones){
+        if(!z)continue;
         const conns=(z.connections||[]).map(c=>zname[c]||c).filter(Boolean).join(" · ");
         const who=(z.accessible_by||[]).map(r=>roleName[r]||r).filter(Boolean).join(", ");
         h+=`<div class="card"><b>${esc(z.name||z.zone_id||"?")}</b> <span class="dim2">${esc(z.area||"")}</span>`
@@ -701,7 +859,8 @@ function ingest(file){const nm=file.name.toLowerCase();
   if(nm.endsWith(".json")){try{const j=JSON.parse(t);if(j.entity||j.world_rules||j.npcs)SCENARIO=j;else if(j.players)REPLAY=j;}catch(_){}if(REPLAY&&RAWCACHE.length){buildAlias();rebuild(RAWCACHE);renderSide();renderMain();}renderInfo();return;}
   loadLogText(file.name,t);renderInfo();});}
 function ingestAll(fl){const files=[...fl];const meta=files.filter(f=>/\.(replay|json|gdam)$/i.test(f.name));const logs=files.filter(f=>/\.(jsonl|txt)$/i.test(f.name));
-  Promise.all(meta.map(ingest)).then(()=>{if(logs[0])ingest(logs[0]);});}
+  // 같은 세션의 .txt + .events.jsonl 을 함께 올리면 ★하나만★ 쓴다(더 풍부한 .events.jsonl 우선) — 이중 출력 방지.
+  Promise.all(meta.map(ingest)).then(()=>{const log=logs.find(f=>/\.jsonl$/i.test(f.name))||logs[0];if(log)ingest(log);});}
 // ★폴더 누적★: logs·replays·gdam이 서로 다른 폴더면, 각 폴더를 차례로 열어도 합쳐진다(초기화하지 않고 병합).
 //  logs 폴더를 먼저 열고 → replays 폴더를 열면 이미 보던 로그가 이름·스탯까지 갖춰 다시 렌더된다.
 function ingestFolder(fl){
@@ -709,6 +868,10 @@ function ingestFolder(fl){
   const add=(arr,f)=>{ if(!arr.some(x=>x.name===f.name&&x.size===f.size))arr.push(f); };
   for(const f of fl){if(/\.(jsonl|txt)$/i.test(f.name))add(FILES.logs,f);else if(/\.replay$/i.test(f.name))add(FILES.replays,f);else if(/\.gdam$/i.test(f.name))add(FILES.gdams,f);else if(/\.json$/i.test(f.name))add(FILES.scenarios,f);}
   FILES.logs.sort((a,b)=>a.name.localeCompare(b.name));
+  // ★같은 세션 중복 제거★: 같은 씨드#회차의 .txt 와 .events.jsonl 이 모두 있으면 목록엔 .events.jsonl(더 풍부) 하나만 — '파일 두 개로 뜨는' 문제 해소.
+  {const baseOf=n=>n.replace(/\.events\.jsonl$/i,"").replace(/\.jsonl$/i,"").replace(/\.txt$/i,"");
+   const jsonlBases=new Set(FILES.logs.filter(f=>/\.jsonl$/i.test(f.name)).map(f=>baseOf(f.name)));
+   FILES.logs=FILES.logs.filter(f=>!(/\.txt$/i.test(f.name)&&jsonlBases.has(baseOf(f.name))));}
   if(!FILES.logs.length){document.getElementById("meta").textContent="이 폴더엔 로그가 없습니다 — 먼저 logs 폴더를 여세요(replays·gdam은 이어서 열면 자동 결합).";resolveFolderTitles().then(renderSide);return;}
   const cur=FILES.logs.find(f=>f.__on)||FILES.logs.find(f=>/\.events\.jsonl$/i.test(f.name))||FILES.logs[0];
   openFolderLog(cur); // 보던 로그 유지 — 새로 합쳐진 replay/gdam을 반영해 다시 연다

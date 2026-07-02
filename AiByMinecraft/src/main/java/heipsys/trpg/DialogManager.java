@@ -309,6 +309,106 @@ public class DialogManager {
         player.showDialog(dialog);
     }
 
+    /** 시작 설정 — 괴담 유형/성격 선택(종류별 테스트용). onPick에 컨셉 제약 문구 전달(""=무작위). */
+    public void showEntityTypeChoice(Player player, java.util.function.Consumer<String> onPick) {
+        String[][] opts = {
+            {"", "무작위 (기본)", "유형 제약 없이 매번 자유 생성"},
+            {"추격·살인마형 — 물리적으로 쫓고 해치는 위협 중심", "추격·살인마형", "물리 위협·도주·제압 중심"},
+            {"규칙·금기형 — 지켜야 할 규칙/금기가 있고 어기면 화를 입는", "규칙·금기형", "규칙 파악과 준수가 생존의 열쇠"},
+            {"인지·정신형 — 보거나 알수록 위험해지는 인지 기반 위협", "인지·정신형", "시선·관심·인지가 매개 (예: 보라색 여인)"},
+            {"사물·저주물건형 — 특정 물건에 깃든 저주가 중심", "사물·저주물건형", "물건의 내력·처분이 핵심"},
+            {"장소·공간형 — 공간 자체가 뒤틀리는(루프·이계) 유형", "장소·공간형", "이상 공간·무한 복도·백룸류"},
+            {"정보격리·통신형 — 통신을 끊거나 왜곡하는 유형", "정보격리·통신형", "연락 두절·변조가 공포의 축"},
+            {"빙의·정체차용형 — 사람 몸이나 정체를 빼앗는 유형", "빙의·정체차용형", "누가 진짜인지 의심하게 되는"},
+            {"시간·인과형 — 시간루프·인과 역전을 다루는 유형", "시간·인과형", "루프·예언·역행"},
+            {"집단·감염형 — 사람 사이로 번지는 전파형 위협", "집단·감염형", "감염·소문·집단 환각"},
+            {"유희형 성격 — 사람을 갖고 노는 장난스러운 괴담", "성격: 유희형", "낄낄대며 판을 짜는 유형"},
+            {"심판자형 성격 — 죄·위선을 심판하려 드는 괴담", "성격: 심판자형", "죄책감·고해를 파고드는 유형"}
+        };
+        List<ActionButton> buttons = new ArrayList<>();
+        for (String[] o : opts) {
+            final String hint = o[0];
+            buttons.add(ActionButton.create(
+                Component.text(o[1], hint.isEmpty() ? NamedTextColor.GRAY : NamedTextColor.LIGHT_PURPLE),
+                Component.text(o[2]),
+                150,
+                DialogAction.customClick((v, a) -> onPick.accept(hint),
+                    ClickCallback.Options.builder().uses(1).build())));
+        }
+        ActionButton cancel = ActionButton.create(
+            Component.text("닫기", TextColor.color(0xAAAAAA)),
+            Component.text("설정을 바꾸지 않습니다."), 100, null);
+        Component body = Component.text()
+            .append(Component.text("다음에 생성될 괴담의 유형/성격을 고정합니다. (종류별 테스트용)", NamedTextColor.WHITE))
+            .appendNewline()
+            .append(Component.text("선택은 다음 생성부터 계속 적용 — '무작위'로 되돌릴 수 있습니다.", NamedTextColor.GRAY))
+            .build();
+        Dialog dialog = Dialog.create(b -> b.empty()
+            .base(DialogBase.builder(Component.text("시작 설정  —  괴담 유형/성격 선택"))
+                .body(List.of(DialogBody.plainMessage(body)))
+                .build())
+            .type(DialogType.multiAction(buttons, cancel, 2))
+        );
+        player.showDialog(dialog);
+    }
+
+    /** 시작 설정 다이얼로그 — 자동생성·시작 스테이지·괴담 유형을 버튼으로 고른다. 항목을 누르면 바뀌고 이 창이 다시 열린다. */
+    public void showStartSettings(Player player, boolean pregen, int startStage, String typeHint,
+                                  Runnable onTogglePregen, Runnable onPickStage, Runnable onPickType) {
+        List<ActionButton> buttons = new ArrayList<>();
+        buttons.add(ActionButton.create(
+            Component.text("자동 사전생성:  " + (pregen ? "켜짐" : "꺼짐"), pregen ? NamedTextColor.GREEN : NamedTextColor.RED),
+            Component.text("다음 시나리오를 미리 만들어 둘지 (끄면 즉석 생성)"), 180,
+            DialogAction.customClick((v, a) -> onTogglePregen.run(), ClickCallback.Options.builder().uses(1).build())));
+        buttons.add(ActionButton.create(
+            Component.text("시작 스테이지:  " + startStage + (startStage > 1 ? "  (레벨 보정 " + (startStage - 1) + "단계)" : ""), NamedTextColor.AQUA),
+            Component.text("새 게임을 몇 스테이지부터 — 높을수록 시작 캐릭터가 강함 (1~6)"), 180,
+            DialogAction.customClick((v, a) -> onPickStage.run(), ClickCallback.Options.builder().uses(1).build())));
+        buttons.add(ActionButton.create(
+            Component.text("괴담 유형/성격:  " + (typeHint == null || typeHint.isEmpty() ? "무작위" : typeHint), NamedTextColor.LIGHT_PURPLE),
+            Component.text("다음 생성 괴담의 유형/성격 고정 (테스트용)"), 180,
+            DialogAction.customClick((v, a) -> onPickType.run(), ClickCallback.Options.builder().uses(1).build())));
+        ActionButton close = ActionButton.create(
+            Component.text("닫기", TextColor.color(0xAAAAAA)),
+            Component.text("설정 완료 — 다음 /trpg start 부터 적용"), 120, null);
+        Component body = Component.text()
+            .append(Component.text("새 게임 시작 옵션을 고릅니다. 항목을 누르면 값이 바뀌고 이 창이 다시 열립니다.", NamedTextColor.WHITE))
+            .appendNewline()
+            .append(Component.text("설정은 다음 /trpg start 부터 적용됩니다.", NamedTextColor.GRAY))
+            .build();
+        Dialog dialog = Dialog.create(b -> b.empty()
+            .base(DialogBase.builder(Component.text("TRPG 시작 설정"))
+                .body(List.of(DialogBody.plainMessage(body)))
+                .build())
+            .type(DialogType.multiAction(buttons, close, 1))
+        );
+        player.showDialog(dialog);
+    }
+
+    /** 시작 스테이지(1~6) 선택 다이얼로그. onPick에 고른 스테이지 번호 전달. */
+    public void showStageChoice(Player player, int cur, java.util.function.IntConsumer onPick) {
+        List<ActionButton> buttons = new ArrayList<>();
+        for (int i = 1; i <= 6; i++) {
+            final int st = i;
+            String label = st + "스테이지" + (st == cur ? "  (현재)" : "");
+            String desc = st == 1 ? "보정 없음 — 처음부터 시작" : "레벨 보정 " + (st - 1) + "단계 (올스탯 +" + ((st - 1) * 2) + " & 특성 추가/등급↑)";
+            buttons.add(ActionButton.create(
+                Component.text(label, st == cur ? NamedTextColor.YELLOW : NamedTextColor.AQUA),
+                Component.text(desc), 130,
+                DialogAction.customClick((v, a) -> onPick.accept(st), ClickCallback.Options.builder().uses(1).build())));
+        }
+        ActionButton cancel = ActionButton.create(
+            Component.text("취소", TextColor.color(0xAAAAAA)), Component.text("스테이지를 바꾸지 않습니다."), 100, null);
+        Dialog dialog = Dialog.create(b -> b.empty()
+            .base(DialogBase.builder(Component.text("시작 스테이지 선택"))
+                .body(List.of(DialogBody.plainMessage(
+                    Component.text("새 게임을 몇 스테이지부터 시작할까요? (높을수록 시작 캐릭터가 강함)", NamedTextColor.WHITE))))
+                .build())
+            .type(DialogType.multiAction(buttons, cancel, 3))
+        );
+        player.showDialog(dialog);
+    }
+
     // ──────────────────────────────────────────────────────────────
     //  캐릭터 정보 GUI (게임 중 열람 — 기본/배역 분리, 능동 특성 사용)
     // ──────────────────────────────────────────────────────────────

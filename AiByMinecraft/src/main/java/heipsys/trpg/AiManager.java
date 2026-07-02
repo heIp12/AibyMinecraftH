@@ -73,6 +73,8 @@ public class AiManager {
     private boolean autoLatest = true;
     private volatile boolean modelsDiscovered = false;
     private volatile String autoHigh = null, autoMedium = null, autoLow = null;
+    /** 미니 티어(나노↑·중품질↓) 자동 탐지값 — NPC 등 '싸지만 나노보단 똑똑해야 하는' 역할용. */
+    private volatile String autoMini = null;
 
     // ── 실사용 토큰·비용 누적(서버 가동 중 영구) + 세션/스테이지 시작 스냅샷(델타용) ──
     private final LongAdder   accCalls   = new LongAdder();
@@ -116,8 +118,9 @@ public class AiManager {
 
     // ── provider별 등급 기본 모델 (네트워크 없음) ──
     private String defHigh()   { return switch (apiType) { case "claude" -> "claude-opus-4-8";          case "openai" -> "gpt-5.5";      default -> "gemini-2.5-pro"; }; }
-    private String defMedium() { return switch (apiType) { case "claude" -> "claude-sonnet-4-6";        case "openai" -> "gpt-5.4";      default -> "gemini-2.5-flash"; }; }
+    private String defMedium() { return switch (apiType) { case "claude" -> "claude-sonnet-5";          case "openai" -> "gpt-5.4";      default -> "gemini-2.5-flash"; }; }
     private String defLow()    { return switch (apiType) { case "claude" -> "claude-haiku-4-5-20251001"; case "openai" -> "gpt-5.4-nano"; default -> "gemini-2.5-flash-lite"; }; }
+    private String defMini()   { return switch (apiType) { case "claude" -> "claude-haiku-4-5-20251001"; case "openai" -> "gpt-5.4-mini"; default -> "gemini-2.5-flash"; }; }
 
     /** 백그라운드 워밍업 — 시작 시 호출하면 최신 모델 탐지가 메인 스레드를 막지 않는다. */
     public void warmUpModels() { CompletableFuture.runAsync(this::ensureModelsDiscovered); }
@@ -138,6 +141,7 @@ public class AiManager {
                         // 저품질=가용 Haiku 중 가장 저렴(3.5) 우선, 없으면 가용 Haiku 아무거나(예: 4.5)
                         autoLow    = firstMatch(ids, "3-5-haiku", null);
                         if (autoLow == null) autoLow = firstMatch(ids, "haiku", null);
+                        autoMini   = firstMatch(ids, "haiku", null); // 미니 = 최신 Haiku(4.5) — 저품질(3.5 우선)보다 한 단계 위
                     }
                     case "openai" -> { // 최신 버전 우선(목록 순서 비보장 → 버전 번호로 최신 선별). gpt-5 계열 > gpt-4 계열.
                         autoHigh = latestVer(ids, new String[]{"gpt-5"}, OAI_NON_FLAGSHIP);   // 최신 gpt-5 표준(mini·nano·pro 제외)
@@ -146,12 +150,14 @@ public class AiManager {
                         if (autoMedium == null) autoMedium = autoHigh;
                         autoLow = latestVer(ids, new String[]{"nano"}, OAI_SPECIAL);          // 최신 *-nano(최저가)
                         if (autoLow == null) autoLow = latestVer(ids, new String[]{"mini"}, OAI_SPECIAL);
+                        autoMini = latestVer(ids, new String[]{"mini"}, OAI_SPECIAL);         // 미니 = 최신 *-mini(나노 한 단계 위)
                     }
                     default -> { // gemini — 버전 최신 우선(gemini-2.5 < 3 < 3.1 < 3.5 …), 특수형 제외
                         autoHigh   = latestVer(ids, new String[]{"pro"}, GEMINI_NONCHAT);
                         autoMedium = latestVer(ids, new String[]{"flash"}, GEMINI_FLASH_EXCL); // flash(라이트 제외)
                         autoLow    = latestVer(ids, new String[]{"flash-lite"}, GEMINI_NONCHAT);
                         if (autoLow == null) autoLow = latestVer(ids, new String[]{"flash"}, GEMINI_FLASH_EXCL);
+                        autoMini   = latestVer(ids, new String[]{"flash"}, GEMINI_FLASH_EXCL); // 미니 = flash(라이트 제외)
                     }
                 }
             } catch (Exception ignored) { /* 실패 → 하드코딩 폴백 */ }
@@ -241,6 +247,12 @@ public class AiManager {
         if (mediumModelOverride != null) return mediumModelOverride;
         ensureModelsDiscovered();
         return autoMedium != null ? autoMedium : defMedium();
+    }
+
+    /** 미니 티어(나노↑·중품질↓) — GPT: 최신 *-mini / Claude: 최신 Haiku / Gemini: flash. */
+    private String miniModel() {
+        ensureModelsDiscovered();
+        return autoMini != null ? autoMini : defMini();
     }
 
     private String haikuModel() { // 저품질 — 가용한 가장 저렴한 모델(탐지값 우선). config models.low로 직접 지정 가능.
@@ -441,8 +453,8 @@ public class AiManager {
 
     /** 괴담(엔티티) AI 모델 — 역할 오버라이드 우선, 없으면 저품질(Haiku). */
     private String entityModel()    { return entityOverride    != null ? entityOverride    : haikuModel(); }
-    /** NPC AI 모델 — 역할 오버라이드 우선, 없으면 저품질(Haiku). */
-    private String npcModel()       { return npcOverride       != null ? npcOverride       : haikuModel(); }
+    /** NPC AI 모델 — 역할 오버라이드 우선, 없으면 ★미니 티어★(B테스트: 나노급이 절차 반복·스톤월링 등 대화 품질을 깎아 한 단계 승격). */
+    private String npcModel()       { return npcOverride       != null ? npcOverride       : miniModel(); }
     /** 보조(특성·처리) AI 모델 — 역할 오버라이드 우선, 없으면 저품질(Haiku). */
     private String assistantModel() { return assistantOverride != null ? assistantOverride : haikuModel(); }
 
@@ -977,8 +989,7 @@ public class AiManager {
             JsonObject json = gson.fromJson(response.body(), JsonObject.class);
             accumulateUsage(json, model); // 실사용 토큰·비용 누적(/trpg status 표시용)
             return switch (apiType) {
-                case "claude" -> json.getAsJsonArray("content").get(0)
-                                     .getAsJsonObject().get("text").getAsString();
+                case "claude" -> claudeText(json);
                 case "gemini" -> json.getAsJsonArray("candidates").get(0)
                                      .getAsJsonObject().getAsJsonObject("content")
                                      .getAsJsonArray("parts").get(0)
@@ -990,6 +1001,24 @@ public class AiManager {
         } catch (Exception e) {
             throw new RuntimeException("API 응답 파싱 실패: " + response.body().substring(0, Math.min(200, response.body().length())), e);
         }
+    }
+
+    /** Claude 응답 content[]에서 실제 텍스트를 추출한다.
+     *  ★Claude 5 계열(Sonnet 5 등)은 thinking 블록을 content[0]로 먼저 반환하므로, content[0]만 읽으면
+     *  없는 text 필드를 참조해 파싱 실패한다. type=="text" 블록만 골라 이어 붙인다(thinking·기타 블록 무시). */
+    private static String claudeText(JsonObject json) {
+        com.google.gson.JsonArray content = json.getAsJsonArray("content");
+        if (content == null) throw new RuntimeException("content 배열 없음");
+        StringBuilder sb = new StringBuilder();
+        for (com.google.gson.JsonElement el : content) {
+            if (el == null || !el.isJsonObject()) continue;
+            JsonObject block = el.getAsJsonObject();
+            String type = block.has("type") && !block.get("type").isJsonNull() ? block.get("type").getAsString() : "";
+            if ("text".equals(type) && block.has("text") && !block.get("text").isJsonNull())
+                sb.append(block.get("text").getAsString());
+        }
+        if (sb.length() == 0) throw new RuntimeException("text 블록 없음(thinking만 반환됐거나 max_tokens 소진)");
+        return sb.toString();
     }
 
     private JsonObject msg(String role, String content) {

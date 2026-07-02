@@ -138,6 +138,8 @@ public class TRPGGameManager {
     private final Map<UUID, String> pendingPrayerInput = new ConcurrentHashMap<>(); // UUID → traitId
     private final Map<UUID, String> pendingOracleInput = new ConcurrentHashMap<>(); // UUID → traitId
     private final Map<UUID, Integer> pendingLuckModifier   = new ConcurrentHashMap<>();
+    /** 행운 보정을 이번 행동의 ★실제 주사위 굴림★에 반영하기 위한 1회성 스태시(playDiceResult가 소비). */
+    private final Map<UUID, Integer> pendingDiceLuck        = new ConcurrentHashMap<>();
     private final Map<UUID, List<OracleChoice>> pendingOracleChoices = new ConcurrentHashMap<>();
     private final Map<UUID, String> pendingSaintTrait = new ConcurrentHashMap<>();
     private final Map<UUID, String> pendingAreaScanInput = new ConcurrentHashMap<>(); // UUID → traitId
@@ -176,6 +178,23 @@ public class TRPGGameManager {
     private final Map<String, List<String>> npcAcquired = new ConcurrentHashMap<>();
     /** NPC id → 그 NPC와 직접 대화(통화 포함)가 있었던 마지막 턴. 대화 중인 NPC를 자율 AI가 중복 구동해 맥락을 오염(되묻기·모순)시키지 않도록 게이트. */
     private final Map<String, Integer> npcLastDirectTurn = new ConcurrentHashMap<>();
+    /** ★편지 두고가기(dead-drop)★: 구역 id → 그곳에 남겨진 쪽지 목록. 그 구역에 들어온 사람(플레이어/괴담)이 발견한다. */
+    private final Map<String, List<DroppedNote>> droppedNotes = new ConcurrentHashMap<>();
+    /** 남겨진 쪽지(편지) — 위치에 놓여 발견을 기다린다. 문서형 괴담이 발견하면 훼손(orig→content). */
+    private static final class DroppedNote {
+        final String authorDisp, targetDisp, orig; String content; boolean tampered = false; final int turnLeft;
+        DroppedNote(String a, String t, String c, int turn) { authorDisp = a; targetDisp = t; orig = c; content = c; turnLeft = turn; }
+    }
+    /** 편지를 옮겨줄 매개(전서구·비둘기·인편·우편) 키워드 — 있으면 전달, 없으면 두고가기(dead-drop). */
+    private static final Set<String> CARRIER_KEYWORDS = Set.of("전서구", "비둘기", "인편", "전령", "파발", "우편", "우체", "택배", "배달", "우체통");
+    /** ★지연 전달 큐★: 전서구·인편·우편처럼 시간이 걸리는 전달. 도착 턴이 되면 전달(전달 중 변조 가능). */
+    private final List<PendingDelivery> pendingDeliveries = new java.util.concurrent.CopyOnWriteArrayList<>();
+    private static final class PendingDelivery {
+        final UUID targetUuid; final String senderDisp, content, kind, via; final int sentTurn, deliverTurn;
+        PendingDelivery(UUID tu, String sd, String c, String k, String v, int st, int dt) {
+            targetUuid = tu; senderDisp = sd; content = c; kind = k; via = v; sentTurn = st; deliverTurn = dt;
+        }
+    }
     /** 금지워드형 괴담: 입에 올리면(입력) 즉시 파국이 되는 단어. 빈 값이면 이 메커니즘 비활성. 재시도 시 변경. */
     private volatile String forbiddenWord = "";
 
@@ -805,6 +824,9 @@ public class TRPGGameManager {
         pendingStageEndNames.clear();
         spawnedPlayers.clear();
         commChannels.clear();
+        droppedNotes.clear();      // 편지 두고가기 — 스테이지 전환 시 남겨진 쪽지 정리
+        pendingDeliveries.clear(); // 지연 전달 큐 — 스테이지 전환 시 미도착 편지 정리
+        npcLastDirectTurn.clear();
         lastEndingPages = null;
         forceRetryAllowed = false; // 새 스테이지 진입 — 동반회귀 재도전 허용 초기화
         state.getAllPlayers().forEach(pd -> traitMan.resetStageTraits(pd));
@@ -875,7 +897,10 @@ public class TRPGGameManager {
     //  시작 설정 (/trpg setting) — 자동 사전생성 토글 + 시작 스테이지 보정
     // ──────────────────────────────────────────────────────────────
 
-    /** /trpg setting [pregen on|off | stage N] — 인자 없으면 현재 설정 표시. */
+    /** 시작 설정: 다음 생성 괴담의 유형/성격 힌트(종류별 테스트용, ""=무작위). GdamGenerator에 즉시 반영. */
+    private String conceptTypeHint = "";
+
+    /** /trpg setting [pregen on|off | stage N | type <유형>] — 인자 없으면 현재 설정 표시. */
     public void handleStartSetting(Player player, String[] sub) {
         if (sub == null || sub.length == 0) { openStartSettings(player); return; }
         String key = sub[0].toLowerCase();
@@ -893,22 +918,50 @@ public class TRPGGameManager {
                     + (startStage > 1 ? " §7(시작 보정 " + (startStage - 1) + "단계: 단계당 올스탯+2 & 특성 추가/등급↑)" : " §7(보정 없음)"));
                 player.sendMessage("§7다음 §f/trpg start §7부터 적용됩니다.");
             } catch (NumberFormatException e) { player.sendMessage("§c숫자를 입력하세요: §f/trpg setting stage <1-6>"); }
+        } else if (key.equals("type") || key.equals("유형") || key.equals("괴담")) {
+            // 괴담 유형/성격 선택(종류별 테스트용): 인자 있으면 자유 텍스트 지정, 없으면 선택 다이얼로그.
+            if (sub.length >= 2) {
+                String v = String.join(" ", java.util.Arrays.copyOfRange(sub, 1, sub.length)).trim();
+                if (v.equalsIgnoreCase("random") || v.equals("무작위") || v.equals("없음") || v.equalsIgnoreCase("off")) v = "";
+                conceptTypeHint = v;
+                gdamGen.setConceptTypeHint(v);
+                player.sendMessage("§6[설정] 괴담 유형/성격: " + (v.isEmpty() ? "§7무작위(기본)" : "§d" + v)
+                    + " §7— 다음 생성부터 적용");
+            } else {
+                dialogMan.showEntityTypeChoice(player, picked -> {
+                    conceptTypeHint = picked == null ? "" : picked;
+                    gdamGen.setConceptTypeHint(conceptTypeHint);
+                    player.sendMessage("§6[설정] 괴담 유형/성격: "
+                        + (conceptTypeHint.isEmpty() ? "§7무작위(기본)" : "§d" + conceptTypeHint) + " §7— 다음 생성부터 적용");
+                });
+            }
         } else {
             openStartSettings(player);
         }
     }
 
-    /** 현재 시작 설정 표시(/trpg setting). */
+    /** 현재 시작 설정 — 다이얼로그로 열어 자동생성·시작 스테이지·괴담 유형을 클릭으로 고른다(/trpg setting, /trpg s s). */
     public void openStartSettings(Player player) {
-        player.sendMessage("§e§l═══ TRPG 시작 설정 ═══");
-        player.sendMessage("§f· 다음 시나리오 자동생성: " + (autoPregen ? "§a켜짐" : "§c꺼짐")
-            + "  §7→ §f/trpg setting pregen on|off");
-        player.sendMessage("§f· 시작 스테이지: §b" + startStage
-            + (startStage > 1 ? " §7(보정 " + (startStage - 1) + "단계)" : "")
-            + "  §7→ §f/trpg setting stage <1-6>");
-        player.sendMessage("§7시작 스테이지 보정: 단계당 올스탯 총합 +2, 그리고 무작위로");
-        player.sendMessage("§7  [특성 1개 추가 — 시작 스테이지↑일수록 높은 등급] 또는 [보유 특성 등급 1단계↑] 중 하나.");
-        player.sendMessage("§7설정은 다음 §f/trpg start§7 부터 적용됩니다.");
+        dialogMan.showStartSettings(player, autoPregen, startStage, conceptTypeHint,
+            () -> { // 자동 사전생성 토글
+                autoPregen = !autoPregen;
+                player.sendMessage("§6[설정] 자동 사전생성: " + (autoPregen ? "§a켜짐" : "§c꺼짐 §7(/trpg next에서 즉석 생성)"));
+                openStartSettings(player); // 갱신된 값으로 다시 연다
+            },
+            () -> dialogMan.showStageChoice(player, startStage, st -> { // 시작 스테이지 선택
+                startStage = Math.max(1, Math.min(6, st));
+                player.sendMessage("§6[설정] 시작 스테이지: §b" + startStage
+                    + (startStage > 1 ? " §7(레벨 보정 " + (startStage - 1) + "단계: 올스탯 +" + ((startStage - 1) * 2) + " & 특성)" : " §7(보정 없음)")
+                    + " §7— 다음 /trpg start 부터");
+                openStartSettings(player);
+            }),
+            () -> dialogMan.showEntityTypeChoice(player, hint -> { // 괴담 유형/성격 선택
+                conceptTypeHint = hint == null ? "" : hint;
+                gdamGen.setConceptTypeHint(conceptTypeHint);
+                player.sendMessage("§6[설정] 괴담 유형/성격: "
+                    + (conceptTypeHint.isEmpty() ? "§7무작위(기본)" : "§d" + conceptTypeHint) + " §7— 다음 생성부터 적용");
+                openStartSettings(player);
+            }));
     }
 
     private static final String[] GRADE_ORDER = {"F", "E", "D", "C", "B", "A", "S"}; // gradeIdx와 동일 순서
@@ -1262,7 +1315,7 @@ public class TRPGGameManager {
                 applyRoleStats(myPd, roleData);
             }
             // 원년 배역 스냅샷: 이 판이 시작된 스테이지(=startStage, 기본 1)의 배역을 '원년'으로 1회 기록 → 피날레 복귀·중간 시작 대응.
-            if (!myPd.hasOrigChar && state.getRoomNumber() == startStage) captureOrigChar(myPd);
+            if (myPd != null && !myPd.hasOrigChar && state.getRoomNumber() == startStage) captureOrigChar(myPd);
 
             p.sendMessage("§e§l[배역 배정]");
             p.sendMessage(roleMan.getRoleBriefing(asgn.roleId(), corruptMan.getLevel()));
@@ -1589,17 +1642,34 @@ public class TRPGGameManager {
                     if (pd.zone.equals(cp.zone)) sameZoneStart.add(cp.gmDisplayName());
                 }
             }
-            promptSb.append("2인칭 시점의 일상 장면을 바로 서술해줘. 제목·헤더 붙이지 말 것. ");
+            // ★도입 강도★: 시나리오에 따라 프롤로그가 담담한 일상일 수도, 시작부터 심각한 상황일 수도 있다.
+            //   daily_prologue.opening: "calm"(기본) · "tense"(일상 속 미묘한 긴장) · "crisis"(시작부터 위기).
+            String opening = "calm";
+            if (gdamForRel != null && gdamForRel.has("daily_prologue") && gdamForRel.get("daily_prologue").isJsonObject()) {
+                JsonObject dp = gdamForRel.getAsJsonObject("daily_prologue");
+                if (dp.has("opening") && !dp.get("opening").isJsonNull())
+                    opening = dp.get("opening").getAsString().trim().toLowerCase();
+            }
+            promptSb.append("2인칭 시점의 장면을 바로 서술해줘. 제목·헤더 붙이지 말 것. ");
             if (sameZoneStart.isEmpty()) {
                 promptSb.append("다른 플레이어의 존재 직접 언급 금지. ");
             } else {
                 promptSb.append("★같은 장소에서 함께 시작하는 인물: ").append(String.join(", ", sameZoneStart))
                     .append(" — 이들은 처음부터 같은 공간에 있다. 서로의 존재를 ★인지한 채★ 시작하도록 "
-                        + "가벼운 조우(눈인사·짧은 한마디 등)를 프롤로그에 자연스럽게 넣어라. 단 아직 괴담·사건은 모른다. ");
+                        + "가벼운 조우(눈인사·짧은 한마디 등)를 프롤로그에 자연스럽게 넣어라. ");
             }
-            promptSb.append("괴담 암시 금지. "
-                + "이 인물은 '특별히 선택된 주인공'이 아니라 사건에 얽혀들 평범한 한 사람이다. "
-                + "거창한 영웅 도입이 아니라 담담한 하루의 한 장면처럼 그려라.");
+            promptSb.append("이 인물은 '특별히 선택된 주인공'이 아니라 사건에 얽혀들 한 사람이다. 거창한 영웅 도입은 피해라. ");
+            switch (opening) {
+                case "crisis" -> promptSb.append(
+                    "★이 시나리오는 프롤로그부터 이미 상황이 심각하다★ — 담담한 일상이 아니라 시작부터 "
+                    + "위급·혼란·이상이 진행 중인 장면으로 그려라(이미 갇힘·재난 진행·쫓김 등 시나리오 배경에 맞게). "
+                    + "단 괴담의 ★정체·원리는 아직 드러내지 마라★(영문 모른 채 사건 한복판에 있는 긴박함).");
+                case "tense" -> promptSb.append(
+                    "겉은 평범한 일상이되 어딘가 ★미묘한 긴장·불편함★이 감돈다 — 단 초자연·괴담은 아직 아니다"
+                    + "(사람 사이 갈등·불안·나쁜 소식 같은 ★일상적★ 긴장만, 위협은 낮게).");
+                default -> promptSb.append(
+                    "괴담 암시 금지. 담담한 하루의 한 장면처럼 그려라(위협 0).");
+            }
             String prompt = promptSb.toString();
 
             ai.callGmAiOnce(gmSystemPrompt, prompt)
@@ -1847,6 +1917,9 @@ public class TRPGGameManager {
             }
             String traitMsg = traitBtn.buildTraitUseMessage(pd, pendingTrait);
             if (traitMsg != null) {
+                // 행동과 결합된 비시스템 특성 발동도 [능력] 이벤트로 기록(발동 선언이 로그에서 사라지던 누락 방지).
+                gameLogger.logAbility(pd.gmDisplayName(), ptd != null ? ptd.name : pendingTrait, "",
+                    ptd != null && ptd.effectType != null ? ptd.effectType : "", "발동");
                 applyTraitUsed(pd, pendingTrait, state.getCurrentTurn());
                 actionMessage = traitMsg + "\n플레이어 추가 행동: " + actionMessage;
             }
@@ -1856,6 +1929,9 @@ public class TRPGGameManager {
         Integer luckMod = pendingLuckModifier.remove(player.getUniqueId());
         if (luckMod != null) {
             actionMessage = actionMessage + " §8[행운 보정 " + (luckMod > 0 ? "+" : "") + luckMod + "]";
+            pendingDiceLuck.put(player.getUniqueId(), luckMod); // 이번 행동의 주사위 굴림에 실제 반영(playDiceResult가 소비)
+        } else {
+            pendingDiceLuck.remove(player.getUniqueId()); // 이월 방지: 이번 행동에 행운 없으면 스태시 정리
         }
 
         // B1/C4: 확정성공·운명 등 '다음 행동 보정' 대기분 주입 (1회 적용 후 소멸)
@@ -1928,7 +2004,7 @@ public class TRPGGameManager {
                     // 해결판정 여부: 태그의 resolved 우선, 없으면 등급으로 추론(C 이상=해결, D=생존)
                     boolean resolved = clearTag.has("resolved")
                         ? clearTag.get("resolved").getAsBoolean()
-                        : gradeIdx(grade) >= gradeIdx("C");
+                        : gradeIdx(grade) >= gradeIdx("B"); // 명시 없으면 B+만 해결판정 인정(C=생존판정으로 하향, 진출 문턱↑)
                     deliverNarrative(player, raw); // 클리어 서술은 행동 플레이어에게
                     onClearEnding(grade, reason, resolved, by);
                     return;
@@ -2087,6 +2163,10 @@ public class TRPGGameManager {
                 //   내부 게이트로 대상 시나리오에서만 실제 호출(그 외엔 값싼 no-op).
                 if (curTurn % 3 == 2) fireEntityActorForTurn();
             }
+            // ★편지 두고가기★: 문서형 괴담이 남겨진 쪽지를 발견·훼손(원본→변형). 값싼 게이트(쪽지 없거나 비문서형이면 즉시 반환).
+            tamperDroppedNotes();
+            // ★지연 전달★: 전서구·인편으로 부친 편지가 도착 턴이 됐으면 전달(전달 중 변조 가능).
+            processPendingDeliveries();
 
             // 12. 스테이지 기반 자동 등장 체크 (STATE_UPDATE 외부에서 stage 이미 변경된 경우 보정)
             checkAndAutoSpawn();
@@ -2303,17 +2383,21 @@ public class TRPGGameManager {
                 if (update.has("key_fact") && !update.get("key_fact").isJsonNull()
                         && !"puppet".equals(pd.status) && pd.puppetRecoveryTurns <= 0) {
                     String kf = update.get("key_fact").getAsString().trim();
-                    if (!kf.isEmpty()) {
-                        pd.addKeyFact(kf);
+                    if (!kf.isEmpty() && pd.addKeyFact(kf)) {
                         Player kfp = Bukkit.getPlayer(pd.uuid);
                         if (kfp != null && kfp.isOnline()) kfp.sendMessage("§b[핵심 정보] §f" + kf);
+                        gameLogger.logItem("clue", pd.gmDisplayName(), kf, "핵심"); // 뷰어: 정보획득(핵심) 실시간 반영
                     }
                 }
                 if (update.has("item_remove") && !update.get("item_remove").isJsonNull()) {
                     String rid = update.get("item_remove").getAsString();
+                    ItemInstance rem = pd.itemStates.get(rid);
+                    String remName = (rem != null && rem.name != null && !rem.name.isBlank()) ? rem.name : rid;
+                    boolean had = pd.heldItemIds.contains(rid) || pd.itemStates.containsKey(rid);
                     pd.heldItemIds.remove(rid); pd.itemStates.remove(rid);
                     Player rp = Bukkit.getPlayer(pd.uuid);
                     if (rp != null) itemMan.removeById(rp, rid); // 실물도 인벤토리에서 제거
+                    if (had) gameLogger.logItemRemoved(pd.gmDisplayName(), remName, "사라짐"); // 뷰어: 상태패널 아이템 제거 반영
                 }
                 // ★상태 로깅★: 이번 업데이트로 생긴 체력·정신력 변화 + 상태 전이(기절·조종·사망·회복)를 한 줄로 기록.
                 int hpD = pd.hp[0] - hpBefore0, sanD = pd.san[0] - sanBefore0;
@@ -2358,32 +2442,13 @@ public class TRPGGameManager {
 
     private void onHorrorPhaseStart() {
         currentPhase = Phase.HORROR;
+        gameLogger.section("공포 파트 진입"); // 뷰어 타임라인 파트 구분(전환 '연출'은 아님 — 로그 구획 표식만)
         lastPlayerActionMs = System.currentTimeMillis(); // 무행동 가속 기준점 초기화
         lastIdleAccelMs = 0L;
-        // 전환을 직접 고지하지 않는다(스포일러 방지). GM의 환경 서술로만 분위기를 바꾼다.
-
-        compressor.compressDailyPhase().thenRun(() ->
-            spawnedPlayers.forEach(uuid -> {
-                Player p = Bukkit.getPlayer(uuid);
-                if (p == null) return;
-                PlayerData pd = state.getPlayer(uuid);
-                String name = pd != null ? pd.gmDisplayName() : "?";
-                ai.callGmAiOnce(gmSystemPrompt,
-                    "분위기가 서서히 변하는 전환 시점이다. 플레이어(" + name + ")의 시점에서 "
-                    + "환경 변화(소리·냄새·온도 등)로만 불길함을 암시해줘. 제목 금지, 직접 언급 금지.")
-                  .thenAccept(r -> plugin.getServer().getScheduler().runTask(plugin, () -> {
-                      if (p.isOnline()) {
-                          String narrative = ai.stripTags(r);
-                          if (!narrative.isBlank()) {
-                              narrativeDelivery.deliver(p, narrative);
-                              // 채팅에만 뜨고 기록에 안 남던 문제 방지 — 전환 연출도 동일하게 저장한다.
-                              gameLogger.logGmOutput(p.getName() + "(전환)", narrative);
-                              if (pd != null) appendNarrativeLog(pd, narrative);
-                          }
-                      }
-                  }));
-            })
-        );
+        // 파트는 나뉘되(공포 파트 진입) ★전환 연출은 하지 않는다★ — 별도의 '불길함 암시' 서술을 따로 보내지 않는다.
+        //   분위기 변화는 GM이 이후 본 서술에서(플레이어가 실제로 괴담에 노출되는 순간) 자연스럽게 드러낸다.
+        //   미노출 플레이어에게 전환 불길함을 미리 흘리던 스포일러 제거. (파트 구분·타임라인·엔티티 AI는 그대로 동작.)
+        compressor.compressDailyPhase(); // 일상 파트 로그 압축(GM 컨텍스트 정리) — 플레이어 대상 서술은 없음
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -2743,12 +2808,14 @@ public class TRPGGameManager {
         TraitData trait = pd.traits.stream().filter(t -> t.id.equals(traitId)).findFirst().orElse(null);
         if (trait == null) { player.sendMessage("§c특성을 찾을 수 없습니다."); return; }
 
-        if (trait.remainingCooldown > 0) {
-            player.sendMessage("§c[" + trait.name + "] 쿨다운 중입니다. (" + trait.remainingCooldown + "턴 남음)");
-            return;
-        }
+        // 스테이지당 1회(cooldownTurns==-1)형은 사용 후 remainingCooldown이 센티넬(MAX_VALUE)이 되므로
+        // 이 분기를 먼저 처리한다 — 그렇지 않으면 아래 쿨다운 메시지가 '2147483647턴 남음'을 출력한다.
         if (trait.cooldownTurns == -1 && trait.usedThisStage > 0) {
             player.sendMessage("§c[" + trait.name + "] 이번 스테이지에서 이미 사용했습니다.");
+            return;
+        }
+        if (trait.remainingCooldown > 0) {
+            player.sendMessage("§c[" + trait.name + "] 쿨다운 중입니다. (" + trait.remainingCooldown + "턴 남음)");
             return;
         }
         // 시스템 효과: uses 기반 사용 횟수 상한 검사 (ai_query 등)
@@ -2802,6 +2869,9 @@ public class TRPGGameManager {
         }
         String msg = traitBtn.buildTraitUseMessage(pd, traitId);
         if (msg != null) {
+            // 비시스템(순수 서술형·effectType 없음) 특성 발동도 [능력] 이벤트로 기록 — 시스템 특성 경로와 동일하게 뷰어·기록에 남게(누락 방지).
+            gameLogger.logAbility(pd.gmDisplayName(), td != null ? td.name : traitId, "",
+                td != null && td.effectType != null ? td.effectType : "", "발동");
             applyTraitUsed(pd, traitId, state.getCurrentTurn());
             boolean accepted = turnMan.handleAction(player, msg, gmSystemPrompt);
             player.sendMessage(accepted ? "§7[특성 발동 중...]" : "§7행동 처리 중입니다. 잠시 후 다시 시도하세요.");
@@ -2812,7 +2882,7 @@ public class TRPGGameManager {
         pd.traits.stream().filter(t -> t.id.equals(traitId)).findFirst().ifPresent(t -> {
             t.usedThisStage++;
             t.lastUsedTurn = currentTurn;
-            if (t.cooldownTurns > 0) t.remainingCooldown = t.cooldownTurns;
+            if (t.cooldownTurns > 0) t.remainingCooldown = t.cooldownTurns + 1; // +1: 발동 당턴의 틱(1회)을 상쇄 → 실효 쿨다운=설정값
             else if (t.cooldownTurns == -1) t.remainingCooldown = Integer.MAX_VALUE;
             applyActivationCost(pd, t); // 발동 대가(소모·행동불능·괴담 진행)를 실제 적용 + GM에 명시
         });
@@ -3135,6 +3205,8 @@ public class TRPGGameManager {
         player.sendMessage("§e[" + td.name + "] 주사위(d" + dice + "): §f" + roll
             + "§e  →  " + color + (modifier > 0 ? "+" : "") + modifier + " 행운 보정");
         player.sendMessage("§7다음 행동 1회에 행운 보정이 적용됩니다.");
+        gameLogger.logAbilityResult(pd.gmDisplayName(), td.name,
+            "주사위 d" + dice + " = " + roll + " → 행운 보정 " + (modifier > 0 ? "+" : "") + modifier); // 뷰어: 능력 결과(주사위) 기록
     }
 
     private void activateShowProgress(Player player, PlayerData pd, TraitData td) {
@@ -3389,12 +3461,15 @@ public class TRPGGameManager {
         int cost    = td.param("cost", 2);
         boolean useSan = td.param("use_san", 0) == 1;
         String resource = useSan ? "정신력" : "체력";
+        int hpBefore = pd.hp[0], sanBefore = pd.san[0];
         if (useSan) {
             pd.san[0] = Math.max(0, pd.san[0] - cost);
         } else {
             pd.hp[0]  = Math.max(0, pd.hp[0] - cost);
         }
         updateAllScoreboards();
+        gameLogger.logVital(pd.gmDisplayName(), pd.hp[0] - hpBefore, pd.hp[0], pd.hp[1],
+            pd.san[0] - sanBefore, pd.san[0], pd.san[1], "능력 대가: " + td.name); // 뷰어: 체력·정신력 소모 실시간 반영
         applyTraitUsed(pd, td.id, state.getCurrentTurn());
         int scale = td.param("scale", 2);
         String scaleStr = switch (scale) {
@@ -3933,13 +4008,17 @@ public class TRPGGameManager {
         if (chosen == null) chosen = rewindBuffer.peekFirst(); // 그만큼 못 돌아가면 가장 먼 시점
         applyTraitUsed(pd, td.id, state.getCurrentTurn());
         final RewindSnapshot snap = chosen;
+        gameLogger.section("시간 회귀 — 약 " + back + "턴 전(" + snap.turn + "턴)으로 되감김"); // 뷰어·재현: 파티 전원 되돌림 구획
         for (PlayerData op : state.getAllPlayers()) {
             int[] v = snap.vitals.get(op.uuid);
+            int bHp = op.hp[0], bSan = op.san[0];
             if (v != null) { op.hp[0] = v[0]; op.hp[1] = v[1]; op.san[0] = v[2]; op.san[1] = v[3]; }
             String st = snap.status.get(op.uuid); if (st != null) op.status = st;
             String z  = snap.zone.get(op.uuid);   if (z  != null) op.zone   = z;
             String sp = snap.spot.get(op.uuid);   if (sp != null) op.spot   = sp;
             Boolean d = snap.dead.get(op.uuid);   if (d  != null) op.isDead = d;
+            if (v != null && (op.hp[0] - bHp != 0 || op.san[0] - bSan != 0)) // 되돌아간 체력·정신 반영
+                gameLogger.logVital(op.gmDisplayName(), op.hp[0]-bHp, op.hp[0], op.hp[1], op.san[0]-bSan, op.san[0], op.san[1], "시간 회귀");
         }
         ai.truncateGmContext(snap.gmMark); // GM 기억을 그 시점으로(무상태 LLM이라 컨텍스트=기억)
         while (!rewindBuffer.isEmpty() && rewindBuffer.peekLast().turn >= snap.turn) rewindBuffer.removeLast();
@@ -4199,6 +4278,7 @@ public class TRPGGameManager {
             default -> "- ★1문장★으로 아주 모호한 '느낌·예감'만.\n";
         };
         String traitName = td != null ? td.name : "원격 감지";
+        gameLogger.logAbilityResult(pd.gmDisplayName(), traitName, "원격 감지 대상 → " + target); // 뷰어: 능력 입력(대상) 기록
         String senseCtx = "\n## " + traitName + " 원격 감지 처리 (범위: " + rangeStr + ", 정보 깊이 " + info + "/3)\n"
             + "플레이어가 ★현재 구역이 아닌 떨어진 곳(원격)을 감지한다(독순술·천리안·원격 투시).\n규칙:\n"
             + "- 반드시 '" + rangeStr + "'에 해당하는 ★다른 장소의 정보만 서술한다(현재 위치 묘사 금지).\n"
@@ -4229,6 +4309,7 @@ public class TRPGGameManager {
             default -> "- ★1문장★으로 직후 예상 결과만 짧게.\n";
         };
         String traitName = td != null ? td.name : "예지";
+        gameLogger.logAbilityResult(pd.gmDisplayName(), traitName, "예지 대상 행동 → " + action); // 뷰어: 능력 입력(의도 행동) 기록
         String foresightCtx = "\n## " + traitName + " 결과 예지 처리 (예측 깊이 " + depth + "/3)\n"
             + "플레이어가 어떤 행동을 ★실제로 하기 전에, 그 행동의 예상 결과를 미리 들여다본다(예지·인생설계).\n규칙:\n"
             + "- 이것은 '전망'일 뿐 실제 판정·진행이 아니다. 타임라인을 진행시키지 말고, 결과를 확정하지도 마라.\n"
@@ -4264,6 +4345,7 @@ public class TRPGGameManager {
             ? "- 단서가 있으면 ★무엇에 관한 것인지 방향만★ 짚어준다(정확한 내용은 아직 흐릿하게).\n"
             : "- ★유무만★: 이 범위에 '살펴볼 만한 단서가 있다/없다' 정도만 알려준다(구체 내용은 아직 모른다).\n";
         String traitName = td != null ? td.name : "환경 탐색";
+        gameLogger.logAbilityResult(pd.gmDisplayName(), traitName, "탐색 대상 → " + target); // 뷰어: 능력 입력(탐색 대상) 기록
         String scanCtx = "\n## " + traitName + " 탐색 처리 (범위: " + scopeStr + ", 등급: " + (td != null ? td.grade : "?") + ")\n"
             + "플레이어가 체계적 탐색으로 단서를 찾고 있다. 규칙:\n"
             + "- 탐색 범위(" + scopeStr + ") 안에서 찾을 수 있는 것만 서술한다.\n"
@@ -4282,6 +4364,7 @@ public class TRPGGameManager {
         TraitData td = pd.traits.stream().filter(t -> t.id.equals(traitId)).findFirst().orElse(null);
         int depth = td != null ? td.param("depth", 2) : 2;
         String traitName = td != null ? td.name : "아군 감지";
+        gameLogger.logAbilityResult(pd.gmDisplayName(), traitName, "아군 탐지 목표 → " + query); // 뷰어: 능력 입력(탐지 목표) 기록
 
         StringBuilder allyCtx = new StringBuilder();
         for (PlayerData op : state.getAllPlayers()) {
@@ -4319,6 +4402,7 @@ public class TRPGGameManager {
                      + "- 예: \"그쪽으로 마음이 자꾸 쏠린다… 왜인지는 모르겠다.\"\n";
         };
         String name = td != null ? td.name : "질문";
+        gameLogger.logAbilityResult(pd.gmDisplayName(), name, "질문 → " + question); // 뷰어: 능력 입력(질문 내용) 기록
         String prayerCtx = "\n## " + name + " 질문 처리 (정보 깊이 " + info + "/3)\n"
             + "플레이어가 시스템 특성으로 GM에게 직접 질문했다.\n규칙:\n" + depthRule
             + "- ★배경 정보는 공개★: '지금이 언제인가(시대·시기·대략 시각)·여기가 어디인가(지역·장소·현재/시작 위치)' 같은 무대 배경을 물으면, 정보 깊이와 무관하게 또렷이 알려줘라(핵심 스포일러 아님). 단 시간을 빼앗긴 상태(시간 불명)면 시각만 모호하게.\n"
@@ -4342,6 +4426,7 @@ public class TRPGGameManager {
         TraitData td = pd.traits.stream().filter(t -> t.id.equals(traitId)).findFirst().orElse(null);
         int numChoices = td != null ? Math.max(2, Math.min(4, td.param("choices", 3))) : 3;
         final boolean autoMode = action == null || action.isBlank();
+        if (!autoMode) gameLogger.logAbilityResult(pd.gmDisplayName(), td != null ? td.name : "선택지", "행동 의도: " + action);
         final TraitData fTd = td;
         // ★등급 = 선택지 품질★: 높으면(A~S) 괴담 해결로 직접 이어지는 '정답' 선택지까지 섞어준다.
         int g = gradeIdx(td != null ? td.grade : "C");
@@ -4391,6 +4476,9 @@ public class TRPGGameManager {
                     // 다이얼로그 버튼으로 선택지 제시(채팅 클릭 대신) — 고르면 handleOracleSelect로
                     List<String> labels = new ArrayList<>();
                     for (OracleChoice oc : choices) labels.add(oc.text());
+                    // ★능력 투명성★: 제시된 선택지 목록을 능력 이벤트로 기록(발동수 미증가 — result 채널).
+                    gameLogger.logAbilityResult(pd.gmDisplayName(), fTd != null ? fTd.name : "선택지",
+                        "제시된 선택지 — " + String.join(" / ", labels));
                     dialogMan.showActionChoices(player,
                         Component.text("[" + (fTd != null ? fTd.name : "선택지") + "] 선택"),
                         Component.text(autoMode ? "지금 상황에서 무엇을 할까요?" : "어떤 방법을 고를까요?"),
@@ -4422,6 +4510,9 @@ public class TRPGGameManager {
         PlayerData pd = state.getPlayer(player);
         if (pd == null) return;
         OracleChoice chosen = choices.get(idx);
+        // ★능력 투명성★: 플레이어가 고른 선택지를 능력 이벤트로 기록(이후 정보수집·수정 편의).
+        gameLogger.logAbilityResult(pd.gmDisplayName(), "선택지", "선택 → " + chosen.text() + " [" + (switch (chosen.outcome()) {
+            case "solve" -> "정답"; case "good" -> "최적"; case "bad" -> "역효과"; default -> "무난"; }) + "]");
         String modifier = switch (chosen.outcome()) {
             case "solve"   -> " (계시 — ★정답: 이 괴담을 해결·돌파하는 결정적 선택. 그 시도가 성공적으로 이어지도록 서술하되 즉시 완전 클리어를 강요하지 말고 '해결의 결정적 진전'으로 처리★)";
             case "good"    -> " (계시 — 최적 선택: 큰 보정 적용)";
@@ -4622,6 +4713,7 @@ public class TRPGGameManager {
         String traitName = td != null ? td.name : "회복";
         boolean wasDeadBefore = target.isDead;
         boolean wasPuppet = "puppet".equals(target.status) || target.puppetRecoveryTurns > 0;
+        int tHpBefore = target.hp[0], tSanBefore = target.san[0];
         target.hp[0]  = target.hp[1];
         target.san[0] = target.san[1];
         target.status = "normal";
@@ -4631,6 +4723,9 @@ public class TRPGGameManager {
         restorePlaying(target); // 부활 시 관전(스펙테이터) 해제 → 생존 복귀
         applyTraitUsed(pd, traitId, state.getCurrentTurn());
         updateAllScoreboards();
+        gameLogger.logVital(target.gmDisplayName(), target.hp[0] - tHpBefore, target.hp[0], target.hp[1],
+            target.san[0] - tSanBefore, target.san[0], target.san[1],
+            wasDeadBefore ? "부활(아군 회복)" : (wasPuppet ? "조종 해제·회복(아군)" : "회복(아군)")); // 뷰어: 대상 회복 실시간 반영
         String targetDisplay = target.gmDisplayName();
         String playerDisplay = pd.gmDisplayName();
         player.sendMessage("§a[" + traitName + "] " + targetDisplay + "을(를) 완전히 회복시켰습니다.");
@@ -4685,6 +4780,11 @@ public class TRPGGameManager {
         if (item == null || !item.hasItemMeta()) return false;
         return item.getItemMeta().getPersistentDataContainer()
             .has(infoItemKey(), PersistentDataType.BYTE);
+    }
+
+    /** TRPG 지급 아이템 여부(설치·버리기로 물리 제거 방지 판정용) — ItemManager 위임. */
+    public boolean isTrpgItem(ItemStack item) {
+        return itemMan != null && itemMan.isTrpgItem(item);
     }
 
     /** 인벤토리에서 캐릭터 정보 아이템 제거 (세션 종료 시) */
@@ -5569,7 +5669,9 @@ public class TRPGGameManager {
                 if (body.isEmpty()) continue;
                 // 형식 불명(대상 분리 실패)이면 '단서' 그룹으로 폴백
                 if (subject == null || subject.isEmpty()) subject = "단서";
-                pd.addInfo(subject, body); // infoGroups(정보모음) 기록 — 조종 중에도 기록 자체는 유지
+                if (pd.addInfo(subject, body)) // infoGroups(정보모음) 기록 — 조종 중에도 기록 자체는 유지
+                    // ★실시간 뷰어 정보획득★: 새로 얻은 단서만 로그 이벤트로(중복 방지) → 상태패널 '알아낸 단서'에 반영.
+                    gameLogger.logItem("clue", pd.gmDisplayName(), body, "단서".equals(subject) ? "" : subject);
                 // G10: 예전엔 조종 중 keyFacts(핵심정보)에 "[조종 중] …"로도 등록해 핵심정보가 오염됐다 → 그 등록만 제거.
             }
         });
@@ -6733,6 +6835,8 @@ public class TRPGGameManager {
             if (trimmed.isEmpty() || looksLikeMetaRequest(trimmed)) return;
             ai.injectGmSystem("[괴담 자율 행동 — GM만 인지] " + getEntityName() + ": " + trimmed
                 + "\n→ GM은 다음 서술에서 이 괴담의 행동·존재감을 그 성격대로 자연스럽게 녹여 내라(직접 출력 금지, 플레이어 조종 금지).");
+            // 다회차 학습: 괴담의 자율 행동을 오염 메모리에 누적 → 재도전 시 buildCorruptionContext가 '이전 회차 기억'으로 주입(더 집요해짐).
+            corruptMan.addEntityMemory(trimmed.length() > 80 ? trimmed.substring(0, 80) + "…" : trimmed);
         });
     }
 
@@ -6988,8 +7092,9 @@ public class TRPGGameManager {
         sender.sendMessage(heard > 0 ? "§7[방송 송출 — " + heard + "명에게 전달됨]"
                                      : "§8(방송했지만 지금 들을 다른 인원이 없습니다.)");
         state.log("comm", senderPd.name, "[방송] " + content);
-        gameLogger.logComm("broadcast", disp, heardNames, content); // 뷰어 통화내역: 방송 수신자 기록
-        noteEntityIntel(3, disp, content, "방송"); // 방송=개방 채널 → 괴담 수집 강함
+        String bNet = commNetworkKey(senderPd); // 폐쇄망(무전) 방송이면 그 망 접속자만 들었을 수 있음(PA는 개방)
+        gameLogger.logComm("broadcast", disp, heardNames, content, bNet); // 뷰어 통화내역: 방송 수신자 기록
+        noteEntityIntel(3, disp, content, bNet != null ? bNet + "망 방송" : "방송"); // 방송=개방 채널 → 괴담 수집 강함
         // GM·NPC 인지: 방송은 건물 전체로 퍼진 큰 행동. 내용은 시스템이 이미 전달했으니 중복 WITNESS 금지.
         if (currentPhase == Phase.HORROR || currentPhase == Phase.DAILY) {
             ai.injectGmSystem("[방송 송출] " + disp + "이(가) 방송 설비로 외쳤다: \"" + content
@@ -7075,24 +7180,32 @@ public class TRPGGameManager {
             if (!hasCommDevice(senderPd)) { sender.sendMessage("§c통신 기기가 없어 발신할 수 없습니다."); return; }
         }
         String disp = senderPd.gmDisplayName();
+        String senderNet = commNetworkKey(senderPd); // ★폐쇄망★: 있으면 같은 망 접속자만 수신
         List<PlayerData> targets = new ArrayList<>();
         for (UUID u : senderPd.knownContacts) {
             PlayerData op = state.getPlayer(u);
-            if (op != null && !op.isDead) targets.add(op);
+            if (op != null && !op.isDead) {
+                if (senderNet != null && !senderNet.equals(commNetworkKey(op))) continue; // 다른 망(또는 미접속)은 못 받음
+                targets.add(op);
+            }
         }
-        if (targets.isEmpty()) { sender.sendMessage("§7아는 번호가 없습니다. (먼저 연락처를 알아야 합니다)"); return; }
-        sender.sendMessage("§7[전체 발신 " + targets.size() + "명] §f" + message);
+        if (targets.isEmpty()) { sender.sendMessage(senderNet != null
+                ? "§7같은 " + senderNet + "망에 접속한 상대가 없습니다."
+                : "§7아는 번호가 없습니다. (먼저 연락처를 알아야 합니다)"); return; }
+        sender.sendMessage((senderNet != null ? "§7[" + senderNet + "망 발신 " : "§7[전체 발신 ") + targets.size() + "명] §f" + message);
         for (PlayerData op : targets) {
             Player op2 = Bukkit.getPlayer(op.uuid);
             if (op2 != null && op2.isOnline() && (bypass || hasCommDevice(op))) // 개방 시 수신자 기기 부재도 관통
-                op2.sendMessage("§b[📞 " + disp + " → 전체] §f" + message);
+                op2.sendMessage("§b[📞 " + disp + " → " + (senderNet != null ? senderNet + "망" : "전체") + "] §f" + message);
         }
-        state.log("comm", senderPd.name, "[전체발신] " + message);
-        // 뷰어 통화내역: 전체 발신도 ★수신자 전원을 기록★(그들 시점에도 보이게)
+        state.log("comm", senderPd.name, "[" + (senderNet != null ? senderNet + "망발신" : "전체발신") + "] " + message);
+        // 뷰어 통화내역: 전체 발신도 ★수신자 전원을 기록★(그들 시점에도 보이게). 폐쇄망이면 via=망이름.
         java.util.List<String> callNames = new ArrayList<>();
         for (PlayerData op : targets) callNames.add(op.gmDisplayName());
-        gameLogger.logComm("call", disp, callNames, message);
-        noteEntityIntel(3, disp, message, "전체 발신"); // 아는 번호 전원 발신 → 수집 강함
+        gameLogger.logComm("call", disp, callNames, message, senderNet);
+        // 폐쇄망은 전자형 괴담이 그 망에 붙어야만 수집(아니면 0=미수집). 개방 전체발신은 항상 강(3).
+        noteEntityIntel(senderNet != null ? (entityInterferes("electronic") ? 3 : 0) : 3, disp, message,
+            senderNet != null ? senderNet + "망 발신" : "전체 발신");
         // (입력 로그는 onChat 진입부에서 이미 1회 기록됨 — 여기서 중복 기록하지 않는다)
         if (commDetectableByEntity(senderPd)) noteCommUsedIfDangerous(senderPd, "전체 발신"); // 은밀 개방이면 괴담이 감지 못함
     }
@@ -7191,6 +7304,24 @@ public class TRPGGameManager {
                 }
                 viaDevice = true;
             }
+        }
+
+        // ★서면(원격 문서) 전달★: 매개(전서구·인편·우편)가 있으면 ★지연 전달★(N턴 뒤 도착·전달 중 변조 가능),
+        //   없으면 현재 위치에 ★두고감(dead-drop)★ — 그 구역에 오는 사람(엉뚱한 이·괴담 포함)이 발견한다.
+        if (written) {
+            if (hasCarrier(senderPd)) {
+                String cvia = commMediumName(senderPd, "text", false);
+                int turns = 1 + new java.util.Random().nextInt(2); // 1~2턴
+                enqueueDelivery(targetPd, commDisplayName(senderPd), message, "letter", cvia, turns);
+                sender.sendMessage("§b[편지] §f" + commDisplayName(targetPd) + "에게 " + cvia + "(으)로 부쳤다. §7(도착까지 약 "
+                    + turns + "턴 — 전달 중 사고·훼손 가능)");
+                gameLogger.logItem("item", commDisplayName(senderPd),
+                    "편지 발송 (→" + commDisplayName(targetPd) + "): " + notePreview(message), cvia + " 발송");
+                exchangeContacts(senderPd, targetPd);
+                return;
+            }
+            leaveDroppedNote(sender, senderPd, targetPd, message);
+            return;
         }
 
         // 괴담이 정체를 차용한 배역이면 → 괴담이 그 사람인 척 기만 응답
@@ -7573,9 +7704,13 @@ public class TRPGGameManager {
         if (pd != null && use.has("consume") && !use.get("consume").isJsonNull()) {
             String c = use.get("consume").getAsString();
             if (!c.isBlank()) {
+                ItemInstance con = pd.itemStates.get(c);
+                String conName = (con != null && con.name != null && !con.name.isBlank()) ? con.name : c;
+                boolean hadC = pd.heldItemIds.contains(c) || pd.itemStates.containsKey(c);
                 pd.heldItemIds.remove(c); pd.itemStates.remove(c);
                 Player cp = Bukkit.getPlayer(pd.uuid);
                 if (cp != null) itemMan.removeById(cp, c); // 실물도 인벤토리에서 제거(소진 불일치 해소)
+                if (hadC) gameLogger.logItemRemoved(pd.gmDisplayName(), conName, "소진"); // 뷰어: 소모품 소진 반영
             }
         }
         // 결과물 생성(조합)
@@ -7592,6 +7727,19 @@ public class TRPGGameManager {
                     ItemInstance made = pd.itemStates.get(prod);
                     if (made != null && use.has("consume") && !use.get("consume").isJsonNull())
                         made.transformedFrom = use.get("consume").getAsString();
+                    String madeName = (made != null && made.name != null && !made.name.isBlank()) ? made.name : prod;
+                    gameLogger.logItem("item", pd.gmDisplayName(), madeName, "제작"); // 뷰어: 조합 결과물 획득 반영
+                } else {
+                    // pname 미지정(ALL) → 전원에게 지급됐으니 전원의 heldItemIds/itemStates도 갱신(소지품 인지·상태 등록 누락 방지)
+                    for (Player op : Bukkit.getOnlinePlayers()) {
+                        PlayerData opd = state.getPlayer(op);
+                        if (opd != null) {
+                            noteHeldItem(opd, prod);
+                            ItemInstance omade = opd.itemStates.get(prod);
+                            String omadeName = (omade != null && omade.name != null && !omade.name.isBlank()) ? omade.name : prod;
+                            gameLogger.logItem("item", opd.gmDisplayName(), omadeName, "제작"); // 뷰어: 전원 조합 결과물 획득 반영
+                        }
+                    }
                 }
             }
         }
@@ -7663,7 +7811,7 @@ public class TRPGGameManager {
     private void accrueContribution(Map<String, String> grades) {
         if (grades == null) return;
         grades.forEach((name, g) -> {
-            PlayerData pd = findByName(name);
+            PlayerData pd = findAnyByName(name); // 사망(자기희생)자도 기여도 반영 — findByName은 사망자 제외
             if (pd != null) pd.contribution += gradeToPoints(g);
         });
     }
@@ -7683,7 +7831,7 @@ public class TRPGGameManager {
     private void awardEndStats(Map<String, String> grades, Map<String, java.util.List<String>> growth) {
         if (grades == null) return;
         grades.forEach((name, g) -> {
-            PlayerData pd = findByName(name);
+            PlayerData pd = findAnyByName(name); // 사망(자기희생)자도 성장 스텟 반영 — findByName은 사망자 제외
             if (pd == null) return;
             int pts = endStatPoints(g);
             if (pts <= 0) return;
@@ -7741,6 +7889,7 @@ public class TRPGGameManager {
         sb.append("- 성격·목표에 충실하되 ★실제 사람이 할 법한 말투★로 답하라(소설 문어체·의미심장한 연출 금지).\n");
         sb.append("- ★치명적 비밀·진상★만 통째로 드러내지 마라(그 외엔 솔직하게 사람답게 답해도 된다). 가끔 얼버무리거나 되물을 수 있지만, 매 대답을 빙빙 돌리거나 수수께끼로 만들지 마라.\n");
         sb.append("- ★정보 공개는 '금지'가 아니라 '현실적 꺼림'으로★: 너는 해법·비밀도 말할 수 있다. 다만 사람이라 잘 안 말하는 이유가 있다 — ①본인도 그게 진실인지 확신 못 함 ②초면·낯선 사람은 못 믿어 중요한 걸 안 줌(신뢰가 쌓여야) ③위험한 정보라 아는 사이라도 망설임 ④자기 비밀·생존·이해관계가 걸림. 그래서 기본은 머뭇·일부만·조건부. 단 관계·설득·매력이 충분하거나, ⑤자기 목적을 위해 일부러 (틀리거나 위험한 정보를 섞어) 흘리기도 한다. 핵심: 통째로 '정답 읊기'를 막는 게 아니라, 말해도 ★불확실·조건부·때론 틀리거나 의도된 정보★라 곧이곧대로 못 믿게 하라.\n");
+        sb.append("- ★질문엔 먼저 '답'부터 — 관공서식 회피 금지★: 절차·규정·목적 확인('목적부터 말해요'·'절차가 먼저예요'류)을 앞세워 답을 미루는 화법은 ★한 번★만 허용된다. 상대가 같은 것을 다시 물으면 그땐 반드시 실질적으로 답하거나(아는 만큼, 불확실 표시 가능) 명확히 거절하고 ★진짜 이유★를 말하라 — 같은 절차 요구를 반복하며 대화를 제자리에 붙잡지 마라.\n");
         sb.append("- ★상대의 '설득력·존재감'(위 대화 머리말 표기)이 강할수록 너는 더 쉽게 마음이 흔들려 협조·양보하고, "
                  + "약할수록 잘 먹히지 않는다. 단, 네 핵심 비밀·생존이 걸린 사안은 설득력만으로 단번에 무너지지 않는다 — 정도를 조절하라.\n");
         sb.append("- ★'너와의 관계'(위 머리말 표기)에 따라 반응의 온도와 협조·도움의 정도를 정하라:\n"
@@ -7808,6 +7957,9 @@ public class TRPGGameManager {
         Player p = Bukkit.getPlayer(learner.uuid);
         if (p != null && p.isOnline())
             p.sendMessage("§a[연락처 입수] §f" + commDisplayName(subject) + " (" + subject.contactId + ")");
+        // 뷰어·재현: 연락처(전화번호) 입수는 '정보 획득' — 단서로 기록해 상태패널·타임라인에 반영.
+        gameLogger.logItem("clue", learner.gmDisplayName(),
+            "연락처: " + subject.gmDisplayName() + " (" + subject.contactId + ")", "연락처 입수");
     }
 
     private void announceKnownContacts(Player p, PlayerData pd) {
@@ -8218,6 +8370,7 @@ public class TRPGGameManager {
         pd.impersonated = true;
         pd.isDead       = true;     // 죽이고 대신 움직인다
         pd.status       = "dead";
+        gameLogger.logVital(pd.gmDisplayName(), 0, pd.hp[0], pd.hp[1], 0, pd.san[0], pd.san[1], "사망(괴담 정체 차용)"); // 뷰어·재현: 특수 사망 반영
         fireDeathRelay(pd);    // 정체 차용으로 제거돼도 사후 전언(death_relay)은 발동
         // ※ 정체 차용(impersonation) 사망에는 동물 소생을 적용하지 않는다 — 괴담이 본체를 차지한 특수 죽음이므로.
         Player p = Bukkit.getPlayer(pd.uuid);
@@ -8275,6 +8428,131 @@ public class TRPGGameManager {
         }
         sb.append("특성·능력은 사용하지 않는다. 정체를 직접 밝히지 마라. 1-2문장.\n");
         return sb.toString();
+    }
+
+    /** 편지를 옮겨줄 매개(전서구·인편·우편 등)를 가졌는가 — 소지 아이템 또는 시나리오 우편 시스템(constraints.postal). */
+    private boolean hasCarrier(PlayerData pd) {
+        if (pd != null) for (String id : pd.heldItemIds) {
+            String low = itemDisplayName(id).toLowerCase();
+            for (String kw : CARRIER_KEYWORDS) if (low.contains(kw)) return true;
+        }
+        JsonObject g = state.getGdamData();
+        if (g != null && g.has("constraints") && g.get("constraints").isJsonObject()) {
+            JsonObject c = g.getAsJsonObject("constraints");
+            if (c.has("postal") && c.get("postal").getAsBoolean()) return true;
+        }
+        return false;
+    }
+
+    private static String notePreview(String s) {
+        if (s == null) return "";
+        return s.length() > 40 ? s.substring(0, 40) + "…" : s;
+    }
+
+    /**
+     * ★폐쇄망★: 이 플레이어가 접속한 닫힌 통신망 이름(무전 주파수·인트라넷·모스). 없으면 null(개방/육성·PA).
+     *  같은 망에 접속한 사람만 그 채널 통신을 수신하고, 전자형 괴담만 그 망에 끼어든다.
+     */
+    private String commNetworkKey(PlayerData pd) {
+        if (pd == null) return null;
+        for (String id : pd.heldItemIds) {
+            String low = itemDisplayName(id).toLowerCase();
+            if (low.contains("무전") || low.contains("워키") || low.contains("walkie") || low.contains("트랜시버") || low.contains("주파수")) return "무전";
+            if (low.contains("인트라넷") || low.contains("intranet") || low.contains("사내망") || low.contains("전산망")) return "인트라넷";
+            if (low.contains("모스") || low.contains("전신")) return "모스";
+        }
+        return null;
+    }
+
+    /** ★편지 두고가기★: 현재 위치에 쪽지를 남긴다 — 그 구역에 오는 사람(플레이어/괴담)이 발견. 즉시 전달되지 않음. */
+    private void leaveDroppedNote(Player sender, PlayerData senderPd, PlayerData targetPd, String message) {
+        String zone = senderPd.zone == null ? "" : senderPd.zone;
+        String authorDisp = commDisplayName(senderPd);
+        String targetDisp = targetPd == null ? "" : commDisplayName(targetPd);
+        droppedNotes.computeIfAbsent(zone, k -> new java.util.concurrent.CopyOnWriteArrayList<>())
+            .add(new DroppedNote(authorDisp, targetDisp, message, state.getCurrentTurn()));
+        sender.sendMessage("§b[편지] §f" + (targetDisp.isEmpty() ? "" : targetDisp + "에게 남기는 ") + "쪽지를 "
+            + zoneDisplayName(zone) + "에 두었다. §7(이곳에 오는 사람이 발견한다 — 엉뚱한 이나 괴담이 먼저 볼 수도 있다.)");
+        state.log("comm", authorDisp, "→ (두고감@" + zoneDisplayName(zone) + ") "
+            + (targetDisp.isEmpty() ? "" : targetDisp + ": ") + message);
+        gameLogger.logItem("item", authorDisp, "편지를 남김"
+            + (targetDisp.isEmpty() ? "" : " (→" + targetDisp + ")") + ": " + notePreview(message), "두고감@" + zoneDisplayName(zone));
+        ai.injectGmSystem("[편지 두고감] " + authorDisp + "이(가) " + zoneDisplayName(zone) + "에 "
+            + (targetDisp.isEmpty() ? "" : targetDisp + "에게 보내는 ") + "쪽지를 남겼다 — 그 구역에 오는 인물이 발견할 수 있다(엉뚱한 손·괴담 포함).");
+    }
+
+    /** 구역 진입 시 그곳에 남겨진 쪽지를 발견 — 발견자가 실물을 가져간다(1부). 훼손됐으면 훼손본을 읽는다. */
+    private void discoverDroppedNotes(PlayerData mover, String zone) {
+        List<DroppedNote> notes = droppedNotes.get(zone);
+        if (notes == null || notes.isEmpty()) return;
+        Player mp = Bukkit.getPlayer(mover.uuid);
+        String finder = commDisplayName(mover);
+        for (DroppedNote n : new java.util.ArrayList<>(notes)) {
+            if (n.authorDisp.equals(finder)) continue; // 자기가 둔 쪽지는 '발견'이 아님
+            notes.remove(n); // 실물 한 부 — 발견자가 가져간다
+            boolean intended = !n.targetDisp.isEmpty() && n.targetDisp.equals(finder);
+            String head = intended ? "당신에게 남겨진 쪽지"
+                : (n.targetDisp.isEmpty() ? "누군가 남긴 쪽지" : "다른 사람(" + n.targetDisp + ")에게 남겨진 쪽지");
+            if (mp != null && mp.isOnline()) {
+                mp.sendMessage("§b[발견] §f" + head + (n.tampered ? " §c(누군가 손댄 흔적이 있다)" : "") + ":");
+                mp.sendMessage("§7\"" + n.content + "\"");
+            }
+            appendNarrativeLog(mover, "[편지 발견] " + head + ": " + n.content);
+            gameLogger.logItem("clue", finder, "쪽지 발견 — " + n.content,
+                n.tampered ? "훼손된 채 발견" : (intended ? "수신" : "엉뚱한 손에"));
+            ai.injectGmSystem("[편지 발견] " + finder + "이(가) " + zoneDisplayName(zone) + "에서 " + head
+                + "를 발견했다: \"" + n.content + "\"" + (n.tampered ? " (이미 훼손됨)" : "") + ". 정황에 반영.");
+        }
+    }
+
+    /** 문서형 괴담이 남겨진 쪽지를 발견해 ★훼손★(원본→변형). 뷰어엔 원본/변형됨으로 남는다. 턴마다 호출(값싼 게이트). */
+    private void tamperDroppedNotes() {
+        if (droppedNotes.isEmpty() || !entityInterferes("text")) return; // 문서형 괴담만
+        java.util.Random rng = new java.util.Random();
+        for (Map.Entry<String, List<DroppedNote>> e : droppedNotes.entrySet()) {
+            for (DroppedNote n : e.getValue()) {
+                if (n.tampered) continue;
+                if (rng.nextInt(100) < 25) { // 미발견 쪽지를 문서형 괴담이 발견·훼손
+                    String altered = tamperText(n.orig, rng);
+                    n.content = altered; n.tampered = true;
+                    gameLogger.logItemTampered(getEntityName(), "쪽지", n.orig, altered, "괴담의 문서 훼손");
+                    ai.injectGmSystem("[편지 훼손] 괴담이 " + zoneDisplayName(e.getKey())
+                        + "에 남겨진 쪽지를 발견해 내용을 바꿔놓았다: \"" + n.orig + "\" → \"" + altered
+                        + "\". 나중에 읽는 이는 훼손본을 믿게 된다.");
+                }
+            }
+        }
+    }
+
+    /** ★지연 전달 큐잉★: 전서구·인편 등으로 부친 편지를 turns턴 뒤 도착하도록 예약. */
+    private void enqueueDelivery(PlayerData target, String senderDisp, String content, String kind, String via, int turns) {
+        if (target == null) return;
+        int now = state.getCurrentTurn();
+        pendingDeliveries.add(new PendingDelivery(target.uuid, senderDisp, content, kind, via, now, now + Math.max(1, turns)));
+    }
+
+    /** 도착 턴이 된 지연 전달을 처리 — 전달 중 매체형 괴담이 변조할 수 있다. 턴마다 호출(값싼 게이트). */
+    private void processPendingDeliveries() {
+        if (pendingDeliveries.isEmpty()) return;
+        int now = state.getCurrentTurn();
+        for (PendingDelivery d : new java.util.ArrayList<>(pendingDeliveries)) {
+            if (d.deliverTurn > now) continue;
+            pendingDeliveries.remove(d);
+            PlayerData tp = state.getPlayer(d.targetUuid);
+            if (tp == null || tp.isDead) continue; // 받을 사람이 없으면 유실
+            String modality = commModality(d.via, "letter".equals(d.kind));
+            boolean tampered = entityInterferes(modality) && new java.util.Random().nextInt(100) < 30; // 전달 중 변조
+            String heard = tampered ? tamperText(d.content, new java.util.Random()) : d.content;
+            String tdisp = commDisplayName(tp);
+            String viaName = d.via == null || d.via.isBlank() ? "편지" : d.via;
+            Player p = Bukkit.getPlayer(d.targetUuid);
+            if (p != null && p.isOnline()) p.sendMessage("§b[✉ " + viaName + " 도착] §f" + d.senderDisp + ": " + heard);
+            appendNarrativeLog(tp, "[" + viaName + " 도착] " + d.senderDisp + ": " + heard);
+            if (tampered) gameLogger.logCommTampered(d.kind, d.senderDisp, java.util.List.of(tdisp), d.content, heard, "전달 중 괴담 변조", d.via);
+            else gameLogger.logComm(d.kind, d.senderDisp, java.util.List.of(tdisp), d.content, d.via);
+            ai.injectGmSystem("[지연 전달 도착] " + d.senderDisp + "이(가) " + (now - d.sentTurn) + "턴 전 부친 " + viaName
+                + "이(가) " + tdisp + "에게 지금 도착했다: \"" + heard + "\"" + (tampered ? " (전달 중 훼손됨)" : "") + ". 정황에 반영.");
+        }
     }
 
     private void deliverDirectMessage(Player sender, PlayerData senderPd, PlayerData targetPd,
@@ -8436,11 +8714,13 @@ public class TRPGGameManager {
             if ("faint".equals(pd.status) && pd.faintTurnsRemaining > 0) {
                 pd.faintTurnsRemaining--;
                 if (pd.faintTurnsRemaining <= 0) {
+                    int fHp = pd.hp[0], fSan = pd.san[0];
                     pd.status = "normal";
                     pd.hp[0]  = 1;
                     pd.san[0] = Math.min(pd.san[1], Math.max(2, pd.san[0])); // ★기절에서 깨어나면 정신력도 2까지 회복★
                     pd.faintTurnsRemaining = 0;
                     updateAllScoreboards();
+                    gameLogger.logVital(pd.gmDisplayName(), pd.hp[0]-fHp, pd.hp[0], pd.hp[1], pd.san[0]-fSan, pd.san[0], pd.san[1], "기절에서 깨어남"); // 뷰어·재현: 상태 회복 반영
                     Player rp = Bukkit.getPlayer(pd.uuid);
                     if (rp != null) rp.sendMessage("§a의식이 돌아왔다. 간신히 일어선다... §7(정신력 " + pd.san[0] + ")");
                     ai.injectGmSystem("[회복] " + commDisplayName(pd) + "이(가) 기절에서 깨어났다. 체력 1·정신력 " + pd.san[0] + "로 회복. 서술에 반영하라.");
@@ -8453,9 +8733,11 @@ public class TRPGGameManager {
                 Player rp = Bukkit.getPlayer(pd.uuid);
                 if (pd.puppetRecoveryTurns <= 0) {
                     // 자동 회복: SAN 1 복구, 관전 해제 (puppet 상태는 유지)
+                    int pSan = pd.san[0];
                     pd.san[0] = Math.max(1, pd.san[0]);
                     pd.puppetRecoveryTurns = 0;
                     updateAllScoreboards();
+                    gameLogger.logVital(pd.gmDisplayName(), 0, pd.hp[0], pd.hp[1], pd.san[0]-pSan, pd.san[0], pd.san[1], "조종 일부 풀림(관전 해제)"); // 뷰어·재현: 자아 회복 반영
                     if (rp != null) {
                         rp.sendMessage("§a정신의 실낱 같은 불꽃이 다시 타오릅니다...");
                         rp.sendMessage("§5아직 조종의 영향이 남아있지만 다시 행동할 수 있습니다.");
@@ -8506,6 +8788,11 @@ public class TRPGGameManager {
         }
         moved.zone = newZone;
         moved.visitedZones.add(newZone); // 방문 기록 (직접 그린 약도에 반영)
+        // ★실시간 뷰어 위치★: 첫 배치(스폰)가 아닌 실제 구역 이동만 기록 → 상태패널 '현재 위치' 갱신.
+        if (zoneChanged && !firstAssignment && spawnedPlayers.contains(moved.uuid))
+            gameLogger.logMove(moved.gmDisplayName(), zoneDisplayName(newZone), forced ? "강제" : (bypass ? "우회" : ""));
+        // ★편지 두고가기★: 새 구역에 들어오면 그곳에 남겨진 쪽지를 발견(엉뚱한 손·훼손본 포함).
+        if (zoneChanged && spawnedPlayers.contains(moved.uuid)) discoverDroppedNotes(moved, newZone);
         // 첫 배치 시: 인접 구역도 약도에 공개 + 지도 자동 지급
         if (firstAssignment) {
             moved.visitedZones.addAll(mapMan.getAdjacentZones(newZone));
@@ -9284,7 +9571,15 @@ public class TRPGGameManager {
         // ★공정성★: roll·outcome은 AI가 아니라 ★코드가 직접★ 정한다.
         //   (AI가 유리한 값만 고르던 문제[거의 다 성공] + '주사위는 성공인데 서술은 실패' 불일치를 동시에 제거)
         int roll = ThreadLocalRandom.current().nextInt(1, max + 1);
-        int effDc = dc > 0 ? Math.max(2, Math.min(max, dc)) : (int) Math.ceil(max * 0.55); // dc 미지정 시 중앙값보다 약간 높게
+        // ★행운 보정★: 능력으로 건 행운 수치를 실제 굴림에 반영(1~max로 클램프, 1회 소비). GM 텍스트 주입만 하고 굴림엔 안 반영되던 공백 보완.
+        Integer luckAdj = pendingDiceLuck.remove(player.getUniqueId());
+        if (luckAdj != null && luckAdj != 0) roll = Math.max(1, Math.min(max, roll + luckAdj));
+        // ★난이도 상향★: 기본 DC 0.55→0.62 + 후반 스테이지(3+)·오염도 비례 가산(성공은 항상 가능하도록 max-1 캡).
+        int diffStage = state.getTimelineStage();
+        int diffCorr  = corruptMan.getLevel();
+        int effDc = dc > 0 ? Math.max(2, Math.min(max, dc)) : (int) Math.ceil(max * 0.62); // dc 미지정 시 중앙보다 높게(난도↑)
+        int diffBump = Math.max(0, diffStage - 2) + diffCorr;
+        if (diffBump > 0) effDc = Math.min(max - 1, effDc + Math.min(diffBump, Math.max(2, max / 6)));
         int band = Math.max(1, max / 10);
         boolean success = roll >= effDc;
         boolean fail    = roll <  effDc - band;
@@ -9302,6 +9597,11 @@ public class TRPGGameManager {
         ai.injectGmSystem("[판정 결과] " + (reason.isEmpty() ? "" : reason + " — ")
             + "주사위 d" + max + "=" + roll + (dc > 0 ? (", 성공기준 " + dc) : "") + " → ★" + outcome + "★. "
             + "이 결과대로 다음 전개를 이어서 서술하라. 결과와 어긋나게(실패인데 성공한 듯, 또는 그 반대로) 쓰지 마라.");
+        // ★로그/실시간 뷰어·재현 충실도★: 코드가 정한 판정을 기록(주사위·성공기준·결과) — 인게임에 뜨던 판정이 로그엔 없던 공백 보완.
+        PlayerData dpd = state.getPlayer(player);
+        gameLogger.logAbilityResult(dpd != null ? dpd.gmDisplayName() : player.getName(), "주사위 판정",
+            (reason.isEmpty() ? "행동 판정" : reason) + " — d" + max + "=" + roll
+            + " (기준 " + effDc + " 이상 성공) → " + outcome);
         // 1) 숫자가 바뀌는 연출(약 1.5초, d{max} 무작위) — 3틱 간격
         final int FRAMES = 10;
         for (int i = 0; i < FRAMES; i++) {

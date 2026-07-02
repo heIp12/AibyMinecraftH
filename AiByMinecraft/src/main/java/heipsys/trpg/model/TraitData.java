@@ -98,8 +98,10 @@ public class TraitData {
     }
 
     public String toDisplayLine() {
-        String cd = (remainingCooldown > 0)
-            ? " §c[쿨다운 " + remainingCooldown + "턴]" : (cooldownTurns == -1 && usedThisStage > 0 ? " §c[이번 스테이지 사용 완료]" : "");
+        // 스테이지당 1회형은 사용 후 remainingCooldown이 센티넬(MAX_VALUE)이므로 이 분기를 먼저 확인한다
+        // (그렇지 않으면 '[쿨다운 2147483647턴]'으로 표시된다).
+        String cd = (cooldownTurns == -1 && usedThisStage > 0)
+            ? " §c[이번 스테이지 사용 완료]" : (remainingCooldown > 0 ? " §c[쿨다운 " + remainingCooldown + "턴]" : "");
         String eff = effectiveGrade();
         String gradeStr = eff.equals(grade) ? grade : (grade + "§7·실효§e" + eff); // 출신보너스 발현 시 병기
         return "▸ (§e" + gradeStr + "§r) " + name + (level > 1 ? " §7Lv." + level : "") + ": " + description + cd
