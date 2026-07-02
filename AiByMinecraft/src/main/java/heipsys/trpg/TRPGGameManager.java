@@ -6673,6 +6673,9 @@ public class TRPGGameManager {
         List<JsonObject> criticals = getCriticalNpcs();
         if (criticals.isEmpty()) return;
         lastNpcBeatTurn = state.getCurrentTurn(); // 워치독 기준 갱신
+        // ★막후 진행(의문)★: 아무도 못 닿는 NPC는 자율 AI를 건너뛰되(비용), 그들의 ★예정(일정)은 계속 진행★된다고
+        //   GM에 알려 준다 — 플레이어가 그 NPC를 안 만났다는 이유로 예정된 사건이 영원히 안 일어나는 걸 방지.
+        java.util.List<String> offscreenIntents = new java.util.ArrayList<>();
 
         for (JsonObject npcObj : criticals) {
             String npcId   = npcObj.has("id")   ? npcObj.get("id").getAsString()   : "npc";
@@ -6686,7 +6689,11 @@ public class TRPGGameManager {
             if (overlapPlayer != null && isAccidentalIdentityDup(npcObj)) continue;
             // ★비용 절약★: 같은 구역에 플레이어도 없고 전화로도 닿지 않는 NPC는 자율 AI 호출 생략 —
             //   그 출력은 GM 컨텍스트로만 들어가 아무도 못 보므로 크레딧만 쓴다. 플레이어가 다가오면 다음 주기에 다시 활동.
-            if (!npcCanReachAnyPlayer(npcId, npcZone)) continue;
+            if (!npcCanReachAnyPlayer(npcId, npcZone)) {
+                String intent = npcScheduleIntent(npcObj);
+                if (!intent.isEmpty() && offscreenIntents.size() < 6) offscreenIntents.add(npcName + " — " + intent);
+                continue;
+            }
             // ★대화 중 중복 구동 방지★: 방금(이번~직전 턴) 플레이어와 직접 대화한 NPC는 자율 AI를 돌리지 않는다 —
             //   대화 맥락에 없는 '플레이어 행동 로그' 기반 자율 출력이 같은 NPC 컨텍스트에 섞여 되묻기·모순을 유발한다.
             int lastDirect = npcLastDirectTurn.getOrDefault(npcId, Integer.MIN_VALUE);
@@ -6759,6 +6766,30 @@ public class TRPGGameManager {
                 gameLogger.logGmOutput("NPC(" + npcName + ")", trimmed);
             });
         }
+        // ★막후 진행 주입(의문)★: 못 닿는 NPC들의 예정을 GM에 한 번에 알린다 — 접촉 없이도 예정된 사건이 진행되게.
+        if (!offscreenIntents.isEmpty()) {
+            ai.injectGmSystem("[막후 진행 — GM만 인지] 지금 플레이어 시야 밖이라 화면엔 안 나오지만, 다음 인물들은 각자의 예정대로 계속 움직이고 있다: "
+                + String.join(" / ", offscreenIntents)
+                + ". 플레이어가 관련 장소·시각·상황에 닿으면 이 예정된 행동이 ★이미 벌어진 결과★(잠긴 문·사라진 물건·남은 흔적·달라진 상황 등)로 드러나게 서술하라 — 아무도 그 NPC를 만나지 않았다는 이유로 예정된 사건이 영원히 일어나지 않아선 안 된다.");
+        }
+    }
+
+    /** NPC의 현재 예정 의도를 짧게 요약(막후 진행 주입용). schedule의 goal(없으면 action) 우선 → NPC goal → role_type. */
+    private String npcScheduleIntent(JsonObject npcObj) {
+        if (npcObj == null) return "";
+        if (npcObj.has("schedule") && npcObj.get("schedule").isJsonArray()) {
+            for (JsonElement el : npcObj.getAsJsonArray("schedule")) {
+                if (!el.isJsonObject()) continue;
+                JsonObject s = el.getAsJsonObject();
+                String goal = getStr(s, "goal"), action = getStr(s, "action");
+                String v = !goal.isBlank() ? goal : action;
+                if (!v.isBlank()) { String cond = getStr(s, "condition"); return v + (cond.isBlank() ? "" : " (조건:" + cond + ")"); }
+            }
+        }
+        String g = getStr(npcObj, "goal");
+        if (!g.isBlank()) return g;
+        String rt = getStr(npcObj, "role_type");
+        return rt.isBlank() ? "" : ("역할:" + rt);
     }
 
     /** 이 NPC가 만나거나(같은 zone) 전화로 닿을 수 있는 살아있는 등장 플레이어가 하나라도 있는가. 자율 AI 호출 여부 판단용(비용 절약). */
