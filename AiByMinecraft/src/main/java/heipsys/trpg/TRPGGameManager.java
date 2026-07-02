@@ -7493,7 +7493,13 @@ public class TRPGGameManager {
         }
 
         // 대면 가능 여부 (같은 zone)
-        boolean sameZone = senderPd.zone.isEmpty() || senderPd.zone.equals(npcZone);
+        // ★근처 NPC 인식(#175)★: NPC 위치가 확인되지 않으면(빈 zone — GM 단역·미추적 NPC) 원격이 아니라
+        //   '지금 눈앞에 있다'로 본다 — 근처 NPC에게 @로 말한 게 전부 통화/서신으로 처리되던 문제 해결.
+        //   위치가 확인되고 ★다른 구역★일 때만 원격(통화/서면). 같은 구역이거나 위치 불명이면 대면.
+        boolean npcZoneKnown = !npcZone.isEmpty();
+        boolean sameZone = senderPd.zone.isEmpty() || !npcZoneKnown || senderPd.zone.equals(npcZone);
+        // 위치 불명이던 NPC를 대면으로 처리했으면 관측된 위치(발신자 구역)를 기록 → 이후 판정 일관성.
+        if (sameZone && !npcZoneKnown && !senderPd.zone.isEmpty()) npcZones.put(npcId, senderPd.zone);
         // CODE-9: 원격 연락 가능 여부 — 대면 제한은 '대면 행위'에만 적용한다.
         //   ①phone_usable + 발신자 통신기기 + (NPC가 통화로 닿거나 ★이미 접촉해 번호를 아는★ NPC) → 통화(viaCall)
         //   ②통신 두절이라도 시대·맥락상 서면(필담·인편·쪽지)이 가능하고 닿는 NPC면 → 서면(written)
