@@ -175,6 +175,20 @@ public class MapManager {
         for (String area : areaOrder) if (vis.contains(area)) out.add(area);
         return out;
     }
+
+    /**
+     * 두 zone이 같은 대분류(건물·시설)에 속하는가 — 구내방송(PA) 도달 범위 판정용.
+     * ★보수적★: 단일 구역 시나리오(대분류 없음)거나 zone/매핑이 불명이면 true(막지 않음) — 방송이 조용히 끊기는 것 방지.
+     * 두 zone이 ★확실히 서로 다른 대분류★일 때만 false.
+     */
+    public boolean sameArea(String zoneA, String zoneB) {
+        if (!hasMultiAreas()) return true;
+        if (zoneA == null || zoneA.isEmpty() || zoneB == null || zoneB.isEmpty()) return true;
+        if (zoneA.equals(zoneB)) return true;
+        String aa = zoneArea.get(zoneA), ab = zoneArea.get(zoneB);
+        if (aa == null || ab == null) return true;
+        return aa.equals(ab);
+    }
     public boolean isMapItem(ItemStack it) { return isOurMap(it); }
     public Set<String> getAdjacentZones(String zoneId) {
         return Collections.unmodifiableSet(adj.getOrDefault(zoneId, Set.of()));

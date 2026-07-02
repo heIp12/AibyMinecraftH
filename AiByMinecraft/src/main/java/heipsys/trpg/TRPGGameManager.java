@@ -7090,10 +7090,18 @@ public class TRPGGameManager {
         String content = extractSpoken(message);
         if (content.isBlank()) return;
         String disp = senderPd.gmDisplayName();
+        // ★도달 범위 게이트★: PA는 같은 대분류(건물·시설) 안에서만 결정적 전달(멀리·밖은 GM 서술로 처리).
+        //   소리 위험/침묵요구 상황이면 크게 못 외치므로 같은 zone(바로 근처)으로 ★축소★한다.
+        boolean risky = soundDangerous();
+        String senderZone = senderPd.zone == null ? "" : senderPd.zone;
+        boolean localizable = !senderZone.isEmpty();
         int heard = 0;
         java.util.List<String> heardNames = new ArrayList<>();
         for (PlayerData op : state.getAllPlayers()) {
             if (op.uuid.equals(senderPd.uuid) || op.isDead || !spawnedPlayers.contains(op.uuid)) continue;
+            boolean reach = (risky && localizable) ? senderZone.equals(op.zone)   // 소리위험 → 같은 구역만
+                                                   : mapMan.sameArea(senderZone, op.zone); // 평상 → 같은 건물(대분류)
+            if (!reach) continue;
             Player op2 = Bukkit.getPlayer(op.uuid);
             if (op2 != null && op2.isOnline()) {
                 op2.sendMessage("§b[📢 방송] §f" + disp + ": " + content);
@@ -7102,8 +7110,9 @@ public class TRPGGameManager {
                 heard++;
             }
         }
-        sender.sendMessage(heard > 0 ? "§7[방송 송출 — " + heard + "명에게 전달됨]"
-                                     : "§8(방송했지만 지금 들을 다른 인원이 없습니다.)");
+        sender.sendMessage(heard > 0 ? ("§7[방송 송출 — " + heard + "명에게 전달됨]" + (risky ? " §8(소리 위험 — 가까운 곳만 닿음)" : ""))
+                                     : (risky ? "§8(소리를 크게 낼 수 없는 상황 — 방송이 멀리 닿지 않았습니다.)"
+                                              : "§8(방송했지만 같은 건물에 들을 다른 인원이 없습니다.)"));
         state.log("comm", senderPd.name, "[방송] " + content);
         String bNet = commNetworkKey(senderPd); // 폐쇄망(무전) 방송이면 그 망 접속자만 들었을 수 있음(PA는 개방)
         gameLogger.logComm("broadcast", disp, heardNames, content, bNet); // 뷰어 통화내역: 방송 수신자 기록
@@ -7111,9 +7120,9 @@ public class TRPGGameManager {
         // GM·NPC 인지: 방송은 건물 전체로 퍼진 큰 행동. 내용은 시스템이 이미 전달했으니 중복 WITNESS 금지.
         if (currentPhase == Phase.HORROR || currentPhase == Phase.DAILY) {
             ai.injectGmSystem("[방송 송출] " + disp + "이(가) 방송 설비로 외쳤다: \"" + content
-                + "\". 이 문구는 시스템이 현재 등장한 플레이어들에게 전달했다(같은 문구를 다시 <WITNESS>로 중복 전달 금지). "
-                + "★범위★: '건물 구내 방송(PA)'이면 ★그 건물·시설 안에 있는 사람만★ 듣는다 — 건물 밖으로 나갔거나 멀리 떨어진 인원이 있으면 그 사람은 ★못 들은 것으로★ 다음 서술에 반영하라(광역 라디오·도시 방송이면 넓게 들림). "
-                + "장면(스피커·반향)과 결과를 서술하고, 소통 가능한 NPC들도 들은 것으로 반영하라. "
+                + "\". 이 문구는 시스템이 ★같은 건물(대분류) 안 인원에게만★ 전달했다(같은 문구를 다시 <WITNESS>로 중복 전달 금지). "
+                + "★범위★: 시스템이 이미 같은 건물·시설 안 사람에게만 닿게 처리했다 — 다른 건물·바깥·먼 곳의 인원은 ★못 들은 것으로★ 다음 서술에 반영하라(광역 라디오·도시 방송 설정이면 서술로 넓게 확장 가능). 방송 설비가 없거나 소리가 위험한 상황이면 육성 외침이 가까운 곳까지만 닿았음을 반영하라. "
+                + "장면(스피커·반향)과 결과를 서술하고, 같은 건물의 소통 가능한 NPC들도 들은 것으로 반영하라. "
                 + "★괴담 개입★: 통신·소리를 감지·간섭하는 괴담이면 이 방송을 ★듣고 반응하거나, 내용을 왜곡해 스피커로 되쏘는(왜곡 재송출)★ 식으로 능동적으로 끼어들 수 있다(평범한 안내 방송에 둔감한 괴담은 무시).");
         }
     }
