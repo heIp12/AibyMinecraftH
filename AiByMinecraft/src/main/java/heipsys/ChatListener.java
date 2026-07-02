@@ -121,6 +121,10 @@ public class ChatListener implements Listener {
         } else if (trpgManager.isMapItem(event.getItem())) {
             event.setCancelled(true);
             Bukkit.getScheduler().runTask(plugin, () -> trpgManager.openMapSelector(player));
+        } else if (trpgManager.isCommDeviceItem(event.getItem())) {
+            // 통신 기기 우클릭 → 소통수단 선언 순환(#177)
+            event.setCancelled(true);
+            Bukkit.getScheduler().runTask(plugin, () -> trpgManager.cycleCommMethod(player));
         }
     }
 

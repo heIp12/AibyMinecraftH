@@ -164,6 +164,31 @@ public class MapManager {
     public boolean hasZones()       { return !zoneOrder.isEmpty(); }
     public boolean hasMultiAreas()  { return areaOrder.size() >= 2; }
     public List<String> areaNames() { return Collections.unmodifiableList(areaOrder); }
+    /**
+     * 플레이어가 아는(방문·현재구역) 대분류(area)만 areaOrder 순으로 반환 — 지도 다이얼로그가
+     * 미발견 장소(백룸 등)를 노출해 스포하던 문제 방지. 지도 이미지(overview)와 ★같은 visibleAreas★ 기준.
+     */
+    public List<String> knownAreaNames(PlayerData pd) {
+        if (pd == null) return new ArrayList<>();
+        Set<String> vis = visibleAreas(pd, pd.hasFullMap);
+        List<String> out = new ArrayList<>();
+        for (String area : areaOrder) if (vis.contains(area)) out.add(area);
+        return out;
+    }
+
+    /**
+     * 두 zone이 같은 대분류(건물·시설)에 속하는가 — 구내방송(PA) 도달 범위 판정용.
+     * ★보수적★: 단일 구역 시나리오(대분류 없음)거나 zone/매핑이 불명이면 true(막지 않음) — 방송이 조용히 끊기는 것 방지.
+     * 두 zone이 ★확실히 서로 다른 대분류★일 때만 false.
+     */
+    public boolean sameArea(String zoneA, String zoneB) {
+        if (!hasMultiAreas()) return true;
+        if (zoneA == null || zoneA.isEmpty() || zoneB == null || zoneB.isEmpty()) return true;
+        if (zoneA.equals(zoneB)) return true;
+        String aa = zoneArea.get(zoneA), ab = zoneArea.get(zoneB);
+        if (aa == null || ab == null) return true;
+        return aa.equals(ab);
+    }
     public boolean isMapItem(ItemStack it) { return isOurMap(it); }
     public Set<String> getAdjacentZones(String zoneId) {
         return Collections.unmodifiableSet(adj.getOrDefault(zoneId, Set.of()));

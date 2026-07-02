@@ -35,6 +35,10 @@ public class DialogManager {
     private Consumer<Player> importantInfoOpener;
     public void setImportantInfoOpener(Consumer<Player> opener) { this.importantInfoOpener = opener; }
 
+    /** '소통수단 변경'(#177) 다이얼로그를 여는 콜백 — 도구가 없을 때 기록에서 여는 경로. TRPGGameManager가 주입. */
+    private Consumer<Player> commMethodOpener;
+    public void setCommMethodOpener(Consumer<Player> opener) { this.commMethodOpener = opener; }
+
     // ──────────────────────────────────────────────────────────────
     //  캐릭터 시트 + 주사위 확인
     // ──────────────────────────────────────────────────────────────
@@ -328,12 +332,15 @@ public class DialogManager {
         List<ActionButton> buttons = new ArrayList<>();
         for (String[] o : opts) {
             final String hint = o[0];
+            final boolean isRule = o[1].equals("규칙·금기형");
             buttons.add(ActionButton.create(
-                Component.text(o[1], hint.isEmpty() ? NamedTextColor.GRAY : NamedTextColor.LIGHT_PURPLE),
-                Component.text(o[2]),
+                Component.text(o[1] + (isRule ? " ▸" : ""), hint.isEmpty() ? NamedTextColor.GRAY : NamedTextColor.LIGHT_PURPLE),
+                Component.text(isRule ? "세부 금기(감정·행동·응답 등) 고르기" : o[2]),
                 150,
-                DialogAction.customClick((v, a) -> onPick.accept(hint),
-                    ClickCallback.Options.builder().uses(1).build())));
+                DialogAction.customClick((v, a) -> {
+                    if (isRule) showRuleSubtypeChoice(player, onPick); // ▸ 세부 RULE 유형 선택으로
+                    else onPick.accept(hint);
+                }, ClickCallback.Options.builder().uses(1).build())));
         }
         ActionButton cancel = ActionButton.create(
             Component.text("닫기", TextColor.color(0xAAAAAA)),
@@ -341,13 +348,50 @@ public class DialogManager {
         Component body = Component.text()
             .append(Component.text("다음에 생성될 괴담의 유형/성격을 고정합니다. (종류별 테스트용)", NamedTextColor.WHITE))
             .appendNewline()
-            .append(Component.text("선택은 다음 생성부터 계속 적용 — '무작위'로 되돌릴 수 있습니다.", NamedTextColor.GRAY))
+            .append(Component.text("선택은 다음 생성부터 계속 적용 — '무작위'로 되돌릴 수 있습니다. ▸ 표시는 세부 선택.", NamedTextColor.GRAY))
             .build();
+        // 3열로 배치해 항목이 잘리지 않게(2열에선 목록이 길어 하단이 안 보이던 문제).
         Dialog dialog = Dialog.create(b -> b.empty()
             .base(DialogBase.builder(Component.text("시작 설정  —  괴담 유형/성격 선택"))
                 .body(List.of(DialogBody.plainMessage(body)))
                 .build())
-            .type(DialogType.multiAction(buttons, cancel, 2))
+            .type(DialogType.multiAction(buttons, cancel, 3))
+        );
+        player.showDialog(dialog);
+    }
+
+    /** 규칙·금기형 세부 유형 선택 — 감정/행동/응답/시선/소리/시간/순서/접촉 금기. onPick에 구체 힌트 전달. */
+    public void showRuleSubtypeChoice(Player player, java.util.function.Consumer<String> onPick) {
+        String[][] opts = {
+            {"규칙·금기형(감정 금기) — 특정 감정 표출(울음·웃음·공포 등)이 금지되고 어기면 화를 입는", "감정 금기", "울면/웃으면/무서워하면 당함"},
+            {"규칙·금기형(행동 금기) — 특정 행동(뒤돌아보기·뛰기·불 켜기 등)이 금지되는", "행동 금기", "뒤돌아보면/뛰면/불 켜면"},
+            {"규칙·금기형(응답 금기) — 부름·질문에 대답하거나 반응하면 안 되는", "응답 금기", "이름을 불러도 대답 금지"},
+            {"규칙·금기형(시선 금기) — 쳐다보거나 눈을 마주치면 안 되는", "시선 금기", "직시·주시가 방아쇠"},
+            {"규칙·금기형(소리 금기) — 소리를 내거나 말하면 안 되는", "소리 금기", "침묵 강요, 소리에 반응"},
+            {"규칙·금기형(시간 금기) — 특정 시각·시간대에 정해진 규칙을 지켜야 하는", "시간 금기", "정각·자정 등 시각 규칙"},
+            {"규칙·금기형(순서·절차 금기) — 정해진 순서·절차를 어기면 안 되는", "순서 금기", "절차·순서 위반이 화근"},
+            {"규칙·금기형(접촉·소지 금기) — 특정 물건을 만지거나 지니면 안 되는", "접촉 금기", "만지면/가지면 저주"}
+        };
+        List<ActionButton> buttons = new ArrayList<>();
+        for (String[] o : opts) {
+            final String hint = o[0];
+            buttons.add(ActionButton.create(
+                Component.text(o[1], NamedTextColor.LIGHT_PURPLE),
+                Component.text(o[2]), 150,
+                DialogAction.customClick((v, a) -> onPick.accept(hint),
+                    ClickCallback.Options.builder().uses(1).build())));
+        }
+        ActionButton back = ActionButton.create(
+            Component.text("◀ 뒤로(유형 전체)", TextColor.color(0xAAAAAA)),
+            Component.text("괴담 유형 전체 목록으로"), 120,
+            DialogAction.customClick((v, a) -> showEntityTypeChoice(player, onPick),
+                ClickCallback.Options.builder().uses(1).build()));
+        Dialog dialog = Dialog.create(b -> b.empty()
+            .base(DialogBase.builder(Component.text("규칙·금기형  —  세부 금기 선택"))
+                .body(List.of(DialogBody.plainMessage(
+                    Component.text("어떤 종류의 금기가 중심인 괴담을 만들까요?", NamedTextColor.WHITE))))
+                .build())
+            .type(DialogType.multiAction(buttons, back, 2))
         );
         player.showDialog(dialog);
     }
@@ -889,6 +933,41 @@ public class DialogManager {
         player.showDialog(dialog);
     }
 
+    /**
+     * 소통수단 선언 다이얼로그(#177) — 도구가 없어 기록에서 여는 경로. 선택 방식은 GM 승인 후 적용된다.
+     * @param currentLabel 현재 선언된 방식 라벨(없으면 "자동")
+     * @param onPick 선택한 방식 키(""=자동, voice/text/signal/electronic)를 전달
+     */
+    public void showCommMethodPicker(Player player, String currentLabel, java.util.function.Consumer<String> onPick) {
+        String[][] opts = {
+            {"",           "🔄 자동(상황에 맡김)", "장면에 맞게 엔진·GM이 알아서 정합니다."},
+            {"voice",      "🗣 말하기(음성)",      "소리 내어 말합니다. 소리가 위험한 곳이면 GM이 막을 수 있습니다."},
+            {"text",       "✍ 필담·글",           "종이·바닥 등에 글로 조용히 전합니다."},
+            {"signal",     "✋ 수신호·몸짓",        "손짓·몸짓으로 소리 없이 전합니다(상대가 볼 수 있어야 함)."},
+            {"electronic", "📱 전자통신",           "전화·무전·메신저 등 기기로 전합니다(기기·신호 필요)."},
+        };
+        List<ActionButton> buttons = new ArrayList<>();
+        for (String[] o : opts) {
+            buttons.add(ActionButton.create(
+                Component.text(o[1], NamedTextColor.GREEN),
+                Component.text(o[2]), 220,
+                DialogAction.customClick((v, a) -> onPick.accept(o[0]),
+                    ClickCallback.Options.builder().uses(1).build())));
+        }
+        ActionButton closeBtn = ActionButton.create(Component.text("닫기", TextColor.color(0xAAAAAA)), null, 100, null);
+        Dialog dialog = Dialog.create(b -> b.empty()
+            .base(DialogBase.builder(Component.text("소통수단 선언"))
+                .body(List.of(DialogBody.plainMessage(Component.text()
+                    .append(Component.text("현재: ", NamedTextColor.GRAY))
+                    .append(Component.text(currentLabel == null || currentLabel.isEmpty() ? "자동" : currentLabel, NamedTextColor.WHITE))
+                    .appendNewline()
+                    .append(Component.text("원하는 소통 방식을 고르세요. 선언은 GM이 상황을 보고 허락해야 적용됩니다.", NamedTextColor.GRAY))
+                    .build())))
+                .build())
+            .type(DialogType.multiAction(buttons, closeBtn, 1)));
+        player.showDialog(dialog);
+    }
+
     // ──────────────────────────────────────────────────────────────
     //  기록 다이얼로그 (전체 대화 / 수집 정보 — 위치 이동 기준 페이지 넘김)
     // ──────────────────────────────────────────────────────────────
@@ -965,6 +1044,13 @@ public class DialogManager {
                 Component.text("⭐ 중요 정보", NamedTextColor.GOLD),
                 Component.text("전화번호 · 능력으로 밝혀낸 사실을 모아 봅니다."), 160,
                 DialogAction.customClick((v, a) -> importantInfoOpener.accept(player),
+                    ClickCallback.Options.builder().uses(1).build())));
+        }
+        if (commMethodOpener != null) {
+            buttons.add(ActionButton.create(
+                Component.text("＠ 소통수단 변경", NamedTextColor.GREEN),
+                Component.text("말하기 · 필담 · 수신호 등 소통 방식을 선언합니다(GM 승인)."), 160,
+                DialogAction.customClick((v, a) -> commMethodOpener.accept(player),
                     ClickCallback.Options.builder().uses(1).build())));
         }
 

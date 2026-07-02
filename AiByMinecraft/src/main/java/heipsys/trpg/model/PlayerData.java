@@ -44,6 +44,10 @@ public class PlayerData {
     public int puppetRecoveryTurns = 0;
 
     public String    status       = "normal";  // normal / puppet / dead
+    /** 소통수단 선언(#177): GM 승인된 소통 모달리티(""=자동). voice/text/signal/electronic. 대면 시 엔진 자동선택(예: 소리위험→필담)을 이 선언이 우선한다. */
+    public String    declaredCommMethod = "";
+    /** 우클릭 순환·다이얼로그로 고른, GM 승인 대기 중인 후보(승인되면 declaredCommMethod로 확정). */
+    public String    pendingCommMethod  = "";
     public String    zone         = "";
     public String    spot         = "";        // 세부 위치 (zone 내 위치, 예: 계단앞)
     public boolean   isDead       = false;
@@ -185,6 +189,8 @@ public class PlayerData {
         status              = "normal";
         faintTurnsRemaining = 0;
         puppetRecoveryTurns = 0;
+        declaredCommMethod  = "";
+        pendingCommMethod   = "";
         spot                = "";
         turnState          = TurnState.IDLE;
         // heldItemIds / contactId / knownContacts 는 회차(재도전)에도 유지
