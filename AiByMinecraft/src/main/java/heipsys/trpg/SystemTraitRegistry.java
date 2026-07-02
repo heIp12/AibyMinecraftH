@@ -721,6 +721,21 @@ public class SystemTraitRegistry {
     }
 
     /**
+     * 예산 부족분(deficit)만큼 ★단점(음의 스텟)★을 추가해, 능력을 통째로 제거하지 않고 '대가를 치르고 나오게' 한다.
+     * 부족분이 예산+단점을 메우면 그만큼 예산이 늘어나(budget+neg) 능력이 보존된다.
+     * 한 스텟에 -가 몰리지 않게 정신력 최대치 → 정신 → 근력 순으로 최대 -2씩 분산한다.
+     */
+    private static void applyBudgetDrawback(TraitData td, int deficit) {
+        int d = Math.max(0, deficit);
+        int sanCut = Math.min(d, 2); d -= sanCut;
+        int sprCut = Math.min(d, 2); d -= sprCut;
+        int strCut = d;
+        td.san_max_add -= sanCut;
+        td.spr_add     -= sprCut;
+        td.str_add     -= strCut;
+    }
+
+    /**
      * 등급 예산 = 능력 코스트 + 양의 스텟 합 (음의 스텟 단점만큼 예산 추가).
      * 능력이 예산을 초과하면 ⓐ제약(쿨다운 -1) → ⓑ파라미터 축소 → ⓒ최후 효과 제거 순으로 맞추고,
      * 남은 예산으로 양의 스텟을 비례 축소한다. (멍청한 AI가 등급을 넘겨도 시스템이 강제 정렬)
@@ -733,8 +748,16 @@ public class SystemTraitRegistry {
             if (td.cooldownTurns != -1) { td.cooldownTurns = -1; ec = abilityCost(td); } // 제약 추가로 할인
             int guard = 0;
             while (ec > budget + neg && reduceOneParam(td) && guard++ < 24) ec = abilityCost(td);
-            if (ec > budget + neg) { // 최소 형태로도 초과 → 등급에 안 맞는 강효과 제거
-                td.effectType = ""; td.effectParams = new HashMap<>(); td.active = false; ec = 0;
+            if (ec > budget + neg) { // 최소 형태로도 초과
+                int deficit = ec - (budget + neg);
+                // A·B급처럼 예산에 근접(초과폭 ≤4)하면 효과를 없애지 말고 ★대가(단점)★를 붙여 '성능열화하며 나오게' 한다.
+                //  (도약자·성녀처럼 코스트가 예산을 1~3점 넘던 능력이 통째 사라지던 문제 해소 — 단점만큼 예산이 늘어 보존됨.)
+                if (deficit <= 4) {
+                    applyBudgetDrawback(td, deficit);
+                    neg = (int) negSum(td);            // 추가한 단점을 예산에 반영
+                } else {                               // 예산을 크게 초과(등급에 전혀 안 맞는 초강효과)면 제거
+                    td.effectType = ""; td.effectParams = new HashMap<>(); td.active = false; ec = 0;
+                }
             }
         }
         double statCap = Math.max(0, budget + neg - ec); // 능력이 쓴 만큼 빼고 남은 예산을 스텟에
