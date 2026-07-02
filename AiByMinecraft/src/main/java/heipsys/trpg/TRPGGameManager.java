@@ -9576,6 +9576,11 @@ public class TRPGGameManager {
         ai.injectGmSystem("[판정 결과] " + (reason.isEmpty() ? "" : reason + " — ")
             + "주사위 d" + max + "=" + roll + (dc > 0 ? (", 성공기준 " + dc) : "") + " → ★" + outcome + "★. "
             + "이 결과대로 다음 전개를 이어서 서술하라. 결과와 어긋나게(실패인데 성공한 듯, 또는 그 반대로) 쓰지 마라.");
+        // ★로그/실시간 뷰어·재현 충실도★: 코드가 정한 판정을 기록(주사위·성공기준·결과) — 인게임에 뜨던 판정이 로그엔 없던 공백 보완.
+        PlayerData dpd = state.getPlayer(player);
+        gameLogger.logAbilityResult(dpd != null ? dpd.gmDisplayName() : player.getName(), "주사위 판정",
+            (reason.isEmpty() ? "행동 판정" : reason) + " — d" + max + "=" + roll
+            + " (기준 " + effDc + " 이상 성공) → " + outcome);
         // 1) 숫자가 바뀌는 연출(약 1.5초, d{max} 무작위) — 3틱 간격
         final int FRAMES = 10;
         for (int i = 0; i < FRAMES; i++) {
