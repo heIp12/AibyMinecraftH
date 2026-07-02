@@ -47,6 +47,8 @@
   .ev.k-ability{border-left-color:var(--ability);background:#251c22} .ev.k-system{border-left-color:var(--system);opacity:.85}
   .ev.k-broadcast{border-left-color:var(--broadcast)} .ev.k-gm_input{border-left-color:#444b5a;opacity:.72}
   .ev.k-private{border-left-color:#8f9bb0}
+  .ev.k-thought{border-left-color:#9b8fc4;background:#1c1a24;opacity:.92} .ev.k-thought .body .ln{font-style:italic;color:#bcb4da}
+  .ev.k-thought .badge{background:#9b8fc4;color:#1c1a24}
   .ev.k-vital{border-left-color:var(--vital);background:#2a1820}
   .ev.k-ability .badge{background:var(--ability);color:#2a0f0f}
   .ev.k-vital .badge{background:var(--vital);color:#2a0f14}
@@ -322,6 +324,7 @@ function badgeFor(e){ return e.kind==="ability"?(e.phase==="result"?"✨ "+(e.ab
   :e.kind==="input"?"입력":e.kind==="call"?("📞 "+(e.via||"통화")):e.kind==="nearby"?"👥 근처":e.kind==="shout"?"📣 외침":e.kind==="letter"?("✉ "+(e.via||"편지")):e.kind==="whisper"?"🤫 귓속말"
   :e.kind==="signal"?("🚩 "+(e.via||"수신호")):e.kind==="psychic"?("🧠 "+(e.via||"정신감응"))
   :e.kind==="gm"?"GM 서술":e.kind==="broadcast"?"📢 방송":e.kind==="npc"?"☎ NPC"
+  :e.kind==="thought"?"💭 생각"
   :e.kind==="assign"?"🎭 배역":e.kind==="system"?"시스템":e.kind==="private"?"개인":e.kind==="gm_input"?"GM입력(상세)":(e.cat||"이벤트"); }
 const COMM_KINDS=new Set(["call","nearby","broadcast","shout","letter","whisper","signal","psychic"]);
 

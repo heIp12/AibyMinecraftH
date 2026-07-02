@@ -178,6 +178,8 @@ public class TRPGGameManager {
     private final Map<String, List<String>> npcAcquired = new ConcurrentHashMap<>();
     /** NPC id → 그 NPC와 직접 대화(통화 포함)가 있었던 마지막 턴. 대화 중인 NPC를 자율 AI가 중복 구동해 맥락을 오염(되묻기·모순)시키지 않도록 게이트. */
     private final Map<String, Integer> npcLastDirectTurn = new ConcurrentHashMap<>();
+    /** NPC id → 뷰어 로그에 마지막으로 남긴 위치(zone). 매 주기 같은 위치를 이동 이벤트로 도배하지 않도록, 바뀔 때만 logMove. 뷰어 NPC 시점 '현재 위치'·근처 가시성용(#188). */
+    private final Map<String, String> npcLoggedZone = new ConcurrentHashMap<>();
     /** ★편지 두고가기(dead-drop)★: 구역 id → 그곳에 남겨진 쪽지 목록. 그 구역에 들어온 사람(플레이어/괴담)이 발견한다. */
     private final Map<String, List<DroppedNote>> droppedNotes = new ConcurrentHashMap<>();
     /** 남겨진 쪽지(편지) — 위치에 놓여 발견을 기다린다. 문서형 괴담이 발견하면 훼손(orig→content). */
@@ -639,6 +641,7 @@ public class TRPGGameManager {
         npcIntel.clear();
         npcAcquired.clear();
         npcLastDirectTurn.clear();
+        npcLoggedZone.clear();
         forbiddenWord = "";
         rewindBuffer.clear();
         lastRewindCaptureTurn = -1;
@@ -828,6 +831,7 @@ public class TRPGGameManager {
         droppedNotes.clear();      // 편지 두고가기 — 스테이지 전환 시 남겨진 쪽지 정리
         pendingDeliveries.clear(); // 지연 전달 큐 — 스테이지 전환 시 미도착 편지 정리
         npcLastDirectTurn.clear();
+        npcLoggedZone.clear();     // 스테이지 전환 — NPC 위치 로그 추적 초기화(새 스테이지에서 다시 '등장' 기록)
         lastEndingPages = null;
         forceRetryAllowed = false; // 새 스테이지 진입 — 동반회귀 재도전 허용 초기화
         state.getAllPlayers().forEach(pd -> traitMan.resetStageTraits(pd));
@@ -6332,6 +6336,7 @@ public class TRPGGameManager {
         npcIntel.clear(); // 새 시나리오의 NPC 지능을 새로 굴리도록 초기화
         npcAcquired.clear(); // NPC가 수집한 정보도 새 시나리오에서 초기화
         npcLastDirectTurn.clear(); // 대화 추적도 새 시나리오에서 초기화
+        npcLoggedZone.clear(); // NPC 위치 로그 추적도 새 시나리오에서 초기화(#188)
         if (gdam == null || !gdam.has("npcs")) return;
         for (JsonElement el : gdam.getAsJsonArray("npcs")) {
             if (!el.isJsonObject()) continue;
@@ -6725,27 +6730,30 @@ public class TRPGGameManager {
                     });
             }
 
-            boolean wantThought = !eavesdroppers.isEmpty();
-            String npcPromptFinal = (wantThought
-                ? npcPrompt + "\n응답 말미에 <THOUGHT>지금 이 NPC의 내면 생각 1문장</THOUGHT>을 출력하라.\n"
-                : npcPrompt)
+            // 뷰어 NPC 시점 '현재 위치' + 근처 가시성용(#188): 이 NPC가 활동(=화면에 닿음)하는 지금 위치를 바뀔 때만 기록.
+            logNpcLocationIfChanged(npcId, npcName, npcZone);
+
+            // 내면 생각(<THOUGHT>)은 ★항상★ 요청한다 — 뷰어 NPC 시점에 '생각'을 남기려는 목적(#188).
+            //   로그 노출은 그 NPC 시점 전용(logNpcThought), 게임 내 노출은 같은 zone 엿보기 플레이어에게만.
+            String npcPromptFinal = npcPrompt
+                + "\n응답 말미에 <THOUGHT>지금 이 NPC의 내면 생각 1문장</THOUGHT>을 출력하라(대사·서술과 별개의 속마음, 딱 1문장).\n"
                 + buildNpcCallInstruction(npcId, npcZone) // NPC가 먼저 연락할 수 있게(닿는 상대 목록+태그)
                 + (overlapPlayer != null && hasIdentityTwistSignal(npcObj) ? buildIdentityOverlapNote(overlapPlayer) : ""); // 반전 신호 있는 동명만 조건부 안내(우연 동명이인 제외)
 
             ai.callNpcAi(npcId, npcPromptFinal, actionLog).thenAccept(npcResp -> {
                 if (npcResp == null || npcResp.startsWith("§c")) return;
 
-                // ③ 엿보기: 내면 사고를 같은 zone 엿보기 플레이어에게 비공개 전달
-                if (wantThought) {
-                    String thought = ai.parseThoughtTag(npcResp);
-                    if (thought != null && !thought.isEmpty()) {
+                // 내면 생각 — (a) 뷰어 로그: 그 NPC 시점 전용 / (b) 게임 내: 같은 zone 엿보기 플레이어에게만 비공개 전달
+                String thought = ai.parseThoughtTag(npcResp);
+                if (thought != null && !thought.isEmpty()) {
+                    gameLogger.logNpcThought(npcName, npcZone.isEmpty() ? "" : zoneDisplayName(npcZone), thought);
+                    if (!eavesdroppers.isEmpty())
                         plugin.getServer().getScheduler().runTask(plugin, () -> {
                             for (Player ep : eavesdroppers)
                                 if (ep.isOnline())
                                     traitReveal(ep, state.getPlayer(ep),
                                         "[엿보기] " + npcName + " 속마음: " + thought, true);
                         });
-                    }
                 }
 
                 // NPC가 먼저 연락하기 — <NPC_CALL player="이름">말</NPC_CALL> (메인 스레드에서 전달)
@@ -6780,6 +6788,16 @@ public class TRPGGameManager {
                 + String.join(" / ", offscreenIntents)
                 + ". 플레이어가 관련 장소·시각·상황에 닿으면 이 예정된 행동이 ★이미 벌어진 결과★(잠긴 문·사라진 물건·남은 흔적·달라진 상황 등)로 드러나게 서술하라 — 아무도 그 NPC를 만나지 않았다는 이유로 예정된 사건이 영원히 일어나지 않아선 안 된다.");
         }
+    }
+
+    /** NPC 위치를 뷰어 로그에 남긴다 — 직전 기록과 다를 때만(같은 위치를 매 주기 이동 이벤트로 도배 방지).
+     *  뷰어 NPC 시점의 '현재 위치' 표시 + 근처/방송 가시성(zoneAtSeq) 판정에 쓰인다(#188). */
+    private void logNpcLocationIfChanged(String npcId, String npcName, String npcZone) {
+        if (npcId == null || npcName == null || npcName.isEmpty() || npcZone == null || npcZone.isEmpty()) return;
+        String prev = npcLoggedZone.get(npcId);
+        if (npcZone.equals(prev)) return;
+        npcLoggedZone.put(npcId, npcZone);
+        gameLogger.logMove(npcName, zoneDisplayName(npcZone), prev == null ? "등장" : "");
     }
 
     /** NPC의 현재 예정 의도를 짧게 요약(막후 진행 주입용). schedule의 goal(없으면 action) 우선 → NPC goal → role_type. */
@@ -7698,6 +7716,7 @@ public class TRPGGameManager {
         senderPd.everKnownNpcContacts.add(npcId);
         refreshCommItems(senderPd);
         npcLastDirectTurn.put(npcId, state.getCurrentTurn()); // 대화 중 — 자율 AI 중복 구동 방지(맥락 오염 차단)
+        logNpcLocationIfChanged(npcId, npcName, npcZones.getOrDefault(npcId, npcZone)); // 뷰어 NPC 시점 위치(#188) — 대화로 위치가 확인된 시점
         // 뷰어 통신내역: 플레이어→NPC 발신 기록(수신자=NPC) — 매체(통화/서신/필담/대면)별 kind + 구체 매체명(via)
         gameLogger.logComm(written ? "letter" : (viaCall ? "call" : "nearby"), senderPd.gmDisplayName(),
             java.util.List.of(npcName), message, media.isEmpty() ? null : media);
