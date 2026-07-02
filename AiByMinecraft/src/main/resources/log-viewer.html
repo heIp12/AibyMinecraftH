@@ -206,8 +206,18 @@ function normalize(ev){
           text:bodyText,cat,orig:ev.orig||"",via:viaName,item:ev.item||"",zone,remove,
           hpAfter,hpMax,sanAfter,sanMax,hpDelta,sanDelta};
 }
-function visibleTo(e,vp){ if(vp==="__all__")return true; if(e.kind==="system"||e.kind==="broadcast"||e.kind==="nearby")return true;
-  if(e.actor===vp)return true; if(e.to.includes(vp))return true; if(e.to.some(isGlobal))return true; return false; }
+// 특정 인물의 seq 시점 구역(마지막 이동 기준). 이동 기록이 없으면 null(불명).
+function zoneAtSeq(person,seq){ let z=null; for(const e of EVENTS){ if((e.seq||0)>seq)break; if(e.kind==="move"&&e.actor===person&&e.zone)z=e.zone; } return z; }
+function visibleTo(e,vp){
+  if(vp==="__all__")return true;
+  if(e.actor===vp)return true;                         // 내가 한 것
+  if(e.to.includes(vp))return true;                    // 나에게 온 것(수신자)
+  if(e.to.some(isGlobal))return true;                  // @전체 등 전역 수신
+  if(e.kind==="system"||e.kind==="broadcast")return true; // 시스템·방송(PA)은 넓게
+  // ★근처(면전) 가시성(#174)★: 같은 구역일 때만 — 다른 구역의 근처발화가 NPC/타 시점에 새던 누출 차단.
+  //   위치가 불명(이동기록 없음)이면 보수적으로 표시(과잉 숨김 방지).
+  if(e.kind==="nearby"){ const az=zoneAtSeq(e.actor,e.seq||0), vz=zoneAtSeq(vp,e.seq||0); return az==null||vz==null||az===vz; }
+  return false; }
 function buildViewpoints(){ const m=new Map();
   for(const e of EVENTS){ if(e.kind==="alias")continue; for(const c of [e.actor,...e.to])if(isPerson(c))m.set(c,(m.get(c)||0)+1); }
   // 플레이어 판별: replay 표시명 + input(입력) 이벤트 발화자(=플레이어만 입력함). 나머지는 NPC·괴담.
