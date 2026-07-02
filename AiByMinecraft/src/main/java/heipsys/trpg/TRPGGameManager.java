@@ -1660,6 +1660,7 @@ public class TRPGGameManager {
                         + "가벼운 조우(눈인사·짧은 한마디 등)를 프롤로그에 자연스럽게 넣어라. ");
             }
             promptSb.append("이 인물은 '특별히 선택된 주인공'이 아니라 사건에 얽혀들 한 사람이다. 거창한 영웅 도입은 피해라. ");
+            promptSb.append("★시작 행동★: 이 인물이 ★지금 하고 있는 구체적 행동★(무언가를 하던 중인 모습)으로 장면을 열어, 플레이어가 '내가 지금 뭘 하는 중인지'를 바로 알게 하라. 끝에는 막막하지 않도록 ★다음 한 걸음의 방향★(무엇을 해볼 수 있을지)을 스포일러 없이 은근한 여지로 남겨라 — 지시·명령이 아니라 자연스러운 상황 실마리로. ");
             switch (opening) {
                 case "crisis" -> promptSb.append(
                     "★이 시나리오는 프롤로그부터 이미 상황이 심각하다★ — 담담한 일상이 아니라 시작부터 "
@@ -2137,21 +2138,9 @@ public class TRPGGameManager {
                 }
             }
 
-            // 막힘 감지(첫 시작 외 자동 추천): 이 턴에 '진전'(새 단서·이동·아이템·피해)이 없으면 무진전 누적.
-            // 연속 STUCK_THRESHOLD회 무진전(잔다·쉰다 반복 등 아무 진행도 못 할 때)이면 정답 모르는 추천을 1회 자동 표시.
-            if (player != null && spawnedPlayers.contains(player.getUniqueId())
-                    && (currentPhase == Phase.DAILY || currentPhase == Phase.HORROR)) {
-                boolean progressed = suHasClue(stateUpdate)
-                    || suInt(stateUpdate, "hp_change") != 0 || suInt(stateUpdate, "san_change") != 0
-                    || itemGrant != null || !ai.parseZoneUpdateTags(raw).isEmpty();
-                UUID stUuid = player.getUniqueId();
-                if (progressed) {
-                    stuckTurns.remove(stUuid);
-                } else if (stuckTurns.merge(stUuid, 1, Integer::sum) >= STUCK_THRESHOLD) {
-                    stuckTurns.remove(stUuid);
-                    afterNarrationIdle(player, () -> showRecommendations(player));
-                }
-            }
+            // (#164) 무진전 자동 추천(도움말) 제거 — 시작부 프롤로그의 '현재 행동+다음 걸음 여지'와
+            //   시작 1회 추천(showRecommendations)이 방향을 주므로, 이후 반복 도움말은 두지 않는다.
+            //   추천이 필요하면 플레이어가 /trpg 추천(hint)로 직접 부른다.
 
             // 11. (제거됨) 괴담 현상 Entity AI 앰비언트 — 연출만 만들고 매 2턴 ★플레이어 수만큼★ 별도 AI를
             //   호출해 크레딧만 소모하던 블록을 제거했다. 괴담의 능동성·존재감은 GM이 entity 규칙·
