@@ -1925,10 +1925,15 @@ public class TRPGGameManager {
             }
         }
 
+        // ★GM 전용 지시(turnCtx)★ — 로그·서술(state.log·narrativeLog·[행동▷] 표시)에 ★남기지 않는다★.
+        //   기존엔 아래 지시문을 actionMessage에 직접 붙여 '[행동] … [소지품: …][GM 필수: …]'가 플레이어 화면·로그에 노출됐다.
+        //   turnCtx로 넘기면 GM은 다 보되(입력 앞단), 표시·로그는 순수 행동만 남는다.
+        StringBuilder gmCtx = new StringBuilder();
+
         // 행운 보정 (이번 행동 1회 적용 후 소멸)
         Integer luckMod = pendingLuckModifier.remove(player.getUniqueId());
         if (luckMod != null) {
-            actionMessage = actionMessage + " §8[행운 보정 " + (luckMod > 0 ? "+" : "") + luckMod + "]";
+            gmCtx.append(" [행운 보정 ").append(luckMod > 0 ? "+" : "").append(luckMod).append("]");
             pendingDiceLuck.put(player.getUniqueId(), luckMod); // 이번 행동의 주사위 굴림에 실제 반영(playDiceResult가 소비)
         } else {
             pendingDiceLuck.remove(player.getUniqueId()); // 이월 방지: 이번 행동에 행운 없으면 스태시 정리
@@ -1936,7 +1941,7 @@ public class TRPGGameManager {
 
         // B1/C4: 확정성공·운명 등 '다음 행동 보정' 대기분 주입 (1회 적용 후 소멸)
         String actionBoost = pendingActionBoost.remove(player.getUniqueId());
-        if (actionBoost != null) { actionMessage = actionMessage + " " + actionBoost; pendingBoostTrait.remove(player.getUniqueId()); }
+        if (actionBoost != null) { gmCtx.append(" ").append(actionBoost); pendingBoostTrait.remove(player.getUniqueId()); }
 
         // B3: 충전식 기계 아이템 사용으로 보이면 GM에게 <ITEM_USE> 발행을 강하게 환기(자원 누락 방지)
         if (!pd.itemStates.isEmpty()) {
@@ -1946,18 +1951,17 @@ public class TRPGGameManager {
                       || message.contains("연다") || message.contains("열어") || message.contains("먹")
                       || message.contains("마신") || message.contains("휘둘") || message.contains("써")))
                     continue;
-                actionMessage += " [GM 필수: '" + it.name + "'(잔량 " + it.charges
-                    + ") 사용이면 <ITEM_USE>로 charge를 차감하라.]";
+                gmCtx.append(" [GM 필수: '").append(it.name).append("'(잔량 ").append(it.charges)
+                     .append(") 사용이면 <ITEM_USE>로 charge를 차감하라.]");
                 break;
             }
         }
 
-        // ★GM 아이템 인지★: 행동하는 플레이어의 소지품 목록을 함께 줘, GM이 상황에 반영(사용·언급·상호작용)하게 한다.
-        //   (기존엔 '사용 중인 충전식 아이템'만 알려 일반 소지품은 서술에 반영되지 않던 문제)
+        // ★GM 아이템 인지★: 소지품 목록은 GM 컨텍스트에만 준다(플레이어 표시·로그엔 노출 안 함).
         if (pd != null && !pd.heldItemIds.isEmpty()) {
             java.util.List<String> names = new java.util.ArrayList<>();
             for (String id : pd.heldItemIds) { String nm = itemDisplayName(id); names.add(nm == null || nm.isBlank() ? id : nm); }
-            if (!names.isEmpty()) actionMessage += " [소지품: " + String.join(", ", names) + "]";
+            if (!names.isEmpty()) gmCtx.append(" [소지품: ").append(String.join(", ", names)).append("]");
         }
 
         // 괴담이 이 플레이어의 말투·행동을 학습 (정체 차용/흉내에 사용)
@@ -1967,8 +1971,8 @@ public class TRPGGameManager {
         //   (GM 서술/WITNESS에만 의존하면 다른 플레이어에게 누락되던 문제 — 번호 공지·집결 호출 등 협업 수단 보장)
         if (looksLikeBroadcast(message)) deliverPlayerBroadcast(player, pd, message);
 
-        // 특성 버튼 관련 단어 처리는 TurnManager가 GM AI로 전달
-        boolean accepted = turnMan.handleAction(player, actionMessage, gmSystemPrompt);
+        // 특성 버튼 관련 단어 처리는 TurnManager가 GM AI로 전달 (gmCtx=소지품·보정 등 GM전용 지시는 로그 미기록)
+        boolean accepted = turnMan.handleAction(player, actionMessage, gmSystemPrompt, gmCtx.toString());
         if (!accepted) {
             player.sendMessage("§7(현재 행동 처리 중입니다. 잠시 기다려주세요.)");
             return;
@@ -7628,7 +7632,7 @@ public class TRPGGameManager {
         // ★아이템 획득 로그★ — 시작 소지품 포함, 뷰어의 아이템 뱃지 + 재생 진행연동 상태패널(그 시점에 아는 것)에 표시.
         if (isNew && gameLogger != null) {
             String nm = def != null && def.has("name")  ? def.get("name").getAsString()
-                      : def != null && def.has("title") ? def.get("title").getAsString() : itemId;
+                      : def != null && def.has("title") ? def.get("title").getAsString() : commonItemKoreanName(itemId);
             gameLogger.logItem("item", pd.gmDisplayName(), nm, state.getCurrentTurn() <= 1 ? "시작 소지" : "");
         }
         refreshCommItems(pd); // 새 아이템(통신 기기 포함) 지급 시 연락법·연락처 표기 갱신
@@ -8224,10 +8228,25 @@ public class TRPGGameManager {
     private String itemDisplayName(String id) {
         if (id == null) return "";
         JsonObject def = itemMan == null ? null : itemMan.findDef(id);
-        if (def == null) return id;
-        if (def.has("name")  && !def.get("name").getAsString().isBlank())  return def.get("name").getAsString();
-        if (def.has("title") && !def.get("title").getAsString().isBlank()) return def.get("title").getAsString();
-        return id;
+        if (def != null) {
+            if (def.has("name")  && !def.get("name").getAsString().isBlank())  return def.get("name").getAsString();
+            if (def.has("title") && !def.get("title").getAsString().isBlank()) return def.get("title").getAsString();
+        }
+        return commonItemKoreanName(id); // def 없는 공용 영문 id(common_items)는 한글 표시명으로 — 메타(영문 id) 노출 방지
+    }
+
+    /** common_items의 영문 id를 한글 표시명으로. 매핑 없으면 원본 반환. (예: smartphone→스마트폰) */
+    private static String commonItemKoreanName(String id) {
+        switch (id == null ? "" : id.trim().toLowerCase()) {
+            case "smartphone": case "smart_phone": case "phone": case "cellphone": return "스마트폰";
+            case "comm_device": case "commdevice": case "radio": return "통신기기";
+            case "flashlight": case "torch": return "손전등";
+            case "wallet":     return "지갑";
+            case "keys": case "key": return "열쇠";
+            case "watch":      return "손목시계";
+            case "lighter":    return "라이터";
+            default:           return id;
+        }
     }
 
     /**
