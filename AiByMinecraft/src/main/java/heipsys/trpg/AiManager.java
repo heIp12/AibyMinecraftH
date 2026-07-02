@@ -538,6 +538,16 @@ public class AiManager {
     // ======================================================
 
     public CompletableFuture<String> callNpcAi(String npcId, String systemPrompt, String actionLog) {
+        return callNpcAi(npcId, systemPrompt, actionLog, false);
+    }
+    /**
+     * @param dialogue true=직접 대화(입력을 그대로 — userMsg가 이미 '누가·어떤 매체로 말한다' 머리말을 포함).
+     *                 false=자율 관측(입력 앞에 '관측된 행동 로그:' 접두).
+     * ★모드 분리 이유(#186 감사)★: 대화 입력에까지 '행동 로그' 접두가 붙고, 자율(3인칭 서술)과 대화(1인칭 대사)
+     *   응답이 같은 npcContexts에 섞이면 약한 모델이 이력을 모방해 대화에도 3인칭·보고체가 새어 나온다.
+     *   히스토리는 기억 유지를 위해 공유하되(분리 시 기억 손실), 입력 라벨만 모드에 맞춰 구분한다.
+     */
+    public CompletableFuture<String> callNpcAi(String npcId, String systemPrompt, String input, boolean dialogue) {
         return CompletableFuture.supplyAsync(() -> {
             List<JsonObject> ctx = npcContexts.computeIfAbsent(npcId,
                 k -> Collections.synchronizedList(new ArrayList<>()));
@@ -546,7 +556,7 @@ public class AiManager {
             synchronized (callLock) {
                 List<JsonObject> snapshot;
                 synchronized (ctx) {
-                    ctx.add(msg("user", "플레이어 행동 로그:\n" + actionLog));
+                    ctx.add(msg("user", dialogue ? input : "관측된 행동 로그:\n" + input));
                     snapshot = new ArrayList<>(ctx);
                 }
                 try {
