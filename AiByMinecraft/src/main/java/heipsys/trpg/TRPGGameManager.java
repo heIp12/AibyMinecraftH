@@ -2379,17 +2379,21 @@ public class TRPGGameManager {
                 if (update.has("key_fact") && !update.get("key_fact").isJsonNull()
                         && !"puppet".equals(pd.status) && pd.puppetRecoveryTurns <= 0) {
                     String kf = update.get("key_fact").getAsString().trim();
-                    if (!kf.isEmpty()) {
-                        pd.addKeyFact(kf);
+                    if (!kf.isEmpty() && pd.addKeyFact(kf)) {
                         Player kfp = Bukkit.getPlayer(pd.uuid);
                         if (kfp != null && kfp.isOnline()) kfp.sendMessage("§b[핵심 정보] §f" + kf);
+                        gameLogger.logItem("clue", pd.gmDisplayName(), kf, "핵심"); // 뷰어: 정보획득(핵심) 실시간 반영
                     }
                 }
                 if (update.has("item_remove") && !update.get("item_remove").isJsonNull()) {
                     String rid = update.get("item_remove").getAsString();
+                    ItemInstance rem = pd.itemStates.get(rid);
+                    String remName = (rem != null && rem.name != null && !rem.name.isBlank()) ? rem.name : rid;
+                    boolean had = pd.heldItemIds.contains(rid) || pd.itemStates.containsKey(rid);
                     pd.heldItemIds.remove(rid); pd.itemStates.remove(rid);
                     Player rp = Bukkit.getPlayer(pd.uuid);
                     if (rp != null) itemMan.removeById(rp, rid); // 실물도 인벤토리에서 제거
+                    if (had) gameLogger.logItemRemoved(pd.gmDisplayName(), remName, "사라짐"); // 뷰어: 상태패널 아이템 제거 반영
                 }
                 // ★상태 로깅★: 이번 업데이트로 생긴 체력·정신력 변화 + 상태 전이(기절·조종·사망·회복)를 한 줄로 기록.
                 int hpD = pd.hp[0] - hpBefore0, sanD = pd.san[0] - sanBefore0;
@@ -2434,6 +2438,7 @@ public class TRPGGameManager {
 
     private void onHorrorPhaseStart() {
         currentPhase = Phase.HORROR;
+        gameLogger.section("공포 파트 진입"); // 뷰어 타임라인 파트 구분(전환 '연출'은 아님 — 로그 구획 표식만)
         lastPlayerActionMs = System.currentTimeMillis(); // 무행동 가속 기준점 초기화
         lastIdleAccelMs = 0L;
         // 파트는 나뉘되(공포 파트 진입) ★전환 연출은 하지 않는다★ — 별도의 '불길함 암시' 서술을 따로 보내지 않는다.
@@ -3196,6 +3201,8 @@ public class TRPGGameManager {
         player.sendMessage("§e[" + td.name + "] 주사위(d" + dice + "): §f" + roll
             + "§e  →  " + color + (modifier > 0 ? "+" : "") + modifier + " 행운 보정");
         player.sendMessage("§7다음 행동 1회에 행운 보정이 적용됩니다.");
+        gameLogger.logAbilityResult(pd.gmDisplayName(), td.name,
+            "주사위 d" + dice + " = " + roll + " → 행운 보정 " + (modifier > 0 ? "+" : "") + modifier); // 뷰어: 능력 결과(주사위) 기록
     }
 
     private void activateShowProgress(Player player, PlayerData pd, TraitData td) {
@@ -3450,12 +3457,15 @@ public class TRPGGameManager {
         int cost    = td.param("cost", 2);
         boolean useSan = td.param("use_san", 0) == 1;
         String resource = useSan ? "정신력" : "체력";
+        int hpBefore = pd.hp[0], sanBefore = pd.san[0];
         if (useSan) {
             pd.san[0] = Math.max(0, pd.san[0] - cost);
         } else {
             pd.hp[0]  = Math.max(0, pd.hp[0] - cost);
         }
         updateAllScoreboards();
+        gameLogger.logVital(pd.gmDisplayName(), pd.hp[0] - hpBefore, pd.hp[0], pd.hp[1],
+            pd.san[0] - sanBefore, pd.san[0], pd.san[1], "능력 대가: " + td.name); // 뷰어: 체력·정신력 소모 실시간 반영
         applyTraitUsed(pd, td.id, state.getCurrentTurn());
         int scale = td.param("scale", 2);
         String scaleStr = switch (scale) {
@@ -4260,6 +4270,7 @@ public class TRPGGameManager {
             default -> "- ★1문장★으로 아주 모호한 '느낌·예감'만.\n";
         };
         String traitName = td != null ? td.name : "원격 감지";
+        gameLogger.logAbilityResult(pd.gmDisplayName(), traitName, "원격 감지 대상 → " + target); // 뷰어: 능력 입력(대상) 기록
         String senseCtx = "\n## " + traitName + " 원격 감지 처리 (범위: " + rangeStr + ", 정보 깊이 " + info + "/3)\n"
             + "플레이어가 ★현재 구역이 아닌 떨어진 곳(원격)을 감지한다(독순술·천리안·원격 투시).\n규칙:\n"
             + "- 반드시 '" + rangeStr + "'에 해당하는 ★다른 장소의 정보만 서술한다(현재 위치 묘사 금지).\n"
@@ -4290,6 +4301,7 @@ public class TRPGGameManager {
             default -> "- ★1문장★으로 직후 예상 결과만 짧게.\n";
         };
         String traitName = td != null ? td.name : "예지";
+        gameLogger.logAbilityResult(pd.gmDisplayName(), traitName, "예지 대상 행동 → " + action); // 뷰어: 능력 입력(의도 행동) 기록
         String foresightCtx = "\n## " + traitName + " 결과 예지 처리 (예측 깊이 " + depth + "/3)\n"
             + "플레이어가 어떤 행동을 ★실제로 하기 전에, 그 행동의 예상 결과를 미리 들여다본다(예지·인생설계).\n규칙:\n"
             + "- 이것은 '전망'일 뿐 실제 판정·진행이 아니다. 타임라인을 진행시키지 말고, 결과를 확정하지도 마라.\n"
@@ -4325,6 +4337,7 @@ public class TRPGGameManager {
             ? "- 단서가 있으면 ★무엇에 관한 것인지 방향만★ 짚어준다(정확한 내용은 아직 흐릿하게).\n"
             : "- ★유무만★: 이 범위에 '살펴볼 만한 단서가 있다/없다' 정도만 알려준다(구체 내용은 아직 모른다).\n";
         String traitName = td != null ? td.name : "환경 탐색";
+        gameLogger.logAbilityResult(pd.gmDisplayName(), traitName, "탐색 대상 → " + target); // 뷰어: 능력 입력(탐색 대상) 기록
         String scanCtx = "\n## " + traitName + " 탐색 처리 (범위: " + scopeStr + ", 등급: " + (td != null ? td.grade : "?") + ")\n"
             + "플레이어가 체계적 탐색으로 단서를 찾고 있다. 규칙:\n"
             + "- 탐색 범위(" + scopeStr + ") 안에서 찾을 수 있는 것만 서술한다.\n"
@@ -4343,6 +4356,7 @@ public class TRPGGameManager {
         TraitData td = pd.traits.stream().filter(t -> t.id.equals(traitId)).findFirst().orElse(null);
         int depth = td != null ? td.param("depth", 2) : 2;
         String traitName = td != null ? td.name : "아군 감지";
+        gameLogger.logAbilityResult(pd.gmDisplayName(), traitName, "아군 탐지 목표 → " + query); // 뷰어: 능력 입력(탐지 목표) 기록
 
         StringBuilder allyCtx = new StringBuilder();
         for (PlayerData op : state.getAllPlayers()) {
@@ -4380,6 +4394,7 @@ public class TRPGGameManager {
                      + "- 예: \"그쪽으로 마음이 자꾸 쏠린다… 왜인지는 모르겠다.\"\n";
         };
         String name = td != null ? td.name : "질문";
+        gameLogger.logAbilityResult(pd.gmDisplayName(), name, "질문 → " + question); // 뷰어: 능력 입력(질문 내용) 기록
         String prayerCtx = "\n## " + name + " 질문 처리 (정보 깊이 " + info + "/3)\n"
             + "플레이어가 시스템 특성으로 GM에게 직접 질문했다.\n규칙:\n" + depthRule
             + "- ★배경 정보는 공개★: '지금이 언제인가(시대·시기·대략 시각)·여기가 어디인가(지역·장소·현재/시작 위치)' 같은 무대 배경을 물으면, 정보 깊이와 무관하게 또렷이 알려줘라(핵심 스포일러 아님). 단 시간을 빼앗긴 상태(시간 불명)면 시각만 모호하게.\n"
@@ -4403,6 +4418,7 @@ public class TRPGGameManager {
         TraitData td = pd.traits.stream().filter(t -> t.id.equals(traitId)).findFirst().orElse(null);
         int numChoices = td != null ? Math.max(2, Math.min(4, td.param("choices", 3))) : 3;
         final boolean autoMode = action == null || action.isBlank();
+        if (!autoMode) gameLogger.logAbilityResult(pd.gmDisplayName(), td != null ? td.name : "선택지", "행동 의도: " + action);
         final TraitData fTd = td;
         // ★등급 = 선택지 품질★: 높으면(A~S) 괴담 해결로 직접 이어지는 '정답' 선택지까지 섞어준다.
         int g = gradeIdx(td != null ? td.grade : "C");
@@ -4452,6 +4468,9 @@ public class TRPGGameManager {
                     // 다이얼로그 버튼으로 선택지 제시(채팅 클릭 대신) — 고르면 handleOracleSelect로
                     List<String> labels = new ArrayList<>();
                     for (OracleChoice oc : choices) labels.add(oc.text());
+                    // ★능력 투명성★: 제시된 선택지 목록을 능력 이벤트로 기록(발동수 미증가 — result 채널).
+                    gameLogger.logAbilityResult(pd.gmDisplayName(), fTd != null ? fTd.name : "선택지",
+                        "제시된 선택지 — " + String.join(" / ", labels));
                     dialogMan.showActionChoices(player,
                         Component.text("[" + (fTd != null ? fTd.name : "선택지") + "] 선택"),
                         Component.text(autoMode ? "지금 상황에서 무엇을 할까요?" : "어떤 방법을 고를까요?"),
@@ -4483,6 +4502,9 @@ public class TRPGGameManager {
         PlayerData pd = state.getPlayer(player);
         if (pd == null) return;
         OracleChoice chosen = choices.get(idx);
+        // ★능력 투명성★: 플레이어가 고른 선택지를 능력 이벤트로 기록(이후 정보수집·수정 편의).
+        gameLogger.logAbilityResult(pd.gmDisplayName(), "선택지", "선택 → " + chosen.text() + " [" + (switch (chosen.outcome()) {
+            case "solve" -> "정답"; case "good" -> "최적"; case "bad" -> "역효과"; default -> "무난"; }) + "]");
         String modifier = switch (chosen.outcome()) {
             case "solve"   -> " (계시 — ★정답: 이 괴담을 해결·돌파하는 결정적 선택. 그 시도가 성공적으로 이어지도록 서술하되 즉시 완전 클리어를 강요하지 말고 '해결의 결정적 진전'으로 처리★)";
             case "good"    -> " (계시 — 최적 선택: 큰 보정 적용)";
@@ -4683,6 +4705,7 @@ public class TRPGGameManager {
         String traitName = td != null ? td.name : "회복";
         boolean wasDeadBefore = target.isDead;
         boolean wasPuppet = "puppet".equals(target.status) || target.puppetRecoveryTurns > 0;
+        int tHpBefore = target.hp[0], tSanBefore = target.san[0];
         target.hp[0]  = target.hp[1];
         target.san[0] = target.san[1];
         target.status = "normal";
@@ -4692,6 +4715,9 @@ public class TRPGGameManager {
         restorePlaying(target); // 부활 시 관전(스펙테이터) 해제 → 생존 복귀
         applyTraitUsed(pd, traitId, state.getCurrentTurn());
         updateAllScoreboards();
+        gameLogger.logVital(target.gmDisplayName(), target.hp[0] - tHpBefore, target.hp[0], target.hp[1],
+            target.san[0] - tSanBefore, target.san[0], target.san[1],
+            wasDeadBefore ? "부활(아군 회복)" : (wasPuppet ? "조종 해제·회복(아군)" : "회복(아군)")); // 뷰어: 대상 회복 실시간 반영
         String targetDisplay = target.gmDisplayName();
         String playerDisplay = pd.gmDisplayName();
         player.sendMessage("§a[" + traitName + "] " + targetDisplay + "을(를) 완전히 회복시켰습니다.");
@@ -5630,7 +5656,9 @@ public class TRPGGameManager {
                 if (body.isEmpty()) continue;
                 // 형식 불명(대상 분리 실패)이면 '단서' 그룹으로 폴백
                 if (subject == null || subject.isEmpty()) subject = "단서";
-                pd.addInfo(subject, body); // infoGroups(정보모음) 기록 — 조종 중에도 기록 자체는 유지
+                if (pd.addInfo(subject, body)) // infoGroups(정보모음) 기록 — 조종 중에도 기록 자체는 유지
+                    // ★실시간 뷰어 정보획득★: 새로 얻은 단서만 로그 이벤트로(중복 방지) → 상태패널 '알아낸 단서'에 반영.
+                    gameLogger.logItem("clue", pd.gmDisplayName(), body, "단서".equals(subject) ? "" : subject);
                 // G10: 예전엔 조종 중 keyFacts(핵심정보)에 "[조종 중] …"로도 등록해 핵심정보가 오염됐다 → 그 등록만 제거.
             }
         });
@@ -7663,9 +7691,13 @@ public class TRPGGameManager {
         if (pd != null && use.has("consume") && !use.get("consume").isJsonNull()) {
             String c = use.get("consume").getAsString();
             if (!c.isBlank()) {
+                ItemInstance con = pd.itemStates.get(c);
+                String conName = (con != null && con.name != null && !con.name.isBlank()) ? con.name : c;
+                boolean hadC = pd.heldItemIds.contains(c) || pd.itemStates.containsKey(c);
                 pd.heldItemIds.remove(c); pd.itemStates.remove(c);
                 Player cp = Bukkit.getPlayer(pd.uuid);
                 if (cp != null) itemMan.removeById(cp, c); // 실물도 인벤토리에서 제거(소진 불일치 해소)
+                if (hadC) gameLogger.logItemRemoved(pd.gmDisplayName(), conName, "소진"); // 뷰어: 소모품 소진 반영
             }
         }
         // 결과물 생성(조합)
@@ -7682,11 +7714,18 @@ public class TRPGGameManager {
                     ItemInstance made = pd.itemStates.get(prod);
                     if (made != null && use.has("consume") && !use.get("consume").isJsonNull())
                         made.transformedFrom = use.get("consume").getAsString();
+                    String madeName = (made != null && made.name != null && !made.name.isBlank()) ? made.name : prod;
+                    gameLogger.logItem("item", pd.gmDisplayName(), madeName, "제작"); // 뷰어: 조합 결과물 획득 반영
                 } else {
                     // pname 미지정(ALL) → 전원에게 지급됐으니 전원의 heldItemIds/itemStates도 갱신(소지품 인지·상태 등록 누락 방지)
                     for (Player op : Bukkit.getOnlinePlayers()) {
                         PlayerData opd = state.getPlayer(op);
-                        if (opd != null) noteHeldItem(opd, prod);
+                        if (opd != null) {
+                            noteHeldItem(opd, prod);
+                            ItemInstance omade = opd.itemStates.get(prod);
+                            String omadeName = (omade != null && omade.name != null && !omade.name.isBlank()) ? omade.name : prod;
+                            gameLogger.logItem("item", opd.gmDisplayName(), omadeName, "제작"); // 뷰어: 전원 조합 결과물 획득 반영
+                        }
                     }
                 }
             }
@@ -8728,6 +8767,9 @@ public class TRPGGameManager {
         }
         moved.zone = newZone;
         moved.visitedZones.add(newZone); // 방문 기록 (직접 그린 약도에 반영)
+        // ★실시간 뷰어 위치★: 첫 배치(스폰)가 아닌 실제 구역 이동만 기록 → 상태패널 '현재 위치' 갱신.
+        if (zoneChanged && !firstAssignment && spawnedPlayers.contains(moved.uuid))
+            gameLogger.logMove(moved.gmDisplayName(), zoneDisplayName(newZone), forced ? "강제" : (bypass ? "우회" : ""));
         // ★편지 두고가기★: 새 구역에 들어오면 그곳에 남겨진 쪽지를 발견(엉뚱한 손·훼손본 포함).
         if (zoneChanged && spawnedPlayers.contains(moved.uuid)) discoverDroppedNotes(moved, newZone);
         // 첫 배치 시: 인접 구역도 약도에 공개 + 지도 자동 지급

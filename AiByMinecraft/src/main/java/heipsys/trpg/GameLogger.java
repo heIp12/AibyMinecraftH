@@ -304,6 +304,23 @@ public class GameLogger {
     }
 
     /**
+     * ★아이템 소진·제거★ — 소모품 사용·조합 소진·괴담의 아이템 파괴 등으로 손에서 사라진 아이템.
+     * 뷰어 상태패널 '가진 아이템'에서 ★빼도록★ remove 표식(remove=true)을 남긴다(획득 logItem의 역연산).
+     *  @param actor 소지자 표시명, name 아이템 이름, cause 사유(예: "사용","소진","괴담 파괴") — 없으면 ""
+     */
+    public void logItemRemoved(String actor, String name, String cause) {
+        if (name == null || name.isBlank()) return;
+        JsonObject extra = new JsonObject();
+        extra.addProperty("kind", "item");
+        extra.addProperty("remove", true);                                  // 뷰어: 획득이 아니라 제거 — 상태패널에서 목록에서 뺀다
+        if (actor != null && !actor.isEmpty()) extra.addProperty("actor", actor);
+        extra.addProperty("item", name);
+        if (cause != null && !cause.isEmpty()) extra.addProperty("note", cause);
+        String body = name + " (제거" + (cause != null && !cause.isEmpty() ? ": " + cause : "") + ")";
+        record("아이템", actor, body, extra);
+    }
+
+    /**
      * ★아이템 변형·훼손★ — 남겨둔 편지·쪽지 등을 괴담·NPC가 발견해 고치거나 훼손했을 때.
      * 뷰어가 "원본 / 변형됨"으로 대조해 보여준다(통신 변조와 동일 표기). kind=item + orig.
      *  @param actor 훼손 주체(괴담 이름 등), name 아이템 이름(편지·쪽지), orig 원문, altered 훼손된 내용, cause 이유
@@ -316,6 +333,20 @@ public class GameLogger {
         extra.addProperty("orig", orig == null ? "" : strip(orig).trim());  // 뷰어: 원본 줄
         if (cause != null && !cause.isEmpty()) extra.addProperty("cause", cause);
         record("아이템", actor, (altered == null ? "" : altered), extra);
+    }
+
+    /**
+     * ★구역 이동★ — 플레이어가 다른 구역으로 이동했을 때. 뷰어 상태패널의 '현재 위치'와 타임라인 이동 표식에 쓰인다.
+     *  @param actor 이동자 표시명, zone 도착 구역의 표시 이름(zone id 아님), how 이동 방식(예: "","강제","우회") — 없으면 ""
+     */
+    public void logMove(String actor, String zone, String how) {
+        if (zone == null || zone.isBlank()) return;
+        JsonObject extra = new JsonObject();
+        extra.addProperty("kind", "move");
+        if (actor != null && !actor.isEmpty()) extra.addProperty("actor", actor);
+        extra.addProperty("zone", zone);
+        if (how != null && !how.isEmpty()) extra.addProperty("note", how);
+        record("이동", actor, "→ " + zone + (how != null && !how.isEmpty() ? " (" + how + ")" : ""), extra);
     }
 
     /** 로그 뷰어용 계정명↔캐릭터명 별칭 기록 — 같은 인물의 입력·서술 시점을 하나로 통합하게 한다. */

@@ -83,27 +83,32 @@ public class PlayerData {
      */
     public final List<String> keyFacts = new ArrayList<>();
     public static final int KEY_FACTS_MAX = 60;
-    public void addKeyFact(String fact) {
-        if (fact == null || fact.isBlank()) return;
+    /** @return 실제로 새로 추가됐으면 true(중복·빈값이면 false) — 호출부의 로그 뷰어 기록 중복 방지용. */
+    public boolean addKeyFact(String fact) {
+        if (fact == null || fact.isBlank()) return false;
         String f = fact.trim();
         synchronized (keyFacts) {
-            if (keyFacts.contains(f)) return;
+            if (keyFacts.contains(f)) return false;
             keyFacts.add(f);
             if (keyFacts.size() > KEY_FACTS_MAX) keyFacts.remove(0);
         }
+        return true;
     }
 
     /**
      * 단서를 대상 태그(주제)별 그룹에 기록한다. 기존 {@link #infoItems} 에도 "[subject] line" 형태로 mirror 추가(하위호환).
      * @param subject 대상 태그. null/blank면 "단서"로 분류.
      * @param line    단서 내용 한 줄. 같은 그룹에 동일 줄이 이미 있으면 중복 추가하지 않는다.
+     * @return 실제로 새로 추가됐으면 true(같은 그룹에 동일 줄이 이미 있으면 false) — 로그 뷰어 단서 중복 기록 방지용.
      */
-    public void addInfo(String subject, String line) {
-        if (line == null) return;
+    public boolean addInfo(String subject, String line) {
+        if (line == null) return false;
         String subj = (subject == null || subject.isBlank()) ? "단서" : subject;
+        boolean added;
         synchronized (infoGroups) {
             List<String> group = infoGroups.computeIfAbsent(subj, k -> new ArrayList<>());
-            if (!group.contains(line)) group.add(line);
+            added = !group.contains(line);
+            if (added) group.add(line);
         }
         // 하위호환: 다른 파일이 읽는 평탄 목록에도 mirror 추가
         String mirror = "[" + subj + "] " + line;
@@ -111,6 +116,7 @@ public class PlayerData {
             infoItems.add(mirror);
             if (infoItems.size() > INFO_ITEMS_MAX) infoItems.remove(0);
         }
+        return added;
     }
 
     /** 방문해 본 zone 집합 (직접 그린 약도에 드러나는 범위) */
