@@ -4782,6 +4782,11 @@ public class TRPGGameManager {
             .has(infoItemKey(), PersistentDataType.BYTE);
     }
 
+    /** TRPG 지급 아이템 여부(설치·버리기로 물리 제거 방지 판정용) — ItemManager 위임. */
+    public boolean isTrpgItem(ItemStack item) {
+        return itemMan != null && itemMan.isTrpgItem(item);
+    }
+
     /** 인벤토리에서 캐릭터 정보 아이템 제거 (세션 종료 시) */
     public void removeInfoItem(Player p) {
         var inv = p.getInventory();

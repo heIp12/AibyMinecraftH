@@ -124,13 +124,30 @@ public class ChatListener implements Listener {
         }
     }
 
-    /** 캐릭터 정보 / 기록 아이템은 버릴 수 없음 */
+    /** 캐릭터 정보 / 기록 / TRPG 지급 아이템은 버릴 수 없음(버리기로 물리 제거되어 소지 상태와 어긋나던 문제 방지). */
     @EventHandler
     public void onInfoItemDrop(PlayerDropItemEvent event) {
         TRPGGameManager trpgManager = trpg();
         if (trpgManager == null || !trpgManager.isActive()) return;
         var dropped = event.getItemDrop().getItemStack();
-        if (trpgManager.isInfoItem(dropped) || trpgManager.isRecordItem(dropped) || trpgManager.isMapItem(dropped)) event.setCancelled(true);
+        if (trpgManager.isInfoItem(dropped) || trpgManager.isRecordItem(dropped) || trpgManager.isMapItem(dropped)
+                || trpgManager.isTrpgItem(dropped)) {
+            event.setCancelled(true);
+            event.getPlayer().sendMessage("§7소지품은 버릴 수 없습니다. (사용은 우클릭·행동으로)");
+        }
+    }
+
+    /** TRPG 아이템·정보/기록/지도 아이템은 블록으로 설치할 수 없음(설치로 인벤에서 물리 제거되어 소지 상태와 어긋나던 문제 방지). */
+    @EventHandler(ignoreCancelled = true)
+    public void onTrpgItemPlace(org.bukkit.event.block.BlockPlaceEvent event) {
+        TRPGGameManager trpgManager = trpg();
+        if (trpgManager == null || !trpgManager.isActive()) return;
+        var inHand = event.getItemInHand();
+        if (trpgManager.isTrpgItem(inHand) || trpgManager.isInfoItem(inHand)
+                || trpgManager.isRecordItem(inHand) || trpgManager.isMapItem(inHand)) {
+            event.setCancelled(true);
+            event.getPlayer().sendMessage("§7소지품은 설치할 수 없습니다. (사용은 우클릭·행동으로)");
+        }
     }
 
     /** OP 접속 시, 진행 중 세션이 없는데 이어할 자동 저장이 있으면 안내(예기치 못한 중단 후 복구 유도). */

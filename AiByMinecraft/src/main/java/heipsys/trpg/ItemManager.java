@@ -110,6 +110,13 @@ public class ItemManager {
         item.setItemMeta(meta);
     }
 
+    /** 이 ItemStack이 TRPG 지급 아이템인지(원본 id 표식 보유) — 설치·버리기로 물리 제거되는 걸 막는 판정용. */
+    public boolean isTrpgItem(ItemStack item) {
+        if (item == null) return false;
+        var meta = item.getItemMeta();
+        return meta != null && meta.getPersistentDataContainer().has(idKey, PersistentDataType.STRING);
+    }
+
     /**
      * ★소모·제거★: 플레이어 인벤토리에서 해당 id(또는 이름)의 아이템 실물을 제거한다.
      *  게임 로직(heldItemIds)만 지우고 실물이 남아 있던 문제를 해소. id PDC 우선, 없으면 표시 이름 매칭.
