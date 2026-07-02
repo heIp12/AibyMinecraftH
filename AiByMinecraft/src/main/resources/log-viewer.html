@@ -699,17 +699,17 @@ function scenarioExtraHtml(){
         h+=`<div class="sub">할 일 · 일정</div>`;
         for(const s of sched){
           if(typeof s==="string"){h+=`<div class="tdesc">· ${esc(s)}</div>`;continue;}
-          // 시간·목표·행동·조건·의지를 각각 표시(기존엔 목표·조건이 누락됐음).
+          // ★한눈에 보이게 [조건]/[행동]/[목적] 라벨 줄로 정리★ (있는 것만).
           const when=S(s.time||s.when||s.turn), goal=S(s.goal||s.intent), act=S(s.action||s.what||s.plan),
                 cond=S(s.condition), will=S(s.will), dur=S(s.duration_turns);
-          let ln="· ";
-          if(when) ln+=`<span class="dim2">[${esc(when)}]</span> `;
-          if(goal) ln+=`<b>${esc(goal)}</b>`;
-          if(act)  ln+=`${goal?" — ":""}${esc(act)}`;
-          if(cond) ln+=` <span class="dim2">(조건: ${esc(cond)})</span>`;
-          if(will) ln+=` <span class="dim2">(의지:${esc(will)})</span>`;
-          if(dur)  ln+=` <span class="dim2">(${esc(dur)}턴)</span>`;
-          h+=`<div class="tdesc">${ln}</div>`;
+          const lab=(k,v,c)=>v?`<div><span style="color:${c};font-weight:600">[${k}]</span> ${esc(v)}</div>`:"";
+          let blk=`<div style="margin:3px 0 6px;padding-left:7px;border-left:2px solid #3a4252">`;
+          if(when||dur) blk+=`<div class="dim2">⏱ ${esc(when||"")}${dur?(when?" · ":"")+esc(dur)+"턴":""}</div>`;
+          blk+=lab("조건",cond,"#e0b060")+lab("행동",act,"#7fc7ff")+lab("목적",goal,"#8fd98f");
+          if(will) blk+=`<div class="dim2">[의지] ${esc(will)}</div>`;
+          if(!cond&&!act&&!goal&&!when&&!will) blk+=`<div>· ${esc(JSON.stringify(s))}</div>`; // 알수없는 형식 폴백
+          blk+=`</div>`;
+          h+=blk;
         }
       }
       const sp=[];
@@ -732,12 +732,26 @@ function scenarioExtraHtml(){
   const tl=SCENARIO.timeline;
   if(tl&&typeof tl==="object"){
     h+=sh('timeline','사건 타임라인')+`<div class="card"><span class="dim2">${esc(S(tl.start_time))}~${esc(S(tl.end_time))} · 1턴 ${esc(S(tl.minutes_per_turn))}분 · 일상 ${esc(S(tl.daily_turns))}턴</span>`;
-    if(Array.isArray(tl.main_events))for(const ev of tl.main_events){
-      if(typeof ev==="string"){h+=`<br>· ${esc(ev)}`;continue;}
-      h+=`<br>· ${S(ev.time)?`<span class="dim2">[${esc(S(ev.time))}]</span> `:""}<b>${esc(S(ev.label||ev.id))}</b>${S(ev.effect)?` — ${esc(S(ev.effect))}`:""}${ev.blockable?` <span class="dim2">(막을수있음)</span>`:""}`;
+    if(Array.isArray(tl.main_events)&&tl.main_events.length){
+      h+=`<div class="sub">주요 사건 (시간순)</div>`;
+      for(const ev of tl.main_events){
+        if(typeof ev==="string"){h+=`<div class="tdesc">· ${esc(ev)}</div>`;continue;}
+        h+=`<div class="tdesc">${S(ev.time)?`<span class="dim2">[${esc(S(ev.time))}]</span> `:""}<b>${esc(S(ev.label||ev.id))}</b>${S(ev.effect)?` — ${esc(S(ev.effect))}`:""}${ev.blockable?` <span class="dim2">(막을 수 있음)</span>`:""}</div>`;
+      }
     }
-    for(const k of ["1","2","3","4","5","6"]){const st=tl[k]; if(st&&(st.condition||st.effect))
-      h+=`<br><span class="st">${k}단계</span>${esc(S(st.condition))}${S(st.effect)?" → "+esc(S(st.effect)):""}`;}
+    // ★단계 진행을 분기 사다리로 — 각 단계가 [조건]→[결과] 블록으로 갈라져 한눈에 진행이 보이게★
+    const stages=[]; for(const k of ["1","2","3","4","5","6"]){const st=tl[k]; if(st&&(S(st.condition)||S(st.effect)))stages.push([k,st]);}
+    if(stages.length){
+      h+=`<div class="sub">단계 진행 (조건 → 결과)</div>`;
+      for(let i=0;i<stages.length;i++){const k=stages[i][0],st=stages[i][1];
+        h+=`<div style="margin:2px 0;padding:4px 8px;border-left:3px solid #6a5a9a;background:#22262e;border-radius:0 4px 4px 0">`
+          +`<b style="color:#c9b6ff">▸ ${esc(k)}단계</b>`
+          +(S(st.condition)?`<div><span style="color:#e0b060;font-weight:600">[조건]</span> ${esc(S(st.condition))}</div>`:"")
+          +(S(st.effect)?`<div><span style="color:#8fd98f;font-weight:600">[결과]</span> ${esc(S(st.effect))}</div>`:"")
+          +`</div>`;
+        if(i<stages.length-1)h+=`<div style="text-align:center;color:#6a5a9a;font-size:11px;line-height:1">↓</div>`;
+      }
+    }
     h+=`</div>`;
   }
   if(Array.isArray(SCENARIO.clues)&&SCENARIO.clues.length){
