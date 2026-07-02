@@ -1611,17 +1611,34 @@ public class TRPGGameManager {
                     if (pd.zone.equals(cp.zone)) sameZoneStart.add(cp.gmDisplayName());
                 }
             }
-            promptSb.append("2인칭 시점의 일상 장면을 바로 서술해줘. 제목·헤더 붙이지 말 것. ");
+            // ★도입 강도★: 시나리오에 따라 프롤로그가 담담한 일상일 수도, 시작부터 심각한 상황일 수도 있다.
+            //   daily_prologue.opening: "calm"(기본) · "tense"(일상 속 미묘한 긴장) · "crisis"(시작부터 위기).
+            String opening = "calm";
+            if (gdamForRel != null && gdamForRel.has("daily_prologue") && gdamForRel.get("daily_prologue").isJsonObject()) {
+                JsonObject dp = gdamForRel.getAsJsonObject("daily_prologue");
+                if (dp.has("opening") && !dp.get("opening").isJsonNull())
+                    opening = dp.get("opening").getAsString().trim().toLowerCase();
+            }
+            promptSb.append("2인칭 시점의 장면을 바로 서술해줘. 제목·헤더 붙이지 말 것. ");
             if (sameZoneStart.isEmpty()) {
                 promptSb.append("다른 플레이어의 존재 직접 언급 금지. ");
             } else {
                 promptSb.append("★같은 장소에서 함께 시작하는 인물: ").append(String.join(", ", sameZoneStart))
                     .append(" — 이들은 처음부터 같은 공간에 있다. 서로의 존재를 ★인지한 채★ 시작하도록 "
-                        + "가벼운 조우(눈인사·짧은 한마디 등)를 프롤로그에 자연스럽게 넣어라. 단 아직 괴담·사건은 모른다. ");
+                        + "가벼운 조우(눈인사·짧은 한마디 등)를 프롤로그에 자연스럽게 넣어라. ");
             }
-            promptSb.append("괴담 암시 금지. "
-                + "이 인물은 '특별히 선택된 주인공'이 아니라 사건에 얽혀들 평범한 한 사람이다. "
-                + "거창한 영웅 도입이 아니라 담담한 하루의 한 장면처럼 그려라.");
+            promptSb.append("이 인물은 '특별히 선택된 주인공'이 아니라 사건에 얽혀들 한 사람이다. 거창한 영웅 도입은 피해라. ");
+            switch (opening) {
+                case "crisis" -> promptSb.append(
+                    "★이 시나리오는 프롤로그부터 이미 상황이 심각하다★ — 담담한 일상이 아니라 시작부터 "
+                    + "위급·혼란·이상이 진행 중인 장면으로 그려라(이미 갇힘·재난 진행·쫓김 등 시나리오 배경에 맞게). "
+                    + "단 괴담의 ★정체·원리는 아직 드러내지 마라★(영문 모른 채 사건 한복판에 있는 긴박함).");
+                case "tense" -> promptSb.append(
+                    "겉은 평범한 일상이되 어딘가 ★미묘한 긴장·불편함★이 감돈다 — 단 초자연·괴담은 아직 아니다"
+                    + "(사람 사이 갈등·불안·나쁜 소식 같은 ★일상적★ 긴장만, 위협은 낮게).");
+                default -> promptSb.append(
+                    "괴담 암시 금지. 담담한 하루의 한 장면처럼 그려라(위협 0).");
+            }
             String prompt = promptSb.toString();
 
             ai.callGmAiOnce(gmSystemPrompt, prompt)
@@ -2390,12 +2407,21 @@ public class TRPGGameManager {
         lastPlayerActionMs = System.currentTimeMillis(); // 무행동 가속 기준점 초기화
         lastIdleAccelMs = 0L;
         // 전환을 직접 고지하지 않는다(스포일러 방지). GM의 환경 서술로만 분위기를 바꾼다.
+        // ★노출 게이트★: 괴담에 '직접 노출된'(괴담과 같은 구역, 또는 괴담이 편재) 플레이어에게만 전환 분위기를 전한다.
+        //   괴담이 없는 먼 곳의 플레이어에게 불길함을 미리 흘리면 스포일러다 — 그들은 일상을 잇고, 괴담이 닿을 때
+        //   (구역 진입·사건 발화) GM 본 서술이 분위기를 바꾼다.
+        JsonObject gdamH = state.getGdamData();
+        JsonObject entityH = (gdamH != null && gdamH.has("entity") && gdamH.get("entity").isJsonObject())
+            ? gdamH.getAsJsonObject("entity") : null;
+        String entityZone = entityH != null ? getStr(entityH, "zone") : ""; // 빈값 = 편재(전역, 전원 노출로 간주)
 
         compressor.compressDailyPhase().thenRun(() ->
             spawnedPlayers.forEach(uuid -> {
                 Player p = Bukkit.getPlayer(uuid);
                 if (p == null) return;
                 PlayerData pd = state.getPlayer(uuid);
+                boolean exposed = entityZone.isEmpty() || (pd != null && entityZone.equals(pd.zone));
+                if (!exposed) return; // 괴담에 노출 안 된 플레이어에겐 전환 불길함을 전하지 않는다(스포일러 방지)
                 String name = pd != null ? pd.gmDisplayName() : "?";
                 ai.callGmAiOnce(gmSystemPrompt,
                     "분위기가 서서히 변하는 전환 시점이다. 플레이어(" + name + ")의 시점에서 "
