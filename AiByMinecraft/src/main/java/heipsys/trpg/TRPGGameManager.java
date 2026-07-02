@@ -940,24 +940,28 @@ public class TRPGGameManager {
         }
     }
 
-    /** 현재 시작 설정 표시(/trpg setting). */
+    /** 현재 시작 설정 — 다이얼로그로 열어 자동생성·시작 스테이지·괴담 유형을 클릭으로 고른다(/trpg setting, /trpg s s). */
     public void openStartSettings(Player player) {
-        player.sendMessage("§e§l═══ TRPG 시작 설정 ═══");
-        player.sendMessage("§f· 다음 시나리오 자동생성: " + (autoPregen ? "§a켜짐" : "§c꺼짐")
-            + "  §7→ §f/trpg setting pregen on|off");
-        player.sendMessage("§f· 시작 스테이지: §b" + startStage
-            + (startStage > 1 ? " §7(보정 " + (startStage - 1) + "단계)" : "")
-            + "  §7→ §f/trpg setting stage <1-6>");
-        player.sendMessage("§f· 괴담 유형/성격: " + (conceptTypeHint.isEmpty() ? "§7무작위" : "§d" + conceptTypeHint)
-            + "  §7→ §f/trpg setting type");
-        // 추가버튼(종류별 테스트용): 클릭 → 유형/성격 선택 다이얼로그
-        player.sendMessage(Component.text("  [괴담 유형/성격 선택]", NamedTextColor.LIGHT_PURPLE)
-            .clickEvent(net.kyori.adventure.text.event.ClickEvent.runCommand("/trpg setting type"))
-            .hoverEvent(net.kyori.adventure.text.event.HoverEvent.showText(
-                Component.text("클릭: 다음 생성 괴담의 유형/성격을 고릅니다 (테스트용, 무작위로 되돌리기 가능)"))));
-        player.sendMessage("§7시작 스테이지 보정: 단계당 올스탯 총합 +2, 그리고 무작위로");
-        player.sendMessage("§7  [특성 1개 추가 — 시작 스테이지↑일수록 높은 등급] 또는 [보유 특성 등급 1단계↑] 중 하나.");
-        player.sendMessage("§7설정은 다음 §f/trpg start§7 부터 적용됩니다.");
+        dialogMan.showStartSettings(player, autoPregen, startStage, conceptTypeHint,
+            () -> { // 자동 사전생성 토글
+                autoPregen = !autoPregen;
+                player.sendMessage("§6[설정] 자동 사전생성: " + (autoPregen ? "§a켜짐" : "§c꺼짐 §7(/trpg next에서 즉석 생성)"));
+                openStartSettings(player); // 갱신된 값으로 다시 연다
+            },
+            () -> dialogMan.showStageChoice(player, startStage, st -> { // 시작 스테이지 선택
+                startStage = Math.max(1, Math.min(6, st));
+                player.sendMessage("§6[설정] 시작 스테이지: §b" + startStage
+                    + (startStage > 1 ? " §7(레벨 보정 " + (startStage - 1) + "단계: 올스탯 +" + ((startStage - 1) * 2) + " & 특성)" : " §7(보정 없음)")
+                    + " §7— 다음 /trpg start 부터");
+                openStartSettings(player);
+            }),
+            () -> dialogMan.showEntityTypeChoice(player, hint -> { // 괴담 유형/성격 선택
+                conceptTypeHint = hint == null ? "" : hint;
+                gdamGen.setConceptTypeHint(conceptTypeHint);
+                player.sendMessage("§6[설정] 괴담 유형/성격: "
+                    + (conceptTypeHint.isEmpty() ? "§7무작위(기본)" : "§d" + conceptTypeHint) + " §7— 다음 생성부터 적용");
+                openStartSettings(player);
+            }));
     }
 
     private static final String[] GRADE_ORDER = {"F", "E", "D", "C", "B", "A", "S"}; // gradeIdx와 동일 순서

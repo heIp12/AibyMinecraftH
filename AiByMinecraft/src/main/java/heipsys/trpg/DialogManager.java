@@ -352,6 +352,63 @@ public class DialogManager {
         player.showDialog(dialog);
     }
 
+    /** 시작 설정 다이얼로그 — 자동생성·시작 스테이지·괴담 유형을 버튼으로 고른다. 항목을 누르면 바뀌고 이 창이 다시 열린다. */
+    public void showStartSettings(Player player, boolean pregen, int startStage, String typeHint,
+                                  Runnable onTogglePregen, Runnable onPickStage, Runnable onPickType) {
+        List<ActionButton> buttons = new ArrayList<>();
+        buttons.add(ActionButton.create(
+            Component.text("자동 사전생성:  " + (pregen ? "켜짐" : "꺼짐"), pregen ? NamedTextColor.GREEN : NamedTextColor.RED),
+            Component.text("다음 시나리오를 미리 만들어 둘지 (끄면 즉석 생성)"), 180,
+            DialogAction.customClick((v, a) -> onTogglePregen.run(), ClickCallback.Options.builder().uses(1).build())));
+        buttons.add(ActionButton.create(
+            Component.text("시작 스테이지:  " + startStage + (startStage > 1 ? "  (레벨 보정 " + (startStage - 1) + "단계)" : ""), NamedTextColor.AQUA),
+            Component.text("새 게임을 몇 스테이지부터 — 높을수록 시작 캐릭터가 강함 (1~6)"), 180,
+            DialogAction.customClick((v, a) -> onPickStage.run(), ClickCallback.Options.builder().uses(1).build())));
+        buttons.add(ActionButton.create(
+            Component.text("괴담 유형/성격:  " + (typeHint == null || typeHint.isEmpty() ? "무작위" : typeHint), NamedTextColor.LIGHT_PURPLE),
+            Component.text("다음 생성 괴담의 유형/성격 고정 (테스트용)"), 180,
+            DialogAction.customClick((v, a) -> onPickType.run(), ClickCallback.Options.builder().uses(1).build())));
+        ActionButton close = ActionButton.create(
+            Component.text("닫기", TextColor.color(0xAAAAAA)),
+            Component.text("설정 완료 — 다음 /trpg start 부터 적용"), 120, null);
+        Component body = Component.text()
+            .append(Component.text("새 게임 시작 옵션을 고릅니다. 항목을 누르면 값이 바뀌고 이 창이 다시 열립니다.", NamedTextColor.WHITE))
+            .appendNewline()
+            .append(Component.text("설정은 다음 /trpg start 부터 적용됩니다.", NamedTextColor.GRAY))
+            .build();
+        Dialog dialog = Dialog.create(b -> b.empty()
+            .base(DialogBase.builder(Component.text("TRPG 시작 설정"))
+                .body(List.of(DialogBody.plainMessage(body)))
+                .build())
+            .type(DialogType.multiAction(buttons, close, 1))
+        );
+        player.showDialog(dialog);
+    }
+
+    /** 시작 스테이지(1~6) 선택 다이얼로그. onPick에 고른 스테이지 번호 전달. */
+    public void showStageChoice(Player player, int cur, java.util.function.IntConsumer onPick) {
+        List<ActionButton> buttons = new ArrayList<>();
+        for (int i = 1; i <= 6; i++) {
+            final int st = i;
+            String label = st + "스테이지" + (st == cur ? "  (현재)" : "");
+            String desc = st == 1 ? "보정 없음 — 처음부터 시작" : "레벨 보정 " + (st - 1) + "단계 (올스탯 +" + ((st - 1) * 2) + " & 특성 추가/등급↑)";
+            buttons.add(ActionButton.create(
+                Component.text(label, st == cur ? NamedTextColor.YELLOW : NamedTextColor.AQUA),
+                Component.text(desc), 130,
+                DialogAction.customClick((v, a) -> onPick.accept(st), ClickCallback.Options.builder().uses(1).build())));
+        }
+        ActionButton cancel = ActionButton.create(
+            Component.text("취소", TextColor.color(0xAAAAAA)), Component.text("스테이지를 바꾸지 않습니다."), 100, null);
+        Dialog dialog = Dialog.create(b -> b.empty()
+            .base(DialogBase.builder(Component.text("시작 스테이지 선택"))
+                .body(List.of(DialogBody.plainMessage(
+                    Component.text("새 게임을 몇 스테이지부터 시작할까요? (높을수록 시작 캐릭터가 강함)", NamedTextColor.WHITE))))
+                .build())
+            .type(DialogType.multiAction(buttons, cancel, 3))
+        );
+        player.showDialog(dialog);
+    }
+
     // ──────────────────────────────────────────────────────────────
     //  캐릭터 정보 GUI (게임 중 열람 — 기본/배역 분리, 능동 특성 사용)
     // ──────────────────────────────────────────────────────────────
