@@ -504,13 +504,22 @@ public class GameStateManager {
     public boolean isClockActive()   { return clockMinutes >= 0; }
     public boolean isEndEventFired() { return endEventFired; }
 
-    /** 현재 인게임 시각. 같은 날이면 "HH:MM", 여러 날에 걸치면 "N일차 HH:MM". 시계 없으면 "". */
+    /** 현재 인게임 시각. 첫날이면 "HH:MM", 여러 날(60일 미만)이면 "N일차 HH:MM",
+     *  장기 도약(60일 이상)이면 "N년 M개월 D일차 HH:MM"(1년=365·1개월=30일 환산)로 압축 표시한다. 시계 없으면 "". */
     public String getCurrentTimeString() {
         if (clockMinutes < 0) return "";
         int m = ((clockMinutes % 1440) + 1440) % 1440;
         String hhmm = String.format("%02d:%02d", m / 60, m % 60);
-        int dayIdx = (clockStart >= 0 ? clockMinutes - clockStart : clockMinutes) / 1440;
-        return dayIdx > 0 ? (dayIdx + 1) + "일차 " + hhmm : hhmm;
+        int dayIdx = (clockStart >= 0 ? clockMinutes - clockStart : clockMinutes) / 1440; // 0=첫날
+        if (dayIdx <= 0) return hhmm;
+        if (dayIdx < 60)  return (dayIdx + 1) + "일차 " + hhmm;      // ~2개월 미만은 종전대로 "N일차"
+        int years  = dayIdx / 365;
+        int months = (dayIdx % 365) / 30;
+        int days   = (dayIdx % 365) % 30;
+        StringBuilder sb = new StringBuilder();
+        if (years  > 0) sb.append(years).append("년 ");
+        if (months > 0) sb.append(months).append("개월 ");
+        return sb.append(days + 1).append("일차 ").append(hhmm).toString();
     }
 
     /** 이 플레이어가 현재 시간을 알 수 있는가 (override > 방 기본값) */

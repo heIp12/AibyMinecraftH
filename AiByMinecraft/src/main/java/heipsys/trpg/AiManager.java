@@ -1194,13 +1194,14 @@ public class AiManager {
         return total;
     }
 
-    /** <DUR minutes="N"/> 합산 → 이 행동의 소요 분(없으면 0, 0~240 클램프). 지금은 표시/기록용(#190, 시계 결합은 추후). */
+    /** <DUR minutes="N"/> 합산 → 이 행동의 소요 분(없으면 0, 0~1440 클램프 = 최대 하루).
+     *  가변 턴 모드(turnMode≥1)에선 이 값만큼 시계가 흐른다(#151 Stage A). 하루를 넘겨 며칠·달·해 단위로 건너뛰는 도약은 DUR이 아니라 <TIME_SKIP>. */
     public int parseDur(String response) {
         int total = 0;
         for (String v : parseSelfClosingAttr(response, "<DUR ", "minutes")) {
             try { total += Integer.parseInt(v.trim()); } catch (NumberFormatException ignore) {}
         }
-        return Math.max(0, Math.min(240, total));
+        return Math.max(0, Math.min(1440, total));
     }
 
     /** <NO_HOPE/> — GM이 '도주·해결·생존 가망 완전 소멸'을 선언(#2 자동 배드엔딩 신호). 있으면 true. */
