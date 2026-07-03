@@ -518,6 +518,7 @@ public class CharacterGenerator {
             + "- description: 아주 짧은 명사구 한 줄(최대 18자). 예: \"빠른 처치 손길\", \"겁 많은 성격\"\n"
             + "- effect: 한 문장으로 간결하게 (수동이면 판정에서 발휘되는 식, 능동이면 사용 효과)\n"
             + "- 직업명을 그대로 쓰지 말고 구체적 능력으로 작성\n"
+            + "- ★name·description·effect는 한 능력을 가리켜야 한다(따로 놀지 말 것)★. name은 자연스러운 한국어 이름 — 무관한 단어 짜깁기·게임 은어(리젠·버프·쿨)·뜬금없는 단어(교통사고) 금지. 좋은 예: \"밤눈\", \"물러서지 않는 다리\".\n"
             + "- 한국어, 창의적\n\n"
             + "직업 등급별 규칙:\n" + tierRules
             + (scenarioFlavor.isBlank() ? "" : "\n" + scenarioFlavor);
