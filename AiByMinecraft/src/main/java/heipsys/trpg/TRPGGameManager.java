@@ -2209,6 +2209,20 @@ public class TRPGGameManager {
                     zu.length > 4 && ("1".equals(zu[4]) || "true".equalsIgnoreCase(zu[4])));
             });
 
+            // 5d-a2. ★자율 NPC 장면 배치(#B 또전화)★: GM이 NPC를 특정 구역(특히 플레이어 앞)에 데려오면 위치(npcZones)를
+            //   ★권위 있게★ 갱신한다 → 그 NPC에게 @대화하면 같은 구역이 되어 '전화'가 아니라 '대면'으로 처리된다.
+            for (String[] na : ai.parseNpcAtTags(raw)) {
+                JsonObject nap = findNpcByName(na[0]);
+                if (nap == null) continue;                                   // 존재하지 않는/단역 NPC → 무시
+                String naId = nap.has("id") ? nap.get("id").getAsString() : "";
+                if (naId.isEmpty()) continue;
+                String rz = resolveZoneId(na[1]);
+                if (rz == null) { gameLogger.write("이동", "", "[NPC_AT 무시: 알 수 없는 구역 '" + na[1] + "']"); continue; }
+                String naName = nap.has("name") ? nap.get("name").getAsString() : na[0];
+                npcZones.put(naId, rz);
+                logNpcLocationIfChanged(naId, naName, rz);                    // 뷰어 NPC 시점 위치 갱신
+            }
+
             // 5d-b. ★이동 소프트 차단(#190, 낙관적 이동 거부권)★: GM이 <BLOCK_MOVE>로 막으면 방금 나아간 홉을 되돌린다.
             //   pendingHops에 담긴 '직전 홉의 출발 구역'으로 복귀시키고 남은 경로를 취소한다(다시 선언해야 감).
             for (String[] bm : ai.parseBlockMoveTags(raw)) {
@@ -6710,7 +6724,7 @@ public class TRPGGameManager {
             sb.append("- 말투: ").append(speechStyle)
               .append(" — 몸에 밴 기본 말씨다. 존댓말/반말은 아래 나이·관계 규칙이 정하고, 이 버릇은 그 결정 위에 얹는다. 이 말씨·언어 수준을 끝까지 일관되게.\n");
             sb.append("- 말버릇은 네가 ★하는 말★(대사·통화·<NPC_CALL> 안의 말 — 글에선 옅게)에만 쓴다. 괄호 지문·3인칭 서술과 <THOUGHT>·<NPC_LEARN> 안은 평범한 문체로.\n");
-            sb.append("- 버릇은 위 말투에 적힌 ★한 가지뿐★ — 새 버릇을 지어 보태지 마라. ★어미 버릇★(문장 끝 고정 어미)이면 거의 매 문장 일관되게(그게 이 인물의 개성이다). ★접두어·필러 버릇★('뭐랄까'·'그러니까' 류)이면 ★가끔만★ — 한 응답에 많아야 한 번, 연속 두 문장 금지.\n");
+            sb.append("- 버릇은 위 말투에 적힌 ★한 가지뿐★ — 새 버릇을 지어 보태지 마라. ★어미 버릇★(문장 끝 고정 어미)이면 거의 매 문장 일관되게(그게 이 인물의 개성이다). ★접두어·필러 버릇★('뭐랄까'·'그러니까' 류)이면 ★아주 드물게★ — 매 응답마다 넣지 마라(넣는 게 기본이 아니다). 서너 응답에 한 번쯤, 한 응답엔 많아야 한 번, 연속 두 문장 금지.\n");
             sb.append("- 버릇이 어미 버릇이 아니면 문장 끝은 평범한 존댓말/반말 그대로 두어라 — 어미를 억지로 바꾸거나 새 어미를 만들지 마라.\n");
             sb.append("- ★직무·전문성은 '무엇을 아는지(대답 내용)'에만 반영하라 — 문장 첫머리를 보고서처럼 시작하지 마라.★ 사적인 대화·통화에선 일 얘기보다 상대의 반응·감정·용건이 먼저다(너는 직함이 아니라 사람이다).\n");
         } else {
@@ -7023,8 +7037,11 @@ public class TRPGGameManager {
 
                 // GM 컨텍스트에만 주입 — 플레이어에게 직접 전달하지 않음.
                 // GM이 다음 턴 서술에서 NPC 행동을 자연스럽게 녹여 낸다.
+                //  ★행동 요지임을 명시★: 여기 섞인 대사를 GM이 따옴표로 그대로 베끼면 그 NPC 자신의 목소리(@대화·선연락)와
+                //  갈라져 '두 목소리' 버그가 난다 → 3인칭 서술·간접화만 요청(B1 이중 말투 방지).
                 ai.injectGmSystem("[NPC 자율 행동 — GM만 인지] " + npcName + " (위치: "
-                    + (npcZone.isEmpty() ? "?" : npcZone) + "): " + trimmed);
+                    + (npcZone.isEmpty() ? "?" : npcZone) + "): " + trimmed
+                    + "  ※행동 요지다 — 3인칭으로 녹이고, 이 NPC의 대사를 ★따옴표로 그대로 옮기지 마라★(그의 말은 본인 채널에서 나온다).");
                 gameLogger.logGmOutput("NPC(" + npcName + ")", trimmed);
             });
         }
@@ -9973,14 +9990,24 @@ public class TRPGGameManager {
             sb.append("결정 내용은 '[NPC 자율 행동 — GM만 인지]' 태그로 전달된다.\n");
             sb.append("GM은 이 내용을 바탕으로 다음 서술에 해당 NPC의 행동을 자연스럽게 녹여 낸다.\n");
             sb.append("★ NPC 행동은 GM의 서술을 통해서만 플레이어에게 전달된다 (직접 출력 금지).\n");
+            sb.append("★ ★목소리는 그 NPC 자신의 AI 몫★ — 자율 NPC의 대사는 @대화·선연락으로 그 NPC가 직접 낸다. GM은 이들의 "
+                + "★1인칭 스타일 대사·고정 어미(ending_style)를 지어내 읊지 마라★(한 인물이 두 목소리로 갈라진다). "
+                + "옮겨야 하면 ★짧은 간접·전언체★로만(\"…라고 다급히 말했다\"), 따옴표 스타일 대사·개성 어미 재현은 금지.\n");
+            sb.append("★ 같은 NPC를 매 턴 주인공처럼 내세우지 마라 — 장면에 필요할 때만, 여러 NPC·플레이어에게 고루 분배.\n");
+            sb.append("★ NPC를 다른 구역으로 옮기거나 플레이어 앞에 데려오면 <NPC_AT npc=\"이름\" zone=\"존ID\"/>도 함께 내라(안 그러면 @대화가 전화로 오처리된다).\n");
             for (JsonObject npc : autoNpcs) {
                 String nname = npc.has("name") ? npc.get("name").getAsString() : "?";
-                String nzone = npc.has("zone") ? npc.get("zone").getAsString() : "?";
-                sb.append("- ").append(nname).append(" (").append(nzone).append(")");
+                String nid   = getStr(npc, "id");
+                String nzone = (!nid.isEmpty() && npcZones.containsKey(nid)) ? npcZones.get(nid)
+                    : (npc.has("zone") ? npc.get("zone").getAsString() : "");
+                int nage = npc.has("age") && !npc.get("age").isJsonNull() ? npc.get("age").getAsInt() : -1;
+                sb.append("- ").append(nname);
+                if (nage >= 0) sb.append("(").append(nage).append("세)");
+                sb.append(" · 현위치 ").append(zoneDisplayName(nzone));
                 if (npc.has("motivation")) sb.append(" — ").append(npc.get("motivation").getAsString());
-                // 자율 행동은 GM 재서술로만 전달되므로, 인용 대사에 쓸 말씨를 병기(직접 대화 채널과 목소리 이음새 봉합).
+                // 말씨는 GM의 ★간접 서술 톤★ 참고용 — 직접 인용·어미 흉내 금지(목소리는 그 NPC AI가 낸다).
                 String nss = getStr(npc, "speech_style");
-                if (!nss.isBlank()) sb.append(" · 말씨(인용 대사에만): ").append(nss);
+                if (!nss.isBlank()) sb.append(" · 결(참고): ").append(nss);
                 sb.append("\n");
             }
         }
