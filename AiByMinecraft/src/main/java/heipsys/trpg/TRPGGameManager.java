@@ -626,6 +626,7 @@ public class TRPGGameManager {
         pendingPrayerInput.clear();
         pendingOracleInput.clear();
         pendingLuckModifier.clear();
+        pendingHops.clear(); lastHopTurn.clear(); // 이동 홉 추적(#190) — 스테이지/재도전 리셋 시 남으면 다음 판에서 오복귀·홉 스킵 유발
         pendingOracleChoices.clear();
         pendingSaintTrait.clear();
         pendingAreaScanInput.clear();
@@ -738,6 +739,7 @@ public class TRPGGameManager {
         pendingPrayerInput.clear();
         pendingOracleInput.clear();
         pendingLuckModifier.clear();
+        pendingHops.clear(); lastHopTurn.clear(); // 이동 홉 추적(#190) — 스테이지/재도전 리셋 시 남으면 다음 판에서 오복귀·홉 스킵 유발
         pendingOracleChoices.clear();
         pendingSaintTrait.clear();
         pendingAreaScanInput.clear();
@@ -826,6 +828,7 @@ public class TRPGGameManager {
         pendingPrayerInput.clear();
         pendingOracleInput.clear();
         pendingLuckModifier.clear();
+        pendingHops.clear(); lastHopTurn.clear(); // 이동 홉 추적(#190) — 스테이지/재도전 리셋 시 남으면 다음 판에서 오복귀·홉 스킵 유발
         pendingOracleChoices.clear();
         pendingSaintTrait.clear();
         pendingAreaScanInput.clear();
@@ -1911,17 +1914,19 @@ public class TRPGGameManager {
             return;
         }
 
-        // ★이동 중(#190)★: 이 플레이어의 턴 = 한 홉 전진. 취소어면 그 자리에서 멈추고,
-        //   아니면 입력을 '이동 중 참고'로 실어 한 홉만 나아간다(먼 곳도 경유지를 거쳐 간다).
-        if (pd.isTraveling()) {
-            if (isCancelWord(message)) {
-                pd.travelPath.clear(); pd.travelDest = "";
-                player.sendMessage("§7[이동 중단] 그 자리에 멈춰 섭니다.");
-                return;
-            }
-            travelTurn(player, pd, message);
+        // ★이동 중(#190)★: 취소·정지어('멈춰' 등)면 처리 대기와 무관하게 언제든 그 자리에서 멈춘다.
+        if (pd.isTraveling() && (isCancelWord(message) || isStopWord(message))) {
+            pd.travelPath.clear(); pd.travelDest = "";
+            player.sendMessage("§7[이동 중단] 그 자리에 멈춰 섭니다.");
             return;
         }
+        // ★직전 행동의 GM 응답을 기다리는 중이면 새 입력을 받지 않는다★(#190) — 이중 전진·동반전진 오작동·홉 스왑·1인 무한무행동 락 방지.
+        if (turnMan.isActing(player)) {
+            player.sendMessage("§7(현재 행동 처리 중입니다. 잠시 기다려주세요.)");
+            return;
+        }
+        // 이동 중: 이 플레이어의 턴 = 한 홉 전진(입력은 '이동 중 참고'로 실림, 먼 곳도 경유지를 거친다).
+        if (pd.isTraveling()) { travelTurn(player, pd, message); return; }
 
         // 홀림 상태: 행동 앞에 상태 표기 → GM이 서술 조정
         String actionMessage = message;
@@ -1999,6 +2004,8 @@ public class TRPGGameManager {
         //   같은 턴에 함께 묶여 서술되도록 GM 문맥에만 알린다(플레이어 표시·로그엔 남기지 않음).
         for (PlayerData mover : state.getAllPlayers()) {
             if (mover == null || mover.uuid.equals(player.getUniqueId()) || !mover.isTraveling()) continue;
+            Player mp = Bukkit.getPlayer(mover.uuid);
+            if (mp != null && turnMan.isActing(mp)) continue; // 자기 홉 GM 판정(차단 여부) 대기 중이면 겹쳐 전진 금지 → pendingHops 덮어쓰기·오복귀 방지
             String moverHop = advanceOneHop(mover);
             if (moverHop == null) continue;
             gmCtx.append(" [이동 경과: ").append(mover.gmDisplayName()).append("이(가) ")
@@ -2138,9 +2145,11 @@ public class TRPGGameManager {
                 PlayerData bmpd = findAnyByName(bm[0]);
                 if (bmpd == null) continue;
                 String[] ph = pendingHops.remove(bmpd.uuid);
-                if (ph == null) continue;                                   // 되돌릴 홉 없음(이미 소비/미이동)
-                int hopTurn; try { hopTurn = Integer.parseInt(ph[1]); } catch (NumberFormatException ex) { continue; }
-                if (state.getCurrentTurn() - hopTurn > 3) continue;         // 너무 오래된 홉은 되돌리지 않음(오작동 방지)
+                if (ph == null || ph.length < 3) continue;                  // 되돌릴 홉 없음(이미 소비/미이동/구형)
+                int hopTurn; try { hopTurn = Integer.parseInt(ph[2]); } catch (NumberFormatException ex) { continue; }
+                int now = state.getCurrentTurn();
+                if (hopTurn > now || now - hopTurn > 3) continue;           // 미래(리셋 음수)·너무 오래된 홉은 되돌리지 않음
+                if (!ph[1].equals(bmpd.zone)) continue;                     // ★이미 그 홉 도착지를 지나 더 이동함 → 낡은 차단, 무시(엉뚱한 구역 복귀 방지)★
                 bmpd.zone = ph[0]; bmpd.spot = "";                          // 출발 구역으로 복귀
                 bmpd.travelPath.clear(); bmpd.travelDest = "";              // 남은 경로 취소
                 lastHopTurn.remove(bmpd.uuid);
@@ -3011,6 +3020,14 @@ public class TRPGGameManager {
         String s = m.trim().toLowerCase();
         return s.equals("취소") || s.equals("발동취소") || s.equals("그만") || s.equals("그만둔다")
             || s.equals("안할래") || s.equals("안 할래") || s.equals("cancel") || s.equals("c");
+    }
+
+    /** 이동 정지어(#190) — 선택기가 안내하는 '멈춰' 등. 이동 취소는 isCancelWord와 별개로 이 단어들도 허용한다. */
+    private static boolean isStopWord(String m) {
+        if (m == null) return false;
+        String s = m.trim().toLowerCase();
+        return s.equals("멈춰") || s.equals("멈춰라") || s.equals("멈춘다") || s.equals("멈춤")
+            || s.equals("정지") || s.equals("스톱") || s.equals("stop");
     }
 
     /** 대기 중인 스킬 발동을 취소하고 (발동 시 소모됐다면) 사용 횟수를 환원. 취소됐으면 true. */
@@ -9143,9 +9160,15 @@ public class TRPGGameManager {
     /** GM이 플레이어 위치를 zone(+세부 위치 spot)으로 업데이트. 같은 zone 진입 시 연락처 자동 교환 */
     /** ★이동 한 홉 전진(#190) — 유일한 커밋 지점★. 전진 못 하면(도착·피격·기절·조종·동물·잠김·같은턴중복) travel 정리 후 null. */
     private String advanceOneHop(PlayerData pd) {
+        // 피격·기절·조종·동물·변신·행동불능 = 현 위치 정지(§2.4-7). 이동 중이었으면 알리고 경로를 취소한다.
         if (pd == null || !pd.isTraveling() || pd.isDead
-            || !"normal".equals(pd.status) || pd.puppetRecoveryTurns != 0 || animalForm.contains(pd.uuid)) {
-            if (pd != null) { pd.travelPath.clear(); pd.travelDest = ""; } // 피격·기절·조종·동물 = 현 위치 정지(§2.4-7)
+            || !"normal".equals(pd.status) || pd.puppetRecoveryTurns != 0 || animalForm.contains(pd.uuid)
+            || morphTurns.getOrDefault(pd.uuid, 0) > 0 || stunTurns.getOrDefault(pd.uuid, 0) > 0) {
+            if (pd != null && pd.isTraveling()) {
+                pd.travelPath.clear(); pd.travelDest = "";
+                Player gp = Bukkit.getPlayer(pd.uuid);
+                if (gp != null && gp.isOnline()) gp.sendMessage("§7[이동 중단] 지금은 이동을 계속할 수 없습니다.");
+            }
             return null;
         }
         int turn = state.getCurrentTurn();
@@ -9161,17 +9184,18 @@ public class TRPGGameManager {
         }
         pd.travelPath.remove(0);
         if (pd.travelPath.isEmpty()) pd.travelDest = "";
-        pendingHops.put(pd.uuid, new String[]{prev, String.valueOf(turn)});
+        pendingHops.put(pd.uuid, new String[]{prev, next, String.valueOf(turn)}); // [출발, 도착, 턴] — 차단 롤백은 '아직 도착지에 있을 때만'
         lastHopTurn.put(pd.uuid, turn);
         return next;
     }
 
     /** 이동자 본인 턴 = 한 홉 전진 + 그 홉을 GM이 서술하도록 구동(morph 패턴). playerInput은 참고용. */
     private void travelTurn(Player p, PlayerData pd, String playerInput) {
+        String destName = pd.travelDest.isEmpty() ? "목적지" : zoneDisplayName(pd.travelDest); // 도착 홉에서 travelDest가 비워지기 전에 확보
         String hop = advanceOneHop(pd);
         if (hop == null) return; // 정지 사유는 advanceOneHop이 통지
         boolean arrived = pd.travelPath.isEmpty();
-        String msg = "[이동 중 → " + (pd.travelDest.isEmpty() ? "목적지" : zoneDisplayName(pd.travelDest)) + "] "
+        String msg = "[이동 중 → " + destName + "] "
             + pd.gmDisplayName() + "이(가) " + zoneDisplayName(hop) + " 구역에 들어섰다"
             + (arrived ? " — ★도착★. 경유지에서 한눈에 들어온 것을 짧게 요약하고 도착지를 묘사하라."
                        : ". 지나치며 ★한눈에 들어오는 것만★ 1~2문장으로, 장황하지 않게 서술하라.")
@@ -9180,12 +9204,25 @@ public class TRPGGameManager {
         turnMan.handleAction(p, msg, gmSystemPrompt);
     }
 
+    /** 이동 경로 계산용 '아는 통과 가능 구역' 집합 — 방문 구역 중 잠기지 않은(또는 통과수단 보유) 곳 + 현위치.
+     *  잠긴 중간 구역으로 경로가 뚫려 불필요하게 그 앞에서 멈추던 문제(RISK9)를 막는다. */
+    private java.util.Set<String> passableKnownZones(PlayerData pd) {
+        java.util.Set<String> allowed = new java.util.HashSet<>();
+        for (String z : pd.visitedZones)
+            if (findGatedZone(z) == null || !gatePassReason(pd, z).isEmpty()) allowed.add(z);
+        if (pd.zone != null) allowed.add(pd.zone); // 현위치는 이미 그곳에 있으므로 포함(잠겨 있어도 떠날 수는 있다)
+        return allowed;
+    }
+
     /** 목적지 선택 후 이동 시작 — BFS 경로를 큐에 담고 첫 홉을 곧바로 진행. */
     private void startTravel(Player p, String dest) {
         PlayerData pd = state.getPlayer(p);
-        if (pd == null || pd.zone == null || pd.zone.isBlank()) return;
-        java.util.Set<String> allowed = new java.util.HashSet<>(pd.visitedZones); allowed.add(pd.zone);
-        java.util.List<String> path = mapMan.shortestZonePath(pd.zone, dest, allowed);
+        // 선택기를 연 뒤 상태가 바뀌었을 수 있다(사망·잠식·강제이동·이미 이동중) → 클릭 시점에 재검증.
+        if (pd == null || pd.isDead || !"normal".equals(pd.status) || animalForm.contains(pd.uuid)
+            || pd.zone == null || pd.zone.isBlank() || pd.isTraveling()) {
+            p.sendMessage("§7지금은 이동할 수 없습니다."); return;
+        }
+        java.util.List<String> path = mapMan.shortestZonePath(pd.zone, dest, passableKnownZones(pd));
         if (path.isEmpty()) { p.sendMessage("§7그곳으로 가는 길을 알지 못합니다."); return; }
         pd.travelPath = new java.util.ArrayList<>(path);
         pd.travelDest = dest;
@@ -9200,7 +9237,7 @@ public class TRPGGameManager {
         if (pd.isDead || !"normal".equals(pd.status) || animalForm.contains(pd.uuid)) { p.sendMessage("§7지금은 이동할 수 없습니다."); return; }
         if (pd.zone == null || pd.zone.isBlank()) { p.sendMessage("§7아직 현재 위치가 정해지지 않았습니다."); return; }
         if (pd.isTraveling()) { p.sendMessage("§7이미 이동 중입니다(멈추려면 '멈춰'라고 입력)."); return; }
-        java.util.Set<String> allowed = new java.util.HashSet<>(pd.visitedZones); allowed.add(pd.zone);
+        java.util.Set<String> allowed = passableKnownZones(pd); // 잠긴 통과불가 구역은 경로에서 제외(RISK9)
         java.util.List<String[]> dests = new java.util.ArrayList<>();
         JsonObject gdam = state.getGdamData();
         if (gdam != null && gdam.has("zones")) for (JsonElement el : gdam.getAsJsonArray("zones")) {
@@ -9250,6 +9287,12 @@ public class TRPGGameManager {
                 else if (!passReason.isEmpty() && !"open".equals(passReason))
                     state.log("system", commDisplayName(moved), "[우회 통과: " + zoneDisplayName(newZone) + " (본인만)]");
             }
+        }
+        // ★이동 경로 무효화(#190, BUG5)★: 이동 중인데 예정된 다음 홉이 아닌 곳으로 옮겨졌으면(강제이동·GM ZONE_UPDATE 등)
+        //   낡은 경로대로 계속 걸어가 순간이동하는 것을 막는다 — 남은 경로를 취소한다(다시 선언해야 감).
+        //   (advanceOneHop의 정상 홉 커밋은 newZone==travelPath.get(0)이라 여기 걸리지 않는다.)
+        if (moved.isTraveling() && (moved.travelPath.isEmpty() || !newZone.equals(moved.travelPath.get(0)))) {
+            moved.travelPath.clear(); moved.travelDest = "";
         }
         moved.zone = newZone;
         moved.visitedZones.add(newZone); // 방문 기록 (직접 그린 약도에 반영)
