@@ -187,6 +187,8 @@ public class TRPGGameManager {
     private final Map<UUID, String[]> pendingHops = new ConcurrentHashMap<>();
     /** uuid → 마지막으로 홉을 전진시킨 턴번호(같은 턴 이중 전진 방지). */
     private final Map<UUID, Integer> lastHopTurn = new ConcurrentHashMap<>();
+    /** ★대화 방식 제약★: uuid → 필담·수신호를 마지막으로 쓴 턴(같은 턴 재사용 차단, 한 턴 1회). */
+    private final Map<UUID, Integer> lastLimitedCommTurn = new ConcurrentHashMap<>();
     /** ★편지 두고가기(dead-drop)★: 구역 id → 그곳에 남겨진 쪽지 목록. 그 구역에 들어온 사람(플레이어/괴담)이 발견한다. */
     private final Map<String, List<DroppedNote>> droppedNotes = new ConcurrentHashMap<>();
     /** 남겨진 쪽지(편지) — 위치에 놓여 발견을 기다린다. 문서형 괴담이 발견하면 훼손(orig→content). */
@@ -648,6 +650,7 @@ public class TRPGGameManager {
         pendingLuckModifier.clear();
         pendingHops.clear(); lastHopTurn.clear(); // 이동 홉 추적(#190) — 스테이지/재도전 리셋 시 남으면 다음 판에서 오복귀·홉 스킵 유발
         noHopeStreak = 0; allIncapTicks = 0; // 자동 배드엔딩(#2) 누적 — 리셋 시 초기화
+        lastLimitedCommTurn.clear(); // 대화 방식 제약(필담·수신호 한 턴 1회) 턴 기록 초기화
         pendingOracleChoices.clear();
         pendingSaintTrait.clear();
         pendingAreaScanInput.clear();
@@ -762,6 +765,7 @@ public class TRPGGameManager {
         pendingLuckModifier.clear();
         pendingHops.clear(); lastHopTurn.clear(); // 이동 홉 추적(#190) — 스테이지/재도전 리셋 시 남으면 다음 판에서 오복귀·홉 스킵 유발
         noHopeStreak = 0; allIncapTicks = 0; // 자동 배드엔딩(#2) 누적 — 리셋 시 초기화
+        lastLimitedCommTurn.clear(); // 대화 방식 제약(필담·수신호 한 턴 1회) 턴 기록 초기화
         pendingOracleChoices.clear();
         pendingSaintTrait.clear();
         pendingAreaScanInput.clear();
@@ -852,6 +856,7 @@ public class TRPGGameManager {
         pendingLuckModifier.clear();
         pendingHops.clear(); lastHopTurn.clear(); // 이동 홉 추적(#190) — 스테이지/재도전 리셋 시 남으면 다음 판에서 오복귀·홉 스킵 유발
         noHopeStreak = 0; allIncapTicks = 0; // 자동 배드엔딩(#2) 누적 — 리셋 시 초기화
+        lastLimitedCommTurn.clear(); // 대화 방식 제약(필담·수신호 한 턴 1회) 턴 기록 초기화
         pendingOracleChoices.clear();
         pendingSaintTrait.clear();
         pendingAreaScanInput.clear();
@@ -7455,6 +7460,28 @@ public class TRPGGameManager {
         if (commDetectableByEntity(senderPd)) noteCommUsedIfDangerous(senderPd, "전체 발신"); // 은밀 개방이면 괴담이 감지 못함
     }
 
+    /** ★대화 방식별 제약★: 필담·수신호는 한 턴 1회, 수신호는 띄어쓰기 빼고 5글자까지. 막히면 true(발신 취소).
+     *  음성·전자통신·미선언은 자유(제약 없음). payload = 실제 전할 내용(수신호 글자수 판정용). */
+    private boolean commMethodLimitBlocks(Player sender, PlayerData senderPd, String payload) {
+        String m = senderPd.declaredCommMethod;
+        if (!"text".equals(m) && !"signal".equals(m)) return false; // 음성·전자·자동 = 자유
+        int turn = state.getCurrentTurn();
+        Integer last = lastLimitedCommTurn.get(sender.getUniqueId());
+        if (last != null && last == turn) {
+            sender.sendMessage("§7(" + ("signal".equals(m) ? "수신호" : "필담") + "는 한 턴에 한 번만 전할 수 있습니다.)");
+            return true;
+        }
+        if ("signal".equals(m)) {
+            String compact = payload == null ? "" : payload.replaceAll("\\s+", "");
+            if (compact.length() > 5) {
+                sender.sendMessage("§7(수신호는 띄어쓰기 빼고 5글자까지만 — 지금 " + compact.length() + "자. 짧게 줄이세요.)");
+                return true;
+            }
+        }
+        lastLimitedCommTurn.put(sender.getUniqueId(), turn);
+        return false;
+    }
+
     private void handleDirectComm(Player sender, PlayerData senderPd, String raw) {
         String content = raw.substring(1).trim(); // '@' 제거
         if (content.isEmpty()) {
@@ -7477,6 +7504,10 @@ public class TRPGGameManager {
         boolean dialedByNumber = token.matches("\\d{3,5}");
         PlayerData targetPd = dialedByNumber ? findByContactId(token) : findByName(token);
         JsonObject npcObj = (!dialedByNumber && targetPd == null) ? findNpcByName(token) : null;
+
+        // ★대화 방식별 제약(필담·수신호)★: @전체(전자 발신)는 위에서 이미 처리됨. 근처 무명발화는 content 전체가 내용.
+        String limitPayload = (!dialedByNumber && targetPd == null && npcObj == null) ? content : message;
+        if (commMethodLimitBlocks(sender, senderPd, limitPayload)) return;
 
         // 번호도, 아는 대상(플레이어/NPC)도 아닌 토큰 → '이름 없이 근처에 말하기'로 처리(같은 구역·세부위치에 전달).
         if (!dialedByNumber && targetPd == null && npcObj == null) {
