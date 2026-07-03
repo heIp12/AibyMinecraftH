@@ -353,6 +353,7 @@ public class TRPGGameManager {
             if (anyoneCanAct) { allIncapTicks = 0; maybeAccelerateIdle(); return; } // 행동 가능 → 정상(누적 리셋). 너무 오래 무행동이면 시간·위협 가속.
             // ★전원 무력화★ → AI 없이 시스템이 한 턴 진행(시간·시계·회복 카운터). 누군가 회복하면 다음 틱에서 멈춘다.
             state.nextTurn();
+            if (state.getTurnMode() >= 1) state.advanceActionClock(state.getMinutesPerTurn()); // #151: DUR 모드에선 nextTurn이 시계 안 미니 명시 진행
             tickFaintCounters();
             updateAllScoreboards();
             // #2 자동 배드엔딩(A): 회복 가망(기절 해제·조종 회복)이 있으면 계속 기다린다. 회복 가망이 전무하면(전원 동물·완전조종)
@@ -377,7 +378,7 @@ public class TRPGGameManager {
         // 접속 중인 등장 플레이어가 있어야 GM 진행 의미가 있음
         Player viewer = null;
         for (UUID u : spawnedPlayers) { Player p = Bukkit.getPlayer(u); if (p != null && p.isOnline()) { viewer = p; break; } }
-        if (viewer == null) { state.nextTurn(); updateAllScoreboards(); return; }
+        if (viewer == null) { state.nextTurn(); if (state.getTurnMode() >= 1) state.advanceActionClock(state.getMinutesPerTurn()); updateAllScoreboards(); return; }
         lastIdleAccelMs = now;
         // GM 진행 비트: 대기·정체 구간이면 인게임 시간을 건너뛰어 다음 사건으로, 급박하면 위협만 진전.
         String prompt = "플레이어들이 약 " + (IDLE_ACCEL_MS / 60000) + "분간 아무 행동도 하지 않았다. "
@@ -397,6 +398,7 @@ public class TRPGGameManager {
                 }
                 if (skipMin > 0) state.skipTime(skipMin);
                 state.nextTurn();
+                if (state.getTurnMode() >= 1) state.advanceActionClock(state.getMinutesPerTurn()); // #151: DUR 모드 명시 진행(TIME_SKIP과 별개의 기본 한 걸음)
                 tickFaintCounters();
                 updateAllScoreboards();
                 String narrative = ai.stripTags(raw);
@@ -982,6 +984,21 @@ public class TRPGGameManager {
                         + (conceptTypeHint.isEmpty() ? "§7무작위(기본)" : "§d" + conceptTypeHint) + " §7— 다음 생성부터 적용");
                 });
             }
+        } else if (key.equals("turnmode") || key.equals("턴모드") || key.equals("턴")) {
+            // ★#151 Stage A★ 턴 진행 방식: 0=고정(턴당 minutesPerTurn) / 1=가변(행동 DUR로 시계 진행). 2=비동기 busy는 Stage B 이후.
+            if (sub.length >= 2) {
+                String v = sub[1].toLowerCase();
+                int m;
+                if (v.equals("0") || v.equals("고정") || v.equals("fixed")) m = 0;
+                else if (v.equals("1") || v.equals("가변") || v.equals("dur")) m = 1;
+                else { player.sendMessage("§c사용법: §f/trpg setting turnmode <0=고정 | 1=가변시간>§7 (2=비동기는 추후)"); return; }
+                state.setTurnMode(m);
+            } else {
+                state.setTurnMode(state.getTurnMode() == 0 ? 1 : 0); // 값 없으면 0↔1 토글
+            }
+            player.sendMessage("§6[설정] 턴 진행 방식: " + (state.getTurnMode() == 0
+                ? "§f고정 §7(턴당 " + state.getMinutesPerTurn() + "분)"
+                : "§a가변 §7(행동 소요시간 DUR로 시계 진행 — 시계 있는 시나리오에서만)") + " §7— 즉시 적용");
         } else {
             openStartSettings(player);
         }
@@ -2203,12 +2220,15 @@ public class TRPGGameManager {
             // 5e. 타임라인 시계 제어 (시간 건너뛰기 / 사건 차단 / 시간 인지 토글)
             int skipMin = ai.parseTimeSkip(raw);
             if (skipMin > 0) state.skipTime(skipMin);
-            // <DUR> 행동 소요 분 — 지금은 ★기록만★(GM의 소요 품질 관찰용). 시계 결합(skipTime)은 실플레이 검증 후(#190/#151).
+            // <DUR> 행동 소요 분 — 기록 + ★#151 Stage A★: DUR 모드(turnMode≥1)면 이 행동 소요만큼 시계를 진행한다.
+            //   (고정 모드에선 nextTurn의 tickClock이 이미 진행 — 여기선 기록만.) 누락 시 minutesPerTurn 폴백으로 현행 페이스 보존.
             int durMin = ai.parseDur(raw);
             if (durMin > 0) {
                 PlayerData durPd = player != null ? state.getPlayer(player) : null;
                 gameLogger.write("시간", durPd != null ? durPd.gmDisplayName() : "", "[행동 소요 " + durMin + "분]");
             }
+            if (state.getTurnMode() >= 1)
+                state.advanceActionClock(durMin > 0 ? durMin : state.getMinutesPerTurn());
             ai.parseEventBlockTags(raw).forEach(state::blockEvent);
             ai.parseEventTriggerTags(raw).forEach(state::triggerEvent);
 

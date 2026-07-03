@@ -69,6 +69,7 @@ public class GameStateManager {
     private int     clockMinutes       = -1;    // 현재 시각(분, 시작부터 누적 — 자정 넘기면 1440 초과)
     private int     clockEnd           = -1;    // 종료 시각(분, 시작 기준 누적; start 이하이면 +1440)
     private int     minutesPerTurn     = 15;    // 공포 파트 1턴당 진행 분
+    private int     turnMode           = 0;     // ★#151★ 0=고정(현행) / 1=DUR로 시계 진행 / 2=비동기 busy. 세션 시작 시 래치, 세이브 포함.
     private boolean timeVisibleDefault = true;  // 이 방에서 기본적으로 시간 인지 가능 여부
     private boolean endEventFired      = false; // 종료 사건/제한 시각 도달 여부
     private final Set<String>       firedEvents       = new HashSet<>();
@@ -183,6 +184,7 @@ public class GameStateManager {
         o.addProperty("clockMinutes", clockMinutes);
         o.addProperty("clockEnd", clockEnd);
         o.addProperty("minutesPerTurn", minutesPerTurn);
+        o.addProperty("turnMode", turnMode);
         o.addProperty("timeVisibleDefault", timeVisibleDefault);
         o.addProperty("endEventFired", endEventFired);
         o.addProperty("lastFiredEventLabel", lastFiredEventLabel);
@@ -222,6 +224,7 @@ public class GameStateManager {
         clockMinutes      = snapI(o, "clockMinutes", -1);
         clockEnd          = snapI(o, "clockEnd", -1);
         minutesPerTurn    = snapI(o, "minutesPerTurn", 15);
+        turnMode          = snapI(o, "turnMode", 0);
         timeVisibleDefault = snapB(o, "timeVisibleDefault", true);
         endEventFired     = snapB(o, "endEventFired", false);
         lastFiredEventLabel = snapS(o, "lastFiredEventLabel", "");
@@ -585,10 +588,21 @@ public class GameStateManager {
 
     public int nextTurn() {
         currentTurn++;
-        tickClock();
+        if (turnMode == 0) tickClock(); // ★#151★ DUR/비동기 모드(≥1)에선 고정 진행 대신 advanceActionClock이 시계를 운전한다.
         return currentTurn;
     }
     public int getCurrentTurn()  { return currentTurn; }
+    public int  getTurnMode()      { return turnMode; }
+    public void setTurnMode(int m) { turnMode = (m < 0 ? 0 : (m > 2 ? 2 : m)); }
+
+    /** ★#151 Stage A★ 행동 소요(DUR)만큼 시계를 진행 — DUR/비동기 모드에서 고정 tickClock 대신 호출.
+     *  TIME_SKIP(skipTime)과 달리 syncStageToClock까지 수행(정상 진행과 동일 정렬). 일상/비활성 시계면 무효. */
+    public void advanceActionClock(int minutes) {
+        if (dailyPhase || clockMinutes < 0 || minutes <= 0) return;
+        clockMinutes += minutes;
+        fireDueEvents();
+        syncStageToClock();
+    }
     /** 지금까지 발화(진행)된 타임라인/분기 사건 수 — 통합 진행도 계산용. */
     public int getFiredEventCount() { return firedEvents.size(); }
     /** 가장 최근 발화한 핵심 사건 이름(상태창 '최근' 패널용, 없으면 ""). */
