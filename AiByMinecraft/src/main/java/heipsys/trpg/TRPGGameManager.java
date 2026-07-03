@@ -10503,17 +10503,19 @@ public class TRPGGameManager {
         Integer luckAdj = pendingLuckModifier.remove(player.getUniqueId());
         int luckB = (luckAdj != null ? luckAdj : 0);
         // ★행운 확률 보정(요행)★: 운은 특정 행동이 아니라 '모든 시도에 깃드는 요행'이다 — 판정 스탯이 행운이 아닐 때,
-        //   행운 수치에 비례한 ★확률적★ 소량 보정을 얹는다(5≈가끔 +1 / 10≈+2까지 / 15≈+3까지, 낮으면 -3까지).
+        //   ★주사위 눈 수(max)의 비율★만큼 확률적 보정을 얹는다. 최대 진폭 = 평균(5) 대비 편차 5마다 2배:
+        //   운 5→5% · 10→10% · 15→20% · 20→40% (소숫점이면 올림). 운 5 이상=요행(+), 미만=불운(-).
         //   '값이 나온 뒤 오르는' 극적 연출은 아래 애니메이션에서 preLuck→roll로 처리한다.
         int lukNudge = 0;
         if (dpd != null && !"luk".equals(statKey)) {
             int lv = Math.max(1, Math.min(20, dpd.luk));
-            int upCap = Math.max(0, Math.round(lv / 5f));                        // 5→1, 10→2, 15→3, 20→4
-            double pUp   = Math.max(0.0, Math.min(0.9, (lv - 5) * 0.05 + 0.10)); // 5→.10, 10→.35, 15→.60
-            double pDown = Math.max(0.0, (5 - lv) * 0.07);                       // 5→0(무해), 4→.07 … 1→.28
-            for (int i = 0; i < upCap; i++) if (ThreadLocalRandom.current().nextDouble() < pUp)   lukNudge++;
-            for (int i = 0; i < 3;     i++) if (ThreadLocalRandom.current().nextDouble() < pDown) lukNudge--;
-            lukNudge = Math.max(-3, Math.min(upCap, lukNudge));
+            double pct = 0.05 * Math.pow(2.0, Math.abs(lv - 5) / 5.0);   // 편차0→5%, ±5→10%, ±10→20%, +15→40%
+            int cap = (int) Math.ceil(max * pct);                        // 주사위 눈 수의 비율(소숫점 올림)
+            if (cap > 0) {
+                // 0..cap을 두 번 뽑아 작은 값(0쪽으로 치우침) → 대개 소량, 가끔 최대에 근접.
+                int mag = Math.min(ThreadLocalRandom.current().nextInt(cap + 1), ThreadLocalRandom.current().nextInt(cap + 1));
+                lukNudge = (lv >= 5) ? mag : -mag;
+            }
         }
         int preLuck = Math.max(1, Math.min(max, baseRoll + statBonus + luckB));  // 요행 반영 전 '자연 착지값'(연출용)
         roll = Math.max(1, Math.min(max, preLuck + lukNudge));
@@ -10620,18 +10622,18 @@ public class TRPGGameManager {
                     Component.text(fnudge > 0 ? "행운이 깃든다…" : "운이 비껴간다…", NamedTextColor.DARK_GRAY),
                     Title.Times.times(Duration.ZERO, Duration.ofMillis(600), Duration.ZERO)));
             }, landTick);
-            int steps = Math.abs(fnudge);
-            for (int k = 1; k <= steps; k++) {
-                final int shown = fpre + (fnudge > 0 ? k : -k);
+            int frames = Math.min(Math.abs(fnudge), 10);                // 큰 요행도 최대 10프레임으로 압축(빠르게 오르내림)
+            for (int k = 1; k <= frames; k++) {
+                final int shown = fpre + (int) Math.round((double) fnudge * k / frames); // 선형 보간, 마지막 프레임=froll
                 final boolean up = fnudge > 0;
                 plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
                     if (player.isOnline()) player.showTitle(Title.title(
                         Component.text((up ? "🍀 " : "💧 ") + shown, up ? NamedTextColor.AQUA : NamedTextColor.GOLD, TextDecoration.BOLD),
                         Component.text(up ? "행운!" : "불운…", up ? NamedTextColor.AQUA : NamedTextColor.GOLD),
                         Title.Times.times(Duration.ZERO, Duration.ofMillis(300), Duration.ZERO)));
-                }, landTick + 12L + k * 4L);
+                }, landTick + 12L + k * 3L);
             }
-            lastTick = landTick + 12L + steps * 4L;
+            lastTick = landTick + 12L + frames * 3L;
         }
         // 3) 최종 결과 강조 — 《N》 3초 유지 + 성공 기준 서브타이틀
         final int froll = roll, fdc = dc;
