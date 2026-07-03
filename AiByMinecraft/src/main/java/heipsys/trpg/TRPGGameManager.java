@@ -206,8 +206,10 @@ public class TRPGGameManager {
             targetUuid = tu; senderDisp = sd; content = c; kind = k; via = v; sentTurn = st; deliverTurn = dt;
         }
     }
-    /** 금지워드형 괴담: 입에 올리면(입력) 즉시 파국이 되는 단어. 빈 값이면 이 메커니즘 비활성. 재시도 시 변경. */
+    /** 금지워드형 괴담: 입에 올리면(입력) 파국이 시작되는 단어. 빈 값이면 이 메커니즘 비활성. 재시도 시 변경. */
     private volatile String forbiddenWord = "";
+    /** ★금지워드 파국 유예(문제1)★ >0이면 발설로 파국이 진행 중 — 매 플레이어 턴 1씩 줄고 0이 되는 턴에 배드엔딩으로 매듭짓는다(즉종료 대신 1~2턴 조짐+행동 여지). 세션/재도전 시 0. */
+    private int forbiddenDoomTurns = 0;
 
     /** 위상 이탈(phase_out) 중인 플레이어의 남은 무적 턴 수 (uuid → turns). 0 이하면 정상. */
     private final Map<UUID, Integer> phaseOutTurns = new ConcurrentHashMap<>();
@@ -680,6 +682,7 @@ public class TRPGGameManager {
         npcLoggedZone.clear();
         npcTrust.clear();
         forbiddenWord = "";
+        forbiddenDoomTurns = 0;
         rewindBuffer.clear();
         lastRewindCaptureTurn = -1;
         lastAutoSaveTurn = -1;
@@ -1868,13 +1871,20 @@ public class TRPGGameManager {
         gameLogger.logPlayerInput(player.getName(), message);
 
         // 금지워드형: 금지된 단어를 입에 올리는 순간 즉시 파국(게임오버). 재시도 시 단어가 바뀐다.
+        // 금지워드형: 입에 올린 순간 파국이 시작된다. ★즉종료가 아니라(문제1: 즉사 몰입 파괴 방지)★ 1~2턴에 걸쳐
+        //   조짐이 조여오고 그동안 플레이어는 계속 행동할 수 있다 → onGmResponse의 forbiddenDoomTurns 카운트다운이 자연스럽게 매듭짓는다.
         if (containsForbidden(message)) {
             gameLogger.logEvent("금지어 발설: " + player.getName() + " (" + forbiddenWord + ")");
-            broadcast("§4그 말이 입 밖으로 나온 순간, 무언가가 응답한다...");
-            ai.injectGmSystem("[금지어 발설] " + pd.gmDisplayName() + "이(가) 절대 입에 올려선 안 될 단어를 말했다. "
-                + "그 즉시 괴담이 완전히 모습을 드러내며 파국이 닥친다 — 그 장면을 강렬하게 서술하라(정체·해결법 누설 금지).");
-            onBadEnding("금지어 발설");
-            return;
+            if (forbiddenDoomTurns <= 0) { // 첫 발설 — 파국 개시(즉종료 대신 유예)
+                forbiddenDoomTurns = 2;
+                broadcast("§4그 말이 입 밖으로 나온 순간, 공기가 무겁게 가라앉는다...");
+                ai.injectGmSystem("[금지어 발설 — 파국 개시] " + pd.gmDisplayName() + "이(가) 절대 입에 올려선 안 될 단어를 말했다. "
+                    + "이제부터 괴담이 서서히 정체를 드러내며 파국이 다가온다 — ★아직 완전히 끝난 건 아니다★. "
+                    + "이 턴엔 세계가 반응하기 시작하는 조짐(불길한 이변·징후)을 강렬히 서술하되, 플레이어에게 마지막 발버둥(도주·속죄·최후의 시도)의 여지를 남겨라. 정체·해결법 누설 금지.");
+            } else { // 파국 진행 중 재발설 — 가속
+                ai.injectGmSystem("[금지어 재발설 — 파국 가속] 금지된 단어가 또 입에 올랐다. 조여오던 파국이 한층 빨라진다 — 조짐을 더 강하고 급박하게 서술하라(아직 정체·해결법 누설 금지).");
+            }
+            // ★return 하지 않는다★ — 이번 입력도 정상 행동으로 처리해, 플레이어가 파국 속에서도 행동하게 둔다.
         }
 
         // 발동 취소: 대기 중인 스킬 발동을 물리고 사용 횟수 환원 (스킬 입력 대기 중 '취소' 입력 시)
@@ -2290,6 +2300,16 @@ public class TRPGGameManager {
                     }
                 } else {
                     noHopeStreak = 0; // 선언 없음(또는 회복 대기) → 아직 상황이 열려 있다
+                }
+            }
+
+            // ★금지어 파국 카운트다운(문제1)★: 발설로 시작된 파국을 즉종료가 아니라 1~2턴 조짐 뒤 매듭짓는다.
+            //   이 턴 서술(조짐·이변)은 이미 위에서 전달됐고, 매 플레이어 턴 1씩 줄어 0이 되는 턴에 배드엔딩으로 자연스럽게 종결.
+            //   (그동안 플레이어는 계속 행동해 왔다 → 즉사 몰입 파괴 없이 '왜 졌는지 납득되는' 파국.)
+            if (forbiddenDoomTurns > 0 && (currentPhase == Phase.HORROR || currentPhase == Phase.DAILY)) {
+                if (--forbiddenDoomTurns <= 0) {
+                    onBadEnding("금지어 발설");
+                    return; // 종료 처리됨 — 이후 쿨다운·NPC 자율 AI 불필요
                 }
             }
 
@@ -6520,6 +6540,7 @@ public class TRPGGameManager {
     /** 금지워드형 괴담의 금지어를 entity.forbidden_word에서 로드(없으면 비활성). */
     private void loadForbiddenWord() {
         forbiddenWord = "";
+        forbiddenDoomTurns = 0;
         JsonObject g = state.getGdamData();
         if (g != null && g.has("entity") && g.get("entity").isJsonObject()) {
             JsonObject e = g.getAsJsonObject("entity");
