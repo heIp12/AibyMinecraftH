@@ -612,6 +612,15 @@ public class GameStateManager {
         fireDueEvents();
         syncStageToClock();
     }
+    /** 현재 게임 내 분(절대). 시계 없으면 -1. busy 판정·점프용(#151 Stage B). */
+    public int getClockMinutes() { return clockMinutes; }
+    /** ★#151 Stage B★ 시계를 절대 목표 분(absMin)까지 진행(뒤로는 안 감). 도래 사건 발화 + 단계 동기화. 비동기 busy 점프 전용. */
+    public void advanceClockTo(int absMin) {
+        if (dailyPhase || clockMinutes < 0 || absMin <= clockMinutes) return;
+        clockMinutes = absMin;
+        fireDueEvents();
+        syncStageToClock();
+    }
     /** 지금까지 발화(진행)된 타임라인/분기 사건 수 — 통합 진행도 계산용. */
     public int getFiredEventCount() { return firedEvents.size(); }
     /** 가장 최근 발화한 핵심 사건 이름(상태창 '최근' 패널용, 없으면 ""). */

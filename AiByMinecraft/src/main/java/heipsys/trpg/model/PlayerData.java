@@ -139,6 +139,15 @@ public class PlayerData {
     /** 이동 중인가 — travelPath에 남은 홉이 있으면 true. */
     public boolean isTraveling() { return travelPath != null && !travelPath.isEmpty(); }
 
+    /** ★#151 Stage B 비동기 busy 턴(turnMode=2 전용)★ 이 인물이 자유로워지는 '게임 내 분'(절대). clockMinutes 이하면 행동 가능(0=자유). */
+    public int busyUntilMin = 0;
+    /** busy 중 진행 중인 행동 요약(중간 서술·소집 판정 근거용). */
+    public String currentActionText = "";
+    /** busy 행동이 시작된 게임 내 분(경과 계산용). */
+    public int actionStartMin = 0;
+    /** turnMode=2에서 이 인물이 아직 행동 중인가(주어진 현재 분 기준). clockMin<0(시계 없음)이면 항상 자유. */
+    public boolean isBusy(int clockMin) { return clockMin >= 0 && busyUntilMin > clockMin; }
+
     /** 무작위 비공개 연락처 번호 (예: "1186"). 1회차에서 타인은 모름 */
     public String contactId = "";
     /** 이 플레이어가 연락처를 알고 있는 상대들의 UUID */
@@ -254,6 +263,7 @@ public class PlayerData {
         synchronized (keyFacts) { keyFacts.clear(); }
         visitedZones.clear();
         travelPath.clear(); travelDest = ""; // 이동 중 상태도 초기화(#190)
+        busyUntilMin = 0; actionStartMin = 0; currentActionText = ""; // ★#151 Stage B★ busy(행동 중) 상태도 초기화(새 스테이지)
         hasFullMap = false;
     }
 

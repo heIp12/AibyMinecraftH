@@ -343,6 +343,37 @@ public class TRPGGameManager {
             && ((("faint".equals(pd.status)) && pd.faintTurnsRemaining > 0) || pd.puppetRecoveryTurns > 0));
     }
 
+    /** turnMode=2에서 행동가능한 인원(살아 등장·비무력) — busy 판정 대상. */
+    private List<PlayerData> busyAbleSpawned() {
+        return state.getAllPlayers().stream()
+            .filter(pd -> !pd.isDead && spawnedPlayers.contains(pd.uuid)
+                && pd.puppetRecoveryTurns == 0 && !animalForm.contains(pd.uuid)
+                && !("faint".equals(pd.status) && pd.faintTurnsRemaining > 0))
+            .collect(Collectors.toList());
+    }
+
+    /**
+     * ★#151 Stage B(비동기 busy, turnMode=2 전용)★ 행동가능 인원이 ★전원 busy★면 시계를 가장 이른 busyUntil로 점프해
+     * 최소 한 명을 자유화한다(자유로운 사람이 없으면 시간이 다음 '자유 시점'까지 흐른다). 그 사이 도래 사건도 발화.
+     * mode<2·시계 없음·행동가능자 0·자유인원 존재 시엔 무동작(=turnMode 0/1은 완전 바이패스).
+     */
+    private void busyClockJumpIfAllBusy() {
+        if (state.getTurnMode() < 2) return;
+        int now = state.getClockMinutes();
+        if (now < 0) return; // 시계 없는 시나리오엔 busy 모델 미적용
+        List<PlayerData> able = busyAbleSpawned();
+        if (able.isEmpty()) return; // 전원 무력화면 무력화 워치독이 별도 처리
+        int earliest = Integer.MAX_VALUE;
+        for (PlayerData pd : able) {
+            if (!pd.isBusy(now)) return;            // 자유로운 사람이 있으면 점프 안 함(그 사람이 움직인다)
+            earliest = Math.min(earliest, pd.busyUntilMin);
+        }
+        if (earliest == Integer.MAX_VALUE || earliest <= now) return;
+        state.advanceClockTo(earliest);             // 다음 자유 시점까지 시간이 흐른다(타임라인 사건 발화 포함)
+        tickFaintCounters();                         // 시간 경과분 회복·기절 카운터도 함께 진행
+        updateAllScoreboards();
+    }
+
     private void startIncapacitationWatchdog() {
         plugin.getServer().getScheduler().runTaskTimer(plugin, () -> {
             if (!isActive()) return;
@@ -991,20 +1022,24 @@ public class TRPGGameManager {
                 });
             }
         } else if (key.equals("turnmode") || key.equals("턴모드") || key.equals("턴")) {
-            // ★#151 Stage A★ 턴 진행 방식: 0=고정(턴당 minutesPerTurn) / 1=가변(행동 DUR로 시계 진행). 2=비동기 busy는 Stage B 이후.
+            // ★#151★ 턴 진행 방식: 0=고정(턴당 minutesPerTurn) / 1=가변(행동 DUR로 시계 진행, 기본) / 2=비동기 busy(각자 소요만큼 '행동 중' 잠금 → 시계 점프).
             if (sub.length >= 2) {
                 String v = sub[1].toLowerCase();
                 int m;
                 if (v.equals("0") || v.equals("고정") || v.equals("fixed")) m = 0;
                 else if (v.equals("1") || v.equals("가변") || v.equals("dur")) m = 1;
-                else { player.sendMessage("§c사용법: §f/trpg setting turnmode <0=고정 | 1=가변시간>§7 (2=비동기는 추후)"); return; }
+                else if (v.equals("2") || v.equals("비동기") || v.equals("busy") || v.equals("async")) m = 2;
+                else { player.sendMessage("§c사용법: §f/trpg setting turnmode <0=고정 | 1=가변시간 | 2=비동기busy>"); return; }
                 state.setTurnMode(m);
             } else {
-                state.setTurnMode(state.getTurnMode() == 0 ? 1 : 0); // 값 없으면 0↔1 토글
+                state.setTurnMode((state.getTurnMode() + 1) % 3); // 값 없으면 0→1→2→0 순환
             }
-            player.sendMessage("§6[설정] 턴 진행 방식: " + (state.getTurnMode() == 0
+            int tmSel = state.getTurnMode();
+            player.sendMessage("§6[설정] 턴 진행 방식: " + (tmSel == 0
                 ? "§f고정 §7(턴당 " + state.getMinutesPerTurn() + "분)"
-                : "§a가변 §7(행동 소요시간 DUR로 시계 진행 — 시계 있는 시나리오에서만)") + " §7— 즉시 적용");
+                : tmSel == 1
+                ? "§a가변 §7(행동 소요시간 DUR로 시계 진행 — 시계 있는 시나리오에서만)"
+                : "§b비동기 busy §7(각자 행동 소요만큼 '행동 중' 잠금 → 시계가 다음 자유 시점으로 점프 · 시계 있는 시나리오)") + " §7— 즉시 적용");
         } else {
             openStartSettings(player);
         }
@@ -1865,6 +1900,19 @@ public class TRPGGameManager {
             return;
         }
 
+        // ★#151 Stage B(turnMode=2 비동기 busy)★: 아직 이전 행동을 '수행 중'인 시간(busyUntil)이 남았으면 새 행동을 받지 않는다.
+        //   교착 방지: 전원 busy면 먼저 시계를 다음 자유 시점으로 점프해 본다(혼자 플레이 시 즉시 자유화). 그래도 busy면(다른 인물이 먼저 움직일 차례) 대기 안내.
+        //   (handleGameChat은 runTask로 메인 스레드에서 돌므로 busyClockJumpIfAllBusy의 스코어보드 갱신이 안전하다.)
+        if (state.getTurnMode() >= 2) {
+            busyClockJumpIfAllBusy();
+            int nowMin = state.getClockMinutes();
+            if (nowMin >= 0 && pd.isBusy(nowMin)) {
+                int leftMin = pd.busyUntilMin - nowMin;
+                player.sendMessage("§8(아직 진행 중인 행동이 끝나지 않았습니다 — 게임 내 약 §f" + leftMin + "§8분 뒤 자유로워집니다. 다른 인물이 먼저 움직입니다.)");
+                return;
+            }
+        }
+
         // 중복 입력 디바운스: 같은 플레이어가 같은 메시지를 2.5초 내 다시 보내면 조용히 무시한다.
         // (엔터 중복·랙 재전송으로 같은 행동·통신이 두 번 처리되어 '두 번 출력'되는 문제 방지)
         UUID inUuid = player.getUniqueId();
@@ -2266,8 +2314,17 @@ public class TRPGGameManager {
                 PlayerData durPd = player != null ? state.getPlayer(player) : null;
                 gameLogger.write("시간", durPd != null ? durPd.gmDisplayName() : "", "[행동 소요 " + durMin + "분]");
             }
-            if (state.getTurnMode() >= 1)
-                state.advanceActionClock(durMin > 0 ? durMin : state.getMinutesPerTurn());
+            int durEff = durMin > 0 ? durMin : state.getMinutesPerTurn();
+            if (state.getTurnMode() == 1) {
+                state.advanceActionClock(durEff); // 가변: 행동 소요만큼 시계 진행
+            } else if (state.getTurnMode() >= 2) {
+                // ★#151 Stage B 비동기 busy★: 행동자를 그 소요만큼 '행동 중'으로 잠근다. 시계는 여기서 직접 안 밀고,
+                //   전원 busy가 되면 다음 입력·유휴 워치독 시점에 busyClockJumpIfAllBusy가 다음 자유 시점으로 점프한다.
+                //   (여기서 busyClockJumpIfAllBusy를 직접 호출하지 않는다 — onGmResponse는 비동기 스레드라 Bukkit API 접근 금지.)
+                PlayerData actorPd = player != null ? state.getPlayer(player) : null;
+                int nowMin = state.getClockMinutes();
+                if (actorPd != null && nowMin >= 0) { actorPd.actionStartMin = nowMin; actorPd.busyUntilMin = nowMin + Math.max(1, durEff); }
+            }
             ai.parseEventBlockTags(raw).forEach(state::blockEvent);
             ai.parseEventTriggerTags(raw).forEach(state::triggerEvent);
 
