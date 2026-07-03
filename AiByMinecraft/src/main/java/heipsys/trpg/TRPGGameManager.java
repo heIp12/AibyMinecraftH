@@ -1801,7 +1801,7 @@ public class TRPGGameManager {
                     String narrative = ai.stripTags(response);
                     if (!narrative.isBlank()) {
                         narrativeDelivery.deliver(p, narrative);
-                        gameLogger.logGmOutput(p.getName() + "(프롤로그)", narrative);
+                        gameLogger.logGmOutput(pd.gmDisplayName() + "(프롤로그)", narrative); // 계정명 대신 캐릭터명(뷰어는 logAlias로 매핑)
                         // (#164 후속) 시작 자동 추천(<-#...-> 1인칭 힌트) 제거 — 프롤로그 서술이 이미 '이 인물이 다음에
                         //   하려던 행동·의도'를 자연스럽게 내비치므로, 별도 assistant AI 호출은 중복이자 토큰 낭비였다.
                         //   추천이 필요하면 플레이어가 /trpg 추천(hint)로 직접 부른다(showRecommendations 유지).
@@ -5866,8 +5866,9 @@ public class TRPGGameManager {
         String narrative = ai.stripTags(raw);
         if (!narrative.isBlank() && actor != null && actor.isOnline()) {
             narrativeDelivery.deliver(actor, narrative);
-            gameLogger.logGmOutput(actor.getName(), narrative);
             PlayerData apd = state.getPlayer(actor);
+            // 로그 헤더에 계정명(영문 닉) 대신 캐릭터명 사용 — 뷰어 시점 라우팅은 logAlias(계정↔캐릭터)로 유지된다.
+            gameLogger.logGmOutput(apd != null ? apd.gmDisplayName() : actor.getName(), narrative);
             if (apd != null) {
                 appendNarrativeLog(apd, narrative);
                 extractAndStoreInfo(narrative, apd);
@@ -8366,6 +8367,13 @@ public class TRPGGameManager {
     // ──────────────────────────────────────────────────────────────
 
     /** heldItemIds 추가 + item_type이 있으면 ItemInstance(런타임 상태) 등록 */
+    /** 아이템 id → 한국어 표시명 (name·title·common 매핑 순). */
+    private String resolveItemDisplayName(String itemId) {
+        JsonObject def = itemMan.findDef(itemId);
+        return def != null && def.has("name")  ? def.get("name").getAsString()
+             : def != null && def.has("title") ? def.get("title").getAsString() : commonItemKoreanName(itemId);
+    }
+
     private void noteHeldItem(PlayerData pd, String itemId) {
         if (pd == null || itemId == null || itemId.isBlank()) return;
         boolean isNew = !pd.heldItemIds.contains(itemId); // 최초 획득만 로그(중복 방지)
@@ -8378,9 +8386,13 @@ public class TRPGGameManager {
         }
         // ★아이템 획득 로그★ — 시작 소지품 포함, 뷰어의 아이템 뱃지 + 재생 진행연동 상태패널(그 시점에 아는 것)에 표시.
         if (isNew && gameLogger != null) {
-            String nm = def != null && def.has("name")  ? def.get("name").getAsString()
-                      : def != null && def.has("title") ? def.get("title").getAsString() : commonItemKoreanName(itemId);
-            gameLogger.logItem("item", pd.gmDisplayName(), nm, state.getCurrentTurn() <= 1 ? "시작 소지" : "");
+            String nm = resolveItemDisplayName(itemId);
+            boolean startItem = state.getCurrentTurn() <= 1;
+            // 시작 소지품에서 표시명이 겹치면(예: common 'smartphone' + 역할 '스마트폰'이 둘 다 '스마트폰') 로그는 1회만.
+            boolean dupStartName = startItem && pd.heldItemIds.stream()
+                .anyMatch(other -> !other.equals(itemId) && nm.equals(resolveItemDisplayName(other)));
+            if (!dupStartName)
+                gameLogger.logItem("item", pd.gmDisplayName(), nm, startItem ? "시작 소지" : "");
         }
         refreshCommItems(pd); // 새 아이템(통신 기기 포함) 지급 시 연락법·연락처 표기 갱신
     }
@@ -8494,7 +8506,7 @@ public class TRPGGameManager {
                 }
             }
         }
-        gameLogger.logEvent("ITEM_USE: " + (pname == null ? "?" : pname) + " / " + itemRef
+        gameLogger.logEvent("아이템 사용: " + (pname == null ? "?" : pname) + " / " + itemRef
             + (inst != null ? " (잔량 " + inst.charges + (inst.broken ? ", 소진" : "") + ")" : ""));
     }
 
