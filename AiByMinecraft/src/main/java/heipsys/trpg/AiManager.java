@@ -962,6 +962,7 @@ public class AiManager {
                     sysBlock.addProperty("text", system);
                     JsonObject cacheCtrl = new JsonObject();
                     cacheCtrl.addProperty("type", "ephemeral");
+                    cacheCtrl.addProperty("ttl", "1h"); // 1시간 TTL(GA·헤더 불필요): TRPG는 턴 간격(수 분)이 기본 5분 캐시를 넘겨 매 턴 시나리오·규칙 프리픽스를 재처리하던 문제 → 세션 내내 유지.
                     sysBlock.add("cache_control", cacheCtrl);
                     JsonArray sysArr = new JsonArray();
                     sysArr.add(sysBlock);
@@ -982,6 +983,7 @@ public class AiManager {
                         block.addProperty("text", src.get("content").getAsString());
                         JsonObject cc = new JsonObject();
                         cc.addProperty("type", "ephemeral");
+                        cc.addProperty("ttl", "1h"); // 1시간 TTL: 느린 턴 간격에도 멀티턴 GM 히스토리 프리픽스 유지
                         block.add("cache_control", cc);
                         JsonArray contentArr = new JsonArray();
                         contentArr.add(block);
