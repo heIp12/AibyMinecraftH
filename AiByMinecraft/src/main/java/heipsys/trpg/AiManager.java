@@ -750,6 +750,7 @@ public class AiManager {
             .replaceAll("<IMPERSONATE [^/]*/?>", "")
             .replaceAll("<IMPERSONATE_END [^/]*/?>", "")
             .replaceAll("<ZONE_UPDATE [^/]*/?>", "")
+            .replaceAll("<BLOCK_MOVE [^/]*/?>", "")
             .replaceAll("<MAP_GRANT [^/]*/?>", "")
             .replaceAll("<TIME_SKIP [^/]*/?>", "")
             .replaceAll("<EVENT_BLOCK [^/]*/?>", "")
@@ -1154,6 +1155,25 @@ public class AiManager {
             String forced = extractAttr(attrs, "forced").orElse("");
             String bypass = extractAttr(attrs, "bypass").orElse("");
             if (player != null && zone != null) out.add(new String[]{player, zone, spot, forced, bypass});
+            from = end + 2;
+        }
+        return out;
+    }
+
+    /** <BLOCK_MOVE player="X" reason="Y"/> 파싱 → [{player, reason}, ...] — 이동 소프트 차단(#190, 낙관적 이동 GM 거부권). */
+    public java.util.List<String[]> parseBlockMoveTags(String response) {
+        java.util.List<String[]> out = new ArrayList<>();
+        final String PREFIX = "<BLOCK_MOVE ";
+        int from = 0;
+        while (true) {
+            int idx = response.indexOf(PREFIX, from);
+            if (idx == -1) break;
+            int end = response.indexOf("/>", idx);
+            if (end == -1) break;
+            String attrs  = response.substring(idx + PREFIX.length(), end);
+            String player = extractAttr(attrs, "player").orElse(null);
+            String reason = extractAttr(attrs, "reason").orElse("");
+            if (player != null) out.add(new String[]{player, reason});
             from = end + 2;
         }
         return out;

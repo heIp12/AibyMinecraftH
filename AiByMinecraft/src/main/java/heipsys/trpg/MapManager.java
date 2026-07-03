@@ -194,6 +194,31 @@ public class MapManager {
         return Collections.unmodifiableSet(adj.getOrDefault(zoneId, Set.of()));
     }
 
+    /**
+     * ★이동 경로(BFS, #190 이동 뒤집기)★ — from→to 인접 그래프 최단 경로의 '거쳐 갈 구역들'(from 제외, to 포함).
+     * allowed가 null이 아니면 그 집합 안의 구역만 경유한다(아는 구역만 지나가기 — 단 목적지 to는 예외 허용).
+     * 경로가 없으면 빈 리스트. 예: 집→마트가 비인접이면 [밖, 시장, 마트].
+     */
+    public List<String> shortestZonePath(String from, String to, Set<String> allowed) {
+        if (from == null || to == null || from.equals(to) || !adj.containsKey(from)) return Collections.emptyList();
+        java.util.Deque<String> queue = new java.util.ArrayDeque<>();
+        java.util.Map<String, String> prev = new java.util.HashMap<>(); // 노드 → 직전 노드(경로 복원용)
+        queue.add(from); prev.put(from, null);
+        while (!queue.isEmpty()) {
+            String cur = queue.poll();
+            if (cur.equals(to)) break;
+            for (String nb : adj.getOrDefault(cur, Set.of())) {
+                if (prev.containsKey(nb)) continue;                                   // 이미 방문
+                if (allowed != null && !allowed.contains(nb) && !nb.equals(to)) continue; // 아는 구역만 경유
+                prev.put(nb, cur); queue.add(nb);
+            }
+        }
+        if (!prev.containsKey(to)) return Collections.emptyList();                     // 경로 없음
+        java.util.LinkedList<String> path = new java.util.LinkedList<>();
+        for (String at = to; at != null && !at.equals(from); at = prev.get(at)) path.addFirst(at);
+        return path;                                                                  // from 제외, to 포함
+    }
+
     // ──────────────────────────────────────────────────────────────
     //  약도 지급
     // ──────────────────────────────────────────────────────────────
