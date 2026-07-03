@@ -803,6 +803,7 @@ public class AiManager {
             .replaceAll("<IMPERSONATE_END [^/]*/?>", "")
             .replaceAll("<ZONE_UPDATE [^/]*/?>", "")
             .replaceAll("<NPC_AT [^/]*/?>", "")
+            .replaceAll("<BUSY [^/]*/?>", "")
             .replaceAll("<BLOCK_MOVE [^/]*/?>", "")
             .replaceAll("<DUR [^/]*/?>", "")
             .replaceAll("</?NO_HOPE\\s*/?>", "")
@@ -1264,6 +1265,15 @@ public class AiManager {
             from = end + 2;
         }
         return out;
+    }
+
+    /** <BUSY turns="N"/> — 자율 NPC가 '여러 턴 걸리는 다급한 일 중'이라 앞으로 N턴 계속 구동을 요청(#179 능동 비트 활성 창). 최대값 반환(없으면 0). */
+    public int parseNpcBusyTurns(String response) {
+        int max = 0;
+        for (String v : parseSelfClosingAttr(response, "<BUSY ", "turns")) {
+            try { max = Math.max(max, Integer.parseInt(v.trim())); } catch (NumberFormatException ignore) {}
+        }
+        return max;
     }
 
     /** <TIME_SKIP minutes="N"/> 모두 합산 → 총 건너뛸 분 (없으면 0) */

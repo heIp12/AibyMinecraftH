@@ -178,6 +178,10 @@ public class TRPGGameManager {
     private final Map<String, List<String>> npcAcquired = new ConcurrentHashMap<>();
     /** NPC id → 그 NPC와 직접 대화(통화 포함)가 있었던 마지막 턴. 대화 중인 NPC를 자율 AI가 중복 구동해 맥락을 오염(되묻기·모순)시키지 않도록 게이트. */
     private final Map<String, Integer> npcLastDirectTurn = new ConcurrentHashMap<>();
+    /** ★#179 능동 비트 활성 창★ NPC id → 이 턴까지 매턴 구동한다(플레이어 지시 이행 중이거나 NPC가 &lt;BUSY&gt;로 '다급한 일 중'을 선언). 지나면 라운드로빈 베이스라인으로. */
+    private final Map<String, Integer> npcActiveUntil = new ConcurrentHashMap<>();
+    /** ★#179 능동 비트★ 라운드로빈 커서 — 매 비트마다 다음 critical NPC 1명을 순번대로 고른다(전원 매턴=파산 방지). */
+    private int npcBeatCursor = -1;
     /** NPC id → 뷰어 로그에 마지막으로 남긴 위치(zone). 매 주기 같은 위치를 이동 이벤트로 도배하지 않도록, 바뀔 때만 logMove. 뷰어 NPC 시점 '현재 위치'·근처 가시성용(#188). */
     private final Map<String, String> npcLoggedZone = new ConcurrentHashMap<>();
     /** ★동적 신뢰(#189 Phase2)★ npc_id → (플레이어 uuid문자열 → 신뢰 델타[-5..+5]). 대화 반복=친밀도 코드 소폭↑(상한 +2),
@@ -713,6 +717,7 @@ public class TRPGGameManager {
         npcIntel.clear();
         npcAcquired.clear();
         npcLastDirectTurn.clear();
+        npcActiveUntil.clear();
         npcLoggedZone.clear();
         npcTrust.clear();
         forbiddenWord = "";
@@ -911,6 +916,7 @@ public class TRPGGameManager {
         droppedNotes.clear();      // 편지 두고가기 — 스테이지 전환 시 남겨진 쪽지 정리
         pendingDeliveries.clear(); // 지연 전달 큐 — 스테이지 전환 시 미도착 편지 정리
         npcLastDirectTurn.clear();
+        npcActiveUntil.clear();
         npcLoggedZone.clear();     // 스테이지 전환 — NPC 위치 로그 추적 초기화(새 스테이지에서 다시 '등장' 기록)
         npcTrust.clear();          // 스테이지 전환 — 신뢰도 초기화(NPC가 스테이지별로 바뀜)
         lastEndingPages = null;
@@ -6612,6 +6618,7 @@ public class TRPGGameManager {
         npcIntel.clear(); // 새 시나리오의 NPC 지능을 새로 굴리도록 초기화
         npcAcquired.clear(); // NPC가 수집한 정보도 새 시나리오에서 초기화
         npcLastDirectTurn.clear(); // 대화 추적도 새 시나리오에서 초기화
+        npcActiveUntil.clear();    // #179 활성 창도 새 시나리오에서 초기화
         npcLoggedZone.clear(); // NPC 위치 로그 추적도 새 시나리오에서 초기화(#188)
         npcTrust.clear(); // 동적 신뢰도 새 시나리오에서 초기화(#189)
         if (gdam == null || !gdam.has("npcs")) return;
@@ -6986,46 +6993,73 @@ public class TRPGGameManager {
             || t.contains("게임을진행") || t.contains("GM께서") || t.contains("다음정보") || t.contains("준비되시면");
     }
 
+    /** ★#179 능동 비트★ 라운드로빈으로 '대화 중이 아닌' 다음 critical NPC 1명을 고른다(전원 대화 중이면 null). */
+    private JsonObject pickNpcBeat(List<JsonObject> pool, int nowTurn) {
+        int n = pool.size();
+        if (n == 0) return null;
+        for (int i = 0; i < n; i++) {
+            npcBeatCursor = (npcBeatCursor + 1) % n;
+            JsonObject npc = pool.get(npcBeatCursor);
+            int ld = npcLastDirectTurn.getOrDefault(getStr(npc, "id"), Integer.MIN_VALUE);
+            if (ld >= 0 && nowTurn - ld <= 1) continue; // 대화 중(직전 1턴) — 건너뜀(맥락오염 방지)
+            return npc;
+        }
+        return null;
+    }
+
     /**
-     * 괴담 파트 N턴마다 critical NPC 독립 AI 호출.
-     * NPC 행동은 같은 zone의 플레이어에게 직접 전달되고, GM 컨텍스트에 주입된다.
+     * 괴담 파트 critical NPC 독립 AI 호출 — ★#179 3층 능동 비트★.
+     * 턴당 자율 구동 NPC를 ★소수만★ 고른다: (A) 활성 창(지시 이행·<BUSY> 다급) NPC는 매턴 + (B) 라운드로빈 1명.
+     * NPC 행동은 같은 zone 플레이어에게 직접 전달되고, GM 컨텍스트에 주입된다.
      */
     private void fireNpcAiForTurn(boolean cadenceTurn) {
         List<JsonObject> criticals = getCriticalNpcs();
         if (criticals.isEmpty()) return;
-        lastNpcBeatTurn = state.getCurrentTurn(); // 워치독 기준 갱신
-        // ★막후 진행(의문)★: 아무도 못 닿는 NPC는 자율 AI를 건너뛰되(비용), 그들의 ★예정(일정)은 계속 진행★된다고
-        //   GM에 알려 준다 — 플레이어가 그 NPC를 안 만났다는 이유로 예정된 사건이 영원히 안 일어나는 걸 방지.
+        int nowTurn = state.getCurrentTurn();
+        // 우연 정체성 중복 NPC는 자율 구동 제외(버그3) — 나머지가 후보 풀.
+        List<JsonObject> pool = new ArrayList<>();
+        for (JsonObject npc0 : criticals) {
+            String ov0 = overlappingPlayerLabel(npc0);
+            if (ov0 != null && isAccidentalIdentityDup(npc0)) continue;
+            pool.add(npc0);
+        }
+        if (pool.isEmpty()) return;
+        // ★이번 턴 비트 대상 선정★ (전원 매턴=파산 방지, 상한 있음):
+        //   (A) 활성 창 NPC = 플레이어 지시 이행 중이거나 스스로 <BUSY>로 '다급한 일 중' 선언 → 그 창 동안 매턴(대화 쿨다운 지난 뒤).
+        //   (B) 라운드로빈 1명 = 나머지 커버리지 + 멀리 있는 NPC의 능동 도달(찾아옴/전화) 유도.
+        java.util.LinkedHashSet<JsonObject> toFire = new java.util.LinkedHashSet<>();
+        for (JsonObject npc0 : pool) {
+            String id0 = getStr(npc0, "id");
+            int au = npcActiveUntil.getOrDefault(id0, Integer.MIN_VALUE);
+            int ld0 = npcLastDirectTurn.getOrDefault(id0, Integer.MIN_VALUE);
+            boolean cooldown = ld0 >= 0 && nowTurn - ld0 <= 1;      // 대화 중(직전 1턴) — 자율 중복 구동 안 함
+            if (au >= nowTurn && !cooldown) { toFire.add(npc0); if (toFire.size() >= 2) break; } // 활성 NPC는 최대 2명까지 매턴
+        }
+        // 라운드로빈 베이스라인은 ★주기 턴(cadence)에만★ 1명 — 활성 NPC 없는 조용한 턴은 스파스하게(N주기마다 1명). 활성 NPC는 위에서 매턴 이미 잡힘.
+        if (cadenceTurn && toFire.size() < 2) { JsonObject rr = pickNpcBeat(pool, nowTurn); if (rr != null) toFire.add(rr); }
+        boolean anyFired = false;
+        // ★막후 진행(층1)★: 이번 턴 비트 없는 '못 닿는' NPC의 예정만 GM에 정적 주입(AI 호출 없이 진행 보장).
         java.util.List<String> offscreenIntents = new java.util.ArrayList<>();
 
-        for (JsonObject npcObj : criticals) {
+        for (JsonObject npcObj : pool) {
             String npcId   = npcObj.has("id")   ? npcObj.get("id").getAsString()   : "npc";
             String npcName = npcObj.has("name") ? npcObj.get("name").getAsString() : "NPC";
             String npcZone = npcZones.getOrDefault(npcId,
                 npcObj.has("zone") ? npcObj.get("zone").getAsString() : "");
-            // ★페르소나 분리(버그3)★: 정체성이 겹치는 플레이어 배역이 있으면 파악해 둔다.
-            //   사고성 중복(피날레 원년 복귀 에코)만 자율 구동 생략 — 그 외 겹침은 반전일 수 있어
-            //   유지하되 아래에서 '같은 정체성' 인지를 주입해 낯선 제3자 모순·반전 소멸을 막는다.
-            String overlapPlayer = overlappingPlayerLabel(npcObj);
-            if (overlapPlayer != null && isAccidentalIdentityDup(npcObj)) continue;
-            // ★비용 절약★: 같은 구역에 플레이어도 없고 전화로도 닿지 않는 NPC는 자율 AI 호출 생략 —
-            //   그 출력은 GM 컨텍스트로만 들어가 아무도 못 보므로 크레딧만 쓴다. 플레이어가 다가오면 다음 주기에 다시 활동.
-            if (!npcCanReachAnyPlayer(npcId, npcZone)) {
-                String intent = npcScheduleIntent(npcObj);
-                if (!intent.isEmpty() && offscreenIntents.size() < 6) offscreenIntents.add(npcName + " — " + intent);
+            boolean reachable = npcCanReachAnyPlayer(npcId, npcZone);
+            if (!toFire.contains(npcObj)) {
+                // 층1: 이번 턴 비트 없음 — 못 닿는 NPC의 예정만 GM에 정적 주입(AI 호출 0). 닿는 NPC는 다음 라운드로빈·상호작용 때 구동.
+                if (!reachable) {
+                    String intent = npcScheduleIntent(npcObj);
+                    if (!intent.isEmpty() && offscreenIntents.size() < 6) offscreenIntents.add(npcName + " — " + intent);
+                }
                 continue;
             }
-            // ★대화 중 중복 구동 방지★: 방금(이번~직전 턴) 플레이어와 직접 대화한 NPC는 자율 AI를 돌리지 않는다 —
-            //   대화 맥락에 없는 '플레이어 행동 로그' 기반 자율 출력이 같은 NPC 컨텍스트에 섞여 되묻기·모순을 유발한다.
+            // ★대화 중 중복 구동 방지★(맥락오염 방지, 안전망): 직전 1턴 내 직접 대화한 NPC는 자율 구동 생략.
             int lastDirect = npcLastDirectTurn.getOrDefault(npcId, Integer.MIN_VALUE);
-            if (lastDirect >= 0 && lastDirect <= state.getCurrentTurn() && state.getCurrentTurn() - lastDirect <= 1) continue;
-            // ★임시 엔게이지먼트 게이트(비주기 턴)★: 주기·워치독 턴이 아니면 '해야 할 작업(일정 goal/action·목표)이 있거나
-            //   최근(4턴 내) 플레이어와 상호작용한' NPC만 매턴 구동한다(그 NPC 시점을 계속 남기려는 목적). 나머지는 주기 턴에만.
-            if (!cadenceTurn) {
-                boolean hasTask = npcHasActiveTask(npcObj);
-                boolean recentInteract = lastDirect >= 0 && state.getCurrentTurn() - lastDirect <= 4;
-                if (!hasTask && !recentInteract) continue;
-            }
+            if (lastDirect >= 0 && nowTurn - lastDirect <= 1) continue;
+            // 반전 동명 안내용(우연 동명이인은 pool에서 이미 제외됨).
+            String overlapPlayer = overlappingPlayerLabel(npcObj);
             // ★그 NPC가 있는 위치(zone)에서 일어난 행동만 — 다른 장면의 플레이어 행동이 NPC 서술에 섞이지 않게.
             String actionLog = state.buildEntityLog(4, npcZone);
             // 빈 로그를 그대로 주면 모델이 '입력을 달라'는 메타 응답을 내놓는다 → 자율 행동 지시로 대체한다.
@@ -7052,7 +7086,9 @@ public class TRPGGameManager {
             //   로그 노출은 그 NPC 시점 전용(logNpcThought), 게임 내 노출은 같은 zone 엿보기 플레이어에게만.
             String npcPromptFinal = npcPrompt
                 + "\n응답 말미에 <THOUGHT>지금 네 속마음 혼잣말 1문장</THOUGHT>을 출력하라(★여기만 1인칭 혼잣말★, 딱 1문장).\n"
+                + "여러 턴 걸리는 ★다급한 일(누굴 쫓거나·막거나·서둘러 가거나·작업 중)★을 하는 중이면, 응답 말미에 <BUSY turns=\"N\"/>(N=더 필요한 턴 수, 1~5)를 붙여라 — 그러면 그 일이 끝날 때까지 매 턴 계속 행동할 기회를 준다. 다급하지 않으면 붙이지 마라.\n"
                 + buildNpcCallInstruction(npcId, npcZone) // NPC가 먼저 연락할 수 있게(닿는 상대 목록+태그)
+                + (!reachable ? "\n[능동 도달] 너는 지금 어떤 플레이어와도 같은 곳에 있지 않다. ★네 목표가 누군가에게 닿는 것이라면★ 그쪽으로 스스로 이동하거나(어디로 향하는지 서술하면 GM이 위치를 옮긴다) 연락 가능한 상대에게 먼저 연락하라. 닿을 이유가 없으면 네 예정대로 조용히 행동하라(억지로 플레이어를 찾지 마라).\n" : "")
                 + (overlapPlayer != null && hasIdentityTwistSignal(npcObj) ? buildIdentityOverlapNote(overlapPlayer) : ""); // 반전 신호 있는 동명만 조건부 안내(우연 동명이인 제외)
 
             ai.callNpcAi(npcId, npcPromptFinal, actionLog).thenAccept(npcResp -> {
@@ -7097,6 +7133,10 @@ public class TRPGGameManager {
                         while (store.size() > 8) store.remove(0);
                     });
 
+                // ★#179 활성 창★: NPC가 <BUSY turns="N"/>로 '다급한 일 중'을 선언하면 앞으로 N턴(1~5) 매턴 계속 구동한다.
+                int busyN = ai.parseNpcBusyTurns(npcResp);
+                if (busyN > 0) npcActiveUntil.put(npcId, state.getCurrentTurn() + Math.min(5, busyN));
+
                 String trimmed = ai.stripThought(ai.stripTags(npcResp)).trim();
                 if (trimmed.isEmpty()) return;
                 if (looksLikeMetaRequest(trimmed)) return; // 인물 이탈 메타 응답("로그 제공해주세요" 등)은 무시 — GM 오염 방지
@@ -7110,7 +7150,9 @@ public class TRPGGameManager {
                     + "  ※행동 요지다 — 3인칭으로 녹이고, 이 NPC의 대사를 ★따옴표로 그대로 옮기지 마라★(그의 말은 본인 채널에서 나온다).");
                 gameLogger.logGmOutput("NPC(" + npcName + ")", trimmed);
             });
+            anyFired = true;
         }
+        if (anyFired) lastNpcBeatTurn = nowTurn; // 워치독 기준은 실제 구동 시에만 갱신
         // ★막후 진행 주입(의문)★: 못 닿는 NPC들의 예정을 GM에 한 번에 알린다 — 접촉 없이도 예정된 사건이 진행되게.
         if (cadenceTurn && !offscreenIntents.isEmpty()) {
             ai.injectGmSystem("[막후 진행 — GM만 인지] 지금 플레이어 시야 밖이라 화면엔 안 나오지만, 다음 인물들은 각자의 예정대로 계속 움직이고 있다: "
@@ -7154,20 +7196,6 @@ public class TRPGGameManager {
     }
 
     /** NPC의 현재 예정 의도를 짧게 요약(막후 진행 주입용). schedule의 goal(없으면 action) 우선 → NPC goal → role_type. */
-    /** 이 NPC가 ★지금 해야 할 실제 작업(일정 goal/action 또는 top-level 목표)★이 있는가 — 역할(role_type)만 있는 건 제외.
-     *  임시: 이런 NPC는 비주기 턴에도 매턴 자율 구동해 시점 서술을 유지한다(fireNpcAiForTurn engaged 판정). */
-    private boolean npcHasActiveTask(JsonObject npcObj) {
-        if (npcObj == null) return false;
-        if (npcObj.has("schedule") && npcObj.get("schedule").isJsonArray()) {
-            for (JsonElement el : npcObj.getAsJsonArray("schedule")) {
-                if (!el.isJsonObject()) continue;
-                JsonObject s = el.getAsJsonObject();
-                if (!getStr(s, "goal").isBlank() || !getStr(s, "action").isBlank()) return true;
-            }
-        }
-        return !getStr(npcObj, "goal").isBlank();
-    }
-
     private String npcScheduleIntent(JsonObject npcObj) {
         if (npcObj == null) return "";
         if (npcObj.has("schedule") && npcObj.get("schedule").isJsonArray()) {
@@ -8147,6 +8175,7 @@ public class TRPGGameManager {
         senderPd.everKnownNpcContacts.add(npcId);
         refreshCommItems(senderPd);
         npcLastDirectTurn.put(npcId, state.getCurrentTurn()); // 대화 중 — 자율 AI 중복 구동 방지(맥락 오염 차단)
+        npcActiveUntil.put(npcId, state.getCurrentTurn() + 3); // ★#179 활성 창★ 플레이어 지시·상호작용 직후 몇 턴은 그 NPC를 매턴 구동(지시 이행·반응·이동)
         logNpcLocationIfChanged(npcId, npcName, npcZones.getOrDefault(npcId, npcZone)); // 뷰어 NPC 시점 위치(#188) — 대화로 위치가 확인된 시점
         // 동적 신뢰(#189 코드): 대화를 거듭할수록 친밀도 소폭↑ — 중립~약신뢰(0~+1)에서만, 상한 +2. 깊은 신뢰·불신은 <TRUST> 이벤트로.
         { String uk = senderPd.uuid.toString(); int cur = npcTrustOf(npcId, uk); if (cur >= 0 && cur < 2) adjustNpcTrust(npcId, uk, 1); }
