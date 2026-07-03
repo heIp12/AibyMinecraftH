@@ -1,6 +1,8 @@
 heipsys\trpg\TRPGGameManager$1.class
 heipsys\trpg\CharacterGenerator.class
 heipsys\trpg\CorruptionManager.class
+heipsys\trpg\TRPGGameManager$PendingDelivery.class
+heipsys\trpg\TRPGGameManager$DroppedNote.class
 heipsys\trpg\AiManager.class
 heipsys\trpg\ItemManager.class
 heipsys\trpg\ScenarioArchetypes$Slot.class
