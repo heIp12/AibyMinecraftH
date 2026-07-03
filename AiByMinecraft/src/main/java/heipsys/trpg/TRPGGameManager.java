@@ -6805,6 +6805,11 @@ public class TRPGGameManager {
             sb.append(getStr(npcObj, "speech_style").isBlank() ? "성격(말투에 반영): " : "성격: ").append(npcObj.get("personality").getAsString()).append("\n");
         if (npcObj.has("motivation"))
             sb.append("목적(무엇을·얼마나 말할지 좌우): ").append(npcObj.get("motivation").getAsString()).append("\n");
+        // 개성 심화(기질·약점): personality를 restate하지 않는 직교 축. 기질=감정 기본값(정서 톤 일관), 약점=괴담·위기가 찌를 지점(공포 반응 개성).
+        if (!getStr(npcObj, "temperament").isBlank())
+            sb.append("평소 기질(감정 기본값 — 대사·반응의 정서 톤을 여기에 맞춰 끝까지 일관되게): ").append(getStr(npcObj, "temperament")).append("\n");
+        if (!getStr(npcObj, "fear").isBlank())
+            sb.append("약점(특히 못 견디거나 무서워하는 것 — 이게 직접 건드려지면 평소 기질보다 크게 흔들린다): ").append(getStr(npcObj, "fear")).append("\n");
         // 거짓말 성향(조건) — 거짓말의 '언제/왜'를 규정해 남발도 과소도 막는다. 필드 없으면 방어형(기본).
         sb.append("거짓말 성향: ").append(honestyDesc(getStr(npcObj, "honesty"))).append("\n");
         // ② 지식 게이팅 — '상시 전량 주입'을 막는다. 지금 상황과 ★관련된 기억만★(관련 없으면 신뢰도 높은 것 위주로)
