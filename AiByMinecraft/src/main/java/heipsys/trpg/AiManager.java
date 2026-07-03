@@ -752,6 +752,7 @@ public class AiManager {
             .replaceAll("<ZONE_UPDATE [^/]*/?>", "")
             .replaceAll("<BLOCK_MOVE [^/]*/?>", "")
             .replaceAll("<DUR [^/]*/?>", "")
+            .replaceAll("</?NO_HOPE\\s*/?>", "")
             .replaceAll("<MAP_GRANT [^/]*/?>", "")
             .replaceAll("<TIME_SKIP [^/]*/?>", "")
             .replaceAll("<EVENT_BLOCK [^/]*/?>", "")
@@ -1196,6 +1197,11 @@ public class AiManager {
             try { total += Integer.parseInt(v.trim()); } catch (NumberFormatException ignore) {}
         }
         return Math.max(0, Math.min(240, total));
+    }
+
+    /** <NO_HOPE/> — GM이 '도주·해결·생존 가망 완전 소멸'을 선언(#2 자동 배드엔딩 신호). 있으면 true. */
+    public boolean parseNoHope(String response) {
+        return response != null && response.contains("<NO_HOPE");
     }
 
     /** <EVENT_BLOCK id="X"/> 모두 파싱 → [id, ...] */

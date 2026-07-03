@@ -262,6 +262,14 @@ public class TRPGGameManager {
     private long lastIdleAccelMs = 0L;
     /** 무행동이 이 시간 이상 지속되면 시간·위협을 한 걸음 진행시킨다(머뭇거림이 안전하지 않게). */
     private static final long IDLE_ACCEL_MS = 180_000L; // 3분
+    /** ★자동 배드엔딩(#2) 활성화★ — 오종료 시 진행 세션이 파괴되므로 게이트로 보수적으로만 발동. 문제 시 false로 즉시 차단. */
+    private static final boolean AUTO_BADEND_ENABLED = true;
+    /** GM이 '가망 없음'(<NO_HOPE>)을 ★연속★ 선언한 횟수 — K회 연속 + 게이트 통과 시 배드엔딩. 선언 없는 응답에서 0으로 리셋(끝 암시→마지막 기회→결말). */
+    private int noHopeStreak = 0;
+    private static final int NO_HOPE_STREAK_REQ = 2; // 1=끝 암시(마지막 기회 한 턴) → 2=재확인 후 결말
+    /** 전원 영구 무력화(회복 가망 0) 워치독 틱 누적 — K틱 연속이면 자동 종료(전원 동물·완전조종 무한 틱 방지). */
+    private int allIncapTicks = 0;
+    private static final int ALL_INCAP_TICKS_REQ = 3; // 10초 간격 × 3 ≈ 30초 연속 확인
     /** 클리어 보상 특성 성장 3선택지 — /trpg trait 재열기용 */
     private final Map<UUID, TraitManager.StageEndChoices> pendingStageEndChoices = new ConcurrentHashMap<>();
     private final Map<UUID, String[]> pendingStageEndNames = new ConcurrentHashMap<>();
@@ -321,6 +329,13 @@ public class TRPGGameManager {
      * → 아무도 입력할 수 없어 게임이 영영 멈추던 문제 해결. 한 명이라도 행동 가능해지면 자동으로 멈춘다.
      * 플러그인 로드 시 1회 등록(상시) — 비활성/정상 상황에선 즉시 return하므로 부하 없음.
      */
+    /** 살아있는 등장 플레이어 중 자연 회복(기절 해제·조종 회복) 대기자가 있는가 — 있으면 아직 '가망 없음' 아님(자동 배드엔딩 오종료 게이트 ①). */
+    private boolean anyRecoveryPending() {
+        return state.getAllPlayers().stream().anyMatch(pd ->
+            !pd.isDead && spawnedPlayers.contains(pd.uuid)
+            && ((("faint".equals(pd.status)) && pd.faintTurnsRemaining > 0) || pd.puppetRecoveryTurns > 0));
+    }
+
     private void startIncapacitationWatchdog() {
         plugin.getServer().getScheduler().runTaskTimer(plugin, () -> {
             if (!isActive()) return;
@@ -333,11 +348,16 @@ public class TRPGGameManager {
                 pd.puppetRecoveryTurns == 0 // ★버그수정★ -1(완전조종)은 행동 불능이다(입력 게이트도 !=0로 차단) — <=0이라 -1을 행동가능으로 오판해 전원 완전조종 시 소프트락이던 것 수정
                 && !animalForm.contains(pd.uuid) // 동물 형태는 시나리오를 풀 수 없음 → 행동 가능자로 치지 않음(동물만 남으면 워치독이 진행)
                 && !("faint".equals(pd.status) && pd.faintTurnsRemaining > 0));
-            if (anyoneCanAct) { maybeAccelerateIdle(); return; } // 행동 가능 → 정상. 단 너무 오래 무행동이면 시간·위협 가속.
+            if (anyoneCanAct) { allIncapTicks = 0; maybeAccelerateIdle(); return; } // 행동 가능 → 정상(누적 리셋). 너무 오래 무행동이면 시간·위협 가속.
             // ★전원 무력화★ → AI 없이 시스템이 한 턴 진행(시간·시계·회복 카운터). 누군가 회복하면 다음 틱에서 멈춘다.
             state.nextTurn();
             tickFaintCounters();
             updateAllScoreboards();
+            // #2 자동 배드엔딩(A): 회복 가망(기절 해제·조종 회복)이 있으면 계속 기다린다. 회복 가망이 전무하면(전원 동물·완전조종)
+            //   K틱 연속 확인 후 종료 — 전원 무력화가 영구인데 워치독이 무한히 시간만 넘기던 것을 매듭짓는다.
+            if (anyRecoveryPending()) { allIncapTicks = 0; return; }
+            if (++allIncapTicks >= ALL_INCAP_TICKS_REQ && AUTO_BADEND_ENABLED && currentPhase != Phase.GAMEOVER)
+                onBadEnding("전원 행동불능 — 회복 가망 없음");
         }, 200L, 200L); // 10초마다(전원 무력화 또는 장시간 무행동일 때만 실제로 동작)
     }
 
@@ -627,6 +647,7 @@ public class TRPGGameManager {
         pendingOracleInput.clear();
         pendingLuckModifier.clear();
         pendingHops.clear(); lastHopTurn.clear(); // 이동 홉 추적(#190) — 스테이지/재도전 리셋 시 남으면 다음 판에서 오복귀·홉 스킵 유발
+        noHopeStreak = 0; allIncapTicks = 0; // 자동 배드엔딩(#2) 누적 — 리셋 시 초기화
         pendingOracleChoices.clear();
         pendingSaintTrait.clear();
         pendingAreaScanInput.clear();
@@ -740,6 +761,7 @@ public class TRPGGameManager {
         pendingOracleInput.clear();
         pendingLuckModifier.clear();
         pendingHops.clear(); lastHopTurn.clear(); // 이동 홉 추적(#190) — 스테이지/재도전 리셋 시 남으면 다음 판에서 오복귀·홉 스킵 유발
+        noHopeStreak = 0; allIncapTicks = 0; // 자동 배드엔딩(#2) 누적 — 리셋 시 초기화
         pendingOracleChoices.clear();
         pendingSaintTrait.clear();
         pendingAreaScanInput.clear();
@@ -829,6 +851,7 @@ public class TRPGGameManager {
         pendingOracleInput.clear();
         pendingLuckModifier.clear();
         pendingHops.clear(); lastHopTurn.clear(); // 이동 홉 추적(#190) — 스테이지/재도전 리셋 시 남으면 다음 판에서 오복귀·홉 스킵 유발
+        noHopeStreak = 0; allIncapTicks = 0; // 자동 배드엔딩(#2) 누적 — 리셋 시 초기화
         pendingOracleChoices.clear();
         pendingSaintTrait.clear();
         pendingAreaScanInput.clear();
@@ -2204,6 +2227,23 @@ public class TRPGGameManager {
             // 9. 사망자 체크
             checkDeaths();
 
+            // 9b. ★자동 배드엔딩(#2, B: 전원 생존이어도 가망 없음)★ — GM '가망 없음'(<NO_HOPE>) ★연속★ 선언 처리.
+            //   끝 암시→마지막 기회(한 턴)→결말 순서를 엔진이 보증한다. 회복 대기자가 있으면(게이트①) 아직 확정 아님.
+            //   선언이 이어지지 않으면(상황이 열림) 누적 리셋 → 오종료 방지. onBadEnding은 GAMEOVER면 자동 no-op.
+            if (currentPhase == Phase.HORROR || currentPhase == Phase.DAILY) {
+                if (ai.parseNoHope(raw) && !anyRecoveryPending()) {
+                    noHopeStreak++;
+                    gameLogger.write("종료", "", "[가망없음 확인 " + noHopeStreak + "/" + NO_HOPE_STREAK_REQ + "]");
+                    if (AUTO_BADEND_ENABLED && noHopeStreak >= NO_HOPE_STREAK_REQ) {
+                        noHopeStreak = 0;
+                        onBadEnding("도주·해결 가망 완전 소멸");
+                        return; // 종료 처리됨 — 이후 쿨다운·NPC 자율 AI 불필요
+                    }
+                } else {
+                    noHopeStreak = 0; // 선언 없음(또는 회복 대기) → 아직 상황이 열려 있다
+                }
+            }
+
             // 쿨다운 틱: 행동자의 특성 쿨다운 1 감소 (스테이지당 1회형은 제외)
             if (player != null) {
                 PlayerData actorPd = state.getPlayer(player);
@@ -2588,6 +2628,8 @@ public class TRPGGameManager {
 
         ai.callGmAi(gmSystemPrompt,
             "게임이 실패로 끝났다(" + reasonLabel + "). 배드 엔딩 장면을 서술해줘. "
+            + "★플레이어가 '왜 이렇게 끝났는지' 납득하게★ — 무엇이 모든 길을 닫아 이 결말에 이르렀는지 그 인과를 장면 안에서 분명히 드러내라. "
+            + "지금까지 쌓여 온 전개의 당연한 귀결로 느껴지게(갑작스럽거나 억울한 즉사·운빨 종료가 아니라, 이미 벌어진 일들의 결과로). "
             + "단, 괴담의 정체·규칙·해결법을 직접 설명하거나 누설하지 마라(재도전 여지를 남긴다).")
           .thenAccept(r -> plugin.getServer().getScheduler().runTask(plugin, () -> {
               String narrative = ai.stripTags(r);
