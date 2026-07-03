@@ -54,6 +54,7 @@ public class MapManager {
     // 그래프 데이터 — loadScenario 시 재구축, views는 유지
     private final Map<String, String>      zoneNames = new LinkedHashMap<>();
     private final Map<String, String>      zoneArea  = new LinkedHashMap<>();
+    private final Map<String, String>      zoneRealm = new LinkedHashMap<>(); // zone_id → realm(거대 분리 영역: 현실/꿈/화성 등). 기본 "" = 주 영역. realm 다르면 걸어서 못 넘는다(#190).
     private final Map<String, Set<String>> adj       = new HashMap<>();
     private List<String>                   zoneOrder = new ArrayList<>();
     private final List<String>             areaOrder = new ArrayList<>();
@@ -91,7 +92,7 @@ public class MapManager {
     // ──────────────────────────────────────────────────────────────
 
     public void loadScenario(JsonObject gdam) {
-        zoneNames.clear(); zoneArea.clear(); adj.clear();
+        zoneNames.clear(); zoneArea.clear(); zoneRealm.clear(); adj.clear();
         zoneOrder = new ArrayList<>();
         areaOrder.clear(); areaAdj.clear();
         flatLayout.clear(); overviewLayout.clear(); areaLayouts.clear();
@@ -114,6 +115,8 @@ public class MapManager {
                 zoneArea.put(id, area);
                 if (!areaOrder.contains(area)) areaOrder.add(area);
             }
+            if (z.has("realm") && !z.get("realm").getAsString().isBlank()) // 거대 분리 영역(#190) — 다르면 걸어서 못 넘음
+                zoneRealm.put(id, z.get("realm").getAsString());
             if (z.has("connections") && z.get("connections").isJsonArray()) {
                 for (JsonElement c : z.getAsJsonArray("connections")) {
                     String to = c.getAsString();
@@ -194,6 +197,9 @@ public class MapManager {
         return Collections.unmodifiableSet(adj.getOrDefault(zoneId, Set.of()));
     }
 
+    /** 구역의 realm(거대 분리 영역: 현실/꿈/화성 등). 없으면 "" = 주 영역. realm이 다르면 걸어서 오갈 수 없다(#190) — GM 서술 전이만. */
+    public String realmOf(String zoneId) { return zoneRealm.getOrDefault(zoneId, ""); }
+
     /**
      * ★이동 경로(BFS, #190 이동 뒤집기)★ — from→to 인접 그래프 최단 경로의 '거쳐 갈 구역들'(from 제외, to 포함).
      * allowed가 null이 아니면 그 집합 안의 구역만 경유한다(아는 구역만 지나가기 — 단 목적지 to는 예외 허용).
@@ -201,6 +207,7 @@ public class MapManager {
      */
     public List<String> shortestZonePath(String from, String to, Set<String> allowed) {
         if (from == null || to == null || from.equals(to) || !adj.containsKey(from)) return Collections.emptyList();
+        String fromRealm = realmOf(from); // ★realm 경계는 걸어서 못 넘는다(#190)★ — 다른 영역(꿈·화성·이세계 등)은 이 경로에 안 잡힘(GM 서술 전이만).
         java.util.Deque<String> queue = new java.util.ArrayDeque<>();
         java.util.Map<String, String> prev = new java.util.HashMap<>(); // 노드 → 직전 노드(경로 복원용)
         queue.add(from); prev.put(from, null);
@@ -209,6 +216,7 @@ public class MapManager {
             if (cur.equals(to)) break;
             for (String nb : adj.getOrDefault(cur, Set.of())) {
                 if (prev.containsKey(nb)) continue;                                   // 이미 방문
+                if (!realmOf(nb).equals(fromRealm)) continue;                         // 다른 realm은 걸어서 못 넘음(목적지라도)
                 if (allowed != null && !allowed.contains(nb) && !nb.equals(to)) continue; // 아는 구역만 경유
                 prev.put(nb, cur); queue.add(nb);
             }

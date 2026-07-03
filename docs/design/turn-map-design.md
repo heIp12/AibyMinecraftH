@@ -71,6 +71,13 @@ int    actionStartMin    // 행동 시작 분(경과 계산)
 **구현 완료(#190)**: `MapManager.shortestZonePath`(BFS) · `PlayerData.travelPath/travelDest/isTraveling` · `AiManager.parseBlockMoveTags`(+스트립) · `TRPGGameManager.advanceOneHop`(단일 커밋 지점)·`travelTurn`·`startTravel`·`openMoveSelector` · `/trpg 이동` 커맨드 · handleGameChat 이동게이트+동반전진 · onGmResponse `<BLOCK_MOVE>` 소비 · PromptBuilder 이동모델 지침. 커밋 fca7b95·a7fb57e·d70d6d3.
 **미결(테스트 필요 — 눈감고 금지)**: 중단/재개 GM 판정(§2.4-7 interrupt|continue, 현재는 피격시 advanceOneHop 가드로 정지만) · §2.4-6② '이동만' 종합서술 정밀형(현재는 홉별 간결서술) · 자유서술 이동해석(§2.4-8, 현재는 선택기 주경로만) · #151 distances×분당계수 정밀화(현재 1홉=1턴 고정).
 
+### 2.4a 거대 영역(realm) — 걸어서 못 넘는 분리 세계 (사용자 확정)
+현실↔꿈, 지구↔화성처럼 ★도보로 오갈 수 없는 완전 분리 세계★는 realm으로 구분한다. "이동거리·속도가 어떻게 되나"의 답 = **비물리 전이는 걷기가 아니라 GM 서술 사건**이다.
+- **거리**: 없음(공간 인접 무의미) → BFS·이동 선택기에 안 뜬다. **속도/시간**: 걷는 홉이 아니라 트리거의 성격대로(잠들면 즉시 · 우주항행이면 `<TIME_SKIP>`).
+- **모델**: zone에 `realm` 필드(기본 "" = 주 영역). `MapManager.realmOf` + `shortestZonePath`가 realm 경계를 넘지 않음 → 다른 realm은 도보 불가. realm 전이는 GM이 트리거로 `<ZONE_UPDATE>`(런타임 예외적 직접 이동).
+- **왜곡**: 비현실 realm(꿈·이세계) 내부는 거리·시간이 뒤틀릴 수 있음 — realm 내부 도보는 시스템이 처리하되 GM이 서술로 초현실 감각(1분=몇 시간·비유클리드·제자리 등)을 덧입힌다. 왜곡이 이동을 실제로 막아야 하면 `<BLOCK_MOVE>`.
+- **구현 완료(#190)**: `MapManager`(zoneRealm·realmOf·BFS realm 경계) · `PromptBuilder`(realm 전이·왜곡 지침) · `GdamGenerator`(zone realm 필드·연결 금지·초반 회피 지침). 초반 스테이지는 realm 분리 대신 '서술 근사' 권장(생성기 지침).
+
 ### 2.5 GM 프롬프트/태그 (신설)
 - `<DUR n>` 행동 소요 분. `<PACE slow|normal|fast>` 완급. `<SUMMON reason>` 즉시 소집. `<BUSY name n>` NPC/타인 장기행동. `<BLOCK_MOVE player reason>` 이동 소프트 차단(§2.4-5 — 드물게·극적일 때만, 기본은 이동 성립).
 - 프롬프트 지침: "행동마다 현실적 소요시간을 분으로 매겨라(<DUR>). 사소한 관찰·대화는 짧게, 이동·수리·의식은 길게. 이미 §페이싱: 결정적 단일행동은 1회로 완료(늘이지 마라)와 정합." (이미 넣은 페이싱 지침과 연결.)
