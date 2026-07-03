@@ -213,6 +213,8 @@ public class TRPGGameManager {
 
     /** 위상 이탈(phase_out) 중인 플레이어의 남은 무적 턴 수 (uuid → turns). 0 이하면 정상. */
     private final Map<UUID, Integer> phaseOutTurns = new ConcurrentHashMap<>();
+    /** ★조우 대면(#175 보강)★ 조우자류 능력으로 '곧 마주칠 상대'를 감지한 턴(uuid→턴). 직후 @대화를 대면으로 본다. */
+    private final Map<UUID, Integer> encounterFaceTurn = new ConcurrentHashMap<>();
     /** 괴담 변신(gdam_morph) 중인 플레이어의 남은 변신 턴 수 (uuid → turns). 0 이하면 정상. 변신 중엔 조작 불가(GM 구동). */
     private final Map<UUID, Integer> morphTurns = new ConcurrentHashMap<>();
     /** 관조자의 눈(observer_sight) 지속 중인 플레이어의 남은 턴 수 (uuid → turns). ★1턴 고정이라 실제로는 지속 등록되지 않지만, 구형 세이브 호환을 위해 틱 처리는 유지한다. */
@@ -4825,6 +4827,7 @@ public class TRPGGameManager {
                     for (JsonElement d : wr.getAsJsonArray("details")) ctx.append("  - ").append(d.getAsString()).append("\n");
             }
             case "encounter_scan" -> {
+                encounterFaceTurn.put(player.getUniqueId(), state.getCurrentTurn()); // 곧 마주칠 상대 감지 → 직후 @대화는 대면(#175 보강)
                 // 첫 조우 = 곧 마주칠 인물/존재의 성향·목표·상태를 어렴풋한 첫인상으로(정체는 모름).
                 focusRule = "포커스=첫 조우: 곧 처음 마주칠 인물/존재의 ★성향·목표·상태★를 어렴풋한 첫인상으로만 준다(정체·정답은 모른다). "
                     + "겉으로 드러나는 낌새·행색·태도 위주로. 예: '비에 흠뻑 젖어 있다' · '다급히 정보실을 찾고 있다' · '뭔가 감추는 듯하다' · '나를 천천히 뜯어보고 있다'.";
@@ -7957,6 +7960,12 @@ public class TRPGGameManager {
      * GM round-trip 없이 NPC AI(Haiku)가 직접 응답.
      * 대면은 같은 zone에서만. CODE-9: 다른 zone이어도 phone_usable + 발신자 통신기기 + NPC 통화 가능 시 '통화'로 허용.
      */
+    /** 최근(2턴 내) 조우자류 능력으로 '곧 마주칠 상대'를 감지했는가 — 그 직후 @대화는 대면으로 본다(#175 보강). */
+    private boolean recentEncounterFace(Player p) {
+        Integer t = encounterFaceTurn.get(p.getUniqueId());
+        return t != null && state.getCurrentTurn() - t <= 2;
+    }
+
     private void handleNpcDirectComm(Player sender, PlayerData senderPd, JsonObject npcObj, String message) {
         String npcId   = npcObj.has("id")   ? npcObj.get("id").getAsString()   : "npc";
         String npcName = npcObj.has("name") ? npcObj.get("name").getAsString() : "NPC";
@@ -7977,6 +7986,13 @@ public class TRPGGameManager {
         boolean sameZone = senderPd.zone.isEmpty() || !npcZoneKnown || senderPd.zone.equals(npcZone);
         // 위치 불명이던 NPC를 대면으로 처리했으면 관측된 위치(발신자 구역)를 기록 → 이후 판정 일관성.
         if (sameZone && !npcZoneKnown && !senderPd.zone.isEmpty()) npcZones.put(npcId, senderPd.zone);
+        // ★조우 대면(#175 보강)★: 방금 조우자류 능력으로 '곧 마주칠 상대'를 감지한 직후 그에게 @로 말하면,
+        //   기본(스케줄) 구역이 멀어도 '지금 눈앞에 나타난 것'으로 본다 — GM이 그 조우를 장면에 데려왔으므로 전화가 아니라 대면.
+        if (!sameZone && recentEncounterFace(sender)) {
+            sameZone = true;
+            if (!senderPd.zone.isEmpty()) npcZones.put(npcId, senderPd.zone); // 그 상대를 지금 내 구역에 있는 것으로 확정
+            encounterFaceTurn.remove(sender.getUniqueId());                    // 1회성 소비
+        }
         // CODE-9: 원격 연락 가능 여부 — 대면 제한은 '대면 행위'에만 적용한다.
         //   ①phone_usable + 발신자 통신기기 + (NPC가 통화로 닿거나 ★이미 접촉해 번호를 아는★ NPC) → 통화(viaCall)
         //   ②통신 두절이라도 시대·맥락상 서면(필담·인편·쪽지)이 가능하고 닿는 NPC면 → 서면(written)
