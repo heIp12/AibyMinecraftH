@@ -300,6 +300,7 @@ public class TRPGGameManager {
         this.dialogMan         = new DialogManager();
         this.dialogMan.setImportantInfoOpener(this::openImportantInfo); // 중요 정보(전화번호·능력으로 밝힌 사실)
         this.dialogMan.setCommMethodOpener(this::openCommMethodDialog);  // 소통수단 선언(#177) — 도구 없을 때 기록에서 여는 경로
+        this.dialogMan.setMoveOpener(this::openMoveSelector);            // 이동 선언(#190) — 지도 도구 없이 기록에서 여는 경로
         this.state.setSpawnedCheck(spawnedPlayers::contains); // 미등장 배역을 GM 서술에서 제외하기 위한 등장 판별 주입
         this.traitBtn          = new TraitButtonManager();
         this.corruptMan        = new CorruptionManager(state);

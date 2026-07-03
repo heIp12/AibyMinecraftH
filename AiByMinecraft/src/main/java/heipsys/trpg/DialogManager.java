@@ -39,6 +39,10 @@ public class DialogManager {
     private Consumer<Player> commMethodOpener;
     public void setCommMethodOpener(Consumer<Player> opener) { this.commMethodOpener = opener; }
 
+    /** '이동'(#190) 목적지 선택기를 여는 콜백 — 지도 도구 없이도 기록에서 여는 경로. TRPGGameManager가 주입. */
+    private Consumer<Player> moveOpener;
+    public void setMoveOpener(Consumer<Player> opener) { this.moveOpener = opener; }
+
     // ──────────────────────────────────────────────────────────────
     //  캐릭터 시트 + 주사위 확인
     // ──────────────────────────────────────────────────────────────
@@ -1085,6 +1089,13 @@ public class DialogManager {
                 Component.text("＠ 소통수단 변경", NamedTextColor.GREEN),
                 Component.text("말하기 · 필담 · 수신호 등 소통 방식을 선언합니다(바로 적용)."), 160,
                 DialogAction.customClick((v, a) -> commMethodOpener.accept(player),
+                    ClickCallback.Options.builder().uses(1).build())));
+        }
+        if (moveOpener != null) {
+            buttons.add(ActionButton.create(
+                Component.text("🚶 이동", NamedTextColor.BLUE),
+                Component.text("아는 곳으로 이동을 선언합니다(먼 곳도 경유해 감, 이동마다 한 턴 소모)."), 160,
+                DialogAction.customClick((v, a) -> moveOpener.accept(player),
                     ClickCallback.Options.builder().uses(1).build())));
         }
 
