@@ -99,6 +99,8 @@ public class CMDTrpg implements CommandExecutor, TabCompleter {
             case "keyinfo", "중요" -> trpg.openImportantInfo(player); // 전화번호·능력으로 밝힌 사실
             case "추천", "recommend", "hint" -> trpg.showRecommendations(player); // 정답 모르는 동료의 행동 제안(스포일러 없음)
             case "map"    -> trpg.openMap(player);
+            case "이동", "move" -> trpg.openMoveSelector(player); // 아는 곳으로 이동 선언(먼 곳도 경유해 감) — #190
+
             case "trait"  -> trpg.reopenTraitDialog(player);
             case "ending" -> trpg.reopenEndingDialog(player);
             case "help"   -> sendHelp(player);
@@ -123,7 +125,7 @@ public class CMDTrpg implements CommandExecutor, TabCompleter {
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (args.length == 1) {
-            List<String> subs = List.of("start", "setting", "stop", "retry", "next", "resume", "load", "read", "replay", "replaylist", "list", "status", "me", "log", "info", "추천", "map", "trait", "ending", "givetrait", "jobrefresh", "help");
+            List<String> subs = List.of("start", "setting", "stop", "retry", "next", "resume", "load", "read", "replay", "replaylist", "list", "status", "me", "log", "info", "추천", "map", "이동", "trait", "ending", "givetrait", "jobrefresh", "help");
             String partial = args[0].toLowerCase();
             return subs.stream()
                 .filter(s -> s.startsWith(partial))
@@ -194,6 +196,7 @@ public class CMDTrpg implements CommandExecutor, TabCompleter {
         player.sendMessage("§f/trpg log §7— 전체 대화 기록 열람 (다이얼로그, '기록' 아이템 우클릭도 가능)");
         player.sendMessage("§f/trpg info §7— 수집 정보 열람 (다이얼로그, '기록' 아이템 우클릭도 가능)");
         player.sendMessage("§f/trpg map §7— 가 본 곳으로 현장 약도 그리기 (지도 아이템)");
+        player.sendMessage("§f/trpg 이동 §7— 아는 곳으로 이동 선언(먼 곳도 경유해 감, 이동마다 한 턴 소모, '멈춰'로 중단)");
         player.sendMessage("§f/trpg trait §7— 특성 선택창이 닫힌 경우 다시 열기 (클리어 보상 선택 중에만 유효)");
         player.sendMessage("§f/trpg ending §7— 엔딩 해설 다이얼로그 다시 열기");
         player.sendMessage("§f/trpg givetrait <플레이어> <ID> §7— 시스템 특성 부여 (OP)");

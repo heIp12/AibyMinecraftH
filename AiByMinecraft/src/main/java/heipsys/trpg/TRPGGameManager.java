@@ -183,6 +183,10 @@ public class TRPGGameManager {
     /** ★동적 신뢰(#189 Phase2)★ npc_id → (플레이어 uuid문자열 → 신뢰 델타[-5..+5]). 대화 반복=친밀도 코드 소폭↑(상한 +2),
      *  '말이 사실로 드러남·배신' 같은 급변은 NPC가 낸 &lt;TRUST±N&gt;로. 관계 라벨에 문구로 반영되고 세이브에 포함(구세이브=0). */
     private final Map<String, Map<String, Integer>> npcTrust = new ConcurrentHashMap<>();
+    /** ★이동 뒤집기(#190)★ 방금 커밋한 홉 되돌리기용(<BLOCK_MOVE>) — uuid → [이전구역, 커밋턴]. 비저장 transient(재시작 시 유실=이동성립으로 안전수렴). */
+    private final Map<UUID, String[]> pendingHops = new ConcurrentHashMap<>();
+    /** uuid → 마지막으로 홉을 전진시킨 턴번호(같은 턴 이중 전진 방지). */
+    private final Map<UUID, Integer> lastHopTurn = new ConcurrentHashMap<>();
     /** ★편지 두고가기(dead-drop)★: 구역 id → 그곳에 남겨진 쪽지 목록. 그 구역에 들어온 사람(플레이어/괴담)이 발견한다. */
     private final Map<String, List<DroppedNote>> droppedNotes = new ConcurrentHashMap<>();
     /** 남겨진 쪽지(편지) — 위치에 놓여 발견을 기다린다. 문서형 괴담이 발견하면 훼손(orig→content). */
@@ -1906,6 +1910,18 @@ public class TRPGGameManager {
             return;
         }
 
+        // ★이동 중(#190)★: 이 플레이어의 턴 = 한 홉 전진. 취소어면 그 자리에서 멈추고,
+        //   아니면 입력을 '이동 중 참고'로 실어 한 홉만 나아간다(먼 곳도 경유지를 거쳐 간다).
+        if (pd.isTraveling()) {
+            if (isCancelWord(message)) {
+                pd.travelPath.clear(); pd.travelDest = "";
+                player.sendMessage("§7[이동 중단] 그 자리에 멈춰 섭니다.");
+                return;
+            }
+            travelTurn(player, pd, message);
+            return;
+        }
+
         // 홀림 상태: 행동 앞에 상태 표기 → GM이 서술 조정
         String actionMessage = message;
         if (asAnimal) {
@@ -1977,6 +1993,18 @@ public class TRPGGameManager {
 
         // 괴담이 이 플레이어의 말투·행동을 학습 (정체 차용/흉내에 사용)
         corruptMan.learnPlayerBehavior(player.getName(), message);
+
+        // ★다른 이동자 동반 전진(#190)★: 이 턴에 이동 중인 다른 플레이어도 한 홉 나아간다.
+        //   같은 턴에 함께 묶여 서술되도록 GM 문맥에만 알린다(플레이어 표시·로그엔 남기지 않음).
+        for (PlayerData mover : state.getAllPlayers()) {
+            if (mover == null || mover.uuid.equals(player.getUniqueId()) || !mover.isTraveling()) continue;
+            String moverHop = advanceOneHop(mover);
+            if (moverHop == null) continue;
+            gmCtx.append(" [이동 경과: ").append(mover.gmDisplayName()).append("이(가) ")
+                 .append(zoneDisplayName(moverHop))
+                 .append(mover.travelPath.isEmpty() ? " 구역에 도착했다." : " 구역을 지나는 중이다.")
+                 .append(" 같은 구역이면 그 모습을 WITNESS로 동료에게 전하고, 아니면 한 줄로만 곁들여라.]");
+        }
 
         // ★방송 설비로 건물 전체에 외치는 '대규모 발화' → 시스템이 ★모든 플레이어에게 직접★ 전달한다.
         //   (GM 서술/WITNESS에만 의존하면 다른 플레이어에게 누락되던 문제 — 번호 공지·집결 호출 등 협업 수단 보장)
@@ -2102,6 +2130,24 @@ public class TRPGGameManager {
                     zu.length > 3 && ("1".equals(zu[3]) || "true".equalsIgnoreCase(zu[3])),
                     zu.length > 4 && ("1".equals(zu[4]) || "true".equalsIgnoreCase(zu[4])));
             });
+
+            // 5d-b. ★이동 소프트 차단(#190, 낙관적 이동 거부권)★: GM이 <BLOCK_MOVE>로 막으면 방금 나아간 홉을 되돌린다.
+            //   pendingHops에 담긴 '직전 홉의 출발 구역'으로 복귀시키고 남은 경로를 취소한다(다시 선언해야 감).
+            for (String[] bm : ai.parseBlockMoveTags(raw)) {
+                PlayerData bmpd = findAnyByName(bm[0]);
+                if (bmpd == null) continue;
+                String[] ph = pendingHops.remove(bmpd.uuid);
+                if (ph == null) continue;                                   // 되돌릴 홉 없음(이미 소비/미이동)
+                int hopTurn; try { hopTurn = Integer.parseInt(ph[1]); } catch (NumberFormatException ex) { continue; }
+                if (state.getCurrentTurn() - hopTurn > 3) continue;         // 너무 오래된 홉은 되돌리지 않음(오작동 방지)
+                bmpd.zone = ph[0]; bmpd.spot = "";                          // 출발 구역으로 복귀
+                bmpd.travelPath.clear(); bmpd.travelDest = "";              // 남은 경로 취소
+                lastHopTurn.remove(bmpd.uuid);
+                gameLogger.logMove(bmpd.gmDisplayName(), zoneDisplayName(ph[0]), "차단복귀");
+                Player bmp = Bukkit.getPlayer(bmpd.uuid);
+                if (bmp != null && bmp.isOnline())
+                    bmp.sendMessage("§c[이동 저지] " + (bm[1] == null || bm[1].isEmpty() ? "무언가가 앞을 막아섭니다." : bm[1]));
+            }
 
             // 5d-2. 지도 입수(전체 공개) — 플레이어가 스토리에서 지도를 구함
             ai.parseMapGrantTags(raw).forEach(pName -> {
@@ -9094,6 +9140,82 @@ public class TRPGGameManager {
     }
 
     /** GM이 플레이어 위치를 zone(+세부 위치 spot)으로 업데이트. 같은 zone 진입 시 연락처 자동 교환 */
+    /** ★이동 한 홉 전진(#190) — 유일한 커밋 지점★. 전진 못 하면(도착·피격·기절·조종·동물·잠김·같은턴중복) travel 정리 후 null. */
+    private String advanceOneHop(PlayerData pd) {
+        if (pd == null || !pd.isTraveling() || pd.isDead
+            || !"normal".equals(pd.status) || pd.puppetRecoveryTurns != 0 || animalForm.contains(pd.uuid)) {
+            if (pd != null) { pd.travelPath.clear(); pd.travelDest = ""; } // 피격·기절·조종·동물 = 현 위치 정지(§2.4-7)
+            return null;
+        }
+        int turn = state.getCurrentTurn();
+        Integer last = lastHopTurn.get(pd.uuid);
+        if (last != null && last == turn) return null;                      // 같은 턴 이중 전진 방지
+        String prev = pd.zone, next = pd.travelPath.get(0);
+        updatePlayerZone(pd.name, next, "", false, false);                  // 잠금 게이트·방문기록·조우주입 포함(무수정 재사용)
+        if (!next.equals(pd.zone)) {                                        // 잠겨 못 들어감 → 그 앞에서 정지
+            pd.travelPath.clear(); pd.travelDest = "";
+            Player p = Bukkit.getPlayer(pd.uuid);
+            if (p != null && p.isOnline()) p.sendMessage("§c[이동 중단] 잠겨 있어 그 앞에서 멈췄습니다.");
+            return null;
+        }
+        pd.travelPath.remove(0);
+        if (pd.travelPath.isEmpty()) pd.travelDest = "";
+        pendingHops.put(pd.uuid, new String[]{prev, String.valueOf(turn)});
+        lastHopTurn.put(pd.uuid, turn);
+        return next;
+    }
+
+    /** 이동자 본인 턴 = 한 홉 전진 + 그 홉을 GM이 서술하도록 구동(morph 패턴). playerInput은 참고용. */
+    private void travelTurn(Player p, PlayerData pd, String playerInput) {
+        String hop = advanceOneHop(pd);
+        if (hop == null) return; // 정지 사유는 advanceOneHop이 통지
+        boolean arrived = pd.travelPath.isEmpty();
+        String msg = "[이동 중 → " + (pd.travelDest.isEmpty() ? "목적지" : zoneDisplayName(pd.travelDest)) + "] "
+            + pd.gmDisplayName() + "이(가) " + zoneDisplayName(hop) + " 구역에 들어섰다"
+            + (arrived ? " — ★도착★. 경유지에서 한눈에 들어온 것을 짧게 요약하고 도착지를 묘사하라."
+                       : ". 지나치며 ★한눈에 들어오는 것만★ 1~2문장으로, 장황하지 않게 서술하라.")
+            + " 막아야 할 극적 상황일 때만 <BLOCK_MOVE player=\"" + pd.gmDisplayName() + "\" reason=\"…\"/>."
+            + (playerInput == null || playerInput.isBlank() ? "" : " (플레이어 입력 '" + playerInput + "'은 참고만.)");
+        turnMan.handleAction(p, msg, gmSystemPrompt);
+    }
+
+    /** 목적지 선택 후 이동 시작 — BFS 경로를 큐에 담고 첫 홉을 곧바로 진행. */
+    private void startTravel(Player p, String dest) {
+        PlayerData pd = state.getPlayer(p);
+        if (pd == null || pd.zone == null || pd.zone.isBlank()) return;
+        java.util.Set<String> allowed = new java.util.HashSet<>(pd.visitedZones); allowed.add(pd.zone);
+        java.util.List<String> path = mapMan.shortestZonePath(pd.zone, dest, allowed);
+        if (path.isEmpty()) { p.sendMessage("§7그곳으로 가는 길을 알지 못합니다."); return; }
+        pd.travelPath = new java.util.ArrayList<>(path);
+        pd.travelDest = dest;
+        p.sendMessage("§b[이동 시작] " + zoneDisplayName(dest) + "(으)로 — " + path.size() + "구역 경유");
+        travelTurn(p, pd, "이동을 시작한다");
+    }
+
+    /** /trpg 이동 — 아는 구역을 목적지로 선택(먼 구역도 경로로 간다). */
+    public void openMoveSelector(Player p) {
+        PlayerData pd = state.getPlayer(p);
+        if (pd == null || !spawnedPlayers.contains(pd.uuid)) { p.sendMessage("§c참여 중인 캐릭터가 없습니다."); return; }
+        if (pd.isDead || !"normal".equals(pd.status) || animalForm.contains(pd.uuid)) { p.sendMessage("§7지금은 이동할 수 없습니다."); return; }
+        if (pd.zone == null || pd.zone.isBlank()) { p.sendMessage("§7아직 현재 위치가 정해지지 않았습니다."); return; }
+        if (pd.isTraveling()) { p.sendMessage("§7이미 이동 중입니다(멈추려면 '멈춰'라고 입력)."); return; }
+        java.util.Set<String> allowed = new java.util.HashSet<>(pd.visitedZones); allowed.add(pd.zone);
+        java.util.List<String[]> dests = new java.util.ArrayList<>();
+        JsonObject gdam = state.getGdamData();
+        if (gdam != null && gdam.has("zones")) for (JsonElement el : gdam.getAsJsonArray("zones")) {
+            if (!el.isJsonObject()) continue;
+            String z = el.getAsJsonObject().has("zone_id") ? el.getAsJsonObject().get("zone_id").getAsString() : "";
+            if (z.isEmpty() || z.equals(pd.zone) || !allowed.contains(z)) continue;         // 아는 구역만, 현위치 제외
+            if (findGatedZone(z) != null && gatePassReason(pd, z).isEmpty()) continue;       // 잠긴 목적지 제외
+            java.util.List<String> path = mapMan.shortestZonePath(pd.zone, z, allowed);
+            if (path.isEmpty()) continue;                                                    // 경로 없으면 제외
+            dests.add(new String[]{z, zoneDisplayName(z), path.size() == 1 ? "인접" : (path.size() + "구역 경유")});
+        }
+        if (dests.isEmpty()) { p.sendMessage("§7이동할 수 있는 아는 장소가 없습니다."); return; }
+        dialogMan.showMoveDestChoice(p, dests, zid ->
+            plugin.getServer().getScheduler().runTask(plugin, () -> startTravel(p, zid)));
+    }
+
     private void updatePlayerZone(String playerName, String newZone, String spot, boolean forced, boolean bypass) {
         PlayerData moved = findAnyByName(playerName);
         if (moved == null || newZone == null || newZone.isBlank()) return;
