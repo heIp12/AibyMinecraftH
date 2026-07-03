@@ -530,7 +530,7 @@ public class CharacterGenerator {
             + (roleContext != null && !roleContext.isBlank() ? "\n배역 맥락: " + roleContext : "")
             + "\n\n위 캐릭터에 맞는 초기 특성을 JSON 배열로 생성해줘.";
 
-        return aiManager.callAssistant(system, prompt).thenApply(raw -> {
+        return aiManager.callTraitGen(system, prompt).thenApply(raw -> {
             try {
                 String cleaned = raw.replaceAll("```json", "").replaceAll("```", "").trim();
                 int s = cleaned.indexOf('['), e = cleaned.lastIndexOf(']');

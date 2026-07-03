@@ -623,6 +623,28 @@ public class AiManager {
     }
 
     /**
+     * 특성(능력) 생성용 1회성 호출 — ★GM 티어(gmModel)로 격상★. assistantModel(mini)은 이름을 단어 짜깁기하고
+     * name·설명·효과가 따로 놀았다(교차검증 지적). 특성은 세션당 몇 번(캐릭터·클리어 보상·배역)만 생성되고
+     * 플레이어가 게임 내내 보는 영구 텍스트라 GM 서술과 같은 품질이어야 한다. 호출 빈도가 낮아 비용 영향이
+     * 작다(gmModel은 세션 품질을 따른다 — LOW 세션은 그대로 저품질).
+     */
+    public CompletableFuture<String> callTraitGen(String system, String data) {
+        return callTraitGen(system, data, GM_MAX_TOKENS); // GM 티어(thinking 모델)에 thinking+JSON 여유
+    }
+    public CompletableFuture<String> callTraitGen(String system, String data, int maxTokens) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                List<JsonObject> messages = List.of(msg("user", system + "\n\n" + data));
+                return send(gmModel(),
+                    "너는 TRPG 특성(능력) 생성기다. 요청받은 JSON 형식으로만 정확히 응답한다.",
+                    messages, maxTokens);
+            } catch (Exception e) {
+                return "§c[특성 AI 오류] " + e.getMessage();
+            }
+        });
+    }
+
+    /**
      * 충실도가 중요한 1회성 호출(친숙 모드 실존 괴담·환상체 정전 선정)용 — 최고 품질 모델 사용.
      * 저품질 모델은 실존 원전을 그럴듯하게 ★창작(환각)★하는 경향이 강해 정전 충실도가 깨진다.
      * 시나리오당 1회뿐이라 비용 영향이 작다.
