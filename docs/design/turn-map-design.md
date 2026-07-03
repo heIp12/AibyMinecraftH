@@ -68,6 +68,8 @@ int    actionStartMin    // 행동 시작 분(경과 계산)
 
 **데이터(PlayerData)**: `List<String> travelPath`(남은 홉 큐), `String travelDest`(최종 목적지 표시). 위치=`zone`(홉마다 갱신). 세이브 포함.
 **단계 구현**: (선행·저위험) BFS 경로 helper + 아는-구역 이동 선택기 + `<BLOCK_MOVE>` 파싱/스트립 + travelPath 필드 → (턴결합) traveling 자동 진행(1홉/턴)·홉별 서술 배치. 턴루프 결합부는 #151 busy 모델과 정합.
+**구현 완료(#190)**: `MapManager.shortestZonePath`(BFS) · `PlayerData.travelPath/travelDest/isTraveling` · `AiManager.parseBlockMoveTags`(+스트립) · `TRPGGameManager.advanceOneHop`(단일 커밋 지점)·`travelTurn`·`startTravel`·`openMoveSelector` · `/trpg 이동` 커맨드 · handleGameChat 이동게이트+동반전진 · onGmResponse `<BLOCK_MOVE>` 소비 · PromptBuilder 이동모델 지침. 커밋 fca7b95·a7fb57e·d70d6d3.
+**미결(테스트 필요 — 눈감고 금지)**: 중단/재개 GM 판정(§2.4-7 interrupt|continue, 현재는 피격시 advanceOneHop 가드로 정지만) · §2.4-6② '이동만' 종합서술 정밀형(현재는 홉별 간결서술) · 자유서술 이동해석(§2.4-8, 현재는 선택기 주경로만) · #151 distances×분당계수 정밀화(현재 1홉=1턴 고정).
 
 ### 2.5 GM 프롬프트/태그 (신설)
 - `<DUR n>` 행동 소요 분. `<PACE slow|normal|fast>` 완급. `<SUMMON reason>` 즉시 소집. `<BUSY name n>` NPC/타인 장기행동. `<BLOCK_MOVE player reason>` 이동 소프트 차단(§2.4-5 — 드물게·극적일 때만, 기본은 이동 성립).
