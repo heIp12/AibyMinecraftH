@@ -450,6 +450,7 @@ public class TRPGGameManager {
             case "rule"   -> "규칙 괴담만";
             case "projectmoon" -> "환상체(프로젝트 문)";
             case "game"        -> "게임 괴담";
+            case "cosmic"      -> "코즈믹 호러만";
             default        -> "모두 무작위";
         };
     }
