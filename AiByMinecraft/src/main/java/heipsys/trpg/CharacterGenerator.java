@@ -509,8 +509,8 @@ public class CharacterGenerator {
 
         String system = "너는 TRPG 캐릭터 초기 특성 생성기야.\n"
             + "아래 JSON 배열 형식으로만 응답 (다른 텍스트 금지):\n"
-            + "[{\"id\":\"\",\"name\":\"\",\"grade\":\"C\",\"description\":\"\",\"active\":false,\"effect\":\"\","
-            + "\"cooldownTurns\":0},...]\n\n"
+            + "[{\"active\":false,\"effect\":\"\",\"concept\":\"\",\"name\":\"\",\"description\":\"\","
+            + "\"grade\":\"C\",\"cooldownTurns\":0},...]\n\n"
             + "공통 규칙:\n"
             + "- 직업·나이에서 자연스럽게 연결되는 능력/약점\n"
             + "- hidden_info에 해결 수단(아이템·경로·조작법)이 포함되면, 그 '존재·방법'만 알게 하고 '왜 필요한지(괴담 약점·해법과의 연결)'는 캐릭터가 인지하지 못한 상태로 설계하라. 정답을 처음부터 쥐여주지 마라(용도는 플레이 중 발견).\n"
@@ -518,7 +518,8 @@ public class CharacterGenerator {
             + "- description: 아주 짧은 명사구 한 줄(최대 18자). 예: \"빠른 처치 손길\", \"겁 많은 성격\"\n"
             + "- effect: 한 문장으로 간결하게 (수동이면 판정에서 발휘되는 식, 능동이면 사용 효과)\n"
             + "- 직업명을 그대로 쓰지 말고 구체적 능력으로 작성\n"
-            + "- ★name·description·effect는 한 능력을 가리켜야 한다(따로 놀지 말 것)★. name은 자연스러운 한국어 이름 — 무관한 단어 짜깁기·게임 은어(리젠·버프·쿨)·뜬금없는 단어(교통사고) 금지. 좋은 예: \"밤눈\", \"물러서지 않는 다리\".\n"
+            + "- ★생성 순서★: 먼저 effect(작용)를 정하고 → concept(핵심 한 줄, 내부용) → name(concept를 2~7자 한국어 특성명으로) → description(name의 짧은 부제) 순으로 만들어라. 셋은 ★같은 능력★을 가리킨다.\n"
+            + "- name은 자연스러운 한국어 이름 — 무관한 단어 짜깁기·게임 은어(리젠·버프·쿨)·뜬금없는 단어(교통사고) 금지. 좋은 예: \"밤눈\", \"물러서지 않는 다리\".\n"
             + "- 한국어, 창의적\n\n"
             + "직업 등급별 규칙:\n" + tierRules
             + (scenarioFlavor.isBlank() ? "" : "\n" + scenarioFlavor);

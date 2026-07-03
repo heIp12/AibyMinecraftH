@@ -39,10 +39,20 @@ public class TraitManager {
 - 같은 능력·이름을 반복하지 마라. 특히 '예언·예지·미래를 본다·직감·육감·통찰·꿰뚫어 본다' 같은 ★예언자류 감지 능력은 남발 금지★ — 정말 그 인물에 꼭 맞을 때만 쓰고, 대개는 서로 다른 감각·기술·재능·사회성으로 폭넓게 다양화하라.
 - 이름은 매번 새롭게 지어라. 뻔한 이름('예언자'·'통찰'·'육감' 등)을 재사용하지 말고 그 인물 고유의 표현으로.
 
-## 이름·설명·효과 정합 (★가장 중요 — 셋이 따로 놀지 않게)
-- name·description·effect는 ★하나의 능력★을 세 각도로 말한 것이다(name=능력 제목 / description=한 줄 인상 / effect=실제 작용). 서로 다른 개념을 섞지 마라. effect_type을 골랐다면 name·description은 ★그 실제 기계 효과와 맞아야★ 한다(끌어당기는 효과인데 이름이 '음성 동기화'면 틀림).
-- name은 ★자연스럽게 읽히는 한국어 능력 이름★이어야 한다: 대개 2~7자, 서로 무관한 단어를 마구 이어 붙이지 마라("영압 소환 교통사고"·"끝없는 추적 리젠" 같은 단어 짜깁기 ✗). 게임 은어 금지("리젠·버프·힐·쿨·스킬" → "되살아남·강화·치유"처럼 자연어로). 뜬금없는 현대 잡단어("교통사고" 등) 금지.
-- 좋은 이름 예: "밤눈"·"물러서지 않는 다리"·"지워지는 얼굴"·"되돌아오는 숨". description은 그 이름을 짧게 풀어낸 인상으로(예: 이름 "밤눈" → description "어둠 속 시야 확보").
+## 이름·설명·효과 정합 — ★생성 순서★로 만든다 (가장 중요)
+특성 하나를 만들 때 반드시 이 순서로 사고하고 JSON 필드도 이 순서로 채워라:
+1) effect_type·effect_params·발동방식·대가(기계 뼈대)를 먼저 정한다.
+2) effect: 그 작용을 한 문장으로 서술한다.
+3) concept: 그 능력의 핵심을 한 줄로 요약한다(★내부용★ — 게임에 표시 안 됨, 이름·설명을 묶는 중심축).
+4) name: concept를 대개 2~7자 한국어 특성명으로 만든다(이름은 concept에서 파생하라 — 새 개념을 지어내지 마라).
+5) description: name을 짧게 풀어쓴 인상 명사구(최대 18자).
+→ name·description·effect는 반드시 ★같은 능력(concept)★을 가리켜야 한다. effect_type이 '끌어당김'인데 이름이 '음성 동기화'면 틀림.
+
+이름 형태: 하나의 이미지·상태를 가리키는 한국어 명사(구). 효과 설명 문장·세 단어 나열·무관한 명사 짜깁기·게임 은어(리젠·버프·힐·쿨) 금지.
+좋은 이름 형태 예: 밤눈 · 되돌아오는 숨 · 지워지는 얼굴 · 물러서지 않는 다리 · 식은 심장 · 빈틈없는 귀 · 엇나간 그림자.
+따라야 할 패턴(나쁨→좋음):
+  ✗ {"effect_type":"mobility","effect":"소환진을 밟으면 끌려온다","name":"영압 소환 교통사고","description":"통로를 찢는 소환"}
+  ✓ {"effect_type":"mobility","effect":"대상을 자신의 근접 1칸으로 강제로 끌어당긴다","concept":"멀리 있는 것을 끌어당김","name":"끌어당기는 손","description":"거리를 지우는 손짓"}
 """;
 
     /** 친숙 모드(프로젝트 문·게임) 보상 특성 테마 지침. 일반 시나리오면 빈 문자열. TRPGGameManager가 스테이지 시작 시 주입. */
@@ -105,9 +115,9 @@ public class TraitManager {
 너는 TRPG 특성 생성기야.
 아래 JSON 배열 형식으로만 응답해 (다른 텍스트 금지):
 [
-  {"id":"","name":"","grade":"","description":"","active":false,"effect":"",
-   "cooldown_turns":0,"str_add":0,"cha_add":0,"luk_add":0,"spr_add":0,"hp_max_add":0,"san_max_add":0,
-   "effect_type":"","effect_params":{},"origin":""},
+  {"effect_type":"","effect_params":{},"active":false,"cooldown_turns":0,
+   "effect":"","concept":"","name":"","description":"","grade":"",
+   "str_add":0,"cha_add":0,"luk_add":0,"spr_add":0,"hp_max_add":0,"san_max_add":0,"origin":"","id":""},
   ...
 ]
 grade는 S/A/B/C/D/E/F 중 하나. (E·F=단점·제약 위주의 고위험 등급; 보상 특성은 보통 D 이상)
@@ -205,9 +215,9 @@ effect: 효과를 한 문장으로 간결하게.
 너는 TRPG 특성 생성기야.
 아래 JSON 배열 형식으로만 응답해 (다른 텍스트 금지):
 [
-  {"id":"","name":"","grade":"","description":"","active":false,"effect":"",
-   "cooldown_turns":0,"str_add":0,"cha_add":0,"luk_add":0,"spr_add":0,"hp_max_add":0,"san_max_add":0,
-   "effect_type":"","effect_params":{},"origin":""},
+  {"effect_type":"","effect_params":{},"active":false,"cooldown_turns":0,
+   "effect":"","concept":"","name":"","description":"","grade":"",
+   "str_add":0,"cha_add":0,"luk_add":0,"spr_add":0,"hp_max_add":0,"san_max_add":0,"origin":"","id":""},
   ...
 ]
 grade는 S/A/B/C/D/E/F. 배역 초기 특성이므로 B~D 범위(드물게 결점형 E/F로 약체·고위험 배역 개성 표현 가능).
