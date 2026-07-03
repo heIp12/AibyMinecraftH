@@ -325,7 +325,7 @@ public class TRPGGameManager {
                 .collect(Collectors.toList());
             if (aliveSpawned.isEmpty()) return; // 살아 등장한 사람이 없으면 종료 로직이 따로 처리
             boolean anyoneCanAct = aliveSpawned.stream().anyMatch(pd ->
-                pd.puppetRecoveryTurns <= 0
+                pd.puppetRecoveryTurns == 0 // ★버그수정★ -1(완전조종)은 행동 불능이다(입력 게이트도 !=0로 차단) — <=0이라 -1을 행동가능으로 오판해 전원 완전조종 시 소프트락이던 것 수정
                 && !animalForm.contains(pd.uuid) // 동물 형태는 시나리오를 풀 수 없음 → 행동 가능자로 치지 않음(동물만 남으면 워치독이 진행)
                 && !("faint".equals(pd.status) && pd.faintTurnsRemaining > 0));
             if (anyoneCanAct) { maybeAccelerateIdle(); return; } // 행동 가능 → 정상. 단 너무 오래 무행동이면 시간·위협 가속.
@@ -2119,6 +2119,12 @@ public class TRPGGameManager {
             // 5e. 타임라인 시계 제어 (시간 건너뛰기 / 사건 차단 / 시간 인지 토글)
             int skipMin = ai.parseTimeSkip(raw);
             if (skipMin > 0) state.skipTime(skipMin);
+            // <DUR> 행동 소요 분 — 지금은 ★기록만★(GM의 소요 품질 관찰용). 시계 결합(skipTime)은 실플레이 검증 후(#190/#151).
+            int durMin = ai.parseDur(raw);
+            if (durMin > 0) {
+                PlayerData durPd = player != null ? state.getPlayer(player) : null;
+                gameLogger.write("시간", durPd != null ? durPd.gmDisplayName() : "", "[행동 소요 " + durMin + "분]");
+            }
             ai.parseEventBlockTags(raw).forEach(state::blockEvent);
             ai.parseEventTriggerTags(raw).forEach(state::triggerEvent);
             ai.parseTimeVisibleTags(raw).forEach(tv ->

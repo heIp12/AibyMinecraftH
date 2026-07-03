@@ -751,6 +751,7 @@ public class AiManager {
             .replaceAll("<IMPERSONATE_END [^/]*/?>", "")
             .replaceAll("<ZONE_UPDATE [^/]*/?>", "")
             .replaceAll("<BLOCK_MOVE [^/]*/?>", "")
+            .replaceAll("<DUR [^/]*/?>", "")
             .replaceAll("<MAP_GRANT [^/]*/?>", "")
             .replaceAll("<TIME_SKIP [^/]*/?>", "")
             .replaceAll("<EVENT_BLOCK [^/]*/?>", "")
@@ -1186,6 +1187,15 @@ public class AiManager {
             try { total += Integer.parseInt(v.trim()); } catch (NumberFormatException ignore) {}
         }
         return total;
+    }
+
+    /** <DUR minutes="N"/> 합산 → 이 행동의 소요 분(없으면 0, 0~240 클램프). 지금은 표시/기록용(#190, 시계 결합은 추후). */
+    public int parseDur(String response) {
+        int total = 0;
+        for (String v : parseSelfClosingAttr(response, "<DUR ", "minutes")) {
+            try { total += Integer.parseInt(v.trim()); } catch (NumberFormatException ignore) {}
+        }
+        return Math.max(0, Math.min(240, total));
     }
 
     /** <EVENT_BLOCK id="X"/> 모두 파싱 → [id, ...] */
