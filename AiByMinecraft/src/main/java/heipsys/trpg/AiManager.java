@@ -564,7 +564,9 @@ public class AiManager {
                 }
                 try {
                     String result = send(npcModel(), systemPrompt, snapshot, ASST_MAX_TOKENS, true); // 히스토리 프리픽스 캐싱
-                    synchronized (ctx) { ctx.add(msg("assistant", result)); }
+                    // #1(컨텍스트 오염): 자율(3인칭) 응답을 raw로 저장하면 이후 ★대화★ 호출이 그 3인칭·보고체를 흉내낸다(약한 모델의 이력 모방).
+                    //   → 자율 응답은 태그를 떼고 '[지난 자율 행동] 요약' 중립 로그로 저장한다(사실 기억은 npcAcquired가 별도 보존, 대화 1인칭 응답은 verbatim 유지해 대화 연속성 보존).
+                    synchronized (ctx) { ctx.add(msg("assistant", dialogue ? result : "[지난 자율 행동] " + stripTags(result).trim())); }
                     return result;
                 } catch (Exception e) {
                     return "§c[NPC AI 오류] " + e.getMessage();
