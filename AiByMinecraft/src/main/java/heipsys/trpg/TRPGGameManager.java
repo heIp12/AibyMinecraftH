@@ -6453,6 +6453,18 @@ public class TRPGGameManager {
         return h < 40 ? "확신" : h < 85 ? "짐작" : "소문";
     }
 
+    /** 거짓말 성향(honesty)을 프롬프트용 서술로 — 거짓말의 '조건'을 규정한다. 값 없으면 방어형(기본). */
+    private static String honestyDesc(String h) {
+        String v = h == null ? "" : h.trim();
+        switch (v) {
+            case "정직형": return "정직형 — 거짓말이 서툴다. 감추더라도 침묵·회피로 하고, 적극적인 거짓말은 거의 못 한다.";
+            case "목적형": return "목적형 — 목적·이득이 걸릴 때만 계산적으로 거짓을 섞는다. 목적과 무관한 일엔 정직할 수 있다.";
+            case "상습형": return "상습형 — 습관처럼 능청스레 거짓·과장을 섞어, 무엇이 진짜인지 종잡기 어렵다.";
+            case "방어형": default:
+                return "방어형(기본) — 평소엔 정직하되 자기 비밀·이해·안전이 걸리면 숨기거나 둘러댄다. 적극적 거짓은 드물다.";
+        }
+    }
+
     /** 인물형 AI(NPC·동료·적) 공유 CORE — 정체성·응답 순서(reaction-first)·사람다움·말투. 최대한 작게·재사용 가능하게. */
     private String npcCorePrompt(JsonObject npcObj) {
         String name = npcObj.has("name") ? npcObj.get("name").getAsString() : "NPC";
@@ -6580,6 +6592,8 @@ public class TRPGGameManager {
             sb.append(getStr(npcObj, "speech_style").isBlank() ? "성격(말투에 반영): " : "성격: ").append(npcObj.get("personality").getAsString()).append("\n");
         if (npcObj.has("motivation"))
             sb.append("목적(무엇을·얼마나 말할지 좌우): ").append(npcObj.get("motivation").getAsString()).append("\n");
+        // 거짓말 성향(조건) — 거짓말의 '언제/왜'를 규정해 남발도 과소도 막는다. 필드 없으면 방어형(기본).
+        sb.append("거짓말 성향: ").append(honestyDesc(getStr(npcObj, "honesty"))).append("\n");
         // ② 지식 게이팅 — '상시 전량 주입'을 막는다. 지금 상황과 ★관련된 기억만★(관련 없으면 신뢰도 높은 것 위주로)
         //   최대 KNOW_CAP개만 노출 → '아는 걸 한 번에 다 쏟기'(GPT 설명 과잉)를 물리적으로 억제. 나머지는 대화가 흐르면 떠오름.
         if (npcObj.has("knowledge") && npcObj.get("knowledge").isJsonArray()) {
@@ -6614,7 +6628,7 @@ public class TRPGGameManager {
         String npcId0 = getStr(npcObj, "id");
         List<String> acq = npcId0.isEmpty() ? null : npcAcquired.get(npcId0);
         if (acq != null && !acq.isEmpty()) {
-            sb.append("이번 사건에서 네가 ★직접 보고 알게 된 것★(비교적 또렷이 말할 수 있다):\n");
+            sb.append("이번 사건에서 네가 새로 알게 된 것 (★[누가 말해줌] 표시가 있으면 전해 들은 말이니 그 사람을 믿는 만큼만, 표시가 없으면 네가 직접 겪어 또렷한 것★):\n");
             for (String a : acq) sb.append("  · ").append(a).append("\n");
         }
         sb.append("새로 보거나 들어 알게 된 게 있으면 <NPC_LEARN>한 줄 요약</NPC_LEARN>로 기억해 둬라(비공개 — 다음에 떠올려 쓰거나 전할 수 있다). "
@@ -7766,7 +7780,10 @@ public class TRPGGameManager {
             if (!learnedD.isEmpty())
                 plugin.getServer().getScheduler().runTask(plugin, () -> {
                     List<String> store = npcAcquired.computeIfAbsent(npcId, k -> new java.util.concurrent.CopyOnWriteArrayList<>());
-                    for (String l : learnedD) if (!store.contains(l)) store.add(l);
+                    // ★전문(secondhand)★: 직접 본 게 아니라 상대가 '말해준' 것이므로 출처를 붙여 저장 — 나중에 확신[직접]으로
+                    //   착각해 옮기지 않도록. 믿음 정도는 관계·성격·근거로 판단(프롬프트).
+                    String src = senderPd.gmDisplayName();
+                    for (String l : learnedD) { String tagged = "[" + src + "가 말해줌] " + l; if (!store.contains(tagged)) store.add(tagged); }
                     while (store.size() > 8) store.remove(0);
                 });
 
@@ -8103,7 +8120,7 @@ public class TRPGGameManager {
         sb.append("  · ★예외★: 상대가 ★감정·속마음을 읽는 특성/능력★을 쓴 경우에만 시스템이 그 내면을 그 플레이어에게 공개한다(기본값=비공개).\n");
         sb.append("- 성격·목표에 충실하되 ★실제 사람이 할 법한 말투★로 답하라(소설 문어체·의미심장한 연출 금지).\n");
         sb.append("- ★치명적 비밀·진상★만 통째로 드러내지 마라(그 외엔 솔직하게 사람답게 답해도 된다). 가끔 얼버무리거나 되물을 수 있지만, 매 대답을 빙빙 돌리거나 수수께끼로 만들지 마라.\n");
-        sb.append("- ★정보 공개는 '금지'가 아니라 '현실적 꺼림'으로★: 너는 해법·비밀도 말할 수 있다. 다만 사람이라 잘 안 말하는 이유가 있다 — ①본인도 그게 진실인지 확신 못 함 ②초면·낯선 사람은 못 믿어 중요한 걸 안 줌(신뢰가 쌓여야) ③위험한 정보라 아는 사이라도 망설임 ④자기 비밀·생존·이해관계가 걸림. 그래서 기본은 머뭇·일부만·조건부. 단 관계·설득·매력이 충분하거나, ⑤자기 목적을 위해 일부러 (틀리거나 위험한 정보를 섞어) 흘리기도 한다. 핵심: ★진상·해법 같은 중대한 정보★만 불확실·조건부로 흐려라 — 일부러 틀린 말을 섞는 건 ⑤처럼 그럴 목적·역할이 있는 인물만이다. 길·시간·안부 같은 일상 대답은 흐리지도 속이지도 마라.\n");
+        sb.append("- ★정보 공개는 '금지'가 아니라 '현실적 꺼림'으로★: 너는 해법·비밀도 말할 수 있다. 다만 사람이라 잘 안 말하는 이유가 있다 — ①본인도 그게 진실인지 확신 못 함 ②초면·낯선 사람은 못 믿어 중요한 걸 안 줌(신뢰가 쌓여야) ③위험한 정보라 아는 사이라도 망설임 ④자기 비밀·생존·이해관계가 걸림. 그래서 기본은 머뭇·일부만·조건부. 단 관계·설득·매력이 충분하거나, ⑤자기 목적을 위해 일부러 (틀리거나 위험한 정보를 섞어) 흘리기도 한다. 핵심: ★진상·해법 같은 중대한 정보★만 불확실·조건부로 흐려라 — 일부러 틀린 말을 섞는 건(⑤) ★네 '거짓말 성향'이 허락하는 선까지만★이다(정직형은 거의 안 하고, 목적형은 목적이 걸릴 때만, 상습형은 능청스레). 길·시간·안부 같은 일상 대답은 흐리지도 속이지도 마라.\n");
         sb.append("- ★질문엔 먼저 '답'부터 — 관공서식 회피 금지★: 절차·규정·목적 확인('목적부터 말해요'·'절차가 먼저예요'류)을 앞세워 답을 미루는 화법은 ★한 번★만 허용된다. 상대가 같은 것을 다시 물으면 그땐 반드시 실질적으로 답하거나(아는 만큼, 불확실 표시 가능) 명확히 거절하고 ★진짜 이유★를 말하라 — 같은 절차 요구를 반복하며 대화를 제자리에 붙잡지 마라.\n");
         sb.append("- 머리말의 [상대 나이·설득력·관계] 표기는 네가 피부로 느끼는 ★인상★일 뿐이다 — 표기 단어·등급을 입 밖에 내지 마라(\"설득력이 매우 강함이시네요\" 같은 말 금지). 인상은 태도와 말투로만 드러내라.\n");
         sb.append("- ★상대의 '설득력·존재감'(위 대화 머리말 표기)이 강할수록 너는 더 쉽게 마음이 흔들려 협조·양보하고, "
@@ -8113,6 +8130,8 @@ public class TRPGGameManager {
                  + "  · 데면데면·지인·동료: 사무적·조건부로 협조한다. 이득·명분이 있어야 움직인다.\n"
                  + "  · 적대·불신·낯선 상대: 무뚝뚝·경계·비협조. 떠보거나 정보를 숨기고, 도움도 인색하다.\n"
                  + "  관계가 좋을수록 같은 설득력이라도 더 잘 통한다(관계·설득력은 함께 작용).\n");
+        sb.append("- ★상대 말을 곧이곧대로 다 믿지 마라(믿음도 차등)★: 관계가 가깝고, 네 성격이 잘 믿는 편이고, 상대가 ★근거·증거·앞뒤 맞는 설명★을 댈수록 믿어라. 낯선 상대의 근거 없는 주장은 반신반의하거나 흘려들어라. 그리고 ★설득력이 약해도 근거가 탄탄하면 더 잘 통한다★ — 말주변이 아니라 근거·논리로도 설득된다.\n");
+        sb.append("- ★신뢰는 고정이 아니다★: 이 사람과 지금까지 겪은 일(위 대화 기억)을 근거로 신뢰를 조정하라 — 함께 어려움을 넘기거나 이 사람이 ★전에 한 말이 사실로 드러났으면★ 더 믿고 돕고, 거짓·말바꿈·배신이 드러났으면 경계하고 덜 믿어라.\n");
         sb.append("- 평소 2~4문장. ★결정적 순간★(고백·결별·죽음 직전·큰 비밀을 여는 장면)에만 6문장까지 허용 — 대신 평소는 더 짧게.\n");
         sb.append("- ★대화는 앞으로 나아가야 한다(반복 금지)★: 지금까지의 대화가 ★네 기억★이다 — 이미 들은 답·이미 던진 질문을 ★되묻지 마라★. "
                  + "상대가 이름·소속·용건을 한 번 밝혔으면 그것을 ★받아들이고★ 다음으로 넘어가라(동의하든 거절하든, 구체적으로 답하거나 행동하거나 네 입장을 정하라). "
