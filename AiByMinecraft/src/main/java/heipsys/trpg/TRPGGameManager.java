@@ -10499,15 +10499,29 @@ public class TRPGGameManager {
             statBonus = Math.max(-cap, Math.min(cap, statBonus));
             statLabel = diceStatLabel(statKey);
         }
-        // ★행운 보정★: 능력으로 무장한 행운을 실제 굴림에 반영하고 ★이때 비로소 1회 소비★. 판정 없이 지나간 행동에선
-        //   유지돼(#176) 다음 판정에 적용된다. GM 텍스트 주입만 하고 굴림엔 안 반영되던 공백 보완.
+        // ★행운 보정(능력)★: 능력으로 무장한 행운을 실제 굴림에 반영하고 ★이때 비로소 1회 소비★(#176).
         Integer luckAdj = pendingLuckModifier.remove(player.getUniqueId());
         int luckB = (luckAdj != null ? luckAdj : 0);
-        roll = Math.max(1, Math.min(max, roll + statBonus + luckB));
+        // ★행운 확률 보정(요행)★: 운은 특정 행동이 아니라 '모든 시도에 깃드는 요행'이다 — 판정 스탯이 행운이 아닐 때,
+        //   행운 수치에 비례한 ★확률적★ 소량 보정을 얹는다(5≈가끔 +1 / 10≈+2까지 / 15≈+3까지, 낮으면 -3까지).
+        //   '값이 나온 뒤 오르는' 극적 연출은 아래 애니메이션에서 preLuck→roll로 처리한다.
+        int lukNudge = 0;
+        if (dpd != null && !"luk".equals(statKey)) {
+            int lv = Math.max(1, Math.min(20, dpd.luk));
+            int upCap = Math.max(0, Math.round(lv / 5f));                        // 5→1, 10→2, 15→3, 20→4
+            double pUp   = Math.max(0.0, Math.min(0.9, (lv - 5) * 0.05 + 0.10)); // 5→.10, 10→.35, 15→.60
+            double pDown = Math.max(0.0, (5 - lv) * 0.07);                       // 5→0(무해), 4→.07 … 1→.28
+            for (int i = 0; i < upCap; i++) if (ThreadLocalRandom.current().nextDouble() < pUp)   lukNudge++;
+            for (int i = 0; i < 3;     i++) if (ThreadLocalRandom.current().nextDouble() < pDown) lukNudge--;
+            lukNudge = Math.max(-3, Math.min(upCap, lukNudge));
+        }
+        int preLuck = Math.max(1, Math.min(max, baseRoll + statBonus + luckB));  // 요행 반영 전 '자연 착지값'(연출용)
+        roll = Math.max(1, Math.min(max, preLuck + lukNudge));
         // 보정 표기(기본 굴림 + 스탯/행운) — 판정 결과가 왜 이렇게 나왔는지 투명하게.
         StringBuilder modSb = new StringBuilder();
         if (statBonus != 0 && !statLabel.isEmpty()) modSb.append(" ").append(statBonus > 0 ? "+" : "").append(statBonus).append(statLabel);
-        if (luckB != 0) modSb.append(" ").append(luckB > 0 ? "+" : "").append(luckB).append("행운");
+        if (luckB != 0) modSb.append(" ").append(luckB > 0 ? "+" : "").append(luckB).append("행운보정");
+        if (lukNudge != 0) modSb.append(" ").append(lukNudge > 0 ? "+" : "").append(lukNudge).append("행운");
         String modNote = modSb.length() > 0 ? (" (기본 " + baseRoll + modSb + ")") : "";
         // ★난이도 상향★: 기본 DC 0.55→0.62 + 후반 스테이지(3+)·오염도 비례 가산(성공은 항상 가능하도록 max-1 캡).
         int diffStage = state.getTimelineStage();
@@ -10515,6 +10529,15 @@ public class TRPGGameManager {
         int effDc = dc > 0 ? Math.max(2, Math.min(max, dc)) : (int) Math.ceil(max * 0.62); // dc 미지정 시 중앙보다 높게(난도↑)
         int diffBump = Math.max(0, diffStage - 2) + diffCorr;
         if (diffBump > 0) effDc = Math.min(max - 1, effDc + Math.min(diffBump, Math.max(2, max / 6)));
+        // ★영감: 아는 정보가 많을수록 진실에 가까워진다★ — 통찰(영감) 판정은 수집 단서·밝혀낸 사실이 많을수록 쉬워진다.
+        //   (단서 없이도 통찰 자체는 가능하되, 아는 게 많을수록 성공 확률↑ = '정보가 곧 무기'.)
+        if ("spr".equals(statKey) && dpd != null) {
+            int infoCount = 0;
+            synchronized (dpd.keyFacts) { infoCount += dpd.keyFacts.size(); }
+            synchronized (dpd.infoGroups) { for (List<String> g : dpd.infoGroups.values()) if (g != null) infoCount += g.size(); }
+            int ease = Math.min((int) Math.round(max * 0.25), infoCount / 2); // 정보 2개당 -1, 상한 주사위의 25%
+            if (ease > 0) effDc = Math.max(2, effDc - ease);
+        }
         int band = Math.max(1, max / 10);
         // ★대성공/대실패★: ★기본(raw) 굴림★으로만 판정한다 — 스탯·행운 보정과 무관하게 자연 최대치=대성공, 자연 최소치=대실패.
         //   덕분에 스탯이 아무리 높아도 대실패가, 아무리 낮아도 대성공이 항상 나올 수 있다(약 상·하위 5%).
@@ -10551,6 +10574,24 @@ public class TRPGGameManager {
         ai.injectGmSystem("[판정 결과] " + (reason.isEmpty() ? "" : reason + " — ")
             + "주사위 d" + max + "=" + roll + modNote + (dc > 0 ? (", 성공기준 " + dc) : "") + " → ★" + outcome + "★." + critHint
             + " 이 결과대로 다음 전개를 이어서 서술하라. 결과와 어긋나게(실패인데 성공한 듯, 또는 그 반대로) 쓰지 마라.");
+        // ★영감 통찰: '아는 정보만' 엮어 결론을 이끌게 한다★ — 성공/부분성공 시 GM이 지금 아는 것만으로 진실에 한 걸음
+        //   다가간 결론을 서술로 보여주도록, 이 인물이 현재 아는 것을 함께 주입한다(모르는 비밀 누설 방지 = 공정성).
+        if ("spr".equals(statKey) && dpd != null && (success || partial)) {
+            StringBuilder known = new StringBuilder();
+            synchronized (dpd.infoGroups) {
+                for (java.util.Map.Entry<String, List<String>> en : dpd.infoGroups.entrySet()) {
+                    if (en.getValue() == null || en.getValue().isEmpty()) continue;
+                    if (known.length() > 0) known.append(" / ");
+                    known.append(en.getKey()).append(": ").append(String.join("; ", en.getValue()));
+                }
+            }
+            synchronized (dpd.keyFacts) {
+                if (!dpd.keyFacts.isEmpty()) { if (known.length() > 0) known.append(" / "); known.append("밝혀낸 사실: ").append(String.join("; ", dpd.keyFacts)); }
+            }
+            ai.injectGmSystem("[영감 통찰] 이 인물이 통찰로 진실에 다가간다. ★지금 아는 정보만★ 엮어 한 걸음 나아간 결론을 서술로 보여줘라"
+                + (known.length() > 0 ? (" (아는 것 — " + known + ")") : " (아직 아는 정보가 적으니 부분적·잠정적 실마리만)")
+                + ". ★아직 발견 못 한 비밀·정답은 누설 금지★ — 모르는 것은 결론에 넣지 마라. " + (success ? "정보가 충분하면 더 확실·구체적으로." : "부분성공이니 조심스러운 한 조각만."));
+        }
         // ★로그/실시간 뷰어·재현 충실도★: 코드가 정한 판정을 기록(주사위·스탯보정·성공기준·결과) — 인게임에 뜨던 판정이 로그엔 없던 공백 보완.
         gameLogger.logAbilityResult(dpd != null ? dpd.gmDisplayName() : player.getName(), "주사위 판정",
             (reason.isEmpty() ? "행동 판정" : reason) + " — d" + max + "=" + roll + modNote
@@ -10566,7 +10607,33 @@ public class TRPGGameManager {
                     Title.Times.times(Duration.ZERO, Duration.ofMillis(220), Duration.ZERO)));
             }, i * 3L);
         }
-        // 2) 최종 결과 강조 — 《N》 3초 유지 + 성공 기준 서브타이틀
+        // 2) ★행운 요행 연출★: 요행 보정이 있으면 '자연 착지값(preLuck)'을 먼저 보여준 뒤 최종값으로 오르내리는 극적 연출.
+        //    (대성공/대실패는 생굴림을 그대로 보여주므로 요행 연출 없음.)
+        final int fpre = preLuck;
+        final int fnudge = (critSuccess || critFail) ? 0 : (roll - preLuck); // 실제 적용된 요행 변화량(클램프 반영) — 연출이 최종값을 넘지 않게
+        final long landTick = FRAMES * 3L + 2L;
+        long lastTick = landTick;
+        if (fnudge != 0) {
+            plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+                if (player.isOnline()) player.showTitle(Title.title(
+                    Component.text("🎲 " + fpre, NamedTextColor.GRAY, TextDecoration.BOLD),
+                    Component.text(fnudge > 0 ? "행운이 깃든다…" : "운이 비껴간다…", NamedTextColor.DARK_GRAY),
+                    Title.Times.times(Duration.ZERO, Duration.ofMillis(600), Duration.ZERO)));
+            }, landTick);
+            int steps = Math.abs(fnudge);
+            for (int k = 1; k <= steps; k++) {
+                final int shown = fpre + (fnudge > 0 ? k : -k);
+                final boolean up = fnudge > 0;
+                plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+                    if (player.isOnline()) player.showTitle(Title.title(
+                        Component.text((up ? "🍀 " : "💧 ") + shown, up ? NamedTextColor.AQUA : NamedTextColor.GOLD, TextDecoration.BOLD),
+                        Component.text(up ? "행운!" : "불운…", up ? NamedTextColor.AQUA : NamedTextColor.GOLD),
+                        Title.Times.times(Duration.ZERO, Duration.ofMillis(300), Duration.ZERO)));
+                }, landTick + 12L + k * 4L);
+            }
+            lastTick = landTick + 12L + steps * 4L;
+        }
+        // 3) 최종 결과 강조 — 《N》 3초 유지 + 성공 기준 서브타이틀
         final int froll = roll, fdc = dc;
         final String fmodNote = modNote;
         plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
@@ -10579,7 +10646,7 @@ public class TRPGGameManager {
                 + (fmodNote.isEmpty() ? "" : " §8" + fmodNote)
                 + (fdc > 0 ? " §8(성공 기준 " + fdc + " 이상)" : "")
                 + " §7→ " + colorCode(col) + (outcome.isEmpty() ? "판정" : outcome));
-        }, FRAMES * 3L + 2L);
+        }, fnudge != 0 ? lastTick + 3L : landTick);
     }
 
     /** NamedTextColor → §코드 (채팅 기록 강조용) */
