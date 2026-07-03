@@ -802,6 +802,7 @@ public class AiManager {
             .replaceAll("<IMPERSONATE [^/]*/?>", "")
             .replaceAll("<IMPERSONATE_END [^/]*/?>", "")
             .replaceAll("<ZONE_UPDATE [^/]*/?>", "")
+            .replaceAll("<NPC_AT [^/]*/?>", "")
             .replaceAll("<BLOCK_MOVE [^/]*/?>", "")
             .replaceAll("<DUR [^/]*/?>", "")
             .replaceAll("</?NO_HOPE\\s*/?>", "")
@@ -1240,6 +1241,26 @@ public class AiManager {
             String player = extractAttr(attrs, "player").orElse(null);
             String reason = extractAttr(attrs, "reason").orElse("");
             if (player != null) out.add(new String[]{player, reason});
+            from = end + 2;
+        }
+        return out;
+    }
+
+    /** <NPC_AT npc="X" zone="Y"/> 파싱 → [{npc, zone}, ...] — GM이 자율 NPC를 특정 구역(특히 플레이어 장면)에
+     *  데려다 놓을 때. 위치 추적(npcZones)을 갱신해 그 NPC에게 @대화하면 '전화'가 아니라 '대면'으로 처리되게 한다(#B 또전화). */
+    public java.util.List<String[]> parseNpcAtTags(String response) {
+        java.util.List<String[]> out = new ArrayList<>();
+        final String PREFIX = "<NPC_AT ";
+        int from = 0;
+        while (true) {
+            int idx = response.indexOf(PREFIX, from);
+            if (idx == -1) break;
+            int end = response.indexOf("/>", idx);
+            if (end == -1) break;
+            String attrs = response.substring(idx + PREFIX.length(), end);
+            String npc  = extractAttr(attrs, "npc").orElse(null);
+            String zone = extractAttr(attrs, "zone").orElse(null);
+            if (npc != null && zone != null) out.add(new String[]{npc, zone});
             from = end + 2;
         }
         return out;

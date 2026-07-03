@@ -2209,6 +2209,20 @@ public class TRPGGameManager {
                     zu.length > 4 && ("1".equals(zu[4]) || "true".equalsIgnoreCase(zu[4])));
             });
 
+            // 5d-a2. ★자율 NPC 장면 배치(#B 또전화)★: GM이 NPC를 특정 구역(특히 플레이어 앞)에 데려오면 위치(npcZones)를
+            //   ★권위 있게★ 갱신한다 → 그 NPC에게 @대화하면 같은 구역이 되어 '전화'가 아니라 '대면'으로 처리된다.
+            for (String[] na : ai.parseNpcAtTags(raw)) {
+                JsonObject nap = findNpcByName(na[0]);
+                if (nap == null) continue;                                   // 존재하지 않는/단역 NPC → 무시
+                String naId = nap.has("id") ? nap.get("id").getAsString() : "";
+                if (naId.isEmpty()) continue;
+                String rz = resolveZoneId(na[1]);
+                if (rz == null) { gameLogger.write("이동", "", "[NPC_AT 무시: 알 수 없는 구역 '" + na[1] + "']"); continue; }
+                String naName = nap.has("name") ? nap.get("name").getAsString() : na[0];
+                npcZones.put(naId, rz);
+                logNpcLocationIfChanged(naId, naName, rz);                    // 뷰어 NPC 시점 위치 갱신
+            }
+
             // 5d-b. ★이동 소프트 차단(#190, 낙관적 이동 거부권)★: GM이 <BLOCK_MOVE>로 막으면 방금 나아간 홉을 되돌린다.
             //   pendingHops에 담긴 '직전 홉의 출발 구역'으로 복귀시키고 남은 경로를 취소한다(다시 선언해야 감).
             for (String[] bm : ai.parseBlockMoveTags(raw)) {
