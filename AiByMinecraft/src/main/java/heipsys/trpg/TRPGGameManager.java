@@ -264,6 +264,8 @@ public class TRPGGameManager {
     }
     /** 미등장 배역별 서술 호출 횟수 (비트 진행 추적) */
     private final Map<UUID, Integer> preSpawnCallCounts = new ConcurrentHashMap<>();
+    /** 미등장 배역별 마지막으로 서술한 비트 인덱스 — 같은 비트 재서술(근사 중복·불필요 GM 호출) 방지. */
+    private final Map<UUID, Integer> preSpawnLastBeat = new ConcurrentHashMap<>();
     /** critical NPC가 마지막으로 행동한 괴담 턴 — 무행동 워치독용 (오래 안 나오면 강제 등장) */
     private int lastNpcBeatTurn = 0;
     /** 마지막 플레이어 입력(행동) 시각(ms) — 무행동 가속 워치독용. 0이면 미설정. */
@@ -735,6 +737,7 @@ public class TRPGGameManager {
         possessingNpc.clear();
         resetOverviewCache();
         preSpawnCallCounts.clear();
+        preSpawnLastBeat.clear();
         lastEndingPages = null;
         concludingEnding = false;
         replayLock = false;
@@ -822,6 +825,7 @@ public class TRPGGameManager {
         pendingStageEndNames.clear();
         spawnedPlayers.clear();
         preSpawnCallCounts.clear();
+        preSpawnLastBeat.clear();
         commChannels.clear();
         state.getAllPlayers().forEach(pd -> traitMan.resetStageTraits(pd));
 
@@ -926,6 +930,7 @@ public class TRPGGameManager {
         preAssignments.clear();
         gmNpcRoleIds.clear();
         preSpawnCallCounts.clear();
+        preSpawnLastBeat.clear();
         ai.clearAll();
         startLoadingBar(".gdam 생성 중...");
         ai.markStageStart(); // 비용 집계: 다음 스테이지 시작점(세션 누적은 유지)
@@ -6403,6 +6408,13 @@ public class TRPGGameManager {
             int beatIdx = Math.min(callCount / CALLS_PER_BEAT, beats.size() - 1);
             beatGuide = beats.get(beatIdx);
         }
+
+        // ★근사 중복·비용 차단★: 같은 비트를 두 번 서술하던 문제(CALLS_PER_BEAT=2 + 매 GM 응답마다 호출로
+        //   등장 전까지 5~6회 근사 중복 재생성). ★비트가 바뀔 때만★ GM(고티어) 서술을 낸다.
+        int beatKey = beats.isEmpty() ? Math.min(callCount, 3) : Math.min(callCount / CALLS_PER_BEAT, beats.size() - 1);
+        Integer lastBeat = preSpawnLastBeat.get(pd.uuid);
+        if (lastBeat != null && lastBeat == beatKey) return; // 같은 비트 재서술 스킵(호출 절반↓ + 중복 제거)
+        preSpawnLastBeat.put(pd.uuid, beatKey);
 
         String spawnLoc = roleData.has("spawn_location")
             ? roleData.get("spawn_location").getAsString() : "";
