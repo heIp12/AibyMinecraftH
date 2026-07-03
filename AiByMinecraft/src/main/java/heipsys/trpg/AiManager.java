@@ -47,7 +47,7 @@ public class AiManager {
 
     private static final int GM_MAX_TOKENS   = 2048;  // 실제 응답은 200-600 수준
     private static final int ASST_MAX_TOKENS = 1024;
-    private static final int GDAM_MAX_TOKENS = 12000; // .gdam 청크 JSON 생성용 (8192는 코어 청크가 잘려 파싱 실패 → 상향)
+    private static final int GDAM_MAX_TOKENS = 32000; // .gdam 청크 JSON 생성용. ★thinking 모델(Sonnet 5·Haiku 4.5 등)은 thinking 토큰이 max_tokens를 함께 소모★ → 12000이면 thinking만으로 소진돼 text 블록이 안 나오고 파싱 실패하던 문제. thinking+JSON이 모두 담기게 상향.
 
     public AiManager(String apiKey, String apiType) {
         this.apiKey  = apiKey.trim();
@@ -1035,6 +1035,12 @@ public class AiManager {
                                      .get("content").getAsString();
             };
         } catch (Exception e) {
+            // ★파싱 실패 재시도★: 응답이 잘리거나(불완전 JSON) thinking 블록만 오고 text가 없을 때(Sonnet 5·Haiku 등
+            //   thinking 모델에서 간헐 발생) 곧장 죽지 말고 429처럼 재시도한다 — 대개 다음 시도에서 온전한 응답을 받는다.
+            if (attempt < 3) {
+                Thread.sleep(3000L * (attempt + 1));
+                return send(model, system, messages, maxTokens, attempt + 1, cacheHistory);
+            }
             throw new RuntimeException("API 응답 파싱 실패: " + response.body().substring(0, Math.min(200, response.body().length())), e);
         }
     }
