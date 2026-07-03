@@ -47,7 +47,7 @@ public class AiManager {
 
     private static final int GM_MAX_TOKENS   = 2048;  // 실제 응답은 200-600 수준
     private static final int ASST_MAX_TOKENS = 1024;
-    private static final int GDAM_MAX_TOKENS = 12000; // .gdam 청크 JSON 생성용 (8192는 코어 청크가 잘려 파싱 실패 → 상향)
+    private static final int GDAM_MAX_TOKENS = 32000; // .gdam 청크 JSON 생성용. ★thinking 모델(Sonnet 5·Haiku 4.5 등)은 thinking 토큰이 max_tokens를 함께 소모★ → 12000이면 thinking만으로 소진돼 text 블록이 안 나오고 파싱 실패하던 문제. thinking+JSON이 모두 담기게 상향.
 
     public AiManager(String apiKey, String apiType) {
         this.apiKey  = apiKey.trim();
@@ -538,6 +538,16 @@ public class AiManager {
     // ======================================================
 
     public CompletableFuture<String> callNpcAi(String npcId, String systemPrompt, String actionLog) {
+        return callNpcAi(npcId, systemPrompt, actionLog, false);
+    }
+    /**
+     * @param dialogue true=직접 대화(입력을 그대로 — userMsg가 이미 '누가·어떤 매체로 말한다' 머리말을 포함).
+     *                 false=자율 관측(입력 앞에 '관측된 행동 로그:' 접두).
+     * ★모드 분리 이유(#186 감사)★: 대화 입력에까지 '행동 로그' 접두가 붙고, 자율(3인칭 서술)과 대화(1인칭 대사)
+     *   응답이 같은 npcContexts에 섞이면 약한 모델이 이력을 모방해 대화에도 3인칭·보고체가 새어 나온다.
+     *   히스토리는 기억 유지를 위해 공유하되(분리 시 기억 손실), 입력 라벨만 모드에 맞춰 구분한다.
+     */
+    public CompletableFuture<String> callNpcAi(String npcId, String systemPrompt, String input, boolean dialogue) {
         return CompletableFuture.supplyAsync(() -> {
             List<JsonObject> ctx = npcContexts.computeIfAbsent(npcId,
                 k -> Collections.synchronizedList(new ArrayList<>()));
@@ -546,7 +556,7 @@ public class AiManager {
             synchronized (callLock) {
                 List<JsonObject> snapshot;
                 synchronized (ctx) {
-                    ctx.add(msg("user", "플레이어 행동 로그:\n" + actionLog));
+                    ctx.add(msg("user", dialogue ? input : "관측된 행동 로그:\n" + input));
                     snapshot = new ArrayList<>(ctx);
                 }
                 try {
@@ -731,6 +741,7 @@ public class AiManager {
             .replaceAll("<WITNESS[^>]*>[\\s\\S]*?</WITNESS>", "")
             .replaceAll("<NPC_CALL[^>]*>[\\s\\S]*?</NPC_CALL>", "")
             .replaceAll("<NPC_LEARN[^>]*>[\\s\\S]*?</NPC_LEARN>", "")
+            .replaceAll("<TRUST[^>]*>[\\s\\S]*?</TRUST>", "")
             .replaceAll("<SPAWN[^/]*/?>", "")
             .replaceAll("<COMM [^/]*/?>", "")
             .replaceAll("<COMM_CLOSE [^/]*/?>", "")
@@ -739,10 +750,17 @@ public class AiManager {
             .replaceAll("<IMPERSONATE [^/]*/?>", "")
             .replaceAll("<IMPERSONATE_END [^/]*/?>", "")
             .replaceAll("<ZONE_UPDATE [^/]*/?>", "")
+            .replaceAll("<BLOCK_MOVE [^/]*/?>", "")
+            .replaceAll("<DUR [^/]*/?>", "")
+            .replaceAll("</?NO_HOPE\\s*/?>", "")
             .replaceAll("<MAP_GRANT [^/]*/?>", "")
             .replaceAll("<TIME_SKIP [^/]*/?>", "")
             .replaceAll("<EVENT_BLOCK [^/]*/?>", "")
             .replaceAll("<EVENT_TRIGGER [^/]*/?>", "")
+            .replaceAll("<ZONE_SEAL [^/]*/?>", "")
+            .replaceAll("<ZONE_UNSEAL [^/]*/?>", "")
+            .replaceAll("<COMM_BLOCK [^/]*/?>", "")
+            .replaceAll("<COMM_UNBLOCK [^/]*/?>", "")
             .replaceAll("<TIME_VISIBLE [^/]*/?>", "")
             .trim();
     }
@@ -821,6 +839,24 @@ public class AiManager {
             from = c + CLOSE.length();
         }
         return out;
+    }
+
+    /** <TRUST>±N 이유</TRUST> 태그들의 앞머리 부호정수를 합산해 반환(동적 신뢰 델타, #189). 응답당 급변은 [-3,+3]로 상한. */
+    public int parseTrustDelta(String response) {
+        int sum = 0;
+        final String OPEN = "<TRUST>", CLOSE = "</TRUST>";
+        int from = 0;
+        while (true) {
+            int o = response.indexOf(OPEN, from);
+            if (o == -1) break;
+            int c = response.indexOf(CLOSE, o + OPEN.length());
+            if (c == -1) break;
+            String v = response.substring(o + OPEN.length(), c).trim();
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("^([+-]?\\d+)").matcher(v);
+            if (m.find()) { try { sum += Integer.parseInt(m.group(1)); } catch (NumberFormatException ignored) {} }
+            from = c + CLOSE.length();
+        }
+        return Math.max(-3, Math.min(3, sum));
     }
 
     /** <MAP_GRANT player="name"/> 태그들에서 플레이어명 목록 추출 (지도 전체 입수) */
@@ -999,6 +1035,12 @@ public class AiManager {
                                      .get("content").getAsString();
             };
         } catch (Exception e) {
+            // ★파싱 실패 재시도★: 응답이 잘리거나(불완전 JSON) thinking 블록만 오고 text가 없을 때(Sonnet 5·Haiku 등
+            //   thinking 모델에서 간헐 발생) 곧장 죽지 말고 429처럼 재시도한다 — 대개 다음 시도에서 온전한 응답을 받는다.
+            if (attempt < 3) {
+                Thread.sleep(3000L * (attempt + 1));
+                return send(model, system, messages, maxTokens, attempt + 1, cacheHistory);
+            }
             throw new RuntimeException("API 응답 파싱 실패: " + response.body().substring(0, Math.min(200, response.body().length())), e);
         }
     }
@@ -1130,6 +1172,25 @@ public class AiManager {
         return out;
     }
 
+    /** <BLOCK_MOVE player="X" reason="Y"/> 파싱 → [{player, reason}, ...] — 이동 소프트 차단(#190, 낙관적 이동 GM 거부권). */
+    public java.util.List<String[]> parseBlockMoveTags(String response) {
+        java.util.List<String[]> out = new ArrayList<>();
+        final String PREFIX = "<BLOCK_MOVE ";
+        int from = 0;
+        while (true) {
+            int idx = response.indexOf(PREFIX, from);
+            if (idx == -1) break;
+            int end = response.indexOf("/>", idx);
+            if (end == -1) break;
+            String attrs  = response.substring(idx + PREFIX.length(), end);
+            String player = extractAttr(attrs, "player").orElse(null);
+            String reason = extractAttr(attrs, "reason").orElse("");
+            if (player != null) out.add(new String[]{player, reason});
+            from = end + 2;
+        }
+        return out;
+    }
+
     /** <TIME_SKIP minutes="N"/> 모두 합산 → 총 건너뛸 분 (없으면 0) */
     public int parseTimeSkip(String response) {
         int total = 0;
@@ -1137,6 +1198,21 @@ public class AiManager {
             try { total += Integer.parseInt(v.trim()); } catch (NumberFormatException ignore) {}
         }
         return total;
+    }
+
+    /** <DUR minutes="N"/> 합산 → 이 행동의 소요 분(없으면 0, 0~1440 클램프 = 최대 하루).
+     *  가변 턴 모드(turnMode≥1)에선 이 값만큼 시계가 흐른다(#151 Stage A). 하루를 넘겨 며칠·달·해 단위로 건너뛰는 도약은 DUR이 아니라 <TIME_SKIP>. */
+    public int parseDur(String response) {
+        int total = 0;
+        for (String v : parseSelfClosingAttr(response, "<DUR ", "minutes")) {
+            try { total += Integer.parseInt(v.trim()); } catch (NumberFormatException ignore) {}
+        }
+        return Math.max(0, Math.min(1440, total));
+    }
+
+    /** <NO_HOPE/> — GM이 '도주·해결·생존 가망 완전 소멸'을 선언(#2 자동 배드엔딩 신호). 있으면 true. */
+    public boolean parseNoHope(String response) {
+        return response != null && response.contains("<NO_HOPE");
     }
 
     /** <EVENT_BLOCK id="X"/> 모두 파싱 → [id, ...] */
@@ -1147,6 +1223,24 @@ public class AiManager {
     /** <EVENT_TRIGGER id="X"/> 모두 파싱 → [id, ...] (분기로 특정 사건 즉시 발화) */
     public java.util.List<String> parseEventTriggerTags(String response) {
         return parseSelfClosingAttr(response, "<EVENT_TRIGGER ", "id");
+    }
+
+    /** <ZONE_SEAL zone="X"/> — 런타임 구역 봉쇄(#180). zone_id 목록. */
+    public java.util.List<String> parseZoneSealTags(String response) {
+        return parseSelfClosingAttr(response, "<ZONE_SEAL ", "zone");
+    }
+    /** <ZONE_UNSEAL zone="X"/> — 봉쇄 해제(#180). */
+    public java.util.List<String> parseZoneUnsealTags(String response) {
+        return parseSelfClosingAttr(response, "<ZONE_UNSEAL ", "zone");
+    }
+
+    /** <COMM_BLOCK medium="X"/> — 통신 매체 차단(#180). medium: voice/text/signal/electronic/all. */
+    public java.util.List<String> parseCommBlockTags(String response) {
+        return parseSelfClosingAttr(response, "<COMM_BLOCK ", "medium");
+    }
+    /** <COMM_UNBLOCK medium="X"/> — 매체 차단 해제(#180). */
+    public java.util.List<String> parseCommUnblockTags(String response) {
+        return parseSelfClosingAttr(response, "<COMM_UNBLOCK ", "medium");
     }
 
     /** <TIME_VISIBLE player="X" known="true/false"/> 모두 파싱 → [{player, known}, ...] */

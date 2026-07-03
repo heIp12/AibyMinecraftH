@@ -202,6 +202,21 @@ public class GameLogger {
         record("상태", actor, b.toString().trim(), extra);
     }
 
+    /**
+     * ★NPC 내면 생각★ — 자율 NPC가 GM 컨텍스트로만 흘려보내던 속사고를, 뷰어 재생·감사에서
+     * ★그 NPC 시점(과 전체 감사뷰)에만★ 보이게 남긴다. actor=NPC라 visibleTo상 플레이어·타 NPC 시점엔
+     * 노출되지 않는다(게임 내 엿보기 공개와는 별개 — 이건 순전히 로그 가시성). 위치(zone)도 함께 기록.
+     *  @param npcName NPC 표시명, zone 현재 구역(없으면 ""), thought 한 문장 내면 생각
+     */
+    public void logNpcThought(String npcName, String zone, String thought) {
+        if (thought == null || thought.isBlank()) return;
+        JsonObject extra = new JsonObject();
+        extra.addProperty("kind", "thought");
+        if (npcName != null && !npcName.isEmpty()) extra.addProperty("actor", npcName);
+        if (zone != null && !zone.isEmpty()) extra.addProperty("zone", zone);
+        record("생각", npcName, thought, extra);
+    }
+
     /** 개인 전용 시스템 메시지(배역 배정·등장 등) — 로그 뷰어에서 ★그 플레이어 시점에만★ 보이게(NPC·타인 시점 제외). */
     public void logPrivate(String player, String content) {
         if (player == null || player.isEmpty()) { logEvent(content); return; }
@@ -383,11 +398,17 @@ public class GameLogger {
         }
     }
 
+    /** 인게임 시계 시각 공급자(뷰어 '게임시간' 표시용). TRPGGameManager가 () -> state.getCurrentTimeString()로 설정. */
+    private java.util.function.Supplier<String> gameTimeSupplier = () -> "";
+    public void setGameTimeSupplier(java.util.function.Supplier<String> s) { if (s != null) gameTimeSupplier = s; }
+
     /** JSONL 이벤트 한 줄을 사이드카 파일에 추가(lock 보유 상태에서 호출). */
     private void appendEvent(String category, String who, String text, JsonObject extra) {
         if (eventsFile == null) return;
         JsonObject o = new JsonObject();
-        o.addProperty("t",   LocalTime.now().format(TIME_FMT));
+        o.addProperty("t",   LocalTime.now().format(TIME_FMT));           // 실시간(실제 시각)
+        String gt = gameTimeSupplier == null ? "" : gameTimeSupplier.get();
+        if (gt != null && !gt.isBlank()) o.addProperty("gt", gt);        // 인게임 시각(시계) — 뷰어 게임시간 표시
         o.addProperty("seq", ++seq);
         o.addProperty("cat", category == null ? "" : category);
         if (who != null && !who.isEmpty()) o.addProperty("who", who);

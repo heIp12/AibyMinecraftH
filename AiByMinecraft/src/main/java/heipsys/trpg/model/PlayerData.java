@@ -42,6 +42,10 @@ public class PlayerData {
     public int faintTurnsRemaining = 0;
     /** 완전 잠식(관전) 상태 자동회복 카운터 (0=행동가능, >0=관전 중 — 0이 되면 SAN 1 회복) */
     public int puppetRecoveryTurns = 0;
+    /** 조종(홀림·완전잠식) 누적 턴 — 상한 도달 시 강제 완전회복(무행동 루프 방지, #1). normal 복귀 시 0. */
+    public int puppetTotalTurns = 0;
+    /** 조종 회복 직후 재조종 유예 턴 — >0이면 SAN이 낮아져도 재조종 트리거 안 됨(연속 조종 루프 차단). 매 턴 감소. */
+    public int puppetGraceTurns = 0;
 
     public String    status       = "normal";  // normal / puppet / dead
     /** 소통수단 선언(#177): GM 승인된 소통 모달리티(""=자동). voice/text/signal/electronic. 대면 시 엔진 자동선택(예: 소리위험→필담)을 이 선언이 우선한다. */
@@ -128,6 +132,13 @@ public class PlayerData {
     /** 전체 지도를 입수했는지 (true면 약도에 모든 zone 표시) */
     public boolean hasFullMap = false;
 
+    /** ★이동 뒤집기(#190)★ 남은 경로 홉 큐(현재 zone 제외, 목적지 포함). 비어있지 않으면 '이동 중' — 매 턴 1홉씩 전진. */
+    public java.util.List<String> travelPath = new java.util.ArrayList<>();
+    /** 이동 중인 최종 목적지 zone_id(표시·요약용). travelPath가 비면 "". */
+    public String travelDest = "";
+    /** 이동 중인가 — travelPath에 남은 홉이 있으면 true. */
+    public boolean isTraveling() { return travelPath != null && !travelPath.isEmpty(); }
+
     /** 무작위 비공개 연락처 번호 (예: "1186"). 1회차에서 타인은 모름 */
     public String contactId = "";
     /** 이 플레이어가 연락처를 알고 있는 상대들의 UUID */
@@ -189,6 +200,8 @@ public class PlayerData {
         status              = "normal";
         faintTurnsRemaining = 0;
         puppetRecoveryTurns = 0;
+        puppetTotalTurns = 0;
+        puppetGraceTurns = 0;
         declaredCommMethod  = "";
         pendingCommMethod   = "";
         spot                = "";
@@ -240,6 +253,7 @@ public class PlayerData {
         infoGroups.clear();
         synchronized (keyFacts) { keyFacts.clear(); }
         visitedZones.clear();
+        travelPath.clear(); travelDest = ""; // 이동 중 상태도 초기화(#190)
         hasFullMap = false;
     }
 

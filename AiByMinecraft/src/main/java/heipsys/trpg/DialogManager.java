@@ -39,6 +39,10 @@ public class DialogManager {
     private Consumer<Player> commMethodOpener;
     public void setCommMethodOpener(Consumer<Player> opener) { this.commMethodOpener = opener; }
 
+    /** '이동'(#190) 목적지 선택기를 여는 콜백 — 지도 도구 없이도 기록에서 여는 경로. TRPGGameManager가 주입. */
+    private Consumer<Player> moveOpener;
+    public void setMoveOpener(Consumer<Player> opener) { this.moveOpener = opener; }
+
     // ──────────────────────────────────────────────────────────────
     //  캐릭터 시트 + 주사위 확인
     // ──────────────────────────────────────────────────────────────
@@ -283,6 +287,7 @@ public class DialogManager {
             {"japan",  "일본 괴담만",    "일본 요괴·유령·학교괴담·도시전설만"},
             {"projectmoon", "환상체만",  "프로젝트 문(로보토미·라오루) 환상체"},
             {"game",   "게임 괴담만",   "게임 도시전설·게임 속 괴물·공포게임 주인공"},
+            {"cosmic", "코즈믹 호러만",  "크툴루 신화·우주적·외우주 공포 (러브크래프트 계열)"},
             {"rule",   "규칙 괴담만",    "규칙을 어기면 화를 입는 류"},
             {"random", "모두 무작위",    "위 전부를 섞어 무작위"}
         };
@@ -326,6 +331,9 @@ public class DialogManager {
             {"빙의·정체차용형 — 사람 몸이나 정체를 빼앗는 유형", "빙의·정체차용형", "누가 진짜인지 의심하게 되는"},
             {"시간·인과형 — 시간루프·인과 역전을 다루는 유형", "시간·인과형", "루프·예언·역행"},
             {"집단·감염형 — 사람 사이로 번지는 전파형 위협", "집단·감염형", "감염·소문·집단 환각"},
+            {"코즈믹·우주적형 — 인간 이해를 넘어선 외우주·차원 너머 존재, 알수록·볼수록 미쳐가는 유형", "코즈믹·우주적형", "우주적 공포·크툴루 신화류"},
+            {"자동 해결형(비개입형) — 두면 해결되고 개입하면 악화된다(가만히 있으면 클리어)", "자동 해결형(비개입)", "안 건드리면 지나감 — 개입할수록 위험"},
+            {"소문 실체화형 — 소문·관찰·집단 인지가 퍼질수록 실체를 얻어 강해진다", "소문 실체화형", "말할수록·믿을수록 실체가 됨"},
             {"유희형 성격 — 사람을 갖고 노는 장난스러운 괴담", "성격: 유희형", "낄낄대며 판을 짜는 유형"},
             {"심판자형 성격 — 죄·위선을 심판하려 드는 괴담", "성격: 심판자형", "죄책감·고해를 파고드는 유형"}
         };
@@ -342,6 +350,11 @@ public class DialogManager {
                     else onPick.accept(hint);
                 }, ClickCallback.Options.builder().uses(1).build())));
         }
+        buttons.add(ActionButton.create(
+            Component.text("▸ 더 많은 사건 구조 유형", NamedTextColor.YELLOW),
+            Component.text("정보격리·통신유인·교환대가·도덕딜레마·인과역전·함정지시 등 직접 고르기"), 150,
+            DialogAction.customClick((v, a) -> showSpecialTypeChoice(player, onPick),
+                ClickCallback.Options.builder().uses(1).build())));
         ActionButton cancel = ActionButton.create(
             Component.text("닫기", TextColor.color(0xAAAAAA)),
             Component.text("설정을 바꾸지 않습니다."), 100, null);
@@ -356,6 +369,95 @@ public class DialogManager {
                 .body(List.of(DialogBody.plainMessage(body)))
                 .build())
             .type(DialogType.multiAction(buttons, cancel, 3))
+        );
+        player.showDialog(dialog);
+    }
+
+    /**
+     * ★이동 목적지 선택(#190 이동 뒤집기)★ — 아는(방문) 구역을 버튼으로. dests=[{zoneId, 표시명, 경로/거리 요약}].
+     * 아는 곳이면 먼 구역도 고를 수 있고(도중 구역을 거쳐 감), onPick에 선택 zoneId를 넘긴다.
+     */
+    public void showMoveDestChoice(Player player, java.util.List<String[]> dests, java.util.function.Consumer<String> onPick) {
+        List<ActionButton> buttons = new ArrayList<>();
+        for (String[] d : dests) {
+            final String zid = d[0];
+            buttons.add(ActionButton.create(
+                Component.text(d[1], NamedTextColor.AQUA),
+                Component.text(d.length > 2 && d[2] != null ? d[2] : ""),
+                220,
+                DialogAction.customClick((v, a) -> onPick.accept(zid),
+                    ClickCallback.Options.builder().uses(1).build())));
+        }
+        ActionButton cancel = ActionButton.create(
+            Component.text("취소", TextColor.color(0xAAAAAA)),
+            Component.text("이동하지 않습니다."), 100, null);
+        Component body = Component.text()
+            .append(Component.text("어디로 이동할까요?", NamedTextColor.WHITE))
+            .appendNewline()
+            .append(Component.text("아는 곳이면 먼 구역도 고를 수 있어요 — 도중 구역들을 거쳐 가며 그만큼 시간이 걸립니다.", NamedTextColor.GRAY))
+            .build();
+        Dialog dialog = Dialog.create(b -> b.empty()
+            .base(DialogBase.builder(Component.text("이동  —  목적지 선택"))
+                .body(List.of(DialogBody.plainMessage(body)))
+                .build())
+            .type(DialogType.multiAction(buttons, cancel, 2))
+        );
+        player.showDialog(dialog);
+    }
+
+    /** 특수·사건구조 유형 선택 — 생성기가 지원하는 구체 아키타입을 직접 골라 종류별로 테스트한다. onPick에 유형 힌트 전달. */
+    public void showSpecialTypeChoice(Player player, java.util.function.Consumer<String> onPick) {
+        String[][] opts = {
+            {"정보 격리형 — 아는 자가 표적·모르는 자가 안전", "정보 격리형", "아는 순간 표적이 됨"},
+            {"통신 유인형 — 전화·무전·통신을 쓰는 행위 자체가 괴담을 부른다", "통신 유인형", "연락하면 위험해짐"},
+            {"교환·대가형 — 통과·안전·정보에 대가가 따른다(동료·기억·신체)", "교환·대가형", "무언가를 바쳐야 얻음"},
+            {"도덕 딜레마형 — 정답 없는 선택을 강요한다", "도덕 딜레마형", "누굴 살리고 뭘 포기할지"},
+            {"시한 의식형 — 마감(자정·만조·의식 완성)이 다가온다", "시한 의식형", "마감 전에 막거나 완수"},
+            {"순번·연쇄형 — 정해진 순서로 표적이 된다(이름·자리·나이)", "순번·연쇄형", "순번 고리를 끊기"},
+            {"규칙 목록 준수형 — 지킬 규칙 목록 중 일부는 가짜·함정", "규칙 목록 준수형", "진짜 규칙만 골라 지키기"},
+            {"집단환각형 — 모두가 뒤바뀐 상식·기억을 진짜로 믿는다", "집단환각형", "거짓 현실을 깨닫기"},
+            {"인과 역전형 — 치료가 독·도움이 해(개념·인과가 뒤집힘)", "인과 역전형", "상식대로 하면 당함"},
+            {"환경 침식형 — 공간의 물리적 현실 자체가 변질(중력·거리·시간)", "환경 침식형", "세계의 물성이 뒤틀림"},
+            {"함정 지시형 — 따르면 클리어 불가인 거짓 지시가 주어진다", "함정 지시형", "지시를 의심하고 거스르기"},
+            {"역할극 강제형 — 부여된 배역대로 연기해야 진실에 닿는다", "역할극 강제형", "극본 완수 또는 모순 짚기"},
+            {"수수께끼·추리형 — 기괴한 상황의 숨은 진상을 추리로 푼다", "수수께끼·추리형", "반직관적 진상 꿰뚫기"},
+            {"진영 대립형 — NPC 세력과 플레이어팀이 목적 충돌로 대립", "진영 대립형", "협상·기만·전투·이간"},
+            {"조건부 안전지대형 — 특정 조건에서만 안전하고 그 조건이 계속 변한다", "조건부 안전지대형", "위치·타이밍 싸움"},
+            {"사후 정보형 — 죽거나 끝나야 해결법이 드러난다(다회차 연계)", "사후 정보형", "한 번 죽어본 지식이 다음 판에"},
+            {"기억·망각형 — 시간·조건마다 기억이 실제로 지워진다", "기억·망각형", "기록·표식으로 진상 보존"},
+            {"금지워드형 — 특정 단어를 입에 올리면 표적이 된다", "금지워드형", "말해선 안 될 단어"},
+            {"감정 금기형 — 특정 감정 표출·자극이 괴담을 부른다", "감정 금기형", "울음·분노·공포 절제"},
+            {"금기 행동형 — 특정 행동(소리·뒤돌기·불 켜기)이 괴담을 부른다", "금기 행동형", "행동을 절제하는 긴장"},
+            {"시간·인과율형(루프) — 특정 시간대가 반복되거나 시간선이 엉킨다", "시간·인과율형(루프)", "루프의 고리를 끊기"},
+            {"공간 왜곡형 — 방과 방의 연결이 고정되지 않고 바뀐다(비유클리드)", "공간 왜곡형", "표식으로 공간을 고정"},
+            {"전원 괴이형 — 플레이어 외 모든 NPC가 사람인 척하는 괴이", "전원 괴이형", "누가 사람인지 의심"},
+            {"비지구 무대형 — 무대가 지구 일상이 아니다(우주·이세계·지옥·사후)", "비지구 무대형", "이질적 세계의 규칙"},
+            {"신체 기생·교환형 — 괴담 일부가 몸에 기생하거나 시점마다 배역이 뒤바뀐다", "신체 기생·교환형", "이득과 잠식의 딜레마"}
+        };
+        List<ActionButton> buttons = new ArrayList<>();
+        for (String[] o : opts) {
+            final String hint = o[0];
+            buttons.add(ActionButton.create(
+                Component.text(o[1], NamedTextColor.LIGHT_PURPLE),
+                Component.text(o[2]), 150,
+                DialogAction.customClick((v, a) -> onPick.accept(hint),
+                    ClickCallback.Options.builder().uses(1).build())));
+        }
+        ActionButton back = ActionButton.create(
+            Component.text("◀ 뒤로(유형 전체)", TextColor.color(0xAAAAAA)),
+            Component.text("괴담 유형 전체 목록으로"), 120,
+            DialogAction.customClick((v, a) -> showEntityTypeChoice(player, onPick),
+                ClickCallback.Options.builder().uses(1).build()));
+        Component body = Component.text()
+            .append(Component.text("생성기가 지원하는 구체 사건 구조 유형입니다. (종류별 테스트용)", NamedTextColor.WHITE))
+            .appendNewline()
+            .append(Component.text("고르면 다음 생성부터 그 구조로 고정 — 목록에 없는 유형도 §f/trpg setting type <이름>§7으로 직접 지정 가능. '무작위'로 되돌릴 수 있습니다.", NamedTextColor.GRAY))
+            .build();
+        Dialog dialog = Dialog.create(b -> b.empty()
+            .base(DialogBase.builder(Component.text("시작 설정  —  특수·사건구조 유형"))
+                .body(List.of(DialogBody.plainMessage(body)))
+                .build())
+            .type(DialogType.multiAction(buttons, back, 3))
         );
         player.showDialog(dialog);
     }
@@ -1051,6 +1153,13 @@ public class DialogManager {
                 Component.text("＠ 소통수단 변경", NamedTextColor.GREEN),
                 Component.text("말하기 · 필담 · 수신호 등 소통 방식을 선언합니다(바로 적용)."), 160,
                 DialogAction.customClick((v, a) -> commMethodOpener.accept(player),
+                    ClickCallback.Options.builder().uses(1).build())));
+        }
+        if (moveOpener != null) {
+            buttons.add(ActionButton.create(
+                Component.text("🚶 이동", NamedTextColor.BLUE),
+                Component.text("아는 곳으로 이동을 선언합니다(먼 곳도 경유해 감, 이동마다 한 턴 소모)."), 160,
+                DialogAction.customClick((v, a) -> moveOpener.accept(player),
                     ClickCallback.Options.builder().uses(1).build())));
         }
 

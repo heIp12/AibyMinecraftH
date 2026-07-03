@@ -69,10 +69,13 @@ public class GameStateManager {
     private int     clockMinutes       = -1;    // 현재 시각(분, 시작부터 누적 — 자정 넘기면 1440 초과)
     private int     clockEnd           = -1;    // 종료 시각(분, 시작 기준 누적; start 이하이면 +1440)
     private int     minutesPerTurn     = 15;    // 공포 파트 1턴당 진행 분
+    private int     turnMode           = 0;     // ★#151★ 0=고정(현행) / 1=DUR로 시계 진행 / 2=비동기 busy. 세션 시작 시 래치, 세이브 포함.
     private boolean timeVisibleDefault = true;  // 이 방에서 기본적으로 시간 인지 가능 여부
     private boolean endEventFired      = false; // 종료 사건/제한 시각 도달 여부
     private final Set<String>       firedEvents       = new HashSet<>();
     private final Set<String>       blockedEvents     = new HashSet<>();
+    private final Set<String>       sealedZones       = new HashSet<>(); // ★런타임 봉쇄(#180)★ — 괴담·사건이 막은 구역(자발 진입 차단, 강제이동은 통과).
+    private final Set<String>       blockedMedia      = new HashSet<>(); // ★매체별 차단(#180)★ — 괴담·사건이 막은 통신 수단(voice/text/signal/electronic, all=전부).
     private final List<String>      justFiredEvents   = new ArrayList<>();
     private String                  lastFiredEventLabel = ""; // 가장 최근 발화한 핵심 사건 이름(상태창 '최근' 패널용, 소비 안 됨)
     private final Map<UUID,Boolean> timeKnownOverride = new HashMap<>();
@@ -181,6 +184,7 @@ public class GameStateManager {
         o.addProperty("clockMinutes", clockMinutes);
         o.addProperty("clockEnd", clockEnd);
         o.addProperty("minutesPerTurn", minutesPerTurn);
+        o.addProperty("turnMode", turnMode);
         o.addProperty("timeVisibleDefault", timeVisibleDefault);
         o.addProperty("endEventFired", endEventFired);
         o.addProperty("lastFiredEventLabel", lastFiredEventLabel);
@@ -220,6 +224,7 @@ public class GameStateManager {
         clockMinutes      = snapI(o, "clockMinutes", -1);
         clockEnd          = snapI(o, "clockEnd", -1);
         minutesPerTurn    = snapI(o, "minutesPerTurn", 15);
+        turnMode          = snapI(o, "turnMode", 0);
         timeVisibleDefault = snapB(o, "timeVisibleDefault", true);
         endEventFired     = snapB(o, "endEventFired", false);
         lastFiredEventLabel = snapS(o, "lastFiredEventLabel", "");
@@ -416,6 +421,8 @@ public class GameStateManager {
     private void loadTimelineConfig(JsonObject gdam) {
         firedEvents.clear();
         blockedEvents.clear();
+        sealedZones.clear(); // 런타임 봉쇄(#180) — 새 시나리오/스테이지 초기화
+        blockedMedia.clear(); // 매체별 차단(#180) — 새 시나리오/스테이지 초기화
         justFiredEvents.clear();
         lastFiredEventLabel = ""; // 새 시나리오/스테이지 — 최근 사건 초기화
         timeKnownOverride.clear();
@@ -497,13 +504,22 @@ public class GameStateManager {
     public boolean isClockActive()   { return clockMinutes >= 0; }
     public boolean isEndEventFired() { return endEventFired; }
 
-    /** 현재 인게임 시각. 같은 날이면 "HH:MM", 여러 날에 걸치면 "N일차 HH:MM". 시계 없으면 "". */
+    /** 현재 인게임 시각. 첫날이면 "HH:MM", 여러 날(60일 미만)이면 "N일차 HH:MM",
+     *  장기 도약(60일 이상)이면 "N년 M개월 D일차 HH:MM"(1년=365·1개월=30일 환산)로 압축 표시한다. 시계 없으면 "". */
     public String getCurrentTimeString() {
         if (clockMinutes < 0) return "";
         int m = ((clockMinutes % 1440) + 1440) % 1440;
         String hhmm = String.format("%02d:%02d", m / 60, m % 60);
-        int dayIdx = (clockStart >= 0 ? clockMinutes - clockStart : clockMinutes) / 1440;
-        return dayIdx > 0 ? (dayIdx + 1) + "일차 " + hhmm : hhmm;
+        int dayIdx = (clockStart >= 0 ? clockMinutes - clockStart : clockMinutes) / 1440; // 0=첫날
+        if (dayIdx <= 0) return hhmm;
+        if (dayIdx < 60)  return (dayIdx + 1) + "일차 " + hhmm;      // ~2개월 미만은 종전대로 "N일차"
+        int years  = dayIdx / 365;
+        int months = (dayIdx % 365) / 30;
+        int days   = (dayIdx % 365) % 30;
+        StringBuilder sb = new StringBuilder();
+        if (years  > 0) sb.append(years).append("년 ");
+        if (months > 0) sb.append(months).append("개월 ");
+        return sb.append(days + 1).append("일차 ").append(hhmm).toString();
     }
 
     /** 이 플레이어가 현재 시간을 알 수 있는가 (override > 방 기본값) */
@@ -534,6 +550,24 @@ public class GameStateManager {
         if (id != null && !id.isBlank()) blockedEvents.add(id.trim());
     }
 
+    // ── 런타임 봉쇄(#180): 괴담·사건이 구역/통로를 막음 ──────────────
+    /** 구역 봉쇄 — 자발 진입 차단(강제이동은 통과). */
+    public void sealZone(String zoneId)   { if (zoneId != null && !zoneId.isBlank()) sealedZones.add(zoneId.trim()); }
+    /** 봉쇄 해제. */
+    public void unsealZone(String zoneId) { if (zoneId != null) sealedZones.remove(zoneId.trim()); }
+    public boolean isZoneSealed(String zoneId) { return zoneId != null && sealedZones.contains(zoneId.trim()); }
+    public Set<String> getSealedZones() { return new HashSet<>(sealedZones); }
+
+    /** 통신 매체 차단(#180) — voice/text/signal/electronic, "all"=전부. */
+    public void blockMedium(String medium)   { if (medium != null && !medium.isBlank()) blockedMedia.add(medium.trim().toLowerCase()); }
+    public void unblockMedium(String medium) { if (medium != null) blockedMedia.remove(medium.trim().toLowerCase()); }
+    /** 그 매체가 지금 차단됐는가(개별 또는 all). */
+    public boolean isMediumBlocked(String medium) {
+        if (blockedMedia.isEmpty()) return false;
+        return blockedMedia.contains("all") || (medium != null && blockedMedia.contains(medium.trim().toLowerCase()));
+    }
+    public Set<String> getBlockedMedia() { return new HashSet<>(blockedMedia); }
+
     /** GM EVENT_TRIGGER: 분기 등으로 특정 main_event를 즉시 발화한다(시각 미도달이어도). */
     public void triggerEvent(String id) {
         if (id == null || id.isBlank() || gdamData == null || !gdamData.has("timeline")) return;
@@ -563,10 +597,21 @@ public class GameStateManager {
 
     public int nextTurn() {
         currentTurn++;
-        tickClock();
+        if (turnMode == 0) tickClock(); // ★#151★ DUR/비동기 모드(≥1)에선 고정 진행 대신 advanceActionClock이 시계를 운전한다.
         return currentTurn;
     }
     public int getCurrentTurn()  { return currentTurn; }
+    public int  getTurnMode()      { return turnMode; }
+    public void setTurnMode(int m) { turnMode = (m < 0 ? 0 : (m > 2 ? 2 : m)); }
+
+    /** ★#151 Stage A★ 행동 소요(DUR)만큼 시계를 진행 — DUR/비동기 모드에서 고정 tickClock 대신 호출.
+     *  TIME_SKIP(skipTime)과 달리 syncStageToClock까지 수행(정상 진행과 동일 정렬). 일상/비활성 시계면 무효. */
+    public void advanceActionClock(int minutes) {
+        if (dailyPhase || clockMinutes < 0 || minutes <= 0) return;
+        clockMinutes += minutes;
+        fireDueEvents();
+        syncStageToClock();
+    }
     /** 지금까지 발화(진행)된 타임라인/분기 사건 수 — 통합 진행도 계산용. */
     public int getFiredEventCount() { return firedEvents.size(); }
     /** 가장 최근 발화한 핵심 사건 이름(상태창 '최근' 패널용, 없으면 ""). */
