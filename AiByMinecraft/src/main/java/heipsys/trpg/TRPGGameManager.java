@@ -2094,9 +2094,14 @@ public class TRPGGameManager {
             ai.parseContactChangeTags(raw).forEach(this::changeContact);
 
             // 5d. 위치(zone)·세부 위치(spot) 업데이트
-            ai.parseZoneUpdateTags(raw).forEach(zu -> updatePlayerZone(zu[0], zu[1], zu[2],
-                zu.length > 3 && ("1".equals(zu[3]) || "true".equalsIgnoreCase(zu[3])),
-                zu.length > 4 && ("1".equals(zu[4]) || "true".equalsIgnoreCase(zu[4]))));
+            ai.parseZoneUpdateTags(raw).forEach(zu -> {
+                String rz = resolveZoneId(zu[1]); // ★zone_id 검증(#190)★ — 유효 id면 그대로, 표시명이면 id로 매칭, 무효면 null
+                if (rz == null) { // GM이 존재하지 않는/틀린 구역을 냈다 → 위치 오염 방지: 이동 무시(서술↔추적 불일치 감지 로그만)
+                    gameLogger.write("이동", "", "[무시: 알 수 없는 구역 '" + zu[1] + "']"); return; }
+                updatePlayerZone(zu[0], rz, zu[2],
+                    zu.length > 3 && ("1".equals(zu[3]) || "true".equalsIgnoreCase(zu[3])),
+                    zu.length > 4 && ("1".equals(zu[4]) || "true".equalsIgnoreCase(zu[4])));
+            });
 
             // 5d-2. 지도 입수(전체 공개) — 플레이어가 스토리에서 지도를 구함
             ai.parseMapGrantTags(raw).forEach(pName -> {
@@ -9231,6 +9236,24 @@ public class TRPGGameManager {
             }
         }
         return zoneId;
+    }
+
+    /** zone 인자를 유효한 zone_id로 해석(#190) — 실제 id면 그대로, GM이 표시명을 넣었으면 그 이름의 id로 매칭,
+     *  둘 다 아니면 null(존재하지 않는 구역 = 무효). zones 정보가 없으면 하위호환으로 원문 그대로 반환. */
+    private String resolveZoneId(String zone) {
+        if (zone == null || zone.isBlank()) return null;
+        JsonObject gdam = state.getGdamData();
+        if (gdam == null || !gdam.has("zones")) return zone; // 구역 정보 없으면 검증 불가 — 그대로
+        String byName = null;
+        for (JsonElement el : gdam.getAsJsonArray("zones")) {
+            if (!el.isJsonObject()) continue;
+            JsonObject z = el.getAsJsonObject();
+            String id = z.has("zone_id") ? z.get("zone_id").getAsString() : "";
+            if (zone.equals(id)) return id;                                     // 유효한 zone_id
+            String nm = z.has("name") ? z.get("name").getAsString() : "";
+            if (!nm.isBlank() && nm.equals(zone)) byName = id;                  // GM이 표시명을 넣음 → 그 id로
+        }
+        return byName;                                                          // 이름 매칭 id 또는 null(무효)
     }
 
     private void openCommChannel(String nameA, String nameB) {
