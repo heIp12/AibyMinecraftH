@@ -1102,11 +1102,20 @@ public class TRPGGameManager {
             pool.add(ps);
         }
         if (pool.isEmpty()) return null;
-        // '적당히 높은' — 가능한 최고 등급대에서 우선 선택
-        int top = pool.stream().mapToInt(ps -> gradeIdx(ps.grade())).max().orElse(0);
-        java.util.List<SystemTraitRegistry.Preset> best = new java.util.ArrayList<>();
-        for (SystemTraitRegistry.Preset ps : pool) if (gradeIdx(ps.grade()) == top) best.add(ps);
-        TraitData td = best.get(rng.nextInt(best.size())).toTraitData();
+        // ★변주(프리셋 고정 방지)★: 최고 등급 하나만 고르면 같은 프리셋(신내림·성녀 등)이 매번 반복된다.
+        //   등급대(C~ceil) 전체에서 ★높은 등급일수록 가중치를 크게★ 준 가중 무작위로 골라, '적당히 높은'은 유지하되
+        //   4라운드 시작처럼 같은 능력이 고정 등장하던 문제를 없앤다.
+        java.util.Collections.shuffle(pool, rng);
+        int lo = gradeIdx("C");
+        int totalW = 0;
+        for (SystemTraitRegistry.Preset ps : pool) totalW += Math.max(1, gradeIdx(ps.grade()) - lo + 1);
+        int roll = rng.nextInt(totalW), acc = 0;
+        SystemTraitRegistry.Preset chosen = pool.get(pool.size() - 1);
+        for (SystemTraitRegistry.Preset ps : pool) {
+            acc += Math.max(1, gradeIdx(ps.grade()) - lo + 1);
+            if (roll < acc) { chosen = ps; break; }
+        }
+        TraitData td = chosen.toTraitData();
         td.origin = "시작 보정";
         return td;
     }
