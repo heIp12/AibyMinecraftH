@@ -45,8 +45,11 @@ public class AiManager {
     private final Object gmCallLock     = new Object();
     private final Object entityCallLock = new Object();
 
-    private static final int GM_MAX_TOKENS   = 2048;  // 실제 응답은 200-600 수준
-    private static final int ASST_MAX_TOKENS = 1024;
+    // ★thinking 모델(Sonnet 5·Haiku 4.5 등)은 thinking 토큰이 max_tokens를 함께 소모★ → 2048/1024면 복잡한 턴에서
+    //   thinking만으로 소진돼 text(대사·서술)가 비어 나오던 문제. 실제 출력은 여전히 200-600 수준이라(짧게 유지) 비용은
+    //   거의 그대로지만, thinking이 들어갈 여유를 준다. (비-thinking 모델은 이 여유분을 쓰지 않아 동작 불변.)
+    private static final int GM_MAX_TOKENS   = 6000;  // GM 턴(서술·대사): thinking + 실제 응답 200-600
+    private static final int ASST_MAX_TOKENS = 4000;  // NPC 대사·능력 브리핑: thinking + 짧은 응답
     private static final int GDAM_MAX_TOKENS = 32000; // .gdam 청크 JSON 생성용. ★thinking 모델(Sonnet 5·Haiku 4.5 등)은 thinking 토큰이 max_tokens를 함께 소모★ → 12000이면 thinking만으로 소진돼 text 블록이 안 나오고 파싱 실패하던 문제. thinking+JSON이 모두 담기게 상향.
 
     public AiManager(String apiKey, String apiType) {
