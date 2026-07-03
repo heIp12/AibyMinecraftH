@@ -7614,6 +7614,32 @@ public class TRPGGameManager {
                 + "\". 이것은 기기 통신이 아니라 입으로 낸 소리다(도청·신호 추적 대상 아님). "
                 + "괴담이 ★소리·인기척을 감지하는 성질일 때에만★ 이 소리에 반응·접근하도록 다음 서술에 자연스럽게 반영하고, 소리에 둔감한 괴담이면 무시하라.");
         }
+        notifyLocalWitnesses(senderPd, message, "주변에 소리 내어 말했다", null); // 같은 구역 NPC도 듣고 반응
+    }
+
+    /** ★근처 목격 → 반응 유도★: 국소 통신(근처 발화·면전 대화·수신호·필담)은 같은 구역의 NPC·동료도 보고/듣는다.
+     *  같은 구역 주요 NPC를 활성 창에 넣어(다음 몇 턴 구동) + GM에 목격 지시를 주입 → 플레이어처럼 다음 서술에서
+     *  자연스럽게 반응(놀람·대꾸·행동)하게 한다. excludeNpcId = 이미 직접 대상인 NPC(중복 제외, 없으면 null). */
+    private void notifyLocalWitnesses(PlayerData senderPd, String message, String actLabel, String excludeNpcId) {
+        if (senderPd == null) return;
+        String z = senderPd.zone == null ? "" : senderPd.zone;
+        if (z.isEmpty()) return;
+        List<String> nearNpcs = new ArrayList<>();
+        for (JsonObject npc : getCriticalNpcs()) {
+            String id = getStr(npc, "id");
+            String nm = getStr(npc, "name");
+            if (id.isEmpty() || nm.isBlank() || id.equals(excludeNpcId)) continue;
+            String nz = npcZones.getOrDefault(id, npc.has("zone") ? npc.get("zone").getAsString() : "");
+            if (!z.equals(nz)) continue;               // 같은 구역만
+            if (!isNpcCommunicable(npc)) continue;      // 반응할 수 있는 상대만
+            nearNpcs.add(nm);
+            npcActiveUntil.put(id, Math.max(npcActiveUntil.getOrDefault(id, 0), state.getCurrentTurn() + 2)); // 다음 몇 턴 구동
+        }
+        if (nearNpcs.isEmpty()) return;
+        String snip = message == null ? "" : (message.length() > 60 ? message.substring(0, 60) + "…" : message);
+        ai.injectGmSystem("[근처 목격] " + senderPd.gmDisplayName() + "이(가) 이곳(" + zoneDisplayName(z) + ")에서 " + actLabel
+            + (snip.isEmpty() ? "" : ": \"" + snip + "\"") + ". 같은 곳에 있는 " + String.join(", ", nearNpcs)
+            + "이(가) 이를 보고/듣고, ★플레이어처럼★ 다음 서술에서 자연스럽게 반응하게 하라(무시할 뚜렷한 이유가 없으면 반응 — 놀람·대꾸·행동·경계). 직접 대상이 아니어도 '옆에서 지켜본 사람'으로서 반응할 수 있다.");
     }
 
     /** 채팅 '@' 자동완성 후보: @전체 + 아는 연락처(이름·번호). 비활성/미참여면 빈 목록. */
@@ -7686,14 +7712,18 @@ public class TRPGGameManager {
     }
 
     /** ★대화 방식별 제약★: 필담·수신호는 한 턴 1회, 수신호는 띄어쓰기 빼고 5글자까지. 막히면 true(발신 취소).
-     *  음성·전자통신·미선언은 자유(제약 없음). payload = 실제 전할 내용(수신호 글자수 판정용). */
-    private boolean commMethodLimitBlocks(Player sender, PlayerData senderPd, String payload) {
+     *  ★지정 대상 통신(@이름·@번호·NPC)은 매체 불문 한 턴 1회★ — 메시지 후 통화로 바꿔 이중 사용하거나
+     *  @이름 말로 계속 연락하는 것을 막는다(연락 = 한 턴 1행동). 근처에 소리내어 말하기(무지정 음성)만 자유.
+     *  payload = 실제 전할 내용(수신호 글자수 판정용). directed = 특정 대상 지정 통신 여부. */
+    private boolean commMethodLimitBlocks(Player sender, PlayerData senderPd, String payload, boolean directed) {
         String m = senderPd.declaredCommMethod;
-        if (!"text".equals(m) && !"signal".equals(m)) return false; // 음성·전자·자동 = 자유
+        boolean textSig = "text".equals(m) || "signal".equals(m);
+        if (!textSig && !directed) return false; // 근처 무지정 음성(그냥 말하기)만 자유
         int turn = state.getCurrentTurn();
         Integer last = lastLimitedCommTurn.get(sender.getUniqueId());
         if (last != null && last == turn) {
-            sender.sendMessage("§7(" + ("signal".equals(m) ? "수신호" : "필담") + "는 한 턴에 한 번만 전할 수 있습니다.)");
+            sender.sendMessage("§7(" + ("signal".equals(m) ? "수신호" : "text".equals(m) ? "필담" : "연락")
+                + "은(는) 한 턴에 한 번만 " + (textSig ? "전할" : "할") + " 수 있습니다.)");
             return true;
         }
         if ("signal".equals(m)) {
@@ -7730,9 +7760,10 @@ public class TRPGGameManager {
         PlayerData targetPd = dialedByNumber ? findByContactId(token) : findByName(token);
         JsonObject npcObj = (!dialedByNumber && targetPd == null) ? findNpcByName(token) : null;
 
-        // ★대화 방식별 제약(필담·수신호)★: @전체(전자 발신)는 위에서 이미 처리됨. 근처 무명발화는 content 전체가 내용.
-        String limitPayload = (!dialedByNumber && targetPd == null && npcObj == null) ? content : message;
-        if (commMethodLimitBlocks(sender, senderPd, limitPayload)) return;
+        // ★대화 방식별 제약★: @전체(전자 발신)는 위에서 이미 처리됨. 근처 무명발화는 content 전체가 내용.
+        boolean isProximity = !dialedByNumber && targetPd == null && npcObj == null;
+        String limitPayload = isProximity ? content : message;
+        if (commMethodLimitBlocks(sender, senderPd, limitPayload, !isProximity)) return;
 
         // ★매체별 차단(#180)★: 이 발신이 쓰려는 매체가 괴담·사건으로 막혔으면 취소(다른 수단 유도).
         String intendedMedium = senderPd.declaredCommMethod;
@@ -7848,6 +7879,11 @@ public class TRPGGameManager {
         deliverDirectMessage(sender, senderPd, targetPd, message, viaDevice, written);
         exchangeContacts(senderPd, targetPd);
         if (viaDevice && commDetectableByEntity(senderPd)) noteCommUsedIfDangerous(senderPd, commMediumName(senderPd, written)); // 은밀 개방이면 괴담이 감지 못함
+        if (!viaDevice) { // ★근처 목격★: 면전 대화·수신호·필담은 같은 구역 NPC도 보고/듣고 반응
+            String act = "signal".equals(senderPd.declaredCommMethod) ? "수신호를 보냈다"
+                       : written ? "필담을 건넸다" : ("곁의 " + commDisplayName(targetPd) + "에게 말을 걸었다");
+            notifyLocalWitnesses(senderPd, message, act, null);
+        }
     }
 
     /** 시나리오상 통신기기가 작동하는가 (constraints.phone_usable, 기본 true). GM 개설 채널은 이와 무관하게 작동. */
@@ -8184,6 +8220,12 @@ public class TRPGGameManager {
             java.util.List.of(npcName), message, media.isEmpty() ? null : media);
         // ★괴담 정보 수집·성장★: NPC와의 소통은 수집도 '중간'. 지능·소통·고위력 괴담이면 GM에 역이용 지시 주입.
         noteEntityIntel(2, senderPd.gmDisplayName(), message, "NPC 소통");
+        // ★근처 목격★: 면전 대화·수신호·필담은 같은 구역의 다른 NPC도 보고/듣는다 → 그들도 반응(직접 대상 NPC는 제외).
+        if (inPerson) {
+            String act = "signal".equals(senderPd.declaredCommMethod) ? "수신호를 보냈다"
+                       : written ? "필담을 건넸다" : (npcName + "에게 말을 걸었다");
+            notifyLocalWitnesses(senderPd, message, act, npcId);
+        }
 
         // ③ 엿보기 특성 여부 확인
         boolean hasEavesdrop = senderPd.traits.stream()
