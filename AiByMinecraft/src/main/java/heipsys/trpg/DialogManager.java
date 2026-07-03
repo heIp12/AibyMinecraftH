@@ -362,6 +362,38 @@ public class DialogManager {
         player.showDialog(dialog);
     }
 
+    /**
+     * ★이동 목적지 선택(#190 이동 뒤집기)★ — 아는(방문) 구역을 버튼으로. dests=[{zoneId, 표시명, 경로/거리 요약}].
+     * 아는 곳이면 먼 구역도 고를 수 있고(도중 구역을 거쳐 감), onPick에 선택 zoneId를 넘긴다.
+     */
+    public void showMoveDestChoice(Player player, java.util.List<String[]> dests, java.util.function.Consumer<String> onPick) {
+        List<ActionButton> buttons = new ArrayList<>();
+        for (String[] d : dests) {
+            final String zid = d[0];
+            buttons.add(ActionButton.create(
+                Component.text(d[1], NamedTextColor.AQUA),
+                Component.text(d.length > 2 && d[2] != null ? d[2] : ""),
+                220,
+                DialogAction.customClick((v, a) -> onPick.accept(zid),
+                    ClickCallback.Options.builder().uses(1).build())));
+        }
+        ActionButton cancel = ActionButton.create(
+            Component.text("취소", TextColor.color(0xAAAAAA)),
+            Component.text("이동하지 않습니다."), 100, null);
+        Component body = Component.text()
+            .append(Component.text("어디로 이동할까요?", NamedTextColor.WHITE))
+            .appendNewline()
+            .append(Component.text("아는 곳이면 먼 구역도 고를 수 있어요 — 도중 구역들을 거쳐 가며 그만큼 시간이 걸립니다.", NamedTextColor.GRAY))
+            .build();
+        Dialog dialog = Dialog.create(b -> b.empty()
+            .base(DialogBase.builder(Component.text("이동  —  목적지 선택"))
+                .body(List.of(DialogBody.plainMessage(body)))
+                .build())
+            .type(DialogType.multiAction(buttons, cancel, 2))
+        );
+        player.showDialog(dialog);
+    }
+
     /** 규칙·금기형 세부 유형 선택 — 감정/행동/응답/시선/소리/시간/순서/접촉 금기. onPick에 구체 힌트 전달. */
     public void showRuleSubtypeChoice(Player player, java.util.function.Consumer<String> onPick) {
         String[][] opts = {
