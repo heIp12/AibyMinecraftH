@@ -180,6 +180,10 @@ public class TRPGGameManager {
     private final Map<String, Integer> npcLastDirectTurn = new ConcurrentHashMap<>();
     /** ★#179 능동 비트 활성 창★ NPC id → 이 턴까지 매턴 구동한다(플레이어 지시 이행 중이거나 NPC가 &lt;BUSY&gt;로 '다급한 일 중'을 선언). 지나면 라운드로빈 베이스라인으로. */
     private final Map<String, Integer> npcActiveUntil = new ConcurrentHashMap<>();
+    /** NPC별 직전 자율 행동 출력 — 무진행 반복(같은 비트 재탕) 감지용. */
+    private final Map<String, String> npcLastAutoOutput = new ConcurrentHashMap<>();
+    /** NPC별 연속 자율 반복 횟수 — 임계 이상이면 자율 구동을 게이트(플레이어 상호작용 시 리셋). */
+    private final Map<String, Integer> npcAutoStale = new ConcurrentHashMap<>();
     /** ★#179 능동 비트★ 라운드로빈 커서 — 매 비트마다 다음 critical NPC 1명을 순번대로 고른다(전원 매턴=파산 방지). */
     private int npcBeatCursor = -1;
     /** NPC id → 뷰어 로그에 마지막으로 남긴 위치(zone). 매 주기 같은 위치를 이동 이벤트로 도배하지 않도록, 바뀔 때만 logMove. 뷰어 NPC 시점 '현재 위치'·근처 가시성용(#188). */
@@ -720,6 +724,7 @@ public class TRPGGameManager {
         npcAcquired.clear();
         npcLastDirectTurn.clear();
         npcActiveUntil.clear();
+        npcLastAutoOutput.clear(); npcAutoStale.clear();
         npcLoggedZone.clear();
         npcTrust.clear();
         forbiddenWord = "";
@@ -921,6 +926,7 @@ public class TRPGGameManager {
         pendingDeliveries.clear(); // 지연 전달 큐 — 스테이지 전환 시 미도착 편지 정리
         npcLastDirectTurn.clear();
         npcActiveUntil.clear();
+        npcLastAutoOutput.clear(); npcAutoStale.clear();
         npcLoggedZone.clear();     // 스테이지 전환 — NPC 위치 로그 추적 초기화(새 스테이지에서 다시 '등장' 기록)
         npcTrust.clear();          // 스테이지 전환 — 신뢰도 초기화(NPC가 스테이지별로 바뀜)
         lastEndingPages = null;
@@ -6653,7 +6659,8 @@ public class TRPGGameManager {
         npcIntel.clear(); // 새 시나리오의 NPC 지능을 새로 굴리도록 초기화
         npcAcquired.clear(); // NPC가 수집한 정보도 새 시나리오에서 초기화
         npcLastDirectTurn.clear(); // 대화 추적도 새 시나리오에서 초기화
-        npcActiveUntil.clear();    // #179 활성 창도 새 시나리오에서 초기화
+        npcActiveUntil.clear();
+        npcLastAutoOutput.clear(); npcAutoStale.clear();    // #179 활성 창도 새 시나리오에서 초기화
         npcLoggedZone.clear(); // NPC 위치 로그 추적도 새 시나리오에서 초기화(#188)
         npcTrust.clear(); // 동적 신뢰도 새 시나리오에서 초기화(#189)
         if (gdam == null || !gdam.has("npcs")) return;
@@ -7028,6 +7035,22 @@ public class TRPGGameManager {
             || t.contains("게임을진행") || t.contains("GM께서") || t.contains("다음정보") || t.contains("준비되시면");
     }
 
+    /** 두 자율 행동 출력이 사실상 같은 비트(무진행 반복)인지 — 2글자+ 단어집합 Jaccard ≥ 0.6이면 반복으로 본다. */
+    private static boolean autoOutputSimilar(String a, String b) {
+        if (a == null || b == null) return false;
+        java.util.Set<String> sa = autoWordSet(a), sb = autoWordSet(b);
+        if (sa.isEmpty() || sb.isEmpty()) return false;
+        java.util.Set<String> inter = new java.util.HashSet<>(sa); inter.retainAll(sb);
+        int uni = sa.size() + sb.size() - inter.size();
+        return uni > 0 && (double) inter.size() / uni >= 0.6;
+    }
+    private static java.util.Set<String> autoWordSet(String s) {
+        java.util.Set<String> out = new java.util.HashSet<>();
+        for (String w : s.replaceAll("[\\p{Punct}]", " ").trim().split("\\s+"))
+            if (w.length() >= 2) out.add(w); // 2글자+ 내용어만(조사·기호 노이즈 감소)
+        return out;
+    }
+
     /** ★#179 능동 비트★ 라운드로빈으로 '대화 중이 아닌' 다음 critical NPC 1명을 고른다(전원 대화 중이면 null). */
     private JsonObject pickNpcBeat(List<JsonObject> pool, int nowTurn) {
         int n = pool.size();
@@ -7037,6 +7060,7 @@ public class TRPGGameManager {
             JsonObject npc = pool.get(npcBeatCursor);
             int ld = npcLastDirectTurn.getOrDefault(getStr(npc, "id"), Integer.MIN_VALUE);
             if (ld >= 0 && nowTurn - ld <= 1) continue; // 대화 중(직전 1턴) — 건너뜀(맥락오염 방지)
+            if (npcAutoStale.getOrDefault(getStr(npc, "id"), 0) >= 2) continue; // 무진행 반복 — 라운드로빈에서 제외(상호작용 시 리셋)
             return npc;
         }
         return null;
@@ -7068,7 +7092,8 @@ public class TRPGGameManager {
             int au = npcActiveUntil.getOrDefault(id0, Integer.MIN_VALUE);
             int ld0 = npcLastDirectTurn.getOrDefault(id0, Integer.MIN_VALUE);
             boolean cooldown = ld0 >= 0 && nowTurn - ld0 <= 1;      // 대화 중(직전 1턴) — 자율 중복 구동 안 함
-            if (au >= nowTurn && !cooldown) { toFire.add(npc0); if (toFire.size() >= 2) break; } // 활성 NPC는 최대 2명까지 매턴
+            boolean stale = npcAutoStale.getOrDefault(id0, 0) >= 2; // 무진행 반복 → 활성창이어도 자율 구동 중단(상호작용 시 리셋)
+            if (au >= nowTurn && !cooldown && !stale) { toFire.add(npc0); if (toFire.size() >= 2) break; } // 활성 NPC는 최대 2명까지 매턴
         }
         // 라운드로빈 베이스라인은 ★주기 턴(cadence)에만★ 1명 — 활성 NPC 없는 조용한 턴은 스파스하게(N주기마다 1명). 활성 NPC는 위에서 매턴 이미 잡힘.
         if (cadenceTurn && toFire.size() < 2) { JsonObject rr = pickNpcBeat(pool, nowTurn); if (rr != null) toFire.add(rr); }
@@ -7175,6 +7200,14 @@ public class TRPGGameManager {
                 String trimmed = ai.stripThought(ai.stripTags(npcResp)).trim();
                 if (trimmed.isEmpty()) return;
                 if (looksLikeMetaRequest(trimmed)) return; // 인물 이탈 메타 응답("로그 제공해주세요" 등)은 무시 — GM 오염 방지
+                // ★무진행 반복 억제★: 직전 자율 출력과 거의 같으면(같은 비트 재탕) 주입·로그를 버리고 스테일 카운트↑
+                //   — 임계(2) 이상이면 위 발화 선택에서 이 NPC를 건너뛴다(플레이어 상호작용 시 리셋). 진행이 있으면 리셋.
+                if (autoOutputSimilar(npcLastAutoOutput.get(npcId), trimmed)) {
+                    npcAutoStale.merge(npcId, 1, Integer::sum);
+                    return; // GM 컨텍스트·로그 오염 방지(중복 서술 드롭)
+                }
+                npcAutoStale.remove(npcId);            // 새 진행 → 스테일 해제
+                npcLastAutoOutput.put(npcId, trimmed);
 
                 // GM 컨텍스트에만 주입 — 플레이어에게 직접 전달하지 않음.
                 // GM이 다음 턴 서술에서 NPC 행동을 자연스럽게 녹여 낸다.
@@ -7669,6 +7702,7 @@ public class TRPGGameManager {
             if (!isNpcCommunicable(npc)) continue;      // 반응할 수 있는 상대만
             nearNpcs.add(nm);
             npcActiveUntil.put(id, Math.max(npcActiveUntil.getOrDefault(id, 0), state.getCurrentTurn() + 2)); // 다음 몇 턴 구동
+            npcAutoStale.remove(id); // 근처 플레이어 행동 목격 = 새 자극 → 무진행 스테일 해제
         }
         if (nearNpcs.isEmpty()) return;
         String snip = message == null ? "" : (message.length() > 60 ? message.substring(0, 60) + "…" : message);
@@ -8247,6 +8281,7 @@ public class TRPGGameManager {
         refreshCommItems(senderPd);
         npcLastDirectTurn.put(npcId, state.getCurrentTurn()); // 대화 중 — 자율 AI 중복 구동 방지(맥락 오염 차단)
         npcActiveUntil.put(npcId, state.getCurrentTurn() + 3); // ★#179 활성 창★ 플레이어 지시·상호작용 직후 몇 턴은 그 NPC를 매턴 구동(지시 이행·반응·이동)
+        npcAutoStale.remove(npcId); // 새 플레이어 입력 → 무진행 스테일 해제(다시 자율 구동 허용)
         logNpcLocationIfChanged(npcId, npcName, npcZones.getOrDefault(npcId, npcZone)); // 뷰어 NPC 시점 위치(#188) — 대화로 위치가 확인된 시점
         // 동적 신뢰(#189 코드): 대화를 거듭할수록 친밀도 소폭↑ — 중립~약신뢰(0~+1)에서만, 상한 +2. 깊은 신뢰·불신은 <TRUST> 이벤트로.
         { String uk = senderPd.uuid.toString(); int cur = npcTrustOf(npcId, uk); if (cur >= 0 && cur < 2) adjustNpcTrust(npcId, uk, 1); }
