@@ -73,6 +73,7 @@ public class GameStateManager {
     private boolean endEventFired      = false; // 종료 사건/제한 시각 도달 여부
     private final Set<String>       firedEvents       = new HashSet<>();
     private final Set<String>       blockedEvents     = new HashSet<>();
+    private final Set<String>       sealedZones       = new HashSet<>(); // ★런타임 봉쇄(#180)★ — 괴담·사건이 막은 구역(자발 진입 차단, 강제이동은 통과).
     private final List<String>      justFiredEvents   = new ArrayList<>();
     private String                  lastFiredEventLabel = ""; // 가장 최근 발화한 핵심 사건 이름(상태창 '최근' 패널용, 소비 안 됨)
     private final Map<UUID,Boolean> timeKnownOverride = new HashMap<>();
@@ -416,6 +417,7 @@ public class GameStateManager {
     private void loadTimelineConfig(JsonObject gdam) {
         firedEvents.clear();
         blockedEvents.clear();
+        sealedZones.clear(); // 런타임 봉쇄(#180) — 새 시나리오/스테이지 초기화
         justFiredEvents.clear();
         lastFiredEventLabel = ""; // 새 시나리오/스테이지 — 최근 사건 초기화
         timeKnownOverride.clear();
@@ -533,6 +535,14 @@ public class GameStateManager {
     public void blockEvent(String id) {
         if (id != null && !id.isBlank()) blockedEvents.add(id.trim());
     }
+
+    // ── 런타임 봉쇄(#180): 괴담·사건이 구역/통로를 막음 ──────────────
+    /** 구역 봉쇄 — 자발 진입 차단(강제이동은 통과). */
+    public void sealZone(String zoneId)   { if (zoneId != null && !zoneId.isBlank()) sealedZones.add(zoneId.trim()); }
+    /** 봉쇄 해제. */
+    public void unsealZone(String zoneId) { if (zoneId != null) sealedZones.remove(zoneId.trim()); }
+    public boolean isZoneSealed(String zoneId) { return zoneId != null && sealedZones.contains(zoneId.trim()); }
+    public Set<String> getSealedZones() { return new HashSet<>(sealedZones); }
 
     /** GM EVENT_TRIGGER: 분기 등으로 특정 main_event를 즉시 발화한다(시각 미도달이어도). */
     public void triggerEvent(String id) {

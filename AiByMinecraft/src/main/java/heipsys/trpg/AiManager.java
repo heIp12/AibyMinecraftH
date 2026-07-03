@@ -757,6 +757,8 @@ public class AiManager {
             .replaceAll("<TIME_SKIP [^/]*/?>", "")
             .replaceAll("<EVENT_BLOCK [^/]*/?>", "")
             .replaceAll("<EVENT_TRIGGER [^/]*/?>", "")
+            .replaceAll("<ZONE_SEAL [^/]*/?>", "")
+            .replaceAll("<ZONE_UNSEAL [^/]*/?>", "")
             .replaceAll("<TIME_VISIBLE [^/]*/?>", "")
             .trim();
     }
@@ -1212,6 +1214,15 @@ public class AiManager {
     /** <EVENT_TRIGGER id="X"/> 모두 파싱 → [id, ...] (분기로 특정 사건 즉시 발화) */
     public java.util.List<String> parseEventTriggerTags(String response) {
         return parseSelfClosingAttr(response, "<EVENT_TRIGGER ", "id");
+    }
+
+    /** <ZONE_SEAL zone="X"/> — 런타임 구역 봉쇄(#180). zone_id 목록. */
+    public java.util.List<String> parseZoneSealTags(String response) {
+        return parseSelfClosingAttr(response, "<ZONE_SEAL ", "zone");
+    }
+    /** <ZONE_UNSEAL zone="X"/> — 봉쇄 해제(#180). */
+    public java.util.List<String> parseZoneUnsealTags(String response) {
+        return parseSelfClosingAttr(response, "<ZONE_UNSEAL ", "zone");
     }
 
     /** <TIME_VISIBLE player="X" known="true/false"/> 모두 파싱 → [{player, known}, ...] */

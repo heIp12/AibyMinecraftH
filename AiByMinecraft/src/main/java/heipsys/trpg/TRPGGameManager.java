@@ -2211,6 +2211,18 @@ public class TRPGGameManager {
             }
             ai.parseEventBlockTags(raw).forEach(state::blockEvent);
             ai.parseEventTriggerTags(raw).forEach(state::triggerEvent);
+
+            // 5f. ★런타임 구역 봉쇄(#180)★ — 괴담·사건이 구역/통로를 막거나 연다. zone_id 검증 후 반영.
+            ai.parseZoneSealTags(raw).forEach(z -> {
+                String rz = resolveZoneId(z); if (rz == null) return;
+                state.sealZone(rz);
+                gameLogger.write("봉쇄", "", "[구역 봉쇄: " + zoneDisplayName(rz) + "]");
+            });
+            ai.parseZoneUnsealTags(raw).forEach(z -> {
+                String rz = resolveZoneId(z); if (rz == null) return;
+                state.unsealZone(rz);
+                gameLogger.write("봉쇄", "", "[봉쇄 해제: " + zoneDisplayName(rz) + "]");
+            });
             ai.parseTimeVisibleTags(raw).forEach(tv ->
                 state.setTimeKnown(tv[0], !"false".equalsIgnoreCase(tv[1])));
 
@@ -9282,8 +9294,8 @@ public class TRPGGameManager {
     private java.util.Set<String> passableKnownZones(PlayerData pd) {
         java.util.Set<String> allowed = new java.util.HashSet<>();
         for (String z : pd.visitedZones)
-            if (findGatedZone(z) == null || !gatePassReason(pd, z).isEmpty()) allowed.add(z);
-        if (pd.zone != null) allowed.add(pd.zone); // 현위치는 이미 그곳에 있으므로 포함(잠겨 있어도 떠날 수는 있다)
+            if (!state.isZoneSealed(z) && (findGatedZone(z) == null || !gatePassReason(pd, z).isEmpty())) allowed.add(z); // 봉쇄(#180)·잠금 제외
+        if (pd.zone != null) allowed.add(pd.zone); // 현위치는 이미 그곳에 있으므로 포함(잠겨/봉쇄돼 있어도 떠날 수는 있다)
         return allowed;
     }
 
@@ -9333,6 +9345,13 @@ public class TRPGGameManager {
         boolean firstAssignment = moved.zone.isEmpty();
         boolean zoneChanged = !newZone.equals(moved.zone);
         String prevZone = moved.zone; // CODE-6: 격리 해제 판정용(덮어쓰기 전 보관)
+        // ★런타임 봉쇄(#180)★: 봉쇄된 구역은 자발 진입 차단(강제이동·첫 배치는 통과 — 던져지는 것/스폰은 봉쇄가 못 막음).
+        if (zoneChanged && !forced && !firstAssignment && spawnedPlayers.contains(moved.uuid) && state.isZoneSealed(newZone)) {
+            Player mp = Bukkit.getPlayer(moved.uuid);
+            if (mp != null && mp.isOnline()) mp.sendMessage("§c[봉쇄] " + zoneDisplayName(newZone) + "은(는) 막혀 있어 들어갈 수 없습니다.");
+            state.log("system", commDisplayName(moved), "[봉쇄 차단: " + zoneDisplayName(newZone) + "]");
+            return; // 이동 취소 — moved.zone 유지(advanceOneHop이 그 앞에서 정지 처리)
+        }
         // 아이템 Phase IV: 잠긴 게이트 구역 진입 차단(자발 이동만; ★강제 이동·첫 배치 제외).
         if (zoneChanged && findGatedZone(newZone) != null) {
             if (forced) {
