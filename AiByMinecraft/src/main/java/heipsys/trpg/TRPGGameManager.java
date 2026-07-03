@@ -1746,7 +1746,9 @@ public class TRPGGameManager {
                     if (!narrative.isBlank()) {
                         narrativeDelivery.deliver(p, narrative);
                         gameLogger.logGmOutput(p.getName() + "(프롤로그)", narrative);
-                        afterNarrationIdle(p, () -> showRecommendations(p)); // 시작부: 서술이 끝난 뒤 추천 1회
+                        // (#164 후속) 시작 자동 추천(<-#...-> 1인칭 힌트) 제거 — 프롤로그 서술이 이미 '이 인물이 다음에
+                        //   하려던 행동·의도'를 자연스럽게 내비치므로, 별도 assistant AI 호출은 중복이자 토큰 낭비였다.
+                        //   추천이 필요하면 플레이어가 /trpg 추천(hint)로 직접 부른다(showRecommendations 유지).
                     }
                     scoreMan.update(p, pd, state.getRoomNumber());
                 }));
