@@ -6993,9 +6993,20 @@ public class TRPGGameManager {
 
                 // NPC가 먼저 연락하기 — <NPC_CALL player="이름">말</NPC_CALL> (메인 스레드에서 전달)
                 java.util.Map<String, String> npcCalls = ai.parseNpcCallTags(npcResp);
-                if (!npcCalls.isEmpty())
+                if (!npcCalls.isEmpty()) {
+                    // #5(말투 2-pass 자율 확장): NPC 선연락도 1인칭 발화 → ending_style 지정 NPC면 어미를 렌더한다(@대화와 동일).
+                    //   ★렌더는 여기(비동기)서★ — deliverNpcInitiatedContact는 메인 스레드(runTask)에서 도니 거기서 blocking send()를 부르면 서버가 멈춘다.
+                    String callEndingStyle = getStr(npcObj, "ending_style");
+                    final java.util.Map<String, String> calls;
+                    if (callEndingStyle.isBlank()) calls = npcCalls;
+                    else {
+                        java.util.Map<String, String> styled = new java.util.LinkedHashMap<>();
+                        npcCalls.forEach((tn, cm) -> styled.put(tn, ai.restyleDialogue(cm, callEndingStyle)));
+                        calls = styled;
+                    }
                     plugin.getServer().getScheduler().runTask(plugin, () ->
-                        npcCalls.forEach((tn, cm) -> deliverNpcInitiatedContact(npcObj, npcId, npcName, npcZone, tn, cm)));
+                        calls.forEach((tn, cm) -> deliverNpcInitiatedContact(npcObj, npcId, npcName, npcZone, tn, cm)));
+                }
 
                 // NPC가 새로 알게 된 정보 누적 — <NPC_LEARN>한 줄</NPC_LEARN> (최근 8개 유지)
                 java.util.List<String> learned = ai.parseNpcLearnTags(npcResp);
