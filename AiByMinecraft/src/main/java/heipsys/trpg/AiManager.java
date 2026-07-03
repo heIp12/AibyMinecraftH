@@ -45,8 +45,11 @@ public class AiManager {
     private final Object gmCallLock     = new Object();
     private final Object entityCallLock = new Object();
 
-    private static final int GM_MAX_TOKENS   = 2048;  // 실제 응답은 200-600 수준
-    private static final int ASST_MAX_TOKENS = 1024;
+    // ★thinking 모델(Sonnet 5·Haiku 4.5 등)은 thinking 토큰이 max_tokens를 함께 소모★ → 2048/1024면 복잡한 턴에서
+    //   thinking만으로 소진돼 text(대사·서술)가 비어 나오던 문제. 실제 출력은 여전히 200-600 수준이라(짧게 유지) 비용은
+    //   거의 그대로지만, thinking이 들어갈 여유를 준다. (비-thinking 모델은 이 여유분을 쓰지 않아 동작 불변.)
+    private static final int GM_MAX_TOKENS   = 6000;  // GM 턴(서술·대사): thinking + 실제 응답 200-600
+    private static final int ASST_MAX_TOKENS = 4000;  // NPC 대사·능력 브리핑: thinking + 짧은 응답
     private static final int GDAM_MAX_TOKENS = 32000; // .gdam 청크 JSON 생성용. ★thinking 모델(Sonnet 5·Haiku 4.5 등)은 thinking 토큰이 max_tokens를 함께 소모★ → 12000이면 thinking만으로 소진돼 text 블록이 안 나오고 파싱 실패하던 문제. thinking+JSON이 모두 담기게 상향.
 
     public AiManager(String apiKey, String apiType) {
@@ -561,13 +564,40 @@ public class AiManager {
                 }
                 try {
                     String result = send(npcModel(), systemPrompt, snapshot, ASST_MAX_TOKENS, true); // 히스토리 프리픽스 캐싱
-                    synchronized (ctx) { ctx.add(msg("assistant", result)); }
+                    // #1(컨텍스트 오염): 자율(3인칭) 응답을 raw로 저장하면 이후 ★대화★ 호출이 그 3인칭·보고체를 흉내낸다(약한 모델의 이력 모방).
+                    //   → 자율 응답은 태그를 떼고 '[지난 자율 행동] 요약' 중립 로그로 저장한다(사실 기억은 npcAcquired가 별도 보존, 대화 1인칭 응답은 verbatim 유지해 대화 연속성 보존).
+                    synchronized (ctx) { ctx.add(msg("assistant", dialogue ? result : "[지난 자율 행동] " + stripTags(result).trim())); }
                     return result;
                 } catch (Exception e) {
                     return "§c[NPC AI 오류] " + e.getMessage();
                 }
             }
         });
+    }
+
+    /**
+     * ★말투 2-pass(스타일 전이)★: 완성된 대사의 '내용·정보·의미·감정·길이·괄호 지문'은 그대로 두고 ★문장 종결 말투(어미)만★ styleSpec대로 변환한다.
+     * 생성(pass1: callNpcAi)과 분리하는 이유 — 미니 모델은 '스타일 유지하며 생성'은 약해도(표준 어미로 회귀) '완성 문장 어미만 치환'은 안정적이다.
+     * 실패·빈 응답이면 원본 대사를 그대로 돌려준다(전달을 절대 막지 않는다). 동기 호출 — 대화 전달 콜백(thenAccept)은 이미 비-메인 스레드다.
+     */
+    public String restyleDialogue(String dialogue, String styleSpec) {
+        if (dialogue == null || dialogue.isBlank() || styleSpec == null || styleSpec.isBlank()) return dialogue;
+        try {
+            String sys = "너는 '대사 말투 변환기'다. 아래 [원본 대사]의 ★내용·정보·의미·감정·문장 수·괄호 지문(예: (문을 밀며))·줄바꿈·문장부호는 조금도 바꾸지 말고★, "
+                + "오직 ★문장을 맺는 말투(어미)★만 [스타일]대로 고쳐라.\n"
+                + "규칙: ①정보·설명·인사·감탄사를 새로 더하거나 빼지 마라(길이·문장 수 유지). 질문은 질문으로·대답은 대답으로 구조를 유지하라. ②반말/존댓말의 방향은 원본 그대로 두고 그 위에 지정 어미만 얹어라. "
+                + "③괄호 지문과 태그처럼 보이는 부분은 손대지 마라. ④억지로 모든 문장을 비틀어 어색해지면 핵심 문장에만 자연스럽게 적용하라. "
+                + "⑤★감정 강도별 조절★: 평상시엔 말투를 또렷이 살리되 긴장·짜증이면 약간 완화하고, 공포·패닉·울음처럼 원본이 이미 흐트러지거나 짧게 끊긴 문장은 그 흐트러짐을 살려 최소한(핵심 어미 흔적만)으로 적용하라 — 고정 어미를 억지로 덧씌워 감정을 납작하게 만들지 마라(격한 순간엔 캐릭터 어미가 약해지는 게 자연스럽다). "
+                + "★마무리 자가검수★: 내보내기 전에, 표준 어미(~요/~다/~어/~습니다)로 밋밋하게 끝난 문장이 남았으면 지정 어미로 고쳐 마무리하라(단 ⑤의 격한 감정 예외는 존중). "
+                + "출력은 ★변환된 대사 본문만★(따옴표·머리말·해설·목록 금지).\n"
+                + "[스타일] " + styleSpec;
+            List<JsonObject> m = List.of(msg("user", "[원본 대사]\n" + dialogue));
+            String out = send(npcModel(), sys, m, ASST_MAX_TOKENS);
+            out = out == null ? "" : out.trim();
+            return (out.isEmpty() || out.startsWith("§c")) ? dialogue : out;
+        } catch (Exception e) {
+            return dialogue; // 변환 실패해도 원본 대사로 전달(전달 보장)
+        }
     }
 
     // ======================================================
@@ -934,6 +964,7 @@ public class AiManager {
                     sysBlock.addProperty("text", system);
                     JsonObject cacheCtrl = new JsonObject();
                     cacheCtrl.addProperty("type", "ephemeral");
+                    cacheCtrl.addProperty("ttl", "1h"); // 1시간 TTL(GA·헤더 불필요): TRPG는 턴 간격(수 분)이 기본 5분 캐시를 넘겨 매 턴 시나리오·규칙 프리픽스를 재처리하던 문제 → 세션 내내 유지.
                     sysBlock.add("cache_control", cacheCtrl);
                     JsonArray sysArr = new JsonArray();
                     sysArr.add(sysBlock);
@@ -954,6 +985,7 @@ public class AiManager {
                         block.addProperty("text", src.get("content").getAsString());
                         JsonObject cc = new JsonObject();
                         cc.addProperty("type", "ephemeral");
+                        cc.addProperty("ttl", "1h"); // 1시간 TTL: 느린 턴 간격에도 멀티턴 GM 히스토리 프리픽스 유지
                         block.add("cache_control", cc);
                         JsonArray contentArr = new JsonArray();
                         contentArr.add(block);

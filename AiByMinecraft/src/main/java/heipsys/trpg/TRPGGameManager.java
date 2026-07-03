@@ -6689,7 +6689,7 @@ public class TRPGGameManager {
         sb.append("※ 말 많은 게 좋은 게 아니다 — 사람은 필요한 만큼만 말한다. ★단★ 관계·목적상 지금 도울·알릴 이유가 분명하면 4~5에서 주저 말고 건네라(지나친 과묵도 부자연스럽다).\n\n");
         // ── 사람답게(인간성) — 흩어져 있던 중복 규칙을 한 블록으로(강도 보존). ──
         sb.append("[사람답게]\n");
-        sb.append("- 쉽고 구체적인 일상어로. ★수수께끼·은유·예언투 금지★ — 무서운 일도 보통 사람 말로(예: \"전화 받으면 걔가 우리 위치를 알까 봐 무서워\").\n");
+        sb.append("- ★쉽고 직설적인 일상어로만 말하라 — 초등학생도 바로 알아들을 만큼★(무서운 일도 보통 사람 말로, 예: \"전화 받으면 걔가 우리 위치를 알까 봐 무서워\"). 수수께끼·은유·예언투로는 빠지지 마라.\n");
         sb.append("- 감정은 ★말투에 배게★ — 겁나도 단어 토막·\"…\"만 늘어놓지 말고 ★온전한 문장★으로(극도의 공황·기절 직전만 예외).\n");
         sb.append("- 주변 묘사·동작을 대사에 '—방금 그 움직임' 같은 토막 명사구로 끼우지 마라(할 말이면 온전한 문장, 아니면 빼라).\n");
         sb.append("- 얼버무리기·발뺌·거짓말도 사람답게 OK(말 돌리기·헛웃음·핑계·발끈). 금지는 하나 — 암호 같은 수수께끼식 얼버무림.\n");
@@ -6700,8 +6700,13 @@ public class TRPGGameManager {
         if (npcAge >= 0 && npcAge < 13) intel = Math.min(intel, 2); // 어린이는 쉬운 말만
         // ★speech_style(설계 채택: Fable5 검토)★: 생성 시 확정된 서술형 말씨 한 문장이 있으면 주사위 유창도 문장을 ★대체★(병기 금지).
         //   없으면(구 .gdam·일반 NPC) 기존 주사위 문장으로 폴백 — 하위호환·내구성.
+        String endingStyle = getStr(npcObj, "ending_style");
         String speechStyle = getStr(npcObj, "speech_style");
-        if (!speechStyle.isBlank()) {
+        if (!endingStyle.isBlank()) {
+            // ★말투 2-pass★: 이 NPC의 개성 말끝(어미)은 출력 후처리(restyleDialogue)가 따로 렌더한다 → pass1은 어미를 꾸미지 말고 자연스러운 기본 말씨로만.
+            sb.append("- 말투: 지금은 ★평범한 기본 말씨★로 자연스럽게 말하라 — 문장 끝 어미를 특별히 꾸미거나 고정 어미를 지어 붙이지 마라(너 특유의 말끝은 나중에 따로 입혀지니 신경 쓰지 마라). 쉬운 일상어로 핵심 위주 간결하게(1~3문장), 언어 수준은 끝까지 일관되게.\n");
+            sb.append("- ★직무·전문성은 '무엇을 아는지(대답 내용)'에만 반영하라 — 문장 첫머리를 보고서처럼 시작하지 마라.★ 사적인 대화·통화에선 상대의 반응·감정·용건이 먼저다(너는 직함이 아니라 사람이다).\n");
+        } else if (!speechStyle.isBlank()) {
             sb.append("- 말투: ").append(speechStyle)
               .append(" — 몸에 밴 기본 말씨다. 존댓말/반말은 아래 나이·관계 규칙이 정하고, 이 버릇은 그 결정 위에 얹는다. 이 말씨·언어 수준을 끝까지 일관되게.\n");
             sb.append("- 말버릇은 네가 ★하는 말★(대사·통화·<NPC_CALL> 안의 말 — 글에선 옅게)에만 쓴다. 괄호 지문·3인칭 서술과 <THOUGHT>·<NPC_LEARN> 안은 평범한 문체로.\n");
@@ -6800,6 +6805,11 @@ public class TRPGGameManager {
             sb.append(getStr(npcObj, "speech_style").isBlank() ? "성격(말투에 반영): " : "성격: ").append(npcObj.get("personality").getAsString()).append("\n");
         if (npcObj.has("motivation"))
             sb.append("목적(무엇을·얼마나 말할지 좌우): ").append(npcObj.get("motivation").getAsString()).append("\n");
+        // 개성 심화(기질·약점): personality를 restate하지 않는 직교 축. 기질=감정 기본값(정서 톤 일관), 약점=괴담·위기가 찌를 지점(공포 반응 개성).
+        if (!getStr(npcObj, "temperament").isBlank())
+            sb.append("평소 기질(감정 기본값 — 대사·반응의 정서 톤을 여기에 맞춰 끝까지 일관되게): ").append(getStr(npcObj, "temperament")).append("\n");
+        if (!getStr(npcObj, "fear").isBlank())
+            sb.append("약점(특히 못 견디거나 무서워하는 것 — 이게 직접 건드려지면 평소 기질보다 크게 흔들린다): ").append(getStr(npcObj, "fear")).append("\n");
         // 거짓말 성향(조건) — 거짓말의 '언제/왜'를 규정해 남발도 과소도 막는다. 필드 없으면 방어형(기본).
         sb.append("거짓말 성향: ").append(honestyDesc(getStr(npcObj, "honesty"))).append("\n");
         // ② 지식 게이팅 — '상시 전량 주입'을 막는다. 지금 상황과 ★관련된 기억만★(관련 없으면 신뢰도 높은 것 위주로)
@@ -6891,7 +6901,7 @@ public class TRPGGameManager {
         sb.append("\n## 자율 행동 출력\n");
         sb.append("- 2~3문장으로 이 NPC의 행동·반응·대사를 ★3인칭★ 서술한다(1인칭 '나는…' 금지).\n");
         sb.append("- 성격·목표에 충실하게 — 플레이어에게 불리한 행동도 가능.\n");
-        sb.append("- 단서를 통째로 알려주지 마라 — 흘리거나 은폐할 수 있다.\n");
+        sb.append("- 단서를 통째로 알려주지 마라 — ★정보 공개는 강제가 아니라 네 자율 판단★이다. 네 목적·거짓말 성향에 따라 흘리거나·은폐하거나·(성향이 허락하면) 거짓·과장을 섞어라(정직형=침묵·회피, 방어형=자기 이해 걸리면 둘러댐, 목적형=목적 걸릴 때만 계산적 거짓, 상습형=능청스레).\n");
         return sb.toString();
     }
 
@@ -6983,9 +6993,20 @@ public class TRPGGameManager {
 
                 // NPC가 먼저 연락하기 — <NPC_CALL player="이름">말</NPC_CALL> (메인 스레드에서 전달)
                 java.util.Map<String, String> npcCalls = ai.parseNpcCallTags(npcResp);
-                if (!npcCalls.isEmpty())
+                if (!npcCalls.isEmpty()) {
+                    // #5(말투 2-pass 자율 확장): NPC 선연락도 1인칭 발화 → ending_style 지정 NPC면 어미를 렌더한다(@대화와 동일).
+                    //   ★렌더는 여기(비동기)서★ — deliverNpcInitiatedContact는 메인 스레드(runTask)에서 도니 거기서 blocking send()를 부르면 서버가 멈춘다.
+                    String callEndingStyle = getStr(npcObj, "ending_style");
+                    final java.util.Map<String, String> calls;
+                    if (callEndingStyle.isBlank()) calls = npcCalls;
+                    else {
+                        java.util.Map<String, String> styled = new java.util.LinkedHashMap<>();
+                        npcCalls.forEach((tn, cm) -> styled.put(tn, ai.restyleDialogue(cm, callEndingStyle)));
+                        calls = styled;
+                    }
                     plugin.getServer().getScheduler().runTask(plugin, () ->
-                        npcCalls.forEach((tn, cm) -> deliverNpcInitiatedContact(npcObj, npcId, npcName, npcZone, tn, cm)));
+                        calls.forEach((tn, cm) -> deliverNpcInitiatedContact(npcObj, npcId, npcName, npcZone, tn, cm)));
+                }
 
                 // NPC가 새로 알게 된 정보 누적 — <NPC_LEARN>한 줄</NPC_LEARN> (최근 8개 유지)
                 java.util.List<String> learned = ai.parseNpcLearnTags(npcResp);
@@ -8093,6 +8114,10 @@ public class TRPGGameManager {
 
             String visible = ai.stripThought(ai.stripTags(npcResp)).trim();
             if (visible.isEmpty()) return;
+            // ★말투 2-pass(pass2)★: ending_style이 지정된 NPC(시나리오당 1~2명)만 완성 대사의 ★어미·말투★를 지정 스타일로 렌더한다.
+            //   생성(pass1)은 내용+감정에 집중(중립 말씨) → 여기서 개성 말끝을 한 번에 얹는다(미니 모델은 '변환'이 안정적). 실패 시 원본 유지.
+            String endingStyle = getStr(npcObj, "ending_style");
+            if (!endingStyle.isBlank()) visible = ai.restyleDialogue(visible, endingStyle);
             // ★통신 변조★: 매체 모달리티가 맞는 괴담이 원격 답신을 가로채 바꿔 전달(30%). 대면(sameZone)은 변조 안 함.
             final boolean tamperedR = remote && entityInterferes(commModality(media, writtenF)) && new java.util.Random().nextInt(100) < 30;
             final String heardR = tamperedR ? tamperText(visible, new java.util.Random()) : visible;
@@ -8425,7 +8450,7 @@ public class TRPGGameManager {
         sb.append("- 성격·목표에 충실하되 ★실제 사람이 할 법한 말투★로 답하라(소설 문어체·의미심장한 연출 금지).\n");
         sb.append("- ★치명적 비밀·진상★만 통째로 드러내지 마라(그 외엔 솔직하게 사람답게 답해도 된다). 가끔 얼버무리거나 되물을 수 있지만, 매 대답을 빙빙 돌리거나 수수께끼로 만들지 마라.\n");
         sb.append("- ★정보 공개는 '금지'가 아니라 '현실적 꺼림'으로★: 너는 해법·비밀도 말할 수 있다. 다만 사람이라 잘 안 말하는 이유가 있다 — ①본인도 그게 진실인지 확신 못 함 ②초면·낯선 사람은 못 믿어 중요한 걸 안 줌(신뢰가 쌓여야) ③위험한 정보라 아는 사이라도 망설임 ④자기 비밀·생존·이해관계가 걸림. 그래서 기본은 머뭇·일부만·조건부. 단 관계·설득·매력이 충분하거나, ⑤자기 목적을 위해 일부러 (틀리거나 위험한 정보를 섞어) 흘리기도 한다. 핵심: ★진상·해법 같은 중대한 정보★만 불확실·조건부로 흐려라 — 일부러 틀린 말을 섞는 건(⑤) ★네 '거짓말 성향'이 허락하는 선까지만★이다(정직형은 거의 안 하고, 목적형은 목적이 걸릴 때만, 상습형은 능청스레). 길·시간·안부 같은 일상 대답은 흐리지도 속이지도 마라.\n");
-        sb.append("- ★질문엔 먼저 '답'부터 — 관공서식 회피 금지★: 절차·규정·목적 확인('목적부터 말해요'·'절차가 먼저예요'류)을 앞세워 답을 미루는 화법은 ★한 번★만 허용된다. 상대가 같은 것을 다시 물으면 그땐 반드시 실질적으로 답하거나(아는 만큼, 불확실 표시 가능) 명확히 거절하고 ★진짜 이유★를 말하라 — 같은 절차 요구를 반복하며 대화를 제자리에 붙잡지 마라.\n");
+        sb.append("- ★질문엔 먼저 '답'부터 — 관공서식 회피 금지★: 절차·규정·목적 확인('목적부터 말해요'·'절차가 먼저예요'류)을 앞세워 답을 미루는 화법은 ★한 번★만 허용된다. 상대가 같은 것을 다시 물으면 그땐 반드시 실질적으로 답하거나(아는 만큼, 불확실 표시 가능) 명확히 거절하고 ★진짜 이유★를 말하라 — 같은 절차 요구를 반복하며 대화를 제자리에 붙잡지 마라. 특히 상대가 단순히 부르거나 확인하는 물음(안부·용건·'뭐 해요?'·'거기 누구 있어요?'류)엔 되묻기로 받아치지 말고 ★네 현재 상태·용건을 먼저 한두 마디로 답한 뒤★ 필요할 때만 되물어라.\n");
         sb.append("- 머리말의 [상대 나이·설득력·관계] 표기는 네가 피부로 느끼는 ★인상★일 뿐이다 — 표기 단어·등급을 입 밖에 내지 마라(\"설득력이 매우 강함이시네요\" 같은 말 금지). 인상은 태도와 말투로만 드러내라.\n");
         sb.append("- ★상대의 '설득력·존재감'(위 대화 머리말 표기)이 강할수록 너는 더 쉽게 마음이 흔들려 협조·양보하고, "
                  + "약할수록 잘 먹히지 않는다. 단, 네 핵심 비밀·생존이 걸린 사안은 설득력만으로 단번에 무너지지 않는다 — 정도를 조절하라.\n");
