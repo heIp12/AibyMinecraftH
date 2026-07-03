@@ -180,6 +180,9 @@ public class TRPGGameManager {
     private final Map<String, Integer> npcLastDirectTurn = new ConcurrentHashMap<>();
     /** NPC id → 뷰어 로그에 마지막으로 남긴 위치(zone). 매 주기 같은 위치를 이동 이벤트로 도배하지 않도록, 바뀔 때만 logMove. 뷰어 NPC 시점 '현재 위치'·근처 가시성용(#188). */
     private final Map<String, String> npcLoggedZone = new ConcurrentHashMap<>();
+    /** ★동적 신뢰(#189 Phase2)★ npc_id → (플레이어 uuid문자열 → 신뢰 델타[-5..+5]). 대화 반복=친밀도 코드 소폭↑(상한 +2),
+     *  '말이 사실로 드러남·배신' 같은 급변은 NPC가 낸 &lt;TRUST±N&gt;로. 관계 라벨에 문구로 반영되고 세이브에 포함(구세이브=0). */
+    private final Map<String, Map<String, Integer>> npcTrust = new ConcurrentHashMap<>();
     /** ★편지 두고가기(dead-drop)★: 구역 id → 그곳에 남겨진 쪽지 목록. 그 구역에 들어온 사람(플레이어/괴담)이 발견한다. */
     private final Map<String, List<DroppedNote>> droppedNotes = new ConcurrentHashMap<>();
     /** 남겨진 쪽지(편지) — 위치에 놓여 발견을 기다린다. 문서형 괴담이 발견하면 훼손(orig→content). */
@@ -642,6 +645,7 @@ public class TRPGGameManager {
         npcAcquired.clear();
         npcLastDirectTurn.clear();
         npcLoggedZone.clear();
+        npcTrust.clear();
         forbiddenWord = "";
         rewindBuffer.clear();
         lastRewindCaptureTurn = -1;
@@ -832,6 +836,7 @@ public class TRPGGameManager {
         pendingDeliveries.clear(); // 지연 전달 큐 — 스테이지 전환 시 미도착 편지 정리
         npcLastDirectTurn.clear();
         npcLoggedZone.clear();     // 스테이지 전환 — NPC 위치 로그 추적 초기화(새 스테이지에서 다시 '등장' 기록)
+        npcTrust.clear();          // 스테이지 전환 — 신뢰도 초기화(NPC가 스테이지별로 바뀜)
         lastEndingPages = null;
         forceRetryAllowed = false; // 새 스테이지 진입 — 동반회귀 재도전 허용 초기화
         state.getAllPlayers().forEach(pd -> traitMan.resetStageTraits(pd));
@@ -6334,6 +6339,7 @@ public class TRPGGameManager {
         npcAcquired.clear(); // NPC가 수집한 정보도 새 시나리오에서 초기화
         npcLastDirectTurn.clear(); // 대화 추적도 새 시나리오에서 초기화
         npcLoggedZone.clear(); // NPC 위치 로그 추적도 새 시나리오에서 초기화(#188)
+        npcTrust.clear(); // 동적 신뢰도 새 시나리오에서 초기화(#189)
         if (gdam == null || !gdam.has("npcs")) return;
         for (JsonElement el : gdam.getAsJsonArray("npcs")) {
             if (!el.isJsonObject()) continue;
@@ -6813,6 +6819,30 @@ public class TRPGGameManager {
         if (npcZone.equals(prev)) return;
         npcLoggedZone.put(npcId, npcZone);
         gameLogger.logMove(npcName, zoneDisplayName(npcZone), prev == null ? "등장" : "");
+    }
+
+    /** 동적 신뢰(#189): (npc,플레이어) 신뢰 델타 읽기. 없으면 0. */
+    private int npcTrustOf(String npcId, String uuidKey) {
+        if (npcId == null || uuidKey == null) return 0;
+        Map<String, Integer> m = npcTrust.get(npcId);
+        return m == null ? 0 : m.getOrDefault(uuidKey, 0);
+    }
+    /** 신뢰 델타 가감(비동기 콜백에서 호출되므로 동기화). [-5..+5]로 클램프. */
+    private synchronized void adjustNpcTrust(String npcId, String uuidKey, int delta) {
+        if (npcId == null || uuidKey == null || delta == 0) return;
+        Map<String, Integer> m = npcTrust.computeIfAbsent(npcId, k -> new ConcurrentHashMap<>());
+        int nv = Math.max(-5, Math.min(5, m.getOrDefault(uuidKey, 0) + delta));
+        m.put(uuidKey, nv);
+    }
+    /** 신뢰 델타 → 관계 라벨에 덧붙일 문구(내부 등급 노출 없이 '느낌'만). 0이면 빈 문자열. */
+    private static String trustPhrase(int t) {
+        if (t >= 4) return " — ★그동안 함께 겪으며 깊이 신뢰하게 됐다★";
+        if (t >= 2) return " — 겪어 보며 신뢰가 제법 쌓였다";
+        if (t == 1) return " — 조금씩 마음을 여는 중";
+        if (t <= -4) return " — ★크게 신뢰를 잃었다(말을 거의 안 믿고 경계한다)★";
+        if (t <= -2) return " — 겪어 보며 미심쩍음·불신이 생겼다";
+        if (t == -1) return " — 살짝 경계하는 기색";
+        return "";
     }
 
     /** NPC의 현재 예정 의도를 짧게 요약(막후 진행 주입용). schedule의 goal(없으면 action) 우선 → NPC goal → role_type. */
@@ -7732,6 +7762,8 @@ public class TRPGGameManager {
         refreshCommItems(senderPd);
         npcLastDirectTurn.put(npcId, state.getCurrentTurn()); // 대화 중 — 자율 AI 중복 구동 방지(맥락 오염 차단)
         logNpcLocationIfChanged(npcId, npcName, npcZones.getOrDefault(npcId, npcZone)); // 뷰어 NPC 시점 위치(#188) — 대화로 위치가 확인된 시점
+        // 동적 신뢰(#189 코드): 대화를 거듭할수록 친밀도 소폭↑ — 중립~약신뢰(0~+1)에서만, 상한 +2. 깊은 신뢰·불신은 <TRUST> 이벤트로.
+        { String uk = senderPd.uuid.toString(); int cur = npcTrustOf(npcId, uk); if (cur >= 0 && cur < 2) adjustNpcTrust(npcId, uk, 1); }
         // 뷰어 통신내역: 플레이어→NPC 발신 기록(수신자=NPC) — 매체(통화/서신/필담/대면)별 kind + 구체 매체명(via)
         gameLogger.logComm(written ? "letter" : (viaCall ? "call" : "nearby"), senderPd.gmDisplayName(),
             java.util.List.of(npcName), message, media.isEmpty() ? null : media);
@@ -7753,7 +7785,7 @@ public class TRPGGameManager {
         String userMsg   = situation + "[" + senderPd.gmDisplayName() + (viaCall ? ("이/가 " + media + "로 말한다") : written ? ("이/가 " + media + "로 전한다") : "이/가 말한다")
             + " · 상대 나이: " + senderPd.age + "세"
             + " · 상대의 설득력·존재감: " + chaControlNote(senderPd)
-            + " · 너와의 관계: " + (relLabel.isBlank() ? "모르는 사이(낯선 상대)" : relLabel)
+            + " · 너와의 관계: " + ((relLabel.isBlank() ? "모르는 사이(낯선 상대)" : relLabel) + trustPhrase(npcTrustOf(npcId, senderPd.uuid.toString())))
             + "] " + message;
 
         sender.sendMessage((viaCall ? "§7[📞→ " : written ? "§7[✉→ " : "§7[→ ") + npcName + "] §f" + message);
@@ -7786,6 +7818,10 @@ public class TRPGGameManager {
                     for (String l : learnedD) { String tagged = "[" + src + "가 말해줌] " + l; if (!store.contains(tagged)) store.add(tagged); }
                     while (store.size() > 8) store.remove(0);
                 });
+
+            // 동적 신뢰(#189): NPC가 낸 <TRUST±N>(말이 사실로 드러남·배신 등 큰 변동)을 델타로 반영(응답당 ±3 상한).
+            int trustDelta = ai.parseTrustDelta(npcResp);
+            if (trustDelta != 0) adjustNpcTrust(npcId, senderPd.uuid.toString(), trustDelta);
 
             String visible = ai.stripThought(ai.stripTags(npcResp)).trim();
             if (visible.isEmpty()) return;
@@ -8132,6 +8168,7 @@ public class TRPGGameManager {
                  + "  관계가 좋을수록 같은 설득력이라도 더 잘 통한다(관계·설득력은 함께 작용).\n");
         sb.append("- ★상대 말을 곧이곧대로 다 믿지 마라(믿음도 차등)★: 관계가 가깝고, 네 성격이 잘 믿는 편이고, 상대가 ★근거·증거·앞뒤 맞는 설명★을 댈수록 믿어라. 낯선 상대의 근거 없는 주장은 반신반의하거나 흘려들어라. 그리고 ★설득력이 약해도 근거가 탄탄하면 더 잘 통한다★ — 말주변이 아니라 근거·논리로도 설득된다.\n");
         sb.append("- ★신뢰는 고정이 아니다★: 이 사람과 지금까지 겪은 일(위 대화 기억)을 근거로 신뢰를 조정하라 — 함께 어려움을 넘기거나 이 사람이 ★전에 한 말이 사실로 드러났으면★ 더 믿고 돕고, 거짓·말바꿈·배신이 드러났으면 경계하고 덜 믿어라.\n");
+        sb.append("- 신뢰가 ★크게 움직인 순간★(이 사람의 말이 사실로 드러남·함께 큰 위기를 넘김 / 거짓·배신이 드러남)에만 응답 맨 끝에 <TRUST>+2 이유</TRUST> 또는 <TRUST>-2 이유</TRUST>를 붙여라(±1~3, 사소한 대화엔 생략). ★내부 기록이라 대사로 읽지 마라★ — 위 '너와의 관계' 문구에 이미 지금까지 쌓인 신뢰가 반영돼 있으니 그 온도대로 대하라.\n");
         sb.append("- 평소 2~4문장. ★결정적 순간★(고백·결별·죽음 직전·큰 비밀을 여는 장면)에만 6문장까지 허용 — 대신 평소는 더 짧게.\n");
         sb.append("- ★대화는 앞으로 나아가야 한다(반복 금지)★: 지금까지의 대화가 ★네 기억★이다 — 이미 들은 답·이미 던진 질문을 ★되묻지 마라★. "
                  + "상대가 이름·소속·용건을 한 번 밝혔으면 그것을 ★받아들이고★ 다음으로 넘어가라(동의하든 거절하든, 구체적으로 답하거나 행동하거나 네 입장을 정하라). "
@@ -10066,6 +10103,7 @@ public class TRPGGameManager {
             root.add("gmContext", ai.exportGmContext());
             root.add("npcZones", saveGson.toJsonTree(npcZones));
             root.add("npcContacts", saveGson.toJsonTree(npcContactNumbers));
+            root.add("npcTrust", saveGson.toJsonTree(npcTrust)); // 동적 신뢰(#189) — 이어하기 시 관계 온도 유지
             root.add("gmNpcRoleIds", saveGson.toJsonTree(gmNpcRoleIds));
             JsonArray sp = new JsonArray();
             spawnedPlayers.forEach(u -> sp.add(u.toString()));
@@ -10165,6 +10203,16 @@ public class TRPGGameManager {
         if (root.has("npcContacts") && root.get("npcContacts").isJsonObject())
             for (Map.Entry<String, JsonElement> e : root.getAsJsonObject("npcContacts").entrySet())
                 npcContactNumbers.put(e.getKey(), e.getValue().getAsString());
+        // 동적 신뢰(#189) 복원 — 구세이브에 없으면 빈 상태(델타 0 = 종전과 동일). 중첩 맵 안전 파싱.
+        npcTrust.clear();
+        if (root.has("npcTrust") && root.get("npcTrust").isJsonObject())
+            for (Map.Entry<String, JsonElement> e : root.getAsJsonObject("npcTrust").entrySet()) {
+                if (!e.getValue().isJsonObject()) continue;
+                Map<String, Integer> inner = new ConcurrentHashMap<>();
+                for (Map.Entry<String, JsonElement> pe : e.getValue().getAsJsonObject().entrySet())
+                    try { inner.put(pe.getKey(), pe.getValue().getAsInt()); } catch (Exception ignored) {}
+                if (!inner.isEmpty()) npcTrust.put(e.getKey(), inner);
+            }
         gmNpcRoleIds.clear();
         if (root.has("gmNpcRoleIds") && root.get("gmNpcRoleIds").isJsonArray())
             for (JsonElement el : root.getAsJsonArray("gmNpcRoleIds")) gmNpcRoleIds.add(el.getAsString());

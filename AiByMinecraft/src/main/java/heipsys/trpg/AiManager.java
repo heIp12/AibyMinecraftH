@@ -741,6 +741,7 @@ public class AiManager {
             .replaceAll("<WITNESS[^>]*>[\\s\\S]*?</WITNESS>", "")
             .replaceAll("<NPC_CALL[^>]*>[\\s\\S]*?</NPC_CALL>", "")
             .replaceAll("<NPC_LEARN[^>]*>[\\s\\S]*?</NPC_LEARN>", "")
+            .replaceAll("<TRUST[^>]*>[\\s\\S]*?</TRUST>", "")
             .replaceAll("<SPAWN[^/]*/?>", "")
             .replaceAll("<COMM [^/]*/?>", "")
             .replaceAll("<COMM_CLOSE [^/]*/?>", "")
@@ -831,6 +832,24 @@ public class AiManager {
             from = c + CLOSE.length();
         }
         return out;
+    }
+
+    /** <TRUST>±N 이유</TRUST> 태그들의 앞머리 부호정수를 합산해 반환(동적 신뢰 델타, #189). 응답당 급변은 [-3,+3]로 상한. */
+    public int parseTrustDelta(String response) {
+        int sum = 0;
+        final String OPEN = "<TRUST>", CLOSE = "</TRUST>";
+        int from = 0;
+        while (true) {
+            int o = response.indexOf(OPEN, from);
+            if (o == -1) break;
+            int c = response.indexOf(CLOSE, o + OPEN.length());
+            if (c == -1) break;
+            String v = response.substring(o + OPEN.length(), c).trim();
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("^([+-]?\\d+)").matcher(v);
+            if (m.find()) { try { sum += Integer.parseInt(m.group(1)); } catch (NumberFormatException ignored) {} }
+            from = c + CLOSE.length();
+        }
+        return Math.max(-3, Math.min(3, sum));
     }
 
     /** <MAP_GRANT player="name"/> 태그들에서 플레이어명 목록 추출 (지도 전체 입수) */
