@@ -321,6 +321,7 @@ public class TRPGGameManager {
         this.compressor        = new ContextCompressor(ai, state);
         this.narrativeDelivery = new NarrativeDelivery(plugin);
         this.gameLogger        = new GameLogger(plugin);
+        this.gameLogger.setGameTimeSupplier(() -> state.getCurrentTimeString()); // 뷰어 '게임시간' 표시용(#9)
         this.mapMan            = new MapManager(plugin, state);
 
         turnMan.setResponseHandler(this::onGmResponse);

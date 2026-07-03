@@ -35,7 +35,7 @@
   .ev .top{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;margin-bottom:3px}
   .ev .t{color:var(--dim);font-variant-numeric:tabular-nums;font-size:12px;flex:none}
   .ev .badge{font-size:11px;padding:1px 7px;border-radius:20px;background:var(--panel2);color:var(--dim)}
-  .ev .who{font-weight:600} .ev .arrow{color:var(--dim)}
+  .ev .who{font-weight:600} .ev .arrow{color:var(--dim)} .ev .top .gt{color:#7fb8d6;font-size:.82em;opacity:.9} /* 인게임 시각(게임시간) */
   .ev.split{margin-left:18px;border-left:2px solid var(--line)} .ev .top.cont{opacity:.55}
   .ln{white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;line-height:1.6;color:#dfe2ea;margin:2px 0;animation:pop .16s ease}
   .ln.bc{color:var(--broadcast);font-weight:600} .ln.mono{color:#c9b3ff;font-style:italic}
@@ -261,6 +261,7 @@ function blockHtml(b){
   if(b.type==="say") return `<div class="ln say"><b style="color:${colorFor(b.name)}">${esc(b.name)}</b> ${esc(b.text)}</div>`;
   return `<div class="ln">${esc(b.text)}</div>`;
 }
+function timeHtml(e){ return `<span class="t">${esc(e.t)}</span>`+(e.gt?`<span class="gt" title="게임 내 시각">🕐${esc(e.gt)}</span>`:""); } // 실시간 + (있으면)게임시간
 function headHtml(e){
   const me=(curVP!=="__all__"&&e.actor===curVP&&(e.kind==="input"||e.kind==="ability"))?" me":"";
   // 다른 사람(내가 아닌 인물)의 행동·대사는 우측 정렬(채팅식). GM·시스템 서술은 대상 아님.
@@ -269,7 +270,7 @@ function headHtml(e){
   const who=e.actor?`<span class="who" style="${col?`color:${col}`:""}">${esc(e.actor)}</span>`:"";
   const toStr=e.to.filter(isPerson).length?`<span class="arrow">→ ${esc(e.to.filter(isPerson).join(", "))}</span>`:"";
   const det=e.detail&&e.kind==="ability"?`<span class="badge">${esc(e.detail)}</span>`:"";
-  return {cls:"ev k-"+e.kind+me+other, top:`<div class="top"><span class="t">${esc(e.t)}</span><span class="badge">${esc(badgeFor(e))}</span>${det}${who}${toStr}</div>`};
+  return {cls:"ev k-"+e.kind+me+other, top:`<div class="top">${timeHtml(e)}<span class="badge">${esc(badgeFor(e))}</span>${det}${who}${toStr}</div>`};
 }
 // 본문 HTML — 괴담·NPC가 메시지를 변형(변절)했으면 원본/변형됨을 대조해 보여준다.
 function bodyHtmlOf(e){
@@ -279,7 +280,7 @@ function bodyHtmlOf(e){
 }
 function evHtml(e){ const h=headHtml(e); const body=bodyHtmlOf(e); return `<div class="${h.cls}">${h.top}${body?`<div class="body">${body}</div>`:""}</div>`; }
 // 개별(현재) 시점 전용: GM 서술에 낀 대사·방송을 별도 칸으로 분리(전체 타임라인은 evHtml 그대로 유지).
-function contHead(e){return `<div class="top cont"><span class="t">${esc(e.t)}</span><span class="badge">${esc(badgeFor(e))}</span></div>`;}
+function contHead(e){return `<div class="top cont">${timeHtml(e)}<span class="badge">${esc(badgeFor(e))}</span></div>`;}
 function evHtmlSplit(e){
   if(e.orig) return evHtml(e); // 변형 대조는 통째로
   const blocks=parseBody(e.text);
@@ -290,9 +291,9 @@ function evHtmlSplit(e){
   for(const b of blocks){
     if(b.type==="say"){ flush(); // ★대사: 화자 이름을 상단(헤더)에 — 입력처럼★
       const col=colorFor(b.name);
-      out.push(`<div class="ev k-say split${(curVP!=="__all__"&&b.name!==curVP)?' other':''}"><div class="top"><span class="t">${esc(e.t)}</span><span class="badge">💬 대사</span><span class="who" style="color:${col}">${esc(b.name)}</span></div><div class="body"><div class="ln">${esc(b.text)}</div></div></div>`); headUsed=true;
+      out.push(`<div class="ev k-say split${(curVP!=="__all__"&&b.name!==curVP)?' other':''}"><div class="top">${timeHtml(e)}<span class="badge">💬 대사</span><span class="who" style="color:${col}">${esc(b.name)}</span></div><div class="body"><div class="ln">${esc(b.text)}</div></div></div>`); headUsed=true;
     } else if(b.type==="bc"){ flush();
-      out.push(`<div class="ev k-broadcast split"><div class="top"><span class="t">${esc(e.t)}</span><span class="badge">📢 방송</span></div><div class="body">${blockHtml(b)}</div></div>`); headUsed=true;
+      out.push(`<div class="ev k-broadcast split"><div class="top">${timeHtml(e)}<span class="badge">📢 방송</span></div><div class="body">${blockHtml(b)}</div></div>`); headUsed=true;
     } else buf.push(b);
   }
   flush();

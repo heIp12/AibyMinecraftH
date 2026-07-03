@@ -398,11 +398,17 @@ public class GameLogger {
         }
     }
 
+    /** 인게임 시계 시각 공급자(뷰어 '게임시간' 표시용). TRPGGameManager가 () -> state.getCurrentTimeString()로 설정. */
+    private java.util.function.Supplier<String> gameTimeSupplier = () -> "";
+    public void setGameTimeSupplier(java.util.function.Supplier<String> s) { if (s != null) gameTimeSupplier = s; }
+
     /** JSONL 이벤트 한 줄을 사이드카 파일에 추가(lock 보유 상태에서 호출). */
     private void appendEvent(String category, String who, String text, JsonObject extra) {
         if (eventsFile == null) return;
         JsonObject o = new JsonObject();
-        o.addProperty("t",   LocalTime.now().format(TIME_FMT));
+        o.addProperty("t",   LocalTime.now().format(TIME_FMT));           // 실시간(실제 시각)
+        String gt = gameTimeSupplier == null ? "" : gameTimeSupplier.get();
+        if (gt != null && !gt.isBlank()) o.addProperty("gt", gt);        // 인게임 시각(시계) — 뷰어 게임시간 표시
         o.addProperty("seq", ++seq);
         o.addProperty("cat", category == null ? "" : category);
         if (who != null && !who.isEmpty()) o.addProperty("who", who);
