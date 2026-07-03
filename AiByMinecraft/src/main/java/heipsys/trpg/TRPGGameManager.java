@@ -2223,6 +2223,16 @@ public class TRPGGameManager {
                 state.unsealZone(rz);
                 gameLogger.write("봉쇄", "", "[봉쇄 해제: " + zoneDisplayName(rz) + "]");
             });
+
+            // 5g. ★매체별 통신 차단(#180)★ — 괴담·사건이 특정 통신 수단을 막거나 연다.
+            ai.parseCommBlockTags(raw).forEach(md -> {
+                state.blockMedium(md);
+                gameLogger.write("통신", "", "[통신 차단: " + commMediumLabel(md) + "]");
+            });
+            ai.parseCommUnblockTags(raw).forEach(md -> {
+                state.unblockMedium(md);
+                gameLogger.write("통신", "", "[통신 차단 해제: " + commMediumLabel(md) + "]");
+            });
             ai.parseTimeVisibleTags(raw).forEach(tv ->
                 state.setTimeKnown(tv[0], !"false".equalsIgnoreCase(tv[1])));
 
@@ -7521,6 +7531,19 @@ public class TRPGGameManager {
         String limitPayload = (!dialedByNumber && targetPd == null && npcObj == null) ? content : message;
         if (commMethodLimitBlocks(sender, senderPd, limitPayload)) return;
 
+        // ★매체별 차단(#180)★: 이 발신이 쓰려는 매체가 괴담·사건으로 막혔으면 취소(다른 수단 유도).
+        String intendedMedium = senderPd.declaredCommMethod;
+        if (intendedMedium.isEmpty()) {
+            if (!dialedByNumber && targetPd == null && npcObj == null) intendedMedium = "voice";        // @근처 = 대면 소리
+            else if (targetPd != null) intendedMedium = (!senderPd.zone.isEmpty() && senderPd.zone.equals(targetPd.zone)) ? "voice" : "electronic";
+            else if (dialedByNumber) intendedMedium = "electronic";                                     // 번호 다이얼 = 원격
+            // NPC 이름 통신+선언 없음 → 매체 불명확 → 차단 판정 생략(GM 서술로 처리)
+        }
+        if (!intendedMedium.isEmpty() && state.isMediumBlocked(intendedMedium)) {
+            sender.sendMessage("§c[통신 차단] 지금 " + commMediumLabel(intendedMedium) + "은(는) 통하지 않습니다. 다른 수단으로 시도하세요.");
+            return;
+        }
+
         // 번호도, 아는 대상(플레이어/NPC)도 아닌 토큰 → '이름 없이 근처에 말하기'로 처리(같은 구역·세부위치에 전달).
         if (!dialedByNumber && targetPd == null && npcObj == null) {
             proximityBroadcast(sender, senderPd, content); // 이름 토큰이 없으므로 content 전체가 발화 내용
@@ -7699,6 +7722,18 @@ public class TRPGGameManager {
             case "signal":     return "수신호·몸짓";
             case "electronic": return "전자통신";
             default:           return "자동";
+        }
+    }
+
+    /** 매체 차단(#180) 안내용 매체 라벨 — 'all' 포함, 알 수 없으면 키 그대로. */
+    private String commMediumLabel(String key) {
+        switch (key == null ? "" : key.toLowerCase()) {
+            case "voice":      return "음성(소리)";
+            case "text":       return "필담·문서";
+            case "signal":     return "수신호";
+            case "electronic": return "전자통신";
+            case "all":        return "모든 통신";
+            default:           return key == null || key.isBlank() ? "통신" : key;
         }
     }
 

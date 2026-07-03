@@ -759,6 +759,8 @@ public class AiManager {
             .replaceAll("<EVENT_TRIGGER [^/]*/?>", "")
             .replaceAll("<ZONE_SEAL [^/]*/?>", "")
             .replaceAll("<ZONE_UNSEAL [^/]*/?>", "")
+            .replaceAll("<COMM_BLOCK [^/]*/?>", "")
+            .replaceAll("<COMM_UNBLOCK [^/]*/?>", "")
             .replaceAll("<TIME_VISIBLE [^/]*/?>", "")
             .trim();
     }
@@ -1223,6 +1225,15 @@ public class AiManager {
     /** <ZONE_UNSEAL zone="X"/> — 봉쇄 해제(#180). */
     public java.util.List<String> parseZoneUnsealTags(String response) {
         return parseSelfClosingAttr(response, "<ZONE_UNSEAL ", "zone");
+    }
+
+    /** <COMM_BLOCK medium="X"/> — 통신 매체 차단(#180). medium: voice/text/signal/electronic/all. */
+    public java.util.List<String> parseCommBlockTags(String response) {
+        return parseSelfClosingAttr(response, "<COMM_BLOCK ", "medium");
+    }
+    /** <COMM_UNBLOCK medium="X"/> — 매체 차단 해제(#180). */
+    public java.util.List<String> parseCommUnblockTags(String response) {
+        return parseSelfClosingAttr(response, "<COMM_UNBLOCK ", "medium");
     }
 
     /** <TIME_VISIBLE player="X" known="true/false"/> 모두 파싱 → [{player, known}, ...] */

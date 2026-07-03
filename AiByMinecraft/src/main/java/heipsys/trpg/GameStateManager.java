@@ -74,6 +74,7 @@ public class GameStateManager {
     private final Set<String>       firedEvents       = new HashSet<>();
     private final Set<String>       blockedEvents     = new HashSet<>();
     private final Set<String>       sealedZones       = new HashSet<>(); // ★런타임 봉쇄(#180)★ — 괴담·사건이 막은 구역(자발 진입 차단, 강제이동은 통과).
+    private final Set<String>       blockedMedia      = new HashSet<>(); // ★매체별 차단(#180)★ — 괴담·사건이 막은 통신 수단(voice/text/signal/electronic, all=전부).
     private final List<String>      justFiredEvents   = new ArrayList<>();
     private String                  lastFiredEventLabel = ""; // 가장 최근 발화한 핵심 사건 이름(상태창 '최근' 패널용, 소비 안 됨)
     private final Map<UUID,Boolean> timeKnownOverride = new HashMap<>();
@@ -418,6 +419,7 @@ public class GameStateManager {
         firedEvents.clear();
         blockedEvents.clear();
         sealedZones.clear(); // 런타임 봉쇄(#180) — 새 시나리오/스테이지 초기화
+        blockedMedia.clear(); // 매체별 차단(#180) — 새 시나리오/스테이지 초기화
         justFiredEvents.clear();
         lastFiredEventLabel = ""; // 새 시나리오/스테이지 — 최근 사건 초기화
         timeKnownOverride.clear();
@@ -543,6 +545,16 @@ public class GameStateManager {
     public void unsealZone(String zoneId) { if (zoneId != null) sealedZones.remove(zoneId.trim()); }
     public boolean isZoneSealed(String zoneId) { return zoneId != null && sealedZones.contains(zoneId.trim()); }
     public Set<String> getSealedZones() { return new HashSet<>(sealedZones); }
+
+    /** 통신 매체 차단(#180) — voice/text/signal/electronic, "all"=전부. */
+    public void blockMedium(String medium)   { if (medium != null && !medium.isBlank()) blockedMedia.add(medium.trim().toLowerCase()); }
+    public void unblockMedium(String medium) { if (medium != null) blockedMedia.remove(medium.trim().toLowerCase()); }
+    /** 그 매체가 지금 차단됐는가(개별 또는 all). */
+    public boolean isMediumBlocked(String medium) {
+        if (blockedMedia.isEmpty()) return false;
+        return blockedMedia.contains("all") || (medium != null && blockedMedia.contains(medium.trim().toLowerCase()));
+    }
+    public Set<String> getBlockedMedia() { return new HashSet<>(blockedMedia); }
 
     /** GM EVENT_TRIGGER: 분기 등으로 특정 main_event를 즉시 발화한다(시각 미도달이어도). */
     public void triggerEvent(String id) {
