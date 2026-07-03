@@ -9653,9 +9653,17 @@ public class TRPGGameManager {
             gameLogger.logMove(moved.gmDisplayName(), zoneDisplayName(newZone), forced ? "강제" : (bypass ? "우회" : ""));
         // ★편지 두고가기★: 새 구역에 들어오면 그곳에 남겨진 쪽지를 발견(엉뚱한 손·훼손본 포함).
         if (zoneChanged && spawnedPlayers.contains(moved.uuid)) discoverDroppedNotes(moved, newZone);
-        // 첫 배치 시: 인접 구역도 약도에 공개 + 지도 자동 지급
+        // ★나가는 길 공개★: 새 구역에 들어서면 그곳에서 '보이는' 인접 구역(=나가는 길)을 약도·이동 목록
+        //   (/trpg 이동 선택기)에 공개한다. 예전엔 첫 배치 때만 공개해, 한 번 이동한 뒤로는 다음 방이
+        //   어디로 이어지는지 알 수 없어 '둘러본다'를 여러 번 선언해야 이동이 열리던 문제를 없앤다.
+        //   다른 realm(꿈·이세계 등)은 걸어서 못 넘으므로 제외 — 약도 스포도 함께 방지.
+        if (zoneChanged) {
+            String nzRealm = mapMan.realmOf(newZone);
+            for (String nb : mapMan.getAdjacentZones(newZone))
+                if (mapMan.realmOf(nb).equals(nzRealm)) moved.visitedZones.add(nb);
+        }
+        // 첫 배치 시: 지도 자동 지급
         if (firstAssignment) {
-            moved.visitedZones.addAll(mapMan.getAdjacentZones(newZone));
             Player mpp = Bukkit.getPlayer(moved.uuid);
             if (mpp != null && mpp.isOnline()) mapMan.giveStartMap(mpp);
         }
@@ -9680,6 +9688,22 @@ public class TRPGGameManager {
                 ai.injectGmSystem("[접근] " + moved.gmDisplayName() + "이(가) 인접한 " + zoneDisplayName(newZone)
                     + "으로 다가왔다. " + String.join(", ", nearby)
                     + "의 시점에서 '저 멀리/건너편에서 누군가 움직이는 기척'으로 이 조우를 다음 서술에 거리감 있게 반영하라.");
+            }
+            // ★길목 안내★: 이 방에서 갈 수 있는 인접 구역(=보이는 길목)을 GM이 서술로 한 번 짚어 플레이어가
+            //   다음에 어디로 갈 수 있는지 알게 한다(길 잃음 방지). 선택기와 같은 기준(같은 realm·비봉쇄·비잠금)만 노출.
+            String nzRealm = mapMan.realmOf(newZone);
+            List<String> exits = new ArrayList<>();
+            for (String nb : adj) {
+                if (!mapMan.realmOf(nb).equals(nzRealm)) continue;                              // 다른 realm은 걸어서 못 감
+                if (state.isZoneSealed(nb)) continue;                                           // 봉쇄된 길목 제외
+                if (findGatedZone(nb) != null && gatePassReason(moved, nb).isEmpty()) continue; // 잠긴 길 제외(선택기와 동일)
+                exits.add(zoneDisplayName(nb));
+            }
+            if (!exits.isEmpty()) {
+                ai.injectGmSystem("[길목 안내] " + moved.gmDisplayName() + "이(가) 들어선 " + zoneDisplayName(newZone)
+                    + "에서 갈 수 있는 인접 구역: " + String.join(", ", exits)
+                    + ". 이 인물이 다음에 어디로 이어질 수 있는지 ★서술 속에 자연스럽게 한 번★ 드러내라(문·통로·계단·길목으로). "
+                    + "매 턴 기계적으로 나열하진 말고, 새로 도착했거나 갈 곳을 찾는 기색일 때 짚어줘라.");
             }
         }
         // 위치 이동 시 기록에 구분 마커 추가 (기록 다이얼로그 페이지 분할 지점)
