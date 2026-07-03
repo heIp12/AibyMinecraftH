@@ -6700,8 +6700,13 @@ public class TRPGGameManager {
         if (npcAge >= 0 && npcAge < 13) intel = Math.min(intel, 2); // 어린이는 쉬운 말만
         // ★speech_style(설계 채택: Fable5 검토)★: 생성 시 확정된 서술형 말씨 한 문장이 있으면 주사위 유창도 문장을 ★대체★(병기 금지).
         //   없으면(구 .gdam·일반 NPC) 기존 주사위 문장으로 폴백 — 하위호환·내구성.
+        String endingStyle = getStr(npcObj, "ending_style");
         String speechStyle = getStr(npcObj, "speech_style");
-        if (!speechStyle.isBlank()) {
+        if (!endingStyle.isBlank()) {
+            // ★말투 2-pass★: 이 NPC의 개성 말끝(어미)은 출력 후처리(restyleDialogue)가 따로 렌더한다 → pass1은 어미를 꾸미지 말고 자연스러운 기본 말씨로만.
+            sb.append("- 말투: 지금은 ★평범한 기본 말씨★로 자연스럽게 말하라 — 문장 끝 어미를 특별히 꾸미거나 고정 어미를 지어 붙이지 마라(너 특유의 말끝은 나중에 따로 입혀지니 신경 쓰지 마라). 쉬운 일상어로 핵심 위주 간결하게(1~3문장), 언어 수준은 끝까지 일관되게.\n");
+            sb.append("- ★직무·전문성은 '무엇을 아는지(대답 내용)'에만 반영하라 — 문장 첫머리를 보고서처럼 시작하지 마라.★ 사적인 대화·통화에선 상대의 반응·감정·용건이 먼저다(너는 직함이 아니라 사람이다).\n");
+        } else if (!speechStyle.isBlank()) {
             sb.append("- 말투: ").append(speechStyle)
               .append(" — 몸에 밴 기본 말씨다. 존댓말/반말은 아래 나이·관계 규칙이 정하고, 이 버릇은 그 결정 위에 얹는다. 이 말씨·언어 수준을 끝까지 일관되게.\n");
             sb.append("- 말버릇은 네가 ★하는 말★(대사·통화·<NPC_CALL> 안의 말 — 글에선 옅게)에만 쓴다. 괄호 지문·3인칭 서술과 <THOUGHT>·<NPC_LEARN> 안은 평범한 문체로.\n");
@@ -8093,6 +8098,10 @@ public class TRPGGameManager {
 
             String visible = ai.stripThought(ai.stripTags(npcResp)).trim();
             if (visible.isEmpty()) return;
+            // ★말투 2-pass(pass2)★: ending_style이 지정된 NPC(시나리오당 1~2명)만 완성 대사의 ★어미·말투★를 지정 스타일로 렌더한다.
+            //   생성(pass1)은 내용+감정에 집중(중립 말씨) → 여기서 개성 말끝을 한 번에 얹는다(미니 모델은 '변환'이 안정적). 실패 시 원본 유지.
+            String endingStyle = getStr(npcObj, "ending_style");
+            if (!endingStyle.isBlank()) visible = ai.restyleDialogue(visible, endingStyle);
             // ★통신 변조★: 매체 모달리티가 맞는 괴담이 원격 답신을 가로채 바꿔 전달(30%). 대면(sameZone)은 변조 안 함.
             final boolean tamperedR = remote && entityInterferes(commModality(media, writtenF)) && new java.util.Random().nextInt(100) < 30;
             final String heardR = tamperedR ? tamperText(visible, new java.util.Random()) : visible;
