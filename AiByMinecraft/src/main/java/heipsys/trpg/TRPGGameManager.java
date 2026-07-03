@@ -2364,7 +2364,9 @@ public class TRPGGameManager {
                 int curTurn = state.getCurrentTurn();
                 boolean cadence  = curTurn % 3 == 0;
                 boolean watchdog = (curTurn - lastNpcBeatTurn) >= 4;
-                if (cadence || watchdog) fireNpcAiForTurn();
+                // ★임시★: 해야 할 작업(일정·목표)이 있거나 최근 플레이어와 상호작용한 NPC는 ★매턴★ 자율 구동해
+                //   그 NPC 시점 서술을 계속 남긴다. 주기(3턴)·워치독 턴이면 전원 검토(cadenceTurn=true), 그 외 턴이면 engaged NPC만(내부 게이트).
+                fireNpcAiForTurn(cadence || watchdog);
                 // 단일 주체 캐릭터 괴담(절망의 기사류)만 자율 AI로 캐릭터를 살린다 — NPC와 다른 박자(% 3 == 2)로,
                 //   내부 게이트로 대상 시나리오에서만 실제 호출(그 외엔 값싼 no-op).
                 if (curTurn % 3 == 2) fireEntityActorForTurn();
@@ -6931,7 +6933,7 @@ public class TRPGGameManager {
      * 괴담 파트 N턴마다 critical NPC 독립 AI 호출.
      * NPC 행동은 같은 zone의 플레이어에게 직접 전달되고, GM 컨텍스트에 주입된다.
      */
-    private void fireNpcAiForTurn() {
+    private void fireNpcAiForTurn(boolean cadenceTurn) {
         List<JsonObject> criticals = getCriticalNpcs();
         if (criticals.isEmpty()) return;
         lastNpcBeatTurn = state.getCurrentTurn(); // 워치독 기준 갱신
@@ -6960,6 +6962,13 @@ public class TRPGGameManager {
             //   대화 맥락에 없는 '플레이어 행동 로그' 기반 자율 출력이 같은 NPC 컨텍스트에 섞여 되묻기·모순을 유발한다.
             int lastDirect = npcLastDirectTurn.getOrDefault(npcId, Integer.MIN_VALUE);
             if (lastDirect >= 0 && lastDirect <= state.getCurrentTurn() && state.getCurrentTurn() - lastDirect <= 1) continue;
+            // ★임시 엔게이지먼트 게이트(비주기 턴)★: 주기·워치독 턴이 아니면 '해야 할 작업(일정 goal/action·목표)이 있거나
+            //   최근(4턴 내) 플레이어와 상호작용한' NPC만 매턴 구동한다(그 NPC 시점을 계속 남기려는 목적). 나머지는 주기 턴에만.
+            if (!cadenceTurn) {
+                boolean hasTask = npcHasActiveTask(npcObj);
+                boolean recentInteract = lastDirect >= 0 && state.getCurrentTurn() - lastDirect <= 4;
+                if (!hasTask && !recentInteract) continue;
+            }
             // ★그 NPC가 있는 위치(zone)에서 일어난 행동만 — 다른 장면의 플레이어 행동이 NPC 서술에 섞이지 않게.
             String actionLog = state.buildEntityLog(4, npcZone);
             // 빈 로그를 그대로 주면 모델이 '입력을 달라'는 메타 응답을 내놓는다 → 자율 행동 지시로 대체한다.
@@ -7046,7 +7055,7 @@ public class TRPGGameManager {
             });
         }
         // ★막후 진행 주입(의문)★: 못 닿는 NPC들의 예정을 GM에 한 번에 알린다 — 접촉 없이도 예정된 사건이 진행되게.
-        if (!offscreenIntents.isEmpty()) {
+        if (cadenceTurn && !offscreenIntents.isEmpty()) {
             ai.injectGmSystem("[막후 진행 — GM만 인지] 지금 플레이어 시야 밖이라 화면엔 안 나오지만, 다음 인물들은 각자의 예정대로 계속 움직이고 있다: "
                 + String.join(" / ", offscreenIntents)
                 + ". 플레이어가 관련 장소·시각·상황에 닿으면 이 예정된 행동이 ★이미 벌어진 결과★(잠긴 문·사라진 물건·남은 흔적·달라진 상황 등)로 드러나게 서술하라 — 아무도 그 NPC를 만나지 않았다는 이유로 예정된 사건이 영원히 일어나지 않아선 안 된다.");
@@ -7088,6 +7097,20 @@ public class TRPGGameManager {
     }
 
     /** NPC의 현재 예정 의도를 짧게 요약(막후 진행 주입용). schedule의 goal(없으면 action) 우선 → NPC goal → role_type. */
+    /** 이 NPC가 ★지금 해야 할 실제 작업(일정 goal/action 또는 top-level 목표)★이 있는가 — 역할(role_type)만 있는 건 제외.
+     *  임시: 이런 NPC는 비주기 턴에도 매턴 자율 구동해 시점 서술을 유지한다(fireNpcAiForTurn engaged 판정). */
+    private boolean npcHasActiveTask(JsonObject npcObj) {
+        if (npcObj == null) return false;
+        if (npcObj.has("schedule") && npcObj.get("schedule").isJsonArray()) {
+            for (JsonElement el : npcObj.getAsJsonArray("schedule")) {
+                if (!el.isJsonObject()) continue;
+                JsonObject s = el.getAsJsonObject();
+                if (!getStr(s, "goal").isBlank() || !getStr(s, "action").isBlank()) return true;
+            }
+        }
+        return !getStr(npcObj, "goal").isBlank();
+    }
+
     private String npcScheduleIntent(JsonObject npcObj) {
         if (npcObj == null) return "";
         if (npcObj.has("schedule") && npcObj.get("schedule").isJsonArray()) {
