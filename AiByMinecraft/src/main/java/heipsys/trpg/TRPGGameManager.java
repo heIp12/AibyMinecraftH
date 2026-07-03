@@ -7037,8 +7037,11 @@ public class TRPGGameManager {
 
                 // GM 컨텍스트에만 주입 — 플레이어에게 직접 전달하지 않음.
                 // GM이 다음 턴 서술에서 NPC 행동을 자연스럽게 녹여 낸다.
+                //  ★행동 요지임을 명시★: 여기 섞인 대사를 GM이 따옴표로 그대로 베끼면 그 NPC 자신의 목소리(@대화·선연락)와
+                //  갈라져 '두 목소리' 버그가 난다 → 3인칭 서술·간접화만 요청(B1 이중 말투 방지).
                 ai.injectGmSystem("[NPC 자율 행동 — GM만 인지] " + npcName + " (위치: "
-                    + (npcZone.isEmpty() ? "?" : npcZone) + "): " + trimmed);
+                    + (npcZone.isEmpty() ? "?" : npcZone) + "): " + trimmed
+                    + "  ※행동 요지다 — 3인칭으로 녹이고, 이 NPC의 대사를 ★따옴표로 그대로 옮기지 마라★(그의 말은 본인 채널에서 나온다).");
                 gameLogger.logGmOutput("NPC(" + npcName + ")", trimmed);
             });
         }
@@ -9987,14 +9990,24 @@ public class TRPGGameManager {
             sb.append("결정 내용은 '[NPC 자율 행동 — GM만 인지]' 태그로 전달된다.\n");
             sb.append("GM은 이 내용을 바탕으로 다음 서술에 해당 NPC의 행동을 자연스럽게 녹여 낸다.\n");
             sb.append("★ NPC 행동은 GM의 서술을 통해서만 플레이어에게 전달된다 (직접 출력 금지).\n");
+            sb.append("★ ★목소리는 그 NPC 자신의 AI 몫★ — 자율 NPC의 대사는 @대화·선연락으로 그 NPC가 직접 낸다. GM은 이들의 "
+                + "★1인칭 스타일 대사·고정 어미(ending_style)를 지어내 읊지 마라★(한 인물이 두 목소리로 갈라진다). "
+                + "옮겨야 하면 ★짧은 간접·전언체★로만(\"…라고 다급히 말했다\"), 따옴표 스타일 대사·개성 어미 재현은 금지.\n");
+            sb.append("★ 같은 NPC를 매 턴 주인공처럼 내세우지 마라 — 장면에 필요할 때만, 여러 NPC·플레이어에게 고루 분배.\n");
+            sb.append("★ NPC를 다른 구역으로 옮기거나 플레이어 앞에 데려오면 <NPC_AT npc=\"이름\" zone=\"존ID\"/>도 함께 내라(안 그러면 @대화가 전화로 오처리된다).\n");
             for (JsonObject npc : autoNpcs) {
                 String nname = npc.has("name") ? npc.get("name").getAsString() : "?";
-                String nzone = npc.has("zone") ? npc.get("zone").getAsString() : "?";
-                sb.append("- ").append(nname).append(" (").append(nzone).append(")");
+                String nid   = getStr(npc, "id");
+                String nzone = (!nid.isEmpty() && npcZones.containsKey(nid)) ? npcZones.get(nid)
+                    : (npc.has("zone") ? npc.get("zone").getAsString() : "");
+                int nage = npc.has("age") && !npc.get("age").isJsonNull() ? npc.get("age").getAsInt() : -1;
+                sb.append("- ").append(nname);
+                if (nage >= 0) sb.append("(").append(nage).append("세)");
+                sb.append(" · 현위치 ").append(zoneDisplayName(nzone));
                 if (npc.has("motivation")) sb.append(" — ").append(npc.get("motivation").getAsString());
-                // 자율 행동은 GM 재서술로만 전달되므로, 인용 대사에 쓸 말씨를 병기(직접 대화 채널과 목소리 이음새 봉합).
+                // 말씨는 GM의 ★간접 서술 톤★ 참고용 — 직접 인용·어미 흉내 금지(목소리는 그 NPC AI가 낸다).
                 String nss = getStr(npc, "speech_style");
-                if (!nss.isBlank()) sb.append(" · 말씨(인용 대사에만): ").append(nss);
+                if (!nss.isBlank()) sb.append(" · 결(참고): ").append(nss);
                 sb.append("\n");
             }
         }
