@@ -816,6 +816,10 @@ public class AiManager {
             .replaceAll("<COMM_BLOCK [^/]*/?>", "")
             .replaceAll("<COMM_UNBLOCK [^/]*/?>", "")
             .replaceAll("<TIME_VISIBLE [^/]*/?>", "")
+            // ★[지난 자율 행동] 마커 누적 방지★: 미니 모델이 이전 턴의 이 내부 마커를 에코해 매턴 하나씩
+            //   불어나던 버그(1→57, 오타 '자울'까지 전파). 어디에 있든 전부 제거 — 저장 시 정확히 1개만
+            //   다시 붙인다(callNpcAi). 출력 누출(플레이어/GM 로그)도 함께 차단.
+            .replaceAll("\\[지난\\s*자[율울]\\s*행동\\]\\s*", "")
             .trim();
     }
 

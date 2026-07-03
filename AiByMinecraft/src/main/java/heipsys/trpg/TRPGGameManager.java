@@ -5934,7 +5934,8 @@ public class TRPGGameManager {
             + "  좋은 예 ✓: '관리인은 밤마다 지하실에 내려간다' / '붉은 문 손잡이만 유독 차갑다(이상 징후)'\n"
             + "★애매하면 빼라 — 기록은 적을수록 좋다. 정말 새 단서일 때만 남겨라.\n"
             + "★ 같은 대상(인물/사물/사건)은 하나로 묶어라. 출력: 한 줄에 '대상|단서' 또는 '[대상] 단서'.\n"
-            + "정보가 없으면 '없음'만. 있으면 위 형식으로 한 줄씩 (최대 2줄).";
+            + "정보가 없으면 '없음'만. 있으면 위 형식으로 한 줄씩 (최대 2줄).\n"
+            + "★출력은 '대상|단서' 줄 또는 '없음'만 — 판단·이유·분석·머리말·마크다운(**)·'(제외)'·'새 단서 없음'·'분위기 묘사' 같은 ★네 생각을 절대 쓰지 마라★. 기록 안 할 거면 그냥 '없음'.";
         ai.callAssistant(task, narrative).thenAccept(result -> {
             if (result == null || result.isBlank()) return;
             for (String line : result.split("\n")) {
@@ -5943,6 +5944,9 @@ public class TRPGGameManager {
                 // 선행 불릿·기호 제거 (모델이 습관적으로 붙이는 '•', '-' 등)
                 clean = clean.replaceFirst("^[•\\-*]+\\s*", "").trim();
                 if (clean.isEmpty()) continue;
+                // ★메타 누출 차단★: 보조모델이 형식 대신 '이건 단서인가' 판단 사고(분석:/제외/**/없습니다 등)를
+                //   뱉으면 그 줄을 단서로 기록하지 않고 버린다(고정밀 신호만 — 진짜 단서 문장엔 안 나타남).
+                if (looksLikeClueMeta(clean)) continue;
                 String subject = null;
                 String body    = clean;
                 // '[대상] 내용' 형식
@@ -5970,6 +5974,24 @@ public class TRPGGameManager {
                 // G10: 예전엔 조종 중 keyFacts(핵심정보)에 "[조종 중] …"로도 등록해 핵심정보가 오염됐다 → 그 등록만 제거.
             }
         });
+    }
+
+    /** 단서 추출 보조모델이 형식 대신 '이건 단서인가' 판단 사고(분석:·(제외)·**·없습니다 등)를 뱉었는지 —
+     *  진짜 단서 문장엔 거의 안 나타나는 고정밀 신호만 검사해 그 줄을 걸러낸다(오탐으로 진짜 단서를 버리지 않게). */
+    private static boolean looksLikeClueMeta(String s) {
+        if (s == null || s.isBlank()) return true;
+        if (s.contains("**")) return true;                       // 마크다운 강조 = 모델 사고(진짜 단서엔 안 씀)
+        if (s.endsWith(":") || s.endsWith("：")) return true;     // '분석:' 같은 머리말
+        String head = s.replaceFirst("^[\\[(【]\\s*", "");
+        for (String h : new String[]{"이유", "분석", "설명", "판단", "결론", "제외"})
+            if (head.startsWith(h)) return true;
+        String t = s.replaceAll("\\s+", "");
+        return t.contains("(제외)") || t.contains("(제외됨)") || t.endsWith("제외") || t.contains("이므로제외") || t.contains("따라서제외")
+            || t.contains("=단순") || t.contains("=분위기") || t.contains("=감정") || t.contains("→분위기") || t.contains("→감정")
+            || t.contains("단순감각") || t.contains("단순묘사") || t.contains("분위기묘사") || t.contains("감정표현만")
+            || t.contains("없습니다") || t.contains("새단서가아님") || t.contains("새정보아님") || t.contains("새로운사실없음")
+            || t.contains("기록할가치") || t.contains("기록할만한") || t.contains("이미알려진상황")
+            || t.contains("제시된서술") || t.startsWith("서술은") || t.startsWith("서술이");
     }
 
     /** 기록 다이얼로그 — 전체 대화 / 정보만 선택 화면 (기록 아이템 우클릭 · /trpg log·info) */
