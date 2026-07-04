@@ -245,12 +245,16 @@ public class GameLogger {
         JsonObject extra = new JsonObject();
         extra.addProperty("kind", k);
         if (via != null && !via.isBlank()) extra.addProperty("via", via.trim());
+        // ★수신자를 .txt 줄에도 남긴다([→이름, 이름])★ — 예전엔 JSONL extra.to에만 있어 .txt 로그를 연 뷰어의
+        //   수신자(NPC·플레이어) 시점에서 통화 수신이 통째로 빠져 '혼잣말'처럼 보였다. 뷰어는 이 마커를 to로 파싱.
+        String toMark = "";
         if (to != null && !to.isEmpty()) {
             JsonArray arr = new JsonArray();
-            for (String t : to) if (t != null && !t.isEmpty()) arr.add(t);
-            if (arr.size() > 0) extra.add("to", arr);
+            java.util.List<String> names = new java.util.ArrayList<>();
+            for (String t : to) if (t != null && !t.isEmpty()) { arr.add(t); names.add(t); }
+            if (arr.size() > 0) { extra.add("to", arr); toMark = "[→" + String.join(", ", names) + "] "; }
         }
-        record("통신", actor, "[" + mediumLabel(k, via) + "] " + (text == null ? "" : text), extra);
+        record("통신", actor, "[" + mediumLabel(k, via) + "] " + toMark + (text == null ? "" : text), extra);
     }
 
     /** 통신 수단 라벨 — 통화·근처·방송·외침·편지·귓속말·수신호 등 가변 수단을 지원(모달리티: 음성/문서/신호). */
@@ -291,14 +295,16 @@ public class GameLogger {
         JsonObject extra = new JsonObject();
         extra.addProperty("kind", k);
         if (via != null && !via.isBlank()) extra.addProperty("via", via.trim());
+        String toMark = ""; // 수신자 .txt 마커 — logComm과 동일(수신자 시점 표시 보장)
         if (to != null && !to.isEmpty()) {
             JsonArray arr = new JsonArray();
-            for (String t : to) if (t != null && !t.isEmpty()) arr.add(t);
-            if (arr.size() > 0) extra.add("to", arr);
+            java.util.List<String> names = new java.util.ArrayList<>();
+            for (String t : to) if (t != null && !t.isEmpty()) { arr.add(t); names.add(t); }
+            if (arr.size() > 0) { extra.add("to", arr); toMark = "[→" + String.join(", ", names) + "] "; }
         }
         extra.addProperty("orig", orig == null ? "" : strip(orig).trim());  // 뷰어: 원본 줄
         if (cause != null && !cause.isEmpty()) extra.addProperty("cause", cause);
-        record("통신", actor, "[" + mediumLabel(k, via) + "] " + (altered == null ? "" : altered), extra);
+        record("통신", actor, "[" + mediumLabel(k, via) + "] " + toMark + (altered == null ? "" : altered), extra);
     }
 
     /**

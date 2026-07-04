@@ -44,6 +44,8 @@
   .ev.split{margin-left:18px;border-left:2px solid var(--line)} .ev .top.cont{opacity:.55}
   .ln{white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;line-height:1.6;color:#dfe2ea;margin:2px 0;animation:pop .16s ease}
   .ln.bc{color:var(--broadcast);font-weight:600} .ln.mono{color:#c9b3ff;font-style:italic}
+  .droll{color:#ffd27a;font-weight:700;font-variant-numeric:tabular-nums} /* 주사위 눈 — 재생 시 구르다 착지 */
+  .droll.land{color:#b9f0c8;text-shadow:0 0 9px rgba(140,240,170,.5);animation:pop .3s ease}
   .ln.say b{font-weight:700}
   .sp{height:7px}
   .ev.me{border-left-color:var(--input);background:#1b2418} .ev.me .top .who{color:var(--input)}
@@ -199,6 +201,10 @@ function normalize(ev){
         if(!viaName&&cm[3])viaName=cm[3].trim(); // 구체 매체명(전서구·통신구·서찰·필담…)
         bodyText=cm[4]; // 중복 라벨 제거 — 매체는 뱃지로만 표시
       } else { if(!actor)actor=who; if(!kind)kind="call"; }
+      // ★수신자 마커([→이름, 이름]) 파싱★ — .txt에도 수신자가 기록되게 한 신형 로그. to로 흡수하고 표시에선 제거.
+      //  (수신자가 없어 수신자 시점에서 통화가 안 보여 '혼잣말'처럼 되던 문제의 신형 로그 해결분 — 구형은 rebuild의 짝짓기 폴백.)
+      const rm=bodyText.match(/^\[→([^\]]+)\]\s*([\s\S]*)$/);
+      if(rm){ if(!to.length) to=rm[1].split(/\s*,\s*/).filter(Boolean); bodyText=rm[2]; }
     }
     else if(cat==="아이템"){kind=kind||"item";actor=actor||who; if(!remove&&/\s\(제거/.test(bodyText))remove=true;} // .txt: '(제거…)' 표기면 제거 이벤트
     else if(cat==="단서"){kind=kind||"clue";actor=actor||who;}
@@ -270,13 +276,23 @@ function parseBody(text){
   }
   return out;
 }
+// 주사위 결과 숫자(dN=M)를 굴림 스팬으로 감싼다 — 재생 시 숫자가 무작위로 구르다 최종값에 착지(단순 텍스트 대신 연출, 요청).
+//  esc() 이후의 안전한 문자열에만 적용. 정지 렌더에선 최종값 그대로(애니메이션은 재생 스텝에서만 시작).
+function diceSpanify(safe){ return safe.replace(/\bd(\d{1,3})=(\d{1,4})\b/g,(m,mx,fin)=>`d${mx}=<span class="droll" data-max="${mx}" data-final="${fin}">${fin}</span>`); }
 function blockHtml(b){
   if(b.type==="br") return `<div class="sp"></div>`;
   if(b.type==="bc") return `<div class="ln bc">📢 ${esc(b.text)}</div>`;
   if(b.type==="mono") return `<div class="ln mono">「${esc(b.text)}」</div>`;
   if(b.type==="say") return `<div class="ln say"><b style="color:${colorFor(b.name)}">${esc(b.name)}</b> ${esc(b.text)}</div>`;
-  return `<div class="ln">${esc(b.text)}</div>`;
+  return `<div class="ln">${diceSpanify(esc(b.text))}</div>`;
 }
+// 방금 붙인 조각 안의 굴림 스팬을 애니메이션 — 45ms×14프레임(~0.6초) 무작위 눈 → 최종값 착지+빛.
+function animateDrolls(scope){ if(!scope||!scope.querySelectorAll)return;
+  for(const el of scope.querySelectorAll(".droll:not(.don)")){ el.classList.add("don");
+    const max=Math.max(2,parseInt(el.dataset.max)||20), fin=el.dataset.final||el.textContent;
+    let n=0; const iv=setInterval(()=>{ if(!el.isConnected||++n>=14){ clearInterval(iv); el.textContent=fin; el.classList.add("land"); }
+      else el.textContent=1+Math.floor(Math.random()*max); },45);
+  } }
 function timeHtml(e){ return `<span class="t">${esc(e.t)}</span>`+(e.gt?`<span class="gt" title="게임 내 시각">🕐${esc(e.gt)}</span>`:""); } // 실시간 + (있으면)게임시간
 function headHtml(e){
   const me=(curVP!=="__all__"&&e.actor===curVP&&(e.kind==="input"||e.kind==="ability"))?" me":"";
@@ -438,10 +454,10 @@ function stopPlay(){ pausePlay(); qi=0; queue=[]; curBodyEl=null; }             
 // 큐 아이템 1개를 스트림에 그린다(instant=true면 애니메이션·스크롤 생략 — 시크 시 즉시 렌더). 길이(읽을 시간)를 반환.
 function renderQueueItem(stream,it,instant){
   let len=40;
-  if(it.whole){ stream.insertAdjacentHTML("beforeend",evHtml(it.e)); curBodyEl=null; len=(it.e.text||"").length||40; }
+  if(it.whole){ stream.insertAdjacentHTML("beforeend",evHtml(it.e)); if(!instant)animateDrolls(stream.lastElementChild); curBodyEl=null; len=(it.e.text||"").length||40; }
   else if(it.header){ const h=headHtml(it.e); const d=document.createElement("div"); d.className=h.cls;
     d.innerHTML=h.top+`<div class="body"></div>`; stream.appendChild(d); curBodyEl=d.querySelector(".body"); len=8; }
-  else if(it.block){ if(curBodyEl) curBodyEl.insertAdjacentHTML("beforeend",blockHtml(it.block)); len=(it.block.text||"").length||20; }
+  else if(it.block){ if(curBodyEl){ curBodyEl.insertAdjacentHTML("beforeend",blockHtml(it.block)); if(!instant)animateDrolls(curBodyEl.lastElementChild); } len=(it.block.text||"").length||20; }
   if(!instant) stream.lastElementChild&&stream.lastElementChild.scrollIntoView({block:"end",behavior:"smooth"});
   return len;
 }
@@ -659,7 +675,24 @@ function buildAlias(){
 function rebuild(raw){
   // 로그에 네이티브 통신 이벤트가 있으면(신형) @입력을 통화로 재분류하지 않는다 — '통화 두번' 방지. (구형 txt엔 없어 그대로 변환)
   HAS_NATIVE_COMM=raw.some(e=>e&&((e.kind&&COMM_KINDS.has(e.kind))||e.cat==="통신"));
-  EVENTS=raw.map(normalize).sort((a,b)=>(a.seq||0)-(b.seq||0)); buildViewpoints(); curVP="__all__"; stopPlay(); }
+  EVENTS=raw.map(normalize).sort((a,b)=>(a.seq||0)-(b.seq||0));
+  // ★구형 로그 통화 상대 짝짓기★: 예전 .txt엔 수신자가 없어 수신자(NPC·플레이어) 시점에서 통화 수신이
+  //  통째로 빠져 '혼잣말'처럼 보였다. 대상형 통신(통화·편지·귓속말·정신감응)에서 to가 비면, 근처(±12 이벤트)의
+  //  ★같은 종류·같은 매체·다른 화자★ 통신을 대화 상대로 보아 서로의 to를 채운다(신형 로그는 [→수신자] 명시 우선).
+  (function pairOldComms(){ const TARGETED=new Set(["call","letter","whisper","psychic"]);
+    // 서술·단서가 사이에 아무리 끼어도 대화는 ★통신 이벤트끼리는 연속★이다 — 통신 목록(T)에서 이웃(±6)을 찾는다.
+    const T=[]; for(let i=0;i<EVENTS.length;i++){const e=EVENTS[i]; if(TARGETED.has(e.kind)&&isPerson(e.actor))T.push(i);}
+    const pick=(p,needVia)=>{ const e=EVENTS[T[p]];
+      for(let d=1;d<=6;d++){ for(const q of [p-d,p+d]){ if(q<0||q>=T.length)continue; const o=EVENTS[T[q]];
+        if(o.kind!==e.kind||o.actor===e.actor)continue;
+        if(needVia&&(o.via||"")!==(e.via||""))continue;
+        return o; } }
+      return null; };
+    for(let p=0;p<T.length;p++){ const e=EVENTS[T[p]];
+      if(e.to.length)continue;
+      const o=pick(p,true)||pick(p,false); // 같은 매체 우선(병행 통화 구분) → 없으면 매체 무관(양쪽 기기 이름이 달라도 같은 통화: 스마트폰↔통화)
+      if(o){ e.to=[o.actor]; if(!o.to.length)o.to=[e.actor]; } } })();
+  buildViewpoints(); curVP="__all__"; stopPlay(); }
 // 로그에서 괴담(시나리오) 이름 파싱 — 세션 이벤트의 title 필드(JSONL) 또는 '괴담: X' 라인(.txt)
 function parseScenarioTitle(text){
   const m=(text||"").match(/"title"\s*:\s*"((?:[^"\\]|\\.)*)"/);
@@ -970,12 +1003,13 @@ function connTargets(z){
   return out;
 }
 function distLabel(d){ if(d==null||d==="")return ""; return typeof d==="number"?(d+"분"):String(d); }
-// 박스(px,py,bw,bh) 중심에서 (tx,ty) 방향으로 나갈 때 테두리와 만나는 점 = '문' 위치(복도가 시작되는 곳).
-function borderPt(px,py,bw,bh,tx,ty){ const cx=px+bw/2,cy=py+bh/2,dx=tx-cx,dy=ty-cy;
-  if(!dx&&!dy)return {x:cx,y:cy}; const s=Math.min(dx?(bw/2)/Math.abs(dx):1e9, dy?(bh/2)/Math.abs(dy):1e9);
-  return {x:cx+dx*s,y:cy+dy*s}; }
-// ★설계도(평면도) 지도★ — 방=사각형, 연결=문과 문 사이를 잇는 ★복도(평행 이중선)★, 통신불가=빨간 점선. (요청: 이미지처럼 설계도 형식)
-//  know={loc,visited}가 주어지면 ★시점 지식 미니맵★(안개): 현재=흰색, 주변=밝게, 다녀온 곳=어둡게, 모르는 곳=숨김. (요청 #9)
+// ★설계도(평면도) 지도 v2★ — '어색하고 설계도 같지 않다'(피드백)는 행 고정 격자+대각 복도를 갈아엎은 인접 배치 엔진:
+//  · 연결된 방을 ★옆 칸에 붙여 배치★(BFS) → 복도가 참고 이미지처럼 짧은 ★통로 토막★이 된다(지도를 가로지르는 긴 선 제거).
+//  · 복도는 ★직교만★(필요 시 ㄱ자, 다른 방을 덜 지나는 코너 선택) — 대각선 금지. 굵은 벽선 위에 배경색을 덧그려
+//    ★속이 빈 통로★(벽 2줄)로 렌더, 방 테두리를 뚫는 지점이 자연스럽게 '문'이 된다.
+//  · 방 크기는 이름 길이·연결 수(허브=크게)에 따라 ★가변★ — 지명은 절대 안 짤린다(textLength 압축).
+//  · 소요 시간은 복도 ★안★에 표기, 대분류는 방 색 + 하단 범례.
+//  know={loc,visited}면 시점 지식 미니맵(안개): 현재=흰, 주변=밝게, 다녀온 곳=어둡게, 모르는 곳=숨김.
 function zoneMapSvg(zones, know){
   const listAll=(zones||[]).filter(z=>z&&z.zone_id);
   if(!listAll.length)return "";
@@ -991,44 +1025,116 @@ function zoneMapSvg(zones, know){
   }
   const list=shown?listAll.filter(z=>shown.has(z.zone_id)):listAll;
   if(!list.length)return `<div class="dim2" style="margin:4px 0 8px">아직 파악한 구역이 없습니다(이동하면 드러납니다).</div>`;
-  const areas=[],byArea={};
-  for(const z of list){const a=z.area||"(구역)"; if(!byArea[a]){byArea[a]=[];areas.push(a);} byArea[a].push(z);}
-  const BW=132,BH=54,GX=180,GY=112,PADX=18,TOP=28; const pos={}; let maxCols=1;
-  areas.forEach((a,ai)=>{ byArea[a].forEach((z,ci)=>{ pos[z.zone_id]={x:PADX+ci*GX,y:TOP+ai*GY,z}; }); if(byArea[a].length>maxCols)maxCols=byArea[a].length; });
-  const W=PADX*2+(maxCols-1)*GX+BW, H=TOP+(areas.length-1)*GY+BH+18;
-  const cx=id=>pos[id].x+BW/2, cy=id=>pos[id].y+BH/2;
+  // ── 그래프(보이는 구역 사이 양방향 연결) ──
+  const ids=list.map(z=>z.zone_id), idSet=new Set(ids);
+  const nbr={}; for(const id of ids)nbr[id]=new Set();
+  const edges=[], ek=new Set();
+  for(const z of list)for(const ct of connTargets(z)){ const t=rid(ct.to); if(!t||t===z.zone_id||!idSet.has(t))continue;
+    nbr[z.zone_id].add(t); nbr[t].add(z.zone_id);
+    const k=[z.zone_id,t].sort().join("|"); if(!ek.has(k)){ek.add(k);edges.push({a:z.zone_id,b:t,dist:ct.dist});} }
+  // ── 방 크기: 이름이 통째로 들어가게(짤림 금지) + 허브 방(연결 3+)은 크게 — 참고 이미지의 거실·마당 느낌 ──
+  const estW=s=>{let w=0;for(const ch of String(s))w+=ch.charCodeAt(0)>0x2E80?13:7.6;return w;};
+  const dim={};
+  for(const z of list){ const nm=z.name||z.zone_id, deg=nbr[z.zone_id].size;
+    const extra=((know&&z.zone_id===curId)?18:0)+(isCommDeadZone(z)?16:0);
+    const need=Math.round(estW(nm))+extra+22;
+    dim[z.zone_id]={w:Math.max(86,Math.min(160,need)), h:deg>=3?66:50, squeeze:need>160}; }
+  // ── 인접 배치(BFS): 이웃을 빈 옆 칸에 → 안 되면 한 칸 건너(사이 칸은 복도로 예약해 직선 긴 복도) → 나선 탐색 ──
+  const cellW=182, cellH=104, key=(x,y)=>x+","+y;
+  const cellOf={}, at={};
+  const free=(x,y)=>!at[key(x,y)];
+  const place=(id,x,y)=>{cellOf[id]=[x,y];at[key(x,y)]=id;};
+  const ordered=[...ids].sort((a,b)=>nbr[b].size-nbr[a].size); // 허브부터(중앙에 앉게)
+  const placedS=new Set();
+  for(const root of ordered){ if(placedS.has(root))continue;
+    let sx=0; if(placedS.size){let mx=-1e9;for(const id of placedS)mx=Math.max(mx,cellOf[id][0]); sx=mx+2;}
+    while(!free(sx,0))sx++;
+    place(root,sx,0); placedS.add(root);
+    const q=[root];
+    while(q.length){ const c=q.shift(); const cc0=cellOf[c], cx0=cc0[0], cy0=cc0[1];
+      const DIRS=((cx0+cy0)%2===0)?[[1,0],[0,1],[-1,0],[0,-1]]:[[0,1],[1,0],[0,-1],[-1,0]]; // 방향 교대 → 정사각형에 가깝게 뭉침
+      for(const n of [...nbr[c]].filter(x=>!placedS.has(x)).sort((a,b)=>nbr[b].size-nbr[a].size)){
+        let spot=null;
+        for(const d of DIRS)if(free(cx0+d[0],cy0+d[1])){spot=[cx0+d[0],cy0+d[1]];break;}
+        if(!spot)for(const d of DIRS){ const ix=cx0+d[0],iy=cy0+d[1],jx=cx0+2*d[0],jy=cy0+2*d[1];
+          if(free(jx,jy)&&(at[key(ix,iy)]==="#corr"||free(ix,iy))){ if(free(ix,iy))at[key(ix,iy)]="#corr"; spot=[jx,jy]; break; } }
+        if(!spot){ outer: for(let r=1;r<=7;r++)for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++){
+            if(Math.max(Math.abs(dx),Math.abs(dy))!==r||!free(cx0+dx,cy0+dy))continue; spot=[cx0+dx,cy0+dy]; break outer; } }
+        if(spot){place(n,spot[0],spot[1]);placedS.add(n);q.push(n);}
+      }
+    }
+  }
+  let minX=1e9,minY=1e9,maxX=-1e9,maxY=-1e9;
+  for(const id of ids){const p=cellOf[id];minX=Math.min(minX,p[0]);minY=Math.min(minY,p[1]);maxX=Math.max(maxX,p[0]);maxY=Math.max(maxY,p[1]);}
+  const PAD=16,TOP2=12;
+  const areasUsed=know?[]:[...new Set(list.map(z=>z.area||""))].filter(Boolean); // 미니맵은 색=상태라 대분류 범례 생략
+  const legendH=areasUsed.length>1?18:0;
+  const W=PAD*2+(maxX-minX+1)*cellW, H=TOP2*2+(maxY-minY+1)*cellH+legendH;
+  const box={};
+  for(const id of ids){ const g0=cellOf[id], d=dim[id];
+    const bcx=PAD+(g0[0]-minX)*cellW+cellW/2, bcy=TOP2+(g0[1]-minY)*cellH+cellH/2;
+    box[id]={x:bcx-d.w/2,y:bcy-d.h/2,w:d.w,h:d.h,cx:bcx,cy:bcy}; }
   const bg=`<defs><pattern id="bpg" width="22" height="22" patternUnits="userSpaceOnUse"><path d="M22 0H0V22" fill="none" stroke="#273052" stroke-width="0.6"/></pattern></defs>`
     +`<rect width="${W}" height="${H}" fill="#0f1424"/><rect width="${W}" height="${H}" fill="url(#bpg)"/>`;
-  // ── 복도: 두 방의 '문'(테두리 교점) 사이를 평행 이중선으로 이어 통로처럼. (양쪽 다 보이는 연결만 — 안개 밖은 자동 생략) ──
-  let corr="",seen={};
-  const ln=(x1,y1,x2,y2,c,w)=>`<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${c}" stroke-width="${w}"/>`;
-  for(const z of list)for(const ct of connTargets(z)){ const c=rid(ct.to)||ct.to; if(!pos[c])continue; const k=[z.zone_id,c].sort().join("|"); if(seen[k])continue; seen[k]=1;
-    const A=borderPt(pos[z.zone_id].x,pos[z.zone_id].y,BW,BH,cx(c),cy(c));
-    const B=borderPt(pos[c].x,pos[c].y,BW,BH,cx(z.zone_id),cy(z.zone_id));
-    const dx=B.x-A.x,dy=B.y-A.y,len=Math.hypot(dx,dy)||1,nx=-dy/len,ny=dx/len,w=6;
-    const cc=know?'#8fd4b0':'#aeb9d4'; // 미니맵: 이동가능 복도는 초록빛으로 강조
-    corr+=ln(A.x+nx*w,A.y+ny*w,B.x+nx*w,B.y+ny*w,cc,1.4)+ln(A.x-nx*w,A.y-ny*w,B.x-nx*w,B.y-ny*w,cc,1.4);
-    const dl=distLabel(ct.dist); if(dl)corr+=`<text x="${((A.x+B.x)/2)|0}" y="${((A.y+B.y)/2-3)|0}" text-anchor="middle" font-size="9" fill="#cabfff">${esc(dl)}</text>`;
-  }
-  // ── 방: 미니맵이면 현재(흰)·주변(밝게)·다녀온 곳(어둡게)로 색 구분, 전체맵이면 대분류 색조 ──
-  let boxes="";
-  for(const z of list){ const p=pos[z.zone_id],dead=isCommDeadZone(z),nm=z.name||z.zone_id,short=nm.length>9?nm.slice(0,8)+"…":nm;
-    let fill=areaTint(z.area||""),fop=0.5,stroke=dead?'#ff5a5a':'#c6d0e6',sw=dead?2.2:1.6,txt='#f2f5fb';
-    if(know){ const st=z.zone_id===curId?'cur':adjId.has(z.zone_id)?'adj':'known';
-      if(st==='cur'){fill='#eef2fb';fop=0.97;stroke='#ffffff';sw=2.6;txt='#14203a';}
-      else if(st==='adj'){fill=areaTint(z.area||'');fop=0.72;stroke='#e2e8f6';sw=1.9;txt='#f2f5fb';}
+  // ── 방(설계도식 사각형): 채움·테두리 먼저 — 복도가 나중에 벽을 뚫어 '문'이 생긴다. 이름표는 맨 위층에 ──
+  let rects="",labels="";
+  for(const z of list){ const id=z.zone_id,b=box[id],dead=isCommDeadZone(z),nm=z.name||z.zone_id;
+    let fill=areaTint(z.area||""),fop=0.55,stroke=dead?'#ff5a5a':'#c6d0e6',sw=dead?2.2:1.7,txt='#f2f5fb';
+    if(know){ const stt=id===curId?'cur':adjId.has(id)?'adj':'known';
+      if(stt==='cur'){fill='#eef2fb';fop=0.97;stroke='#ffffff';sw=2.6;txt='#14203a';}
+      else if(stt==='adj'){fop=0.75;stroke='#e2e8f6';sw=1.9;}
       else {fill='#161d2e';fop=0.92;stroke='#3f4a66';sw=1.2;txt='#8792ab';}
       if(dead){stroke='#ff5a5a';sw=2.2;} }
-    boxes+=`<g><title>${esc(nm)}${z.area?" — "+esc(z.area):""}${dead?" · 통신불가":""}${z.zone_id===curId?" · 현재 위치":""}</title>`
-      +`<rect x="${p.x}" y="${p.y}" width="${BW}" height="${BH}" rx="2" fill="${fill}" fill-opacity="${fop}" stroke="${stroke}" stroke-width="${sw}" ${dead?'stroke-dasharray="5 3"':''}/>`
-      +`<text x="${p.x+BW/2}" y="${p.y+BH/2+4}" text-anchor="middle" font-size="13" fill="${txt}">${(z.zone_id===curId?'▶ ':'')+esc(short)}${dead?' 📵':''}</text></g>`; }
-  let labels=""; areas.forEach((a,ai)=>{ labels+=`<text x="${PADX}" y="${TOP+ai*GY-9}" font-size="10" fill="#9b8fd6">${esc(a)}</text>`; });
+    rects+=`<g><title>${esc(nm)}${z.area?" — "+esc(z.area):""}${dead?" · 통신불가":""}${id===curId?" · 현재 위치":""}</title>`
+      +`<rect x="${b.x.toFixed(1)}" y="${b.y.toFixed(1)}" width="${b.w}" height="${b.h}" fill="${fill}" fill-opacity="${fop}" stroke="${stroke}" stroke-width="${sw}" ${dead?'stroke-dasharray="5 3"':''}/></g>`;
+    const label=(id===curId?'▶ ':'')+nm+(dead?' 📵':'');
+    labels+=`<text x="${b.cx.toFixed(1)}" y="${(b.cy+4).toFixed(1)}" text-anchor="middle" font-size="13" fill="${txt}" ${dim[id].squeeze?`textLength="${b.w-10}" lengthAdjust="spacingAndGlyphs"`:''} style="paint-order:stroke" stroke="#0f1424" stroke-width="2.5">${esc(label)}</text>`;
+  }
+  // ── 복도: 직선 우선(다른 방 안 지날 때만), 아니면 ㄱ자 중 덜 부딪히는 코너. 벽 15px 위에 배경 11px 덧그림=속 빈 통로 ──
+  const wallC=know?'#8fd4b0':'#aeb9d4', holl='#0f1424';
+  const hitOthers=(a,b,x1,y1,x2,y2)=>{const xa=Math.min(x1,x2)-1,xb=Math.max(x1,x2)+1,ya=Math.min(y1,y2)-1,yb=Math.max(y1,y2)+1;let n=0;
+    for(const id of ids){ if(id===a||id===b)continue; const r=box[id]; if(xb>r.x&&xa<r.x+r.w&&yb>r.y&&ya<r.y+r.h)n++; } return n; };
+  const ep=(b,tx,ty)=>Math.abs(tx-b.cx)<0.5?{x:b.cx,y:ty<b.cy?b.y+2:b.y+b.h-2}:{x:tx<b.cx?b.x+2:b.x+b.w-2,y:b.cy}; // 방 테두리 2px 안쪽 = 문
+  let corr="",dists="";
+  for(const e of edges){ const A=box[e.a],B=box[e.b]; if(!A||!B)continue;
+    let pts=null,lab=null;
+    if(Math.abs(A.cy-B.cy)<Math.min(A.h,B.h)/2){ const y=(A.cy+B.cy)/2,L=A.cx<B.cx?A:B,R=A.cx<B.cx?B:A,x1=L.x+L.w-2,x2=R.x+2;
+      if(x2>x1&&!hitOthers(e.a,e.b,x1,y,x2,y)){pts=[[x1,y],[x2,y]];lab=[(x1+x2)/2,y];} }
+    if(!pts&&Math.abs(A.cx-B.cx)<Math.min(A.w,B.w)/2){ const x=(A.cx+B.cx)/2,T=A.cy<B.cy?A:B,Bo=A.cy<B.cy?B:A,y1=T.y+T.h-2,y2=Bo.y+2;
+      if(y2>y1&&!hitOthers(e.a,e.b,x,y1,x,y2)){pts=[[x,y1],[x,y2]];lab=[x,(y1+y2)/2];} }
+    if(!pts){ let best=null,bh=1e9;
+      for(const C of [[B.cx,A.cy],[A.cx,B.cy]]){
+        const p0=ep(A,C[0],C[1]),p1=ep(B,C[0],C[1]);
+        const h=hitOthers(e.a,e.b,p0.x,p0.y,C[0],C[1])+hitOthers(e.a,e.b,C[0],C[1],p1.x,p1.y);
+        if(h<bh){bh=h;best={pts:[[p0.x,p0.y],[C[0],C[1]],[p1.x,p1.y]],lab:C};} }
+      pts=best.pts;lab=best.lab;
+      if(bh>0){ // ㄱ자 코너가 모두 방에 막히면 ★거터(방 사이 틈) 경유 ㄹ자★ — 다른 방을 관통하던 복도 제거
+        const gx=A.cx<B.cx?(A.x+A.w+B.x)/2:(B.x+B.w+A.x)/2; // 두 방 사이 세로 거터
+        const gy=A.cy<B.cy?(A.y+A.h+B.y)/2:(B.y+B.h+A.y)/2; // 두 방 사이 가로 거터
+        const zh=[[A.cx<B.cx?A.x+A.w-2:A.x+2,A.cy],[gx,A.cy],[gx,B.cy],[A.cx<B.cx?B.x+2:B.x+B.w-2,B.cy]];
+        const zv=[[A.cx,A.cy<B.cy?A.y+A.h-2:A.y+2],[A.cx,gy],[B.cx,gy],[B.cx,A.cy<B.cy?B.y+2:B.y+B.h-2]];
+        for(const zp of [zh,zv]){ let h=0;
+          for(let i=0;i+1<zp.length;i++)h+=hitOthers(e.a,e.b,zp[i][0],zp[i][1],zp[i+1][0],zp[i+1][1]);
+          if(h<bh){bh=h;pts=zp;lab=[zp[1][0]===zp[2][0]?zp[1][0]:(zp[1][0]+zp[2][0])/2, zp[1][1]===zp[2][1]?zp[1][1]:(zp[1][1]+zp[2][1])/2];} }
+      }
+    }
+    const d=pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join('');
+    corr+=`<path d="${d}" stroke="${wallC}" stroke-width="15" fill="none" stroke-linejoin="miter" stroke-linecap="butt"/>`
+        +`<path d="${d}" stroke="${holl}" stroke-width="11" fill="none" stroke-linejoin="miter" stroke-linecap="butt"/>`;
+    const dl=distLabel(e.dist);
+    if(dl)dists+=`<text x="${lab[0].toFixed(1)}" y="${(lab[1]+3).toFixed(1)}" text-anchor="middle" font-size="9" fill="#cfd6ea" style="paint-order:stroke" stroke="#0f1424" stroke-width="3">${esc(dl)}</text>`;
+  }
+  // ── 대분류 범례(하단): 색=건물/구획 ──
+  let legendSvg="";
+  if(areasUsed.length>1){ let lx=PAD; const ly=H-6;
+    for(const a of areasUsed){ legendSvg+=`<rect x="${lx}" y="${ly-8}" width="9" height="9" fill="${areaTint(a)}" fill-opacity="0.8" stroke="#c6d0e6" stroke-width="0.7"/>`
+      +`<text x="${lx+13}" y="${ly}" font-size="9.5" fill="#aab3cf">${esc(a)}</text>`; lx+=13+Math.round(estW(a)*0.73)+18; } }
   const title=know?'미니맵 — 아는 구역만':'구역 지도(설계도)';
-  const legend=know?'▶흰색=현재 · 밝음=주변 · 어두움=다녀온 곳 · 초록 복도=이동 가능(모르는 곳은 숨김)':'📵 = 통신 불가 · 복도(이중선) = 연결 · 색 = 대분류(건물)';
+  const foot=know?'▶흰색=현재 · 밝음=주변 · 어두움=다녀온 곳 · 초록 통로=이동 가능(모르는 곳은 숨김)':'통로=연결(안의 숫자=소요 시간) · 📵=통신 불가 · 색=대분류(하단 범례)';
   return `<div class="zmap" style="overflow:auto;margin-bottom:6px;cursor:zoom-in" onclick="mapZoom(this)" title="클릭하면 크게 보기">`
     +`<div class="dim2" style="margin-bottom:3px">${title} <span style="background:#2a2450;border:1px solid #4a3f80;border-radius:6px;padding:0 7px;color:#cabfff">🔍 크게 보기</span></div>`
-    +`<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-height:380px;min-width:${Math.min(W,320)}px">${bg}${corr}${boxes}${labels}</svg>`
-    +`<div class="dim2">${legend}</div></div>`;
+    +`<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-height:400px;min-width:${Math.min(W,320)}px">${bg}${rects}${corr}${dists}${labels}${legendSvg}</svg>`
+    +`<div class="dim2">${foot}</div></div>`;
 }
 // 지도 클릭 → 전체화면 오버레이로 ★크게★ 보기(스크롤 가능). 아무 곳이나 누르면 닫힘. (뷰어 맵이 작다는 피드백)
 function mapZoom(el){
