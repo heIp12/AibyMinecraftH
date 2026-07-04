@@ -520,13 +520,22 @@ public class MapManager {
                 g.drawLine(pa[0], pa[1], pb[0], pb[1]);
             }
         }
+        // ★긴 지명 짤림(#10) 대응★: 박스에 다 들어가는 짧은 이름은 그대로, ★안 들어가는 긴 이름은 번호표 [n]★로
+        //   그리고 아래 ★범례★에 "[n] 전체 지명"을 적어 지명을 따로 알려준다("어두운…"처럼 잘려 뭔지 모르던 문제 해결).
+        java.util.List<String> longs = new java.util.ArrayList<>();
+        java.util.Map<String, Integer> num = new java.util.HashMap<>();
+        for (String id : revealed) { if (!pos.containsKey(id)) continue;
+            String nm = names.getOrDefault(id, id);
+            if (fm.stringWidth(nm) > maxBoxW - 8) { num.put(id, longs.size() + 1); longs.add(id); } }
+        int legendH = longs.isEmpty() ? 0 : Math.min(rh / 2, fm.getHeight() * Math.min(longs.size(), Math.max(1, (rh / 2) / fm.getHeight())) + 4);
+        int graphH = rh - legendH;
         for (String id : revealed) {
             int[] p = pos.get(id); if (p == null) continue;
-            String label = fit(fm, names.getOrDefault(id, id), maxBoxW - 8);
+            String label = num.containsKey(id) ? ("[" + num.get(id) + "]") : fit(fm, names.getOrDefault(id, id), maxBoxW - 8);
             int tw = fm.stringWidth(label);
             int bw = tw + 8, bh = fm.getAscent() + 4;
             int bx = clamp(p[0] - bw / 2, rx, rx + rw - bw);
-            int by = clamp(p[1] - bh / 2, ry, ry + rh - bh);
+            int by = clamp(p[1] - bh / 2, ry, ry + graphH - bh); // 범례 영역 침범 안 하게 graphH로 제한
             g.setColor(id.equals(cur) ? C_BOX2 : C_BOX); g.fillRect(bx, by, bw, bh);
             g.setColor(C_BORDER);                          g.drawRect(bx, by, bw, bh);
             g.setColor(C_TEXT);                            g.drawString(label, bx + 4, by + fm.getAscent());
@@ -534,6 +543,18 @@ public class MapManager {
                 int px = bx + 4, topY = by - 1;
                 g.setColor(C_POLE); g.drawLine(px, topY, px, topY - 11);
                 g.setColor(C_FLAG); g.fillPolygon(new int[]{px, px + 8, px}, new int[]{topY - 11, topY - 8, topY - 5}, 3);
+            }
+        }
+        if (!longs.isEmpty()) { // ── 범례: [n] 전체 지명 ──
+            int ly0 = ry + graphH;
+            g.setColor(C_BG); g.fillRect(rx, ly0, rw, legendH);         // 배경으로 겹친 선·박스 가림
+            g.setColor(C_DIV); g.drawLine(rx, ly0, rx + rw, ly0);
+            int yy = ly0 + fm.getAscent() + 1;
+            for (String id : longs) {
+                if (yy > ry + rh - 1) break;                            // 범례 공간 초과분은 생략
+                g.setColor(id.equals(cur) ? C_FLAG : C_TEXT);
+                g.drawString(fit(fm, "[" + num.get(id) + "] " + names.getOrDefault(id, id), rw - 4), rx + 2, yy);
+                yy += fm.getHeight();
             }
         }
     }

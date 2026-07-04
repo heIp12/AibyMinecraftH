@@ -1562,6 +1562,15 @@ public class TRPGGameManager {
                     if (pd != null) noteHeldItem(pd, itemId);
                 }
             }
+            // ★시작부터 아는 것(initial_info)을 '알고있는 정보'에 등록(#6)★ — 예전엔 GM 프롤로그 컨텍스트에만 쓰여
+            //   기록 GUI에는 남지 않아, 배역이 처음부터 알던 배경·단서를 플레이어가 다시 확인할 수 없었다.
+            if (pd != null && r.has("initial_info") && r.get("initial_info").isJsonArray()) {
+                for (var inf : r.getAsJsonArray("initial_info")) {
+                    if (inf == null || inf.isJsonNull()) continue;
+                    String s = inf.getAsString().trim();
+                    if (!s.isEmpty()) pd.addInfo("시작 정보", s); // infoGroups '시작 정보' 묶음 → 기록 GUI에 표시
+                }
+            }
         }
     }
 
@@ -5898,10 +5907,20 @@ public class TRPGGameManager {
     // ──────────────────────────────────────────────────────────────
 
     /** 행동 플레이어에게 GM 서술 전달 + WITNESS 태그로 주변 플레이어에게 간접 단서 전달 */
+    /** ★관전 중계(#7)★: target에게 전달되는 서술을 그를 '보고 있는' 관전자에게도 그대로 전달한다.
+     *  관전 카메라는 대상의 월드만 보여줄 뿐 대상의 HUD(타이틀)·채팅은 안 보여줘, 관전자가 대상에게 뜨는 텍스트를 못 보던 문제 해결. */
+    private void relayToSpectators(Player target, String text) {
+        if (target == null || text == null || text.isBlank()) return;
+        for (Player sp : Bukkit.getOnlinePlayers()) {
+            if (sp.getGameMode() != GameMode.SPECTATOR || sp.getUniqueId().equals(target.getUniqueId())) continue;
+            if (target.equals(sp.getSpectatorTarget())) narrativeDelivery.deliver(sp, text);
+        }
+    }
     private void deliverNarrative(Player actor, String raw) {
         String narrative = ai.stripTags(raw);
         if (!narrative.isBlank() && actor != null && actor.isOnline()) {
             narrativeDelivery.deliver(actor, narrative);
+            relayToSpectators(actor, narrative); // 관전자에게도 같은 서술 전달(#7)
             PlayerData apd = state.getPlayer(actor);
             // 로그 헤더에 계정명(영문 닉) 대신 캐릭터명 사용 — 뷰어 시점 라우팅은 logAlias(계정↔캐릭터)로 유지된다.
             gameLogger.logGmOutput(apd != null ? apd.gmDisplayName() : actor.getName(), narrative);
@@ -5922,6 +5941,7 @@ public class TRPGGameManager {
                     Player target = Bukkit.getPlayer(pd.uuid);
                     if (target != null && target.isOnline()) {
                         narrativeDelivery.deliver(target, witnessText);
+                        relayToSpectators(target, witnessText); // 관전자에게도 목격 서술 전달(#7)
                         appendNarrativeLog(pd, witnessText);
                         extractAndStoreInfo(witnessText, pd);
                     }

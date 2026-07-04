@@ -86,15 +86,16 @@ public class ChatListener implements Listener {
         trpgManager.getNarrativeDelivery().onSneak(event.getPlayer());
     }
 
-    /** 관전자가 인물을 클릭해 그 시점으로 '들어가면' 자동으로 대상 소지품 미러를 연다(웅크리기는 관전 중 동작 안 함). */
+    /** 관전자가 인물을 클릭해 그 시점으로 '들어가면' — ★자동으로 소지품을 열지 않는다(#8)★. 대상에게 뜨는 서술을 그대로
+     *  지켜보다가, 소지품이 보고 싶을 때 ★우클릭★하면 미러가 열린다(onInfoItemUse의 관전 분기). 들어간 순간엔 안내만 띄운다. */
     @EventHandler
     public void onStartSpectating(com.destroystokyo.paper.event.player.PlayerStartSpectatingEntityEvent event) {
         TRPGGameManager trpgManager = trpg();
         if (trpgManager == null || !trpgManager.isActive()) return;
         if (!(event.getNewSpectatorTarget() instanceof Player)) return;
         Player spectator = event.getPlayer();
-        // 이벤트 시점엔 getSpectatorTarget()이 아직 갱신 전이라 다음 틱에 연다.
-        Bukkit.getScheduler().runTask(plugin, () -> trpgManager.openSpectatorMirror(spectator));
+        Bukkit.getScheduler().runTask(plugin, () ->
+            spectator.sendMessage("§8(관전 중 — 이 인물에게 뜨는 서술을 함께 봅니다. 소지품이 궁금하면 §f우클릭§8하세요.)"));
     }
 
     /** 캐릭터 정보 / 기록 아이템 우클릭 → 해당 GUI 열기 */
