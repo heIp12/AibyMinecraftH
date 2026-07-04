@@ -44,6 +44,8 @@
   .ev.split{margin-left:18px;border-left:2px solid var(--line)} .ev .top.cont{opacity:.55}
   .ln{white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;line-height:1.6;color:#dfe2ea;margin:2px 0;animation:pop .16s ease}
   .ln.bc{color:var(--broadcast);font-weight:600} .ln.mono{color:#c9b3ff;font-style:italic}
+  .droll{color:#ffd27a;font-weight:700;font-variant-numeric:tabular-nums} /* 주사위 눈 — 재생 시 구르다 착지 */
+  .droll.land{color:#b9f0c8;text-shadow:0 0 9px rgba(140,240,170,.5);animation:pop .3s ease}
   .ln.say b{font-weight:700}
   .sp{height:7px}
   .ev.me{border-left-color:var(--input);background:#1b2418} .ev.me .top .who{color:var(--input)}
@@ -270,13 +272,23 @@ function parseBody(text){
   }
   return out;
 }
+// 주사위 결과 숫자(dN=M)를 굴림 스팬으로 감싼다 — 재생 시 숫자가 무작위로 구르다 최종값에 착지(단순 텍스트 대신 연출, 요청).
+//  esc() 이후의 안전한 문자열에만 적용. 정지 렌더에선 최종값 그대로(애니메이션은 재생 스텝에서만 시작).
+function diceSpanify(safe){ return safe.replace(/\bd(\d{1,3})=(\d{1,4})\b/g,(m,mx,fin)=>`d${mx}=<span class="droll" data-max="${mx}" data-final="${fin}">${fin}</span>`); }
 function blockHtml(b){
   if(b.type==="br") return `<div class="sp"></div>`;
   if(b.type==="bc") return `<div class="ln bc">📢 ${esc(b.text)}</div>`;
   if(b.type==="mono") return `<div class="ln mono">「${esc(b.text)}」</div>`;
   if(b.type==="say") return `<div class="ln say"><b style="color:${colorFor(b.name)}">${esc(b.name)}</b> ${esc(b.text)}</div>`;
-  return `<div class="ln">${esc(b.text)}</div>`;
+  return `<div class="ln">${diceSpanify(esc(b.text))}</div>`;
 }
+// 방금 붙인 조각 안의 굴림 스팬을 애니메이션 — 45ms×14프레임(~0.6초) 무작위 눈 → 최종값 착지+빛.
+function animateDrolls(scope){ if(!scope||!scope.querySelectorAll)return;
+  for(const el of scope.querySelectorAll(".droll:not(.don)")){ el.classList.add("don");
+    const max=Math.max(2,parseInt(el.dataset.max)||20), fin=el.dataset.final||el.textContent;
+    let n=0; const iv=setInterval(()=>{ if(!el.isConnected||++n>=14){ clearInterval(iv); el.textContent=fin; el.classList.add("land"); }
+      else el.textContent=1+Math.floor(Math.random()*max); },45);
+  } }
 function timeHtml(e){ return `<span class="t">${esc(e.t)}</span>`+(e.gt?`<span class="gt" title="게임 내 시각">🕐${esc(e.gt)}</span>`:""); } // 실시간 + (있으면)게임시간
 function headHtml(e){
   const me=(curVP!=="__all__"&&e.actor===curVP&&(e.kind==="input"||e.kind==="ability"))?" me":"";
@@ -438,10 +450,10 @@ function stopPlay(){ pausePlay(); qi=0; queue=[]; curBodyEl=null; }             
 // 큐 아이템 1개를 스트림에 그린다(instant=true면 애니메이션·스크롤 생략 — 시크 시 즉시 렌더). 길이(읽을 시간)를 반환.
 function renderQueueItem(stream,it,instant){
   let len=40;
-  if(it.whole){ stream.insertAdjacentHTML("beforeend",evHtml(it.e)); curBodyEl=null; len=(it.e.text||"").length||40; }
+  if(it.whole){ stream.insertAdjacentHTML("beforeend",evHtml(it.e)); if(!instant)animateDrolls(stream.lastElementChild); curBodyEl=null; len=(it.e.text||"").length||40; }
   else if(it.header){ const h=headHtml(it.e); const d=document.createElement("div"); d.className=h.cls;
     d.innerHTML=h.top+`<div class="body"></div>`; stream.appendChild(d); curBodyEl=d.querySelector(".body"); len=8; }
-  else if(it.block){ if(curBodyEl) curBodyEl.insertAdjacentHTML("beforeend",blockHtml(it.block)); len=(it.block.text||"").length||20; }
+  else if(it.block){ if(curBodyEl){ curBodyEl.insertAdjacentHTML("beforeend",blockHtml(it.block)); if(!instant)animateDrolls(curBodyEl.lastElementChild); } len=(it.block.text||"").length||20; }
   if(!instant) stream.lastElementChild&&stream.lastElementChild.scrollIntoView({block:"end",behavior:"smooth"});
   return len;
 }

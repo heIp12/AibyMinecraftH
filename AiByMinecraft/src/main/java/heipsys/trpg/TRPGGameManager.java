@@ -10729,13 +10729,33 @@ public class TRPGGameManager {
     //  주사위 판정 애니메이션
     // ──────────────────────────────────────────────────────────────
 
+    /** 대상 + 그 시점에 ★들어와 있는★ 관전자(getSpectatorTarget==대상)에게 같은 타이틀을 보여준다 —
+     *  관전자도 주사위 '숫자 굴림→행운 상승→최종 《N》' 연출을 텍스트가 아니라 ★애니메이션 그대로★ 본다(요청). */
+    private void titleToWatchers(Player target, Title t) {
+        if (target == null || !target.isOnline()) return;
+        target.showTitle(t);
+        for (Player sp : Bukkit.getOnlinePlayers()) {
+            if (sp.getGameMode() != GameMode.SPECTATOR || sp.getUniqueId().equals(target.getUniqueId())) continue;
+            if (target.equals(sp.getSpectatorTarget())) sp.showTitle(t);
+        }
+    }
+    /** 대상 + 그 시점 관전자에게 같은 채팅 줄 전달(판정 사전 안내·최종 결과 줄). */
+    private void msgToWatchers(Player target, String msg) {
+        if (target == null || !target.isOnline()) return;
+        target.sendMessage(msg);
+        for (Player sp : Bukkit.getOnlinePlayers()) {
+            if (sp.getGameMode() != GameMode.SPECTATOR || sp.getUniqueId().equals(target.getUniqueId())) continue;
+            if (target.equals(sp.getSpectatorTarget())) sp.sendMessage(msg);
+        }
+    }
+
     private boolean needsDiceAnimation(String text) {
         return text.contains("[판정]") || text.contains("d20")
             || text.contains("주사위를 굴") || text.contains("판정이 필요") || text.contains("판정을 진행");
     }
 
     private void playDiceAnimation(Player player) {
-        player.showTitle(Title.title(
+        titleToWatchers(player, Title.title(
             Component.text("🎲", NamedTextColor.GOLD, TextDecoration.BOLD),
             Component.text("판정 진행 중...", NamedTextColor.YELLOW),
             Title.Times.times(
@@ -10832,8 +10852,8 @@ public class TRPGGameManager {
             outcome = success ? "성공" : partial ? "부분성공" : "실패";
             col = success ? NamedTextColor.GREEN : fail ? NamedTextColor.RED : NamedTextColor.GOLD;
         }
-        // '왜 굴리는지'를 먼저 알려준다(요청 사항)
-        player.sendMessage("§e[판정] " + (reason.isEmpty() ? "행동 판정" : reason)
+        // '왜 굴리는지'를 먼저 알려준다(요청 사항) — 관전자에게도 함께
+        msgToWatchers(player, "§e[판정] " + (reason.isEmpty() ? "행동 판정" : reason)
             + " §7— 주사위 d" + max + " (" + effDc + " 이상 성공)"   // ★실제 성공기준(effDc) 표시★ — 영감 완화·난이도 가산 반영, dc와 어긋나던 문제 해소
             + (statLabel.isEmpty() ? "" : " §8[" + statLabel + " 반영]") + "§7 굴립니다…");
         // 서브타이틀: 굴린 주사위 크기(d{max})와 '어디까지가 성공인지' — 실제 성공기준(effDc)으로 표시(판정과 일치)
@@ -10874,7 +10894,7 @@ public class TRPGGameManager {
         for (int i = 0; i < FRAMES; i++) {
             final int n = ThreadLocalRandom.current().nextInt(1, fmax + 1);
             plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
-                if (player.isOnline()) player.showTitle(Title.title(
+                titleToWatchers(player, Title.title(
                     Component.text("🎲 " + n, NamedTextColor.GRAY, TextDecoration.BOLD),
                     Component.text("주사위(d" + fmax + ")를 굴리는 중...", NamedTextColor.DARK_GRAY),
                     Title.Times.times(Duration.ZERO, Duration.ofMillis(220), Duration.ZERO)));
@@ -10888,7 +10908,7 @@ public class TRPGGameManager {
         long lastTick = landTick;
         if (fnudge != 0) {
             plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
-                if (player.isOnline()) player.showTitle(Title.title(
+                titleToWatchers(player, Title.title(
                     Component.text("🎲 " + fpre, NamedTextColor.GRAY, TextDecoration.BOLD),
                     Component.text(fnudge > 0 ? "행운이 깃든다…" : "운이 비껴간다…", NamedTextColor.DARK_GRAY),
                     Title.Times.times(Duration.ZERO, Duration.ofMillis(600), Duration.ZERO)));
@@ -10898,7 +10918,7 @@ public class TRPGGameManager {
                 final int shown = fpre + (int) Math.round((double) fnudge * k / frames); // 선형 보간, 마지막 프레임=froll
                 final boolean up = fnudge > 0;
                 plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
-                    if (player.isOnline()) player.showTitle(Title.title(
+                    titleToWatchers(player, Title.title(
                         Component.text((up ? "🍀 " : "💧 ") + shown, up ? NamedTextColor.AQUA : NamedTextColor.GOLD, TextDecoration.BOLD),
                         Component.text(up ? "행운!" : "불운…", up ? NamedTextColor.AQUA : NamedTextColor.GOLD),
                         Title.Times.times(Duration.ZERO, Duration.ofMillis(300), Duration.ZERO)));
@@ -10911,11 +10931,11 @@ public class TRPGGameManager {
         final String fmodNote = modNote;
         plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
             if (!player.isOnline()) return;
-            player.showTitle(Title.title(
+            titleToWatchers(player, Title.title(
                 Component.text("《 " + froll + " 》", col, TextDecoration.BOLD),
                 Component.text(sub, col),
                 Title.Times.times(Duration.ofMillis(150), Duration.ofMillis(3000), Duration.ofMillis(600))));
-            player.sendMessage("§7[판정] 주사위 d" + fmax + " " + colorCode(col) + "《" + froll + "》"
+            msgToWatchers(player, "§7[판정] 주사위 d" + fmax + " " + colorCode(col) + "《" + froll + "》"
                 + (fmodNote.isEmpty() ? "" : " §8" + fmodNote)
                 + (fdc > 0 ? " §8(성공 기준 " + fdc + " 이상)" : "")
                 + " §7→ " + colorCode(col) + (outcome.isEmpty() ? "판정" : outcome));
