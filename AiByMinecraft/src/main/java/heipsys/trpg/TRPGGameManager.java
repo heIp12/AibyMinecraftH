@@ -1835,6 +1835,7 @@ public class TRPGGameManager {
                     String narrative = ai.stripTags(response);
                     if (!narrative.isBlank()) {
                         narrativeDelivery.deliver(p, narrative);
+                        relayToSpectators(p, narrative); // 관전자에게도 프롤로그 전달(도입부부터 대상 서술을 함께 보게)
                         gameLogger.logGmOutput(pd.gmDisplayName() + "(프롤로그)", narrative); // 계정명 대신 캐릭터명(뷰어는 logAlias로 매핑)
                         // (#164 후속) 시작 자동 추천(<-#...-> 1인칭 힌트) 제거 — 프롤로그 서술이 이미 '이 인물이 다음에
                         //   하려던 행동·의도'를 자연스럽게 내비치므로, 별도 assistant AI 호출은 중복이자 토큰 낭비였다.
@@ -5914,11 +5915,18 @@ public class TRPGGameManager {
     /** 행동 플레이어에게 GM 서술 전달 + WITNESS 태그로 주변 플레이어에게 간접 단서 전달 */
     /** ★관전 중계(#7)★: target에게 전달되는 서술을 그를 '보고 있는' 관전자에게도 그대로 전달한다.
      *  관전 카메라는 대상의 월드만 보여줄 뿐 대상의 HUD(타이틀)·채팅은 안 보여줘, 관전자가 대상에게 뜨는 텍스트를 못 보던 문제 해결. */
+    /** sp가 target을 관전(그 시점으로 들어가 봄) 중인가 — ★UUID로 견고하게★ 판정. 엔티티 equals 구현/프록시 차이로
+     *  관전 중계가 통째로 실패(관전자가 대상 서술·메시지를 전혀 못 보던 문제)하지 않게 한다. */
+    private static boolean isWatching(Player sp, Player target) {
+        if (sp == null || target == null) return false;
+        org.bukkit.entity.Entity t = sp.getSpectatorTarget();
+        return t instanceof Player tp && tp.getUniqueId().equals(target.getUniqueId());
+    }
     private void relayToSpectators(Player target, String text) {
         if (target == null || text == null || text.isBlank()) return;
         for (Player sp : Bukkit.getOnlinePlayers()) {
             if (sp.getGameMode() != GameMode.SPECTATOR || sp.getUniqueId().equals(target.getUniqueId())) continue;
-            if (target.equals(sp.getSpectatorTarget())) narrativeDelivery.deliver(sp, text);
+            if (isWatching(sp, target)) narrativeDelivery.deliver(sp, text);
         }
     }
     private void deliverNarrative(Player actor, String raw) {
@@ -6739,10 +6747,9 @@ public class TRPGGameManager {
             if (name.isBlank()) continue;
             // 라벨은 ★전각 괄호 【】★ — 뷰어의 '[화자] 대사' 파싱(ASCII 대괄호)에 걸려 '대사'로 오분류되지 않게.
             StringBuilder sb = new StringBuilder("【시작 상황】 ").append(name);
-            String roleType = getStr(npc, "role_type");
-            if (!roleType.isBlank()) sb.append("(").append(roleType).append(")");
-            String zone = npcZones.getOrDefault(getStr(npc, "id"), getStr(npc, "zone"));
-            sb.append(zone.isBlank() ? "." : " — " + zone + "에서 시작.");
+            // ★role_type은 내부 설계 라벨(약화된열쇠·발생원+수상한자 등)이라 노출 금지★. zone도 zone_id가 아니라 표시명으로(메타 누출 방지).
+            String zone = zoneDisplayName(npcZones.getOrDefault(getStr(npc, "id"), getStr(npc, "zone")));
+            sb.append(zone == null || zone.isBlank() || "?".equals(zone) ? "." : " — " + zone + "에서 시작.");
             // 지금 하는 일 (schedule 첫 항목: action 우선, 없으면 goal)
             if (npc.has("schedule") && npc.get("schedule").isJsonArray() && npc.getAsJsonArray("schedule").size() > 0
                     && npc.getAsJsonArray("schedule").get(0).isJsonObject()) {
@@ -7743,7 +7750,7 @@ public class TRPGGameManager {
     private void proximityBroadcast(Player sender, PlayerData senderPd, String message) {
         String z = senderPd.zone == null ? "" : senderPd.zone;
         String disp = senderPd.gmDisplayName();
-        sender.sendMessage("§7[근처에 말함] §f" + message);
+        msgToWatchers(sender, "§7[근처에 말함] §f" + message); // 발신자+그 관전자에게(관전 중계)
         List<PlayerData> heard = new ArrayList<>();
         for (PlayerData op : state.getAllPlayers()) {
             if (op.uuid.equals(senderPd.uuid) || op.isDead) continue;
@@ -7757,7 +7764,7 @@ public class TRPGGameManager {
         if (heard.isEmpty()) sender.sendMessage("§8(근처에 들을 사람이 없습니다.)");
         for (PlayerData op : heard) {
             Player op2 = Bukkit.getPlayer(op.uuid);
-            if (op2 != null && op2.isOnline()) op2.sendMessage("§e[근처] §f" + disp + ": " + message);
+            if (op2 != null && op2.isOnline()) msgToWatchers(op2, "§e[근처] §f" + disp + ": " + message); // 수신자+그 관전자에게(관전 중계)
             exchangeContacts(senderPd, op); // 대면 성공 → 서로 번호를 알게 됨
         }
         state.log("comm", senderPd.name, "[근처] " + message);
@@ -7858,7 +7865,8 @@ public class TRPGGameManager {
         for (PlayerData op : targets) {
             Player op2 = Bukkit.getPlayer(op.uuid);
             if (op2 != null && op2.isOnline() && (bypass || hasCommDevice(op))) // 개방 시 수신자 기기 부재도 관통
-                op2.sendMessage("§b[📞 " + disp + " → " + (senderNet != null ? senderNet + "망" : "전체") + "] §f" + message);
+                msgToWatchers(op2, "§b[📞 " + disp + " → " + (senderNet != null ? senderNet + "망" : "전체") + "] §f" + message); // 수신자+관전자
+
         }
         state.log("comm", senderPd.name, "[" + (senderNet != null ? senderNet + "망발신" : "전체발신") + "] " + message);
         // 뷰어 통화내역: 전체 발신도 ★수신자 전원을 기록★(그들 시점에도 보이게). 폐쇄망이면 via=망이름.
@@ -7907,7 +7915,10 @@ public class TRPGGameManager {
         // 대상 토큰 식별: 캐릭터명·NPC명에 띄어쓰기가 있을 수 있으므로(예: "라비 샤르마"),
         // 알려진 이름 중 content가 시작하는 ★가장 긴★ 이름을 토큰으로 본다. 없으면 첫 단어.
         String token   = matchCommToken(content);
-        String message = content.length() > token.length() ? content.substring(token.length()).trim() : "";
+        String after   = content.length() > token.length() ? content.substring(token.length()) : "";
+        // 이름 바로 뒤에 호격 조사(씨/님/아/야)가 공백 없이 붙었으면 그 한 자만 대상 호칭으로 떼어낸다("류시온씨반갑…"→"반갑…").
+        if (!after.isEmpty() && "씨님아야".indexOf(after.charAt(0)) >= 0) after = after.substring(1);
+        String message = after.trim();
 
         // @전체 → 내가 아는 번호의 모든 사람에게 발신
         if (token.equals("전체") || token.equalsIgnoreCase("all")) {
@@ -8280,23 +8291,37 @@ public class TRPGGameManager {
         for (String c : cands) {
             if (c == null || c.isEmpty()) continue;
             String clc = c.toLowerCase();
-            if ((lc.equals(clc) || lc.startsWith(clc + " ")) && (best == null || c.length() > best.length()))
-                best = c;
+            // 이름 뒤 경계: 공백뿐 아니라 ★호격 조사(씨/님/아/야)★가 공백 없이 붙어도 대상으로 인식(예: "류시온씨…").
+            boolean hit = lc.equals(clc) || lc.startsWith(clc + " ")
+                || lc.startsWith(clc + "씨") || lc.startsWith(clc + "님") || lc.startsWith(clc + "아") || lc.startsWith(clc + "야");
+            if (hit && (best == null || c.length() > best.length())) best = c;
         }
         if (best != null) return content.substring(0, best.length()); // 입력 원문 그대로(대소문자 보존)
         int sp = content.indexOf(' ');
         return sp == -1 ? content : content.substring(0, sp);
     }
 
-    /** critical NPC 목록에서 이름으로 검색 */
+    /** critical NPC 목록에서 이름으로 검색 — 정확 일치 우선, 없으면 ★짧은 호칭(이름의 한 단어)★으로도 매칭.
+     *  긴 서술형 NPC명(예: '토끼팀 해결사 하리')을 짧게 '하리'로 부르는 게 자연스러운데 정확일치만 하면 @대화가 실패하던 문제.
+     *  단어 매칭은 그 단어를 가진 NPC가 ★유일할 때만★(모호하면 오배송 방지로 매칭 안 함). */
     private JsonObject findNpcByName(String name) {
+        if (name == null || name.isBlank()) return null;
+        String n = name.trim();
         for (JsonObject npc : getCriticalNpcs()) { // ★주요(critical) NPC만 @직접 대화·통화 대상 — 단역 제외
             String npcName = npc.has("name") ? npc.get("name").getAsString() : "";
             String npcId   = npc.has("id")   ? npc.get("id").getAsString()   : "";
-            if ((!npcName.isEmpty() && npcName.equalsIgnoreCase(name))
-                || (!npcId.isEmpty() && npcId.equalsIgnoreCase(name))) return npc;
+            if ((!npcName.isEmpty() && npcName.equalsIgnoreCase(n))
+                || (!npcId.isEmpty() && npcId.equalsIgnoreCase(n))) return npc;
         }
-        return null;
+        // 짧은 호칭 — 이름의 한 단어와 일치하는 NPC가 유일하면 그 NPC.
+        JsonObject uniq = null; int hits = 0;
+        for (JsonObject npc : getCriticalNpcs()) {
+            String npcName = npc.has("name") ? npc.get("name").getAsString() : "";
+            if (npcName.isBlank()) continue;
+            for (String w : npcName.trim().split("\\s+"))
+                if (w.length() >= 2 && w.equalsIgnoreCase(n)) { hits++; uniq = npc; break; }
+        }
+        return hits == 1 ? uniq : null;
     }
 
     /**
@@ -9573,7 +9598,7 @@ public class TRPGGameManager {
             String tdisp = commDisplayName(tp);
             String viaName = d.via == null || d.via.isBlank() ? "편지" : d.via;
             Player p = Bukkit.getPlayer(d.targetUuid);
-            if (p != null && p.isOnline()) p.sendMessage("§b[✉ " + viaName + " 도착] §f" + d.senderDisp + ": " + heard);
+            if (p != null && p.isOnline()) msgToWatchers(p, "§b[✉ " + viaName + " 도착] §f" + d.senderDisp + ": " + heard); // 수신자+관전자(관전 중계)
             appendNarrativeLog(tp, "[" + viaName + " 도착] " + d.senderDisp + ": " + heard);
             if (tampered) gameLogger.logCommTampered(d.kind, d.senderDisp, java.util.List.of(tdisp), d.content, heard, "전달 중 괴담 변조", d.via);
             else gameLogger.logComm(d.kind, d.senderDisp, java.util.List.of(tdisp), d.content, d.via);
@@ -9593,7 +9618,7 @@ public class TRPGGameManager {
         String medium  = hasMedium ? media : "근거리";
         String outLine = tag + " §f" + commDisplayName(senderPd) + " → " + commDisplayName(targetPd) + ": " + message;
 
-        sender.sendMessage(outLine); // 발신자는 자기가 한 말 그대로 본다
+        msgToWatchers(sender, outLine); // 발신자는 자기가 한 말 그대로 본다 + 그 관전자에게도(관전 중계)
         Player target = Bukkit.getPlayer(targetPd.uuid);
         // ★통신 변조★: 매체 모달리티(음성/문서/신호/전자/정신)가 맞는 괴담이 원격 전달을 가로채 수신 내용을 바꾼다(30%).
         String modality = commModality(media, written);
@@ -9601,7 +9626,7 @@ public class TRPGGameManager {
         boolean tampered = interfered && new java.util.Random().nextInt(100) < 30;
         String heard = tampered ? tamperText(message, new java.util.Random()) : message;
         String inLine = tag + " §f" + commDisplayName(senderPd) + ": " + heard;
-        if (target != null && target.isOnline()) target.sendMessage(inLine);
+        if (target != null && target.isOnline()) msgToWatchers(target, inLine); // 수신자+그 관전자에게(관전 중계)
 
         state.log("comm", commDisplayName(senderPd),
             "→ " + commDisplayName(targetPd) + " (" + medium + "): " + message);
@@ -9691,7 +9716,7 @@ public class TRPGGameManager {
         PlayerData tpd = spectatedPd(spectator);
         Player tp = tpd == null ? null : Bukkit.getPlayer(tpd.uuid);
         if (tpd == null || tp == null) {
-            spectator.sendMessage("§7먼저 관전할 인물을 §f클릭§7해 그 시점으로 들어가세요(그 뒤 웅크리기).");
+            spectator.sendMessage("§7먼저 관전할 인물을 §f클릭§7해 그 시점으로 들어간 뒤 다시 시도하세요.");
             return;
         }
         org.bukkit.inventory.Inventory mirror = Bukkit.createInventory(null, 45,
@@ -10781,7 +10806,7 @@ public class TRPGGameManager {
         target.showTitle(t);
         for (Player sp : Bukkit.getOnlinePlayers()) {
             if (sp.getGameMode() != GameMode.SPECTATOR || sp.getUniqueId().equals(target.getUniqueId())) continue;
-            if (target.equals(sp.getSpectatorTarget())) sp.showTitle(t);
+            if (isWatching(sp, target)) sp.showTitle(t);
         }
     }
     /** 대상 + 그 시점 관전자에게 같은 채팅 줄 전달(판정 사전 안내·최종 결과 줄). */
@@ -10790,7 +10815,7 @@ public class TRPGGameManager {
         target.sendMessage(msg);
         for (Player sp : Bukkit.getOnlinePlayers()) {
             if (sp.getGameMode() != GameMode.SPECTATOR || sp.getUniqueId().equals(target.getUniqueId())) continue;
-            if (target.equals(sp.getSpectatorTarget())) sp.sendMessage(msg);
+            if (isWatching(sp, target)) sp.sendMessage(msg);
         }
     }
 

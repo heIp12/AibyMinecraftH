@@ -100,6 +100,7 @@ public class CMDTrpg implements CommandExecutor, TabCompleter {
             case "추천", "recommend", "hint" -> trpg.showRecommendations(player); // 정답 모르는 동료의 행동 제안(스포일러 없음)
             case "map"    -> trpg.openMap(player);
             case "이동", "move" -> trpg.openMoveSelector(player); // 아는 곳으로 이동 선언(먼 곳도 경유해 감) — #190
+            case "mirror", "소지품", "peek" -> trpg.openSpectatorMirror(player); // 관전자: 보고 있는 인물의 소지품 미러(관전 중 월드 우클릭이 안 먹히는 것의 대체 진입 — 채팅 버튼/자기 인벤 클릭에서 호출)
 
             case "trait"  -> trpg.reopenTraitDialog(player);
             case "ending" -> trpg.reopenEndingDialog(player);
