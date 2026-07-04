@@ -201,6 +201,10 @@ function normalize(ev){
         if(!viaName&&cm[3])viaName=cm[3].trim(); // 구체 매체명(전서구·통신구·서찰·필담…)
         bodyText=cm[4]; // 중복 라벨 제거 — 매체는 뱃지로만 표시
       } else { if(!actor)actor=who; if(!kind)kind="call"; }
+      // ★수신자 마커([→이름, 이름]) 파싱★ — .txt에도 수신자가 기록되게 한 신형 로그. to로 흡수하고 표시에선 제거.
+      //  (수신자가 없어 수신자 시점에서 통화가 안 보여 '혼잣말'처럼 되던 문제의 신형 로그 해결분 — 구형은 rebuild의 짝짓기 폴백.)
+      const rm=bodyText.match(/^\[→([^\]]+)\]\s*([\s\S]*)$/);
+      if(rm){ if(!to.length) to=rm[1].split(/\s*,\s*/).filter(Boolean); bodyText=rm[2]; }
     }
     else if(cat==="아이템"){kind=kind||"item";actor=actor||who; if(!remove&&/\s\(제거/.test(bodyText))remove=true;} // .txt: '(제거…)' 표기면 제거 이벤트
     else if(cat==="단서"){kind=kind||"clue";actor=actor||who;}
@@ -671,7 +675,24 @@ function buildAlias(){
 function rebuild(raw){
   // 로그에 네이티브 통신 이벤트가 있으면(신형) @입력을 통화로 재분류하지 않는다 — '통화 두번' 방지. (구형 txt엔 없어 그대로 변환)
   HAS_NATIVE_COMM=raw.some(e=>e&&((e.kind&&COMM_KINDS.has(e.kind))||e.cat==="통신"));
-  EVENTS=raw.map(normalize).sort((a,b)=>(a.seq||0)-(b.seq||0)); buildViewpoints(); curVP="__all__"; stopPlay(); }
+  EVENTS=raw.map(normalize).sort((a,b)=>(a.seq||0)-(b.seq||0));
+  // ★구형 로그 통화 상대 짝짓기★: 예전 .txt엔 수신자가 없어 수신자(NPC·플레이어) 시점에서 통화 수신이
+  //  통째로 빠져 '혼잣말'처럼 보였다. 대상형 통신(통화·편지·귓속말·정신감응)에서 to가 비면, 근처(±12 이벤트)의
+  //  ★같은 종류·같은 매체·다른 화자★ 통신을 대화 상대로 보아 서로의 to를 채운다(신형 로그는 [→수신자] 명시 우선).
+  (function pairOldComms(){ const TARGETED=new Set(["call","letter","whisper","psychic"]);
+    // 서술·단서가 사이에 아무리 끼어도 대화는 ★통신 이벤트끼리는 연속★이다 — 통신 목록(T)에서 이웃(±6)을 찾는다.
+    const T=[]; for(let i=0;i<EVENTS.length;i++){const e=EVENTS[i]; if(TARGETED.has(e.kind)&&isPerson(e.actor))T.push(i);}
+    const pick=(p,needVia)=>{ const e=EVENTS[T[p]];
+      for(let d=1;d<=6;d++){ for(const q of [p-d,p+d]){ if(q<0||q>=T.length)continue; const o=EVENTS[T[q]];
+        if(o.kind!==e.kind||o.actor===e.actor)continue;
+        if(needVia&&(o.via||"")!==(e.via||""))continue;
+        return o; } }
+      return null; };
+    for(let p=0;p<T.length;p++){ const e=EVENTS[T[p]];
+      if(e.to.length)continue;
+      const o=pick(p,true)||pick(p,false); // 같은 매체 우선(병행 통화 구분) → 없으면 매체 무관(양쪽 기기 이름이 달라도 같은 통화: 스마트폰↔통화)
+      if(o){ e.to=[o.actor]; if(!o.to.length)o.to=[e.actor]; } } })();
+  buildViewpoints(); curVP="__all__"; stopPlay(); }
 // 로그에서 괴담(시나리오) 이름 파싱 — 세션 이벤트의 title 필드(JSONL) 또는 '괴담: X' 라인(.txt)
 function parseScenarioTitle(text){
   const m=(text||"").match(/"title"\s*:\s*"((?:[^"\\]|\\.)*)"/);
