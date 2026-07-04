@@ -46,6 +46,8 @@
   .ev.split{margin-left:18px;border-left:2px solid var(--line)} .ev .top.cont{opacity:.55}
   .ln{white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;line-height:1.6;color:#dfe2ea;margin:2px 0;animation:pop .16s ease}
   .ln.bc{color:var(--broadcast);font-weight:600} .ln.mono{color:#c9b3ff;font-style:italic}
+  .tw.typing::after{content:"▌";margin-left:1px;color:var(--dim);animation:twcaret .7s steps(1) infinite} /* 대화 한 글자씩 타이핑 커서 */
+  @keyframes twcaret{50%{opacity:0}}
   .droll{display:inline-block;color:#ffd27a;font-weight:700;font-variant-numeric:tabular-nums} /* 주사위 눈 — 재생 시 구르다 착지 */
   .droll.rolling{text-shadow:0 0 7px rgba(255,205,120,.65)}
   .droll.land{color:#b9f0c8;text-shadow:0 0 13px rgba(140,240,170,.75);animation:rollland .42s cubic-bezier(.2,1.5,.4,1)}
@@ -336,6 +338,29 @@ function animateDrolls(scope){ if(!scope||!scope.querySelectorAll)return;
     const max=Math.max(2,parseInt(el.dataset.max)||20), fin=el.dataset.final||el.textContent;
     rollNumber(el,max,fin,14,34,120);
   } }
+// ── ★대화 타이핑★: 통화·근처·귓속말 등 '상호 대화'와 대사(say)를 한 글자씩 노출(재생속도 비례, 요청). GM 서술은 제외 ──
+const TYPE_KINDS=new Set(["call","nearby","broadcast","shout","letter","whisper","signal","psychic","npc"]);
+function isConvoEvent(e){ return !!e && TYPE_KINDS.has(e.kind); }
+// 타이핑 대상? 대사(say)는 항상, 서술(narr)은 통신류 이벤트일 때만(GM 서술문은 제외).
+function typeBlock(b,e){ if(!b)return false; if(b.type==="say")return true; if(b.type==="narr"&&isConvoEvent(e))return true; return false; }
+// 타이핑용 빈 껍데기 — 화자·구조는 즉시, 본문 자리엔 빈 .tw 스팬만.
+function blockShell(b){ if(b.type==="say")return `<div class="ln say"><b style="color:${colorFor(b.name)}">${esc(b.name)}</b> <span class="tw"></span></div>`;
+  return `<div class="ln"><span class="tw"></span></div>`; }
+// 한 글자씩 노출 — 22ms×fxk(재생속도 비례). textContent라 HTML 파싱·XSS 무관·안전.
+function typeInto(span,text,done){ if(!span){done&&done();return;}
+  const chars=Array.from(text||""); let i=0; span.textContent=""; span.classList.add("typing");
+  const tick=()=>{ if(!span.isConnected){ span.textContent=text||""; span.classList.remove("typing"); done&&done(); return; }
+    if(i>=chars.length){ span.classList.remove("typing"); done&&done(); return; }
+    span.textContent+=chars[i++];
+    if(i%16===0){ const c=span.closest(".ev"); if(c)c.scrollIntoView({block:"end"}); }
+    setTimeout(tick,22*fxk()); };
+  tick(); }
+// 블록 1개를 컨테이너에 붙인다 — 대화면 타이핑, 아니면 즉시(+굴림). 시크(instant)면 항상 즉시.
+function appendBlock(container,b,e,instant){
+  if(!instant && typeBlock(b,e)){ container.insertAdjacentHTML("beforeend",blockShell(b));
+    typeInto(container.lastElementChild.querySelector(".tw"), b.text); }
+  else { container.insertAdjacentHTML("beforeend",blockHtml(b)); if(!instant)animateDrolls(container.lastElementChild); }
+}
 // ── ★주사위 전용 카드★: 결과를 미리 안 보여주고(긴장감), 굴림 → 착지 → 칸 반짝 → 결과 공개 + 칸 색 변경(요청) ──
 // 판정 결과 텍스트 인식(관대한 파서 — 신·구 포맷 모두): "…(사유) — d20=14 (기본 12 +2근력) (기준 13 이상 성공) → 성공"
 function diceParse(e){
@@ -585,12 +610,14 @@ function buildQueue(){
   const list=filtered(); const q=[]; const individual=curVP!=="__all__";
   for(const e of list){
     const blocks=e.text?parseBody(e.text):[];
-    if(individual && blocks.length && !diceParse(e) && !choiceParse(e) && !abilAct(e)){ // 개별 뷰: 문단(줄)씩 — 주사위·선택지·능력발동은 카드 통째
+    const hasSay=blocks.some(b=>b.type==="say");
+    // 개별 뷰 전부 + (전체 뷰라도) 통신·대사 포함 이벤트는 문단(줄)씩 → 대화 타이핑 경로. 주사위·선택지·능력발동은 카드 통째.
+    if((individual||isConvoEvent(e)||hasSay) && blocks.length && !diceParse(e) && !choiceParse(e) && !abilAct(e)){
       const real=blocks.filter(b=>b.type!=="br");
       if(real.length){ q.push({e,header:true,block:real[0]});   // ★이름(헤더)+첫 줄을 한 스텝에★ — 따로 뜸들이지 않게(요청)
         for(let i=1;i<real.length;i++) q.push({e,block:real[i]}); }
       else q.push({e,header:true});
-    } else q.push({e,whole:true});            // 전체 뷰·능력발동: 이벤트 단위
+    } else q.push({e,whole:true});            // 전체 뷰 비대화·능력발동: 이벤트 단위
   }
   return q;
 }
@@ -618,9 +645,10 @@ function renderQueueItem(stream,it,instant){
     if(le&&(le.classList.contains("k-dice")||le.classList.contains("k-choice")))len=Math.max(len+90,150); } // ★긴 감속 연출★이 다음 이벤트에 덮이지 않게 시간 확보
   else if(it.header){ const h=headHtml(it.e); const d=document.createElement("div"); d.className=h.cls;
     d.innerHTML=h.top+`<div class="body"></div>`; stream.appendChild(d); curBodyEl=d.querySelector(".body");
-    if(it.block){ curBodyEl.insertAdjacentHTML("beforeend",blockHtml(it.block)); len=8+((it.block.text||"").length||20); } else len=8;
-    if(!instant)playFx(d,it.e); } // 헤더(이름)+첫 줄을 함께 그린 뒤 특수효과·굴림(요청)
-  else if(it.block){ if(curBodyEl){ curBodyEl.insertAdjacentHTML("beforeend",blockHtml(it.block)); if(!instant)animateDrolls(curBodyEl.lastElementChild); } len=(it.block.text||"").length||20; }
+    if(!instant)playFx(d,it.e);                                            // 특수효과(글로우)는 헤더 카드에
+    if(it.block){ appendBlock(curBodyEl,it.block,it.e,instant); len=8+((it.block.text||"").length||20); } else len=8;
+  } // 헤더(이름)+첫 줄을 함께 — 대화면 한 글자씩 타이핑(요청)
+  else if(it.block){ if(curBodyEl){ appendBlock(curBodyEl,it.block,it.e,instant); } len=(it.block.text||"").length||20; }
   if(!instant) stream.lastElementChild&&stream.lastElementChild.scrollIntoView({block:"end",behavior:"smooth"});
   return len;
 }
