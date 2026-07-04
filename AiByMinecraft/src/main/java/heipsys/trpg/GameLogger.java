@@ -386,7 +386,12 @@ public class GameLogger {
             if (currentFile == null) return;
             String clean = content == null ? "" : strip(content).trim();
             if (!clean.isEmpty()) {
-                String head = "[" + LocalTime.now().format(TIME_FMT) + "] [" + category + "]"
+                // ★.txt에도 인게임 시각([G …])을 남긴다★ — 뷰어가 현실시간 대신 게임 내 시각을 주 시각으로 표시(요청).
+                //   JSONL엔 이미 gt로 기록 중이었고, .txt만 실시간뿐이라 .txt 로그를 연 뷰어에서 게임시간이 안 보였다.
+                String gtNow = gameTimeSupplier == null ? "" : gameTimeSupplier.get();
+                String head = "[" + LocalTime.now().format(TIME_FMT) + "]"
+                              + (gtNow == null || gtNow.isBlank() ? "" : " [G " + gtNow + "]")
+                              + " [" + category + "]"
                               + (who == null || who.isEmpty() ? "" : " " + who);
                 String[] lines = clean.split("\n");
                 if (lines.length == 1) {

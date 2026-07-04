@@ -46,6 +46,36 @@
   .ln.bc{color:var(--broadcast);font-weight:600} .ln.mono{color:#c9b3ff;font-style:italic}
   .droll{color:#ffd27a;font-weight:700;font-variant-numeric:tabular-nums} /* 주사위 눈 — 재생 시 구르다 착지 */
   .droll.land{color:#b9f0c8;text-shadow:0 0 9px rgba(140,240,170,.5);animation:pop .3s ease}
+  /* ★주사위 전용 카드★ — 결과를 미리 안 보여주고(긴장감), 굴림 착지 후 반짝→결과 공개→칸 색 변경(성공=초록·실패=자홍) */
+  .ev.k-dice{border-left-color:#8f9bb0;background:#1a1e2c;transition:background .35s,border-color .35s}
+  .ev.k-dice .badge{background:#3a4157;color:#e6ebf7}
+  .ev.k-dice .dth{color:var(--dim)} .ev.k-dice .dmod{color:#9fb4d8;font-size:12px}
+  .ev.k-dice .doutcome{font-weight:800;margin-left:4px}
+  .ev.k-dice.res-ok{border-left-color:#3ddc84;background:#15251c} .ev.k-dice.res-ok .doutcome{color:#7defb0}
+  .ev.k-dice.res-part{border-left-color:#e0b34a;background:#272113} .ev.k-dice.res-part .doutcome{color:#ffd27a}
+  .ev.k-dice.res-fail{border-left-color:#e0559d;background:#291526} .ev.k-dice.res-fail .doutcome{color:#ff8fce}
+  .ev.k-dice.flash{animation:dflash .38s ease}
+  @keyframes dflash{0%{filter:brightness(1)}45%{filter:brightness(2.1)}100%{filter:brightness(1)}}
+  /* ★선택지 카드★ — 전부 출력 후 ❯ 반짝으로 '골라졌다' 공개(요청). 등급 색: 정답·최적=초록, 무난=금, 역효과=자홍 */
+  .ev.k-choice{border-left-color:#c9a2ff;background:#1d1930;transition:border-color .35s}
+  .ev.k-choice .badge{background:#4a3f6e;color:#e9defc}
+  .ev.k-choice .choice-opt{padding:1px 0;color:#cfd3de}
+  .ev.k-choice .choice-opt .cmark{color:#ffd27a;font-weight:800}
+  .ev.k-choice .choice-opt.pick{color:#ffe9a8;font-weight:700;animation:dflash .5s ease}
+  .ev.k-choice .cgrade{font-size:11px;font-weight:700}
+  .ev.k-choice.res-ok{border-left-color:#3ddc84} .ev.k-choice .cgrade.res-ok{color:#7defb0}
+  .ev.k-choice.res-part{border-left-color:#e0b34a} .ev.k-choice .cgrade.res-part{color:#ffd27a}
+  .ev.k-choice.res-fail{border-left-color:#e0559d} .ev.k-choice .cgrade.res-fail{color:#ff8fce}
+  /* ★재생 특수효과★ — 능력=보랏빛 파동 · 피해=흔들림·붉게 · 회복=초록 파동 · 아이템=금빛 · 단서=청록 빛 */
+  .ev.fx-abil{animation:abilglow .9s ease}
+  @keyframes abilglow{0%{box-shadow:none}35%{box-shadow:0 0 18px rgba(199,148,255,.55)}100%{box-shadow:none}}
+  .ev.fx-hurt{animation:hurtfx .5s ease}
+  @keyframes hurtfx{0%,100%{transform:none;filter:none}20%{transform:translateX(-4px);filter:brightness(1.5) saturate(1.6)}45%{transform:translateX(4px)}70%{transform:translateX(-2px)}}
+  .ev.fx-heal{animation:healfx .8s ease}
+  @keyframes healfx{40%{box-shadow:inset 0 0 22px rgba(90,230,150,.35);filter:brightness(1.2)}}
+  .ev.fx-item{animation:itemfx .7s ease} @keyframes itemfx{30%{filter:brightness(1.6) sepia(.3)}}
+  .ev.fx-clue{animation:cluefx .8s ease} @keyframes cluefx{35%{filter:brightness(1.45);box-shadow:0 0 14px rgba(102,200,176,.5)}}
+  .ev.self{border-left-color:var(--input)} /* @입력을 접고 남긴 내 통신 카드 = 내 발화(초록 테두리, 개별뷰에선 .me 배경까지) */
   .ln.say b{font-weight:700}
   .sp{height:7px}
   .ev.me{border-left-color:var(--input);background:#1b2418} .ev.me .top .who{color:var(--input)}
@@ -161,7 +191,7 @@ function normalize(ev){
   let hpAfter=ev.hpAfter,hpMax=ev.hpMax,sanAfter=ev.sanAfter,sanMax=ev.sanMax,hpDelta=ev.hpDelta,sanDelta=ev.sanDelta;
   let zone=ev.zone||"", remove=ev.remove||false, ability=ev.ability||"";
   // 구형 .txt: [상태]/[아이템]/[단서]/[능력]/[이동] 줄은 본문 첫 토큰이 행위자(who 비어있음) → 앞 토큰을 actor로 분리해 시점 귀속을 살린다.
-  if((!ev.actor&&!who)&&(/^(상태|아이템|단서|이동)$/.test(cat)||cat.startsWith("능력"))){
+  if((!ev.actor&&!who)&&(/^(상태|아이템|단서|이동)$/.test(cat)||cat.startsWith("능력")||cat.startsWith("주사위"))){
     const nm=matchKnownName(bodyText); // 알려진 전체이름(다중 토큰) 우선 — '사토 겐타'를 통째로 행위자로
     if(nm){actor=nm;bodyText=bodyText.slice(nm.length).replace(/^\s+/,"");}
     else{const mm=bodyText.match(/^(\S+)\s+([\s\S]*)$/); if(mm){actor=mm[1];bodyText=mm[2];}} // 폴백: 첫 토큰
@@ -191,6 +221,7 @@ function normalize(ev){
       else{kind=kind||"gm";actor=actor||"GM";target=x;}}
     else if(cat.startsWith("NPC")){kind=kind||"npc";const m=cat.match(/\(([^)]*)\)/);if(m)actor=actor||m[1];const a=cat.indexOf("→");if(a>=0)target=cat.slice(a+1);}
     else if(cat.startsWith("능력")){kind=kind||"ability";actor=actor||who; const am=cat.match(/^능력\(([^)]*)\)/); if(am&&!ability)ability=am[1].trim();} // .txt: 능력명은 카테고리 '능력(이름)'에 있음 → 사용횟수 집계용으로 추출
+    else if(cat.startsWith("주사위")){kind=kind||"ability";actor=actor||who; if(!ability)ability="주사위 판정";} // 구형 [주사위 판정] 단독 카테고리 → 주사위 카드로
     else if(cat==="통신"){
       // 통신 이벤트 — 본문 앞 [통화]/[근처]/[방송]/[외침]/[편지]/[귓속말](+·구체매체명) 라벨로 ★대화방식(매체)★을 인식.
       //  JSONL은 kind가 이미 있어 라벨은 중복 제거용 / 구형 .txt는 라벨에서 kind·매체명을 유추한다. 예: [편지·전서구]
@@ -229,7 +260,7 @@ function normalize(ev){
   if(target&&!to.length)to=[target];
   actor=canon(actor); to=to.map(canon);
   if(kind==="assign")bodyText=(/등장/.test(text)?"배역 등장: ":"배역 배정: ")+(actor||"?"); // 계정→role_id·zone_id 메타 제거 + 표시명으로
-  return {seq:ev.seq||0,t:ev.t||"",kind,actor,to,ability,detail:ev.detail||"",phase:ev.phase||"",cause:ev.cause||"",
+  return {seq:ev.seq||0,t:ev.t||"",gt:ev.gt||"",kind,actor,to,ability,detail:ev.detail||"",phase:ev.phase||"",cause:ev.cause||"",
           text:bodyText,cat,orig:ev.orig||"",via:viaName,item:ev.item||"",zone,remove,
           hpAfter,hpMax,sanAfter,sanMax,hpDelta,sanDelta};
 }
@@ -293,16 +324,112 @@ function animateDrolls(scope){ if(!scope||!scope.querySelectorAll)return;
     let n=0; const iv=setInterval(()=>{ if(!el.isConnected||++n>=14){ clearInterval(iv); el.textContent=fin; el.classList.add("land"); }
       else el.textContent=1+Math.floor(Math.random()*max); },45);
   } }
-function timeHtml(e){ return `<span class="t">${esc(e.t)}</span>`+(e.gt?`<span class="gt" title="게임 내 시각">🕐${esc(e.gt)}</span>`:""); } // 실시간 + (있으면)게임시간
+// ── ★주사위 전용 카드★: 결과를 미리 안 보여주고(긴장감), 굴림 → 착지 → 칸 반짝 → 결과 공개 + 칸 색 변경(요청) ──
+// 판정 결과 텍스트 인식(관대한 파서 — 신·구 포맷 모두): "…(사유) — d20=14 (기본 12 +2근력) (기준 13 이상 성공) → 성공"
+function diceParse(e){
+  if(!e||!e.text||e.orig)return null;
+  if(!(e.kind==="ability"||/주사위/.test(e.ability||"")||/주사위/.test(e.cat||"")))return null;
+  const t=e.text; if(/\n/.test(t))return null;
+  const dm=t.match(/d(\d{1,3})=(\d{1,4})/); const km=t.match(/\(기준\s*(\d+)\s*이상 성공\)/); const om=t.match(/→\s*(\S+)\s*$/);
+  if(!dm||!km||!om)return null;
+  const reason=t.slice(0,dm.index).replace(/[—–-]\s*$/,"").trim();
+  const mods=t.slice(dm.index+dm[0].length,km.index).trim().replace(/^\(/,"").replace(/\)$/,"").trim();
+  return {reason,max:+dm[1],roll:+dm[2],mods,dc:+km[1],outcome:om[1]};
+}
+function diceResClass(outcome){ return /부분/.test(outcome)?"res-part":/성공/.test(outcome)?"res-ok":"res-fail"; }
+function diceCardHtml(e,d){
+  const col=isPerson(e.actor)?colorFor(e.actor):"";
+  const who=e.actor?`<span class="who" style="${col?`color:${col}`:""}">${esc(e.actor)}</span>`:"";
+  return `<div class="ev k-dice ${diceResClass(d.outcome)}"><div class="top">${timeHtml(e)}<span class="badge">🎲 주사위</span>${who}`
+    +`<span>${esc(d.reason||"행동 판정")}</span><span class="dth">(${d.dc}이상 성공)</span></div>`
+    +`<div class="body"><div class="ln">${d.mods?`<span class="dmod">[${esc(d.mods)} 보정] </span>`:""}`
+    +`d${d.max} = <span class="droll" data-max="${d.max}" data-final="${d.roll}">${d.roll}</span>`
+    +`<span class="doutcome"> &gt; ${esc(d.outcome)}!</span></div></div></div>`;
+}
+// 재생: 결과 숨김 → 숫자 굴림 → 착지 → 칸 반짝(flash) → 결과 공개 + 성공=초록/부분=금/실패=자홍 칸 색.
+function animateDiceCard(card){
+  const roll=card.querySelector(".droll"), out=card.querySelector(".doutcome");
+  const res=[...card.classList].find(c=>c.indexOf("res-")===0);
+  if(res)card.classList.remove(res);
+  if(out)out.style.visibility="hidden";
+  const reveal=()=>{ card.classList.add("flash");
+    setTimeout(()=>{ if(!card.isConnected)return; if(res)card.classList.add(res); if(out)out.style.visibility=""; card.classList.remove("flash"); },380); };
+  if(roll){ roll.classList.add("don");
+    const max=Math.max(2,parseInt(roll.dataset.max)||20), fin=roll.dataset.final||roll.textContent;
+    let n=0; const iv=setInterval(()=>{ if(!roll.isConnected){clearInterval(iv);return;}
+      if(++n>=14){ clearInterval(iv); roll.textContent=fin; roll.classList.add("land"); reveal(); }
+      else roll.textContent=1+Math.floor(Math.random()*max); },45);
+  } else reveal();
+}
+// ── ★선택지 카드★: 선택지가 전부 출력된 다음 ❯ 표시와 함께 한 번 반짝여 '골라졌다'가 드러난다(요청) ──
+// 신형: "1) A ∥ 2) B ∥ 3) C ⇒ 2) B [최적]" / 구형: "선택 → B [무난]"(목록 없음 — 고른 줄만 반짝)
+function choiceParse(e){
+  if(!e||!e.text||e.orig)return null;
+  if(!/선택지/.test(e.ability||"")&&!/선택지/.test(e.cat||""))return null;
+  const t=e.text.replace(/\n/g," ");
+  const gm=t.match(/\[(정답|최적|역효과|무난)\]\s*$/); const grade=gm?gm[1]:"";
+  const body=gm?t.slice(0,gm.index).trim():t.trim();
+  const zm=body.match(/⇒\s*(\d+)\)/);
+  if(zm&&/1\)\s/.test(body)){
+    const opts=body.slice(0,zm.index).split("∥").map(s=>s.trim()).filter(Boolean);
+    return {opts,pick:+zm[1],pickText:body.slice(zm.index+1).replace(/^\s*\d+\)\s*/,"").trim(),grade};
+  }
+  const sm=body.match(/선택\s*→\s*([\s\S]+)$/);
+  if(sm)return {opts:null,pick:1,pickText:sm[1].trim(),grade};
+  return null;
+}
+function choiceGradeClass(g){ return g==="정답"||g==="최적"?"res-ok":g==="역효과"?"res-fail":"res-part"; }
+function choiceCardHtml(e,c){
+  const col=isPerson(e.actor)?colorFor(e.actor):"";
+  const who=e.actor?`<span class="who" style="${col?`color:${col}`:""}">${esc(e.actor)}</span>`:"";
+  let body="";
+  if(c.opts){ c.opts.forEach((op,i)=>{ const picked=(i+1)===c.pick;
+      body+=`<div class="choice-opt${picked?" pick":""}"><span class="cmark">${picked?"❯ ":""}</span>${esc(op)}</div>`; }); }
+  else body+=`<div class="choice-opt pick"><span class="cmark">❯ </span>${esc(c.pickText)}</div>`;
+  const gcls=choiceGradeClass(c.grade);
+  return `<div class="ev k-choice ${gcls}"><div class="top">${timeHtml(e)}<span class="badge">🔀 선택지</span>${who}`
+    +`${c.grade?`<span class="cgrade ${gcls}">[${esc(c.grade)}]</span>`:""}</div><div class="body">${body}</div></div>`;
+}
+// 재생: 선택 표시·등급·칸 색을 숨긴 채 선택지 전부 출력 → 잠시 뒤 고른 줄에 ❯ + 반짝 + 칸 색 공개.
+function animateChoiceCard(card){
+  const res=[...card.classList].find(c=>c.indexOf("res-")===0);
+  if(res)card.classList.remove(res);
+  const g=card.querySelector(".cgrade"); if(g)g.style.visibility="hidden";
+  const picked=card.querySelector(".choice-opt.pick");
+  if(picked){ picked.classList.remove("pick"); const mk=picked.querySelector(".cmark"); if(mk)mk.textContent="";
+    setTimeout(()=>{ if(!card.isConnected)return;
+      picked.classList.add("pick"); if(mk)mk.textContent="❯ ";
+      if(res)card.classList.add(res); if(g)g.style.visibility="";
+    },560); }
+  else { if(res)card.classList.add(res); if(g)g.style.visibility=""; }
+}
+// ── ★재생 특수효과 디스패처★: 이벤트 종류마다 적절한 연출(요청: 능력 사용 전반에 특수효과) ──
+//  주사위=굴림·반짝·색 / 선택지=❯ 반짝 / 능력=보랏빛 파동 / 피해=흔들림·붉게 / 회복=초록 파동 / 아이템=금빛 / 단서=청록 빛.
+function playFx(el,e){
+  if(!el||!el.classList)return;
+  if(el.classList.contains("k-dice")){animateDiceCard(el);return;}
+  if(el.classList.contains("k-choice")){animateChoiceCard(el);return;}
+  animateDrolls(el); // 서술 속 dN=M 숫자 굴림(범용)
+  if(!e)return;
+  if(e.kind==="ability")el.classList.add("fx-abil");
+  else if(e.kind==="vital"){ const dmg=(e.hpDelta!=null&&e.hpDelta<0)||(e.sanDelta!=null&&e.sanDelta<0);
+    el.classList.add(dmg?"fx-hurt":"fx-heal"); }
+  else if(e.kind==="item")el.classList.add("fx-item");
+  else if(e.kind==="clue")el.classList.add("fx-clue");
+}
+// ★인게임 시각을 주 시각으로★(요청: 현실시간 말고 인게임 시간) — gt가 있으면 게임시간을 크게, 실제 시각은 툴팁으로만.
+//  gt가 없는 이벤트·구형 로그는 실시간으로 폴백(아예 안 보이는 것 방지).
+function timeHtml(e){ return e.gt?`<span class="t" title="실제 시각 ${escAttr(e.t)}">🕐${esc(e.gt)}</span>`
+                              :`<span class="t">${esc(e.t)}</span>`; }
 function headHtml(e){
-  const me=(curVP!=="__all__"&&e.actor===curVP&&(e.kind==="input"||e.kind==="ability"))?" me":"";
+  const me=(curVP!=="__all__"&&e.actor===curVP&&(e.kind==="input"||e.kind==="ability"||e.self))?" me":""; // self=입력을 접고 남긴 내 통신도 초록
   // 다른 사람(내가 아닌 인물)의 행동·대사는 우측 정렬(채팅식). GM·시스템 서술은 대상 아님.
   const other=(curVP!=="__all__"&&e.actor&&e.actor!==curVP&&isPerson(e.actor))?" other":"";
   const col=isPerson(e.actor)?colorFor(e.actor):"";
   const who=e.actor?`<span class="who" style="${col?`color:${col}`:""}">${esc(e.actor)}</span>`:"";
   const toStr=e.to.filter(isPerson).length?`<span class="arrow">→ ${esc(e.to.filter(isPerson).join(", "))}</span>`:"";
   const det=e.detail&&e.kind==="ability"?`<span class="badge">${esc(e.detail)}</span>`:"";
-  return {cls:"ev k-"+e.kind+me+other, top:`<div class="top">${timeHtml(e)}<span class="badge">${esc(badgeFor(e))}</span>${det}${who}${toStr}</div>`};
+  return {cls:"ev k-"+e.kind+me+other+(e.self?" self":""), top:`<div class="top">${timeHtml(e)}<span class="badge">${esc(badgeFor(e))}</span>${det}${who}${toStr}</div>`};
 }
 // 본문 HTML — 괴담·NPC가 메시지를 변형(변절)했으면 원본/변형됨을 대조해 보여준다.
 function bodyHtmlOf(e){
@@ -313,7 +440,10 @@ function bodyHtmlOf(e){
 // 짧은 메타 이벤트(아이템·배역·이동·상태)는 헤더 줄에 내용을 ★인라인★으로 붙여 카드 높이를 반으로 —
 //  시작소지 10개가 각각 큰 카드로 세로를 잡아먹던 낭비 해소. 단서·서술 등 실내용은 종전대로 본문 줄 유지.
 const COMPACT_KINDS=new Set(["item","assign","move","vital"]);
-function evHtml(e){ const h=headHtml(e); const body=bodyHtmlOf(e);
+function evHtml(e){
+  const dd=diceParse(e); if(dd)return diceCardHtml(e,dd);      // 주사위 → 전용 카드(굴림·반짝·색 공개)
+  const cc=choiceParse(e); if(cc)return choiceCardHtml(e,cc);  // 선택지 → 전용 카드(전부 출력 후 ❯ 반짝)
+  const h=headHtml(e); const body=bodyHtmlOf(e);
   if(COMPACT_KINDS.has(e.kind)&&e.text&&!e.orig&&!/\n/.test(e.text)){ // 한 줄짜리 메타 → 인라인 컴팩트
     return `<div class="${h.cls} compact">${h.top.slice(0,-6)}<span class="cbody">${esc(e.text)}</span></div></div>`;
   }
@@ -376,6 +506,7 @@ function filtered(){
   const onlyVital=document.getElementById("onlyVital")?.checked;
   const showVerbose=document.getElementById("verbose")?.checked;
   return EVENTS.filter(e=>{
+    if(e.hidden)return false; // 통신 카드로 접힌 중복 @입력(요청: 입력·통화 이중 표시 제거)
     if(!visibleTo(e,curVP))return false;
     if(onlyAbil&&e.kind!=="ability")return false;
     if(onlyComm&&!COMM_KINDS.has(e.kind))return false;
@@ -429,7 +560,7 @@ function buildQueue(){
   const list=filtered(); const q=[]; const individual=curVP!=="__all__";
   for(const e of list){
     const blocks=e.text?parseBody(e.text):[];
-    if(individual && blocks.length){          // 개별 뷰: 실제 게임처럼 문단(줄)씩
+    if(individual && blocks.length && !diceParse(e) && !choiceParse(e)){ // 개별 뷰: 문단(줄)씩 — 단 주사위·선택지는 카드 통째(연출 보존)
       q.push({e,header:true});
       for(const b of blocks) if(b.type!=="br") q.push({e,block:b});
     } else q.push({e,whole:true});            // 전체 뷰: 이벤트 단위
@@ -454,9 +585,12 @@ function stopPlay(){ pausePlay(); qi=0; queue=[]; curBodyEl=null; }             
 // 큐 아이템 1개를 스트림에 그린다(instant=true면 애니메이션·스크롤 생략 — 시크 시 즉시 렌더). 길이(읽을 시간)를 반환.
 function renderQueueItem(stream,it,instant){
   let len=40;
-  if(it.whole){ stream.insertAdjacentHTML("beforeend",evHtml(it.e)); if(!instant)animateDrolls(stream.lastElementChild); curBodyEl=null; len=(it.e.text||"").length||40; }
+  if(it.whole){ stream.insertAdjacentHTML("beforeend",evHtml(it.e)); const le=stream.lastElementChild;
+    if(!instant)playFx(le,it.e); // 종류별 특수효과(주사위 굴림·선택지 ❯·능력 파동·피해 흔들림 등)
+    curBodyEl=null; len=(it.e.text||"").length||40;
+    if(le&&(le.classList.contains("k-dice")||le.classList.contains("k-choice")))len+=70; } // 연출 시간 확보
   else if(it.header){ const h=headHtml(it.e); const d=document.createElement("div"); d.className=h.cls;
-    d.innerHTML=h.top+`<div class="body"></div>`; stream.appendChild(d); curBodyEl=d.querySelector(".body"); len=8; }
+    d.innerHTML=h.top+`<div class="body"></div>`; stream.appendChild(d); if(!instant)playFx(d,it.e); curBodyEl=d.querySelector(".body"); len=8; }
   else if(it.block){ if(curBodyEl){ curBodyEl.insertAdjacentHTML("beforeend",blockHtml(it.block)); if(!instant)animateDrolls(curBodyEl.lastElementChild); } len=(it.block.text||"").length||20; }
   if(!instant) stream.lastElementChild&&stream.lastElementChild.scrollIntoView({block:"end",behavior:"smooth"});
   return len;
@@ -604,9 +738,9 @@ function escAttr(s){return esc(s).replace(/"/g,"&quot;")}
 
 // ── 파싱 ──
 function parseJSONL(t){const out=[];for(const ln of t.split(/\r?\n/)){const s=ln.trim();if(!s)continue;try{out.push(JSON.parse(s));}catch(_){}}return out;}
-function parseTXT(t){const out=[];let cur=null,seq=0;const head=/^\[(\d\d:\d\d:\d\d)\]\s*\[([^\]]+)\]\s?(.*)$/;
+function parseTXT(t){const out=[];let cur=null,seq=0;const head=/^\[(\d\d:\d\d:\d\d)\]\s*(?:\[G ([^\]]*)\]\s*)?\[([^\]]+)\]\s?(.*)$/; // [G 인게임시각]은 신형 로그 선택 그룹
   for(const raw of t.split(/\r?\n/)){const m=raw.match(head);
-    if(m){if(cur)out.push(cur);cur={seq:++seq,t:m[1],cat:m[2],who:"",text:m[3]||""};}
+    if(m){if(cur)out.push(cur);cur={seq:++seq,t:m[1],gt:m[2]||"",cat:m[3],who:"",text:m[4]||""};}
     else if(cur&&raw.trim()){cur.text+=(cur.text?"\n":"")+raw.trim();}}
   if(cur)out.push(cur);return out;}
 function buildAlias(){
@@ -692,6 +826,18 @@ function rebuild(raw){
       if(e.to.length)continue;
       const o=pick(p,true)||pick(p,false); // 같은 매체 우선(병행 통화 구분) → 없으면 매체 무관(양쪽 기기 이름이 달라도 같은 통화: 스마트폰↔통화)
       if(o){ e.to=[o.actor]; if(!o.to.length)o.to=[e.actor]; } } })();
+  // ★내 발신 중복 접기(요청)★: '@… 입력' 카드와 곧이은 통신 카드가 ★같은 말을 두 번★ 보여줬다 —
+  //  입력은 숨기고 수신자 표기가 있는 통신 카드 하나만 남긴다. 그 통신 카드는 '내 입력' 표시(self=초록)를 물려받는다.
+  //  (통신이 차단·유실돼 짝이 없으면 입력은 그대로 남긴다 — 정보 손실 없음.)
+  for(let i=0;i<EVENTS.length;i++){ const e=EVENTS[i];
+    if(e.kind!=="input"||!/^@/.test(e.text||""))continue;
+    const cand=(e.text||"").replace(/^@\S+\s*/,"").trim(); if(!cand)continue;
+    for(let j=i+1;j<=i+6&&j<EVENTS.length;j++){ const o=EVENTS[j];
+      if(!o||!COMM_KINDS.has(o.kind)||o.actor!==e.actor)continue;
+      const ot=(o.text||"").trim(), og=(o.orig||"").trim();
+      if(ot===cand||og===cand||(cand.length>=4&&(ot.endsWith(cand)||cand.endsWith(ot)))){ e.hidden=true; o.self=true; break; }
+    }
+  }
   buildViewpoints(); curVP="__all__"; stopPlay(); }
 // 로그에서 괴담(시나리오) 이름 파싱 — 세션 이벤트의 title 필드(JSONL) 또는 '괴담: X' 라인(.txt)
 function parseScenarioTitle(text){

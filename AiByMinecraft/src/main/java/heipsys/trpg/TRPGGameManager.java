@@ -4838,8 +4838,12 @@ public class TRPGGameManager {
         PlayerData pd = state.getPlayer(player);
         if (pd == null) return;
         OracleChoice chosen = choices.get(idx);
-        // ★능력 투명성★: 플레이어가 고른 선택지를 능력 이벤트로 기록(이후 정보수집·수정 편의).
-        gameLogger.logAbilityResult(pd.gmDisplayName(), "선택지", "선택 → " + chosen.text() + " [" + (switch (chosen.outcome()) {
+        // ★능력 투명성 + 뷰어 연출★: ★전체 선택지 목록과 고른 항목★을 한 이벤트로 기록 —
+        //   뷰어가 '선택지 전부 출력 → 고른 줄에 ❯ 반짝'으로 재생한다(요청). 형식: "1) A ∥ 2) B ⇒ 2) B [등급]".
+        StringBuilder ob = new StringBuilder();
+        for (int i = 0; i < choices.size(); i++) ob.append(i > 0 ? " ∥ " : "").append(i + 1).append(") ").append(choices.get(i).text());
+        ob.append(" ⇒ ").append(idx + 1).append(") ").append(chosen.text());
+        gameLogger.logAbilityResult(pd.gmDisplayName(), "선택지", ob + " [" + (switch (chosen.outcome()) {
             case "solve" -> "정답"; case "good" -> "최적"; case "bad" -> "역효과"; default -> "무난"; }) + "]");
         String modifier = switch (chosen.outcome()) {
             case "solve"   -> " (계시 — ★정답: 이 괴담을 해결·돌파하는 결정적 선택. 그 시도가 성공적으로 이어지도록 서술하되 즉시 완전 클리어를 강요하지 말고 '해결의 결정적 진전'으로 처리★)";
