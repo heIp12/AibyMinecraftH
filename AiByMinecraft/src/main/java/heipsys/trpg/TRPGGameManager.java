@@ -391,6 +391,8 @@ public class TRPGGameManager {
             List<PlayerData> aliveSpawned = state.getAllPlayers().stream()
                 .filter(pd -> !pd.isDead && spawnedPlayers.contains(pd.uuid))
                 .collect(Collectors.toList());
+            // ★근력↓ 이동속도 물리 반영★: 상시 하트비트로 재적용(재접속·놓친 훅·스탯 변동 catch-all). 값이 바뀔 때만 set.
+            for (PlayerData pd : aliveSpawned) refreshMoveSpeed(pd);
             if (aliveSpawned.isEmpty()) return; // 살아 등장한 사람이 없으면 종료 로직이 따로 처리
             boolean anyoneCanAct = aliveSpawned.stream().anyMatch(pd ->
                 pd.puppetRecoveryTurns == 0 // ★버그수정★ -1(완전조종)은 행동 불능이다(입력 게이트도 !=0로 차단) — <=0이라 -1을 행동가능으로 오판해 전원 완전조종 시 소프트락이던 것 수정
@@ -683,6 +685,7 @@ public class TRPGGameManager {
             removeInfoItem(p);
             removeRecordItem(p);
             if (p.getGameMode() == GameMode.SPECTATOR) p.setGameMode(GameMode.SURVIVAL); // 관전 해제(세션 종료 정리)
+            if (Math.abs(p.getWalkSpeed() - 0.2f) > 0.001f) { try { p.setWalkSpeed(0.2f); } catch (IllegalArgumentException ignore) {} } // 근력 감속 원복(세션 종료)
         });
         itemMan.reclaimChapterItems(new ArrayList<>(Bukkit.getOnlinePlayers()));
         narrativeDelivery.clearAll();
@@ -1475,6 +1478,7 @@ public class TRPGGameManager {
 
             if (isImmediateSpawn(asgn.roleId())) {
                 spawnedPlayers.add(p.getUniqueId());
+                refreshMoveSpeed(myPd); // 시작 즉시 등장 배역: 근력 기반 이동속도 적용
             } else {
                 p.sendMessage("§8당신의 배역은 이야기가 진행되면서 등장합니다. GM의 안내를 기다려주세요.");
             }
@@ -2131,6 +2135,10 @@ public class TRPGGameManager {
             for (String id : pd.heldItemIds) { String nm = itemDisplayName(id); names.add(nm == null || nm.isBlank() ? id : nm); }
             if (!names.isEmpty()) gmCtx.append(" [소지품: ").append(String.join(", ", names)).append("]");
         }
+
+        // ★행동하는 인물의 근력·영감을 서술 결에 반영★: 근력↓=힘·순발력 서술 페널티, 영감↓=단서 자동 안내 억제(불친절),
+        //   영감↑=미세 실마리 하나쯤 자연 안내. 평균(5)이면 빈 문자열 → 노이즈 없음. gmCtx로만(플레이어·로그 미노출).
+        gmCtx.append(actorStatGmContext(pd));
 
         // 괴담이 이 플레이어의 말투·행동을 학습 (정체 차용/흉내에 사용)
         corruptMan.learnPlayerBehavior(player.getName(), message);
@@ -6333,6 +6341,7 @@ public class TRPGGameManager {
             .ifPresent(pd -> {
                 spawnedPlayers.add(pd.uuid);
                 gameLogger.logPrivate(pd.name, "배역 등장 [" + pd.gmDisplayName() + "]");
+                refreshMoveSpeed(pd); // 등장 즉시 근력 기반 이동속도 적용(하트비트 대기 없이)
                 Player p = Bukkit.getPlayer(pd.uuid);
                 if (p == null || !p.isOnline()) return;
                 p.sendMessage("§e§l[등장] 당신의 배역이 이야기에 들어섰습니다. 이제 행동할 수 있습니다.");
@@ -8763,6 +8772,51 @@ public class TRPGGameManager {
              : c >= 4  ? "보통"
              : c >= 2  ? "약함(설득이 잘 먹히지 않는다)"
              :           "거의 없음(불쾌·거슬리게 느껴진다 — 친절한 이도 시큰둥·건성으로 답하고, 평범하거나 경계심 있는 이는 무뚝뚝·비협조·냉담하거나 대놓고 무시·적대할 수 있다)";
+    }
+
+    /**
+     * ★행동하는 인물의 근력(STR)·영감(SPR)을 GM 서술에 반영하는 컨텍스트 노트★ — 능력치가 판정 성패뿐 아니라
+     * '서술의 결'까지 좌우하게 한다(5=평균이면 빈 문자열, 낮을수록 불리한 노트). gmCtx로만 전달(플레이어 표시·로그 미노출).
+     *   · 근력↓: 힘·순발력 필요한 행동이 굼뜨고 뒤처진다(이동속도는 별도로 setWalkSpeed에서 물리 반영).
+     *   · 영감↓: GM이 알아서 단서를 짚어주지 않는다('책상 아래 종이' 같은 친절 서술 생략) — 명시적으로 살필 때만 인색하게.
+     *   · 영감↑: 눈에 띄는 실마리 하나쯤은 자연스럽게 짚어줘도 된다(정답·비밀은 여전히 아낌).
+     */
+    private static String actorStatGmContext(PlayerData pd) {
+        if (pd == null) return "";
+        StringBuilder n = new StringBuilder();
+        int str = Math.max(1, Math.min(20, pd.str));
+        if (str <= 1)
+            n.append(" [신체 열세(근력 ").append(str).append("): 이 인물은 몹시 약하고 굼뜨다. 힘·속도·순발력이 필요한 행동(빨리 달아나기·힘껏 밀기·재빠른 회피·무거운 것 다루기)은 크게 버거워 남보다 뒤처지고 숨이 차며, 설령 판정이 성공이라도 그 '과정'을 힘겹고 아슬아슬하게 그려라. 판정이 정한 성패 자체는 지켜라.]");
+        else if (str <= 3)
+            n.append(" [체력 부침(근력 ").append(str).append("): 이 인물은 힘·순발력이 평균 이하다. 빠르거나 힘쓰는 행동은 다소 굼뜨고 벅차게, 남보다 한 박자 늦거나 힘에 부치는 결을 곁들여라(성패는 판정대로).]");
+        int spr = Math.max(1, Math.min(20, pd.spr));
+        if (spr <= 1)
+            n.append(" [둔한 직감(영감 ").append(spr).append("): 이 인물은 직관이 몹시 무디다. ★스스로 살피지 않은 단서·이상 징후를 GM이 대신 짚어주지 마라★ — '책상 아래 놓인 종이'·'벽의 이상한 틈'처럼 묻지도 뒤지지도 않은 것을 친절히 서술해 주지 마라. ★명시적으로 자세히 살피거나 뒤질 때만★ 발견 기회를 주고, 그마저 결정적 단서는 인색하게. 불길함·위화감의 결도 흐릿하게(무딘 사람이 느끼는 만큼만).]");
+        else if (spr <= 3)
+            n.append(" [무딘 촉(영감 ").append(spr).append("): 직관이 평균 이하다. 눈에 띄지 않는 단서는 알아서 짚어주지 말고, 이 인물이 스스로 살필 때만 드러내라(대놓고 보이는 것만 자연스레).]");
+        else if (spr >= 8)
+            n.append(" [예민한 직감(영감 ").append(spr).append("): 이 인물은 촉이 날카롭다. 주변의 미세한 이상·어긋남(놓인 물건·틀어진 배치·공기의 결)을 잘 알아챈다 — 굳이 다 뒤지지 않아도 결정적이지 않은 실마리 하나쯤은 자연스럽게 짚어줘도 좋다(정답·비밀은 여전히 아껴라).]");
+        return n.toString();
+    }
+
+    /**
+     * ★근력(STR)에 따른 이동속도 물리 반영★ — 근력이 낮으면 걸음이 느려진다(평균 5=정상, 1=절반).
+     * Bukkit 기본 보행속도 0.2f. str<5면 최대 50%까지 감소, str>=5는 정상(요청: 감속만, 가속 없음).
+     * 등장·생존 상태에서만 적용하고, 그 외(미등장·사망)엔 정상으로 되돌린다. 값이 바뀔 때만 set(불필요 패킷 방지).
+     */
+    private void refreshMoveSpeed(PlayerData pd) {
+        if (pd == null) return;
+        Player p = Bukkit.getPlayer(pd.uuid);
+        if (p == null || !p.isOnline()) return;
+        float target = 0.2f; // 기본 보행속도
+        if (!pd.isDead && spawnedPlayers.contains(pd.uuid)) {
+            int s = Math.max(1, Math.min(20, pd.str));
+            float factor = s >= 5 ? 1.0f : (float) (0.5 + 0.5 * (s - 1) / 4.0); // str1=0.5 … str5=1.0
+            target = 0.2f * factor;
+        }
+        if (Math.abs(p.getWalkSpeed() - target) > 0.001f) {
+            try { p.setWalkSpeed(target); } catch (IllegalArgumentException ignore) {} // 범위 밖 방어
+        }
     }
 
     /** 통신 성립 시 양쪽이 서로의 연락처를 알게 됨 (착신/대면 교환) */
