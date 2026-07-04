@@ -968,31 +968,45 @@ function connTargets(z){
   return out;
 }
 function distLabel(d){ if(d==null||d==="")return ""; return typeof d==="number"?(d+"분"):String(d); }
+// 박스(px,py,bw,bh) 중심에서 (tx,ty) 방향으로 나갈 때 테두리와 만나는 점 = '문' 위치(복도가 시작되는 곳).
+function borderPt(px,py,bw,bh,tx,ty){ const cx=px+bw/2,cy=py+bh/2,dx=tx-cx,dy=ty-cy;
+  if(!dx&&!dy)return {x:cx,y:cy}; const s=Math.min(dx?(bw/2)/Math.abs(dx):1e9, dy?(bh/2)/Math.abs(dy):1e9);
+  return {x:cx+dx*s,y:cy+dy*s}; }
+// ★설계도(평면도) 지도★ — 방=사각형, 연결=문과 문 사이를 잇는 ★복도(평행 이중선)★, 통신불가=빨간 점선. (요청: 이미지처럼 설계도 형식)
 function zoneMapSvg(zones){
   const list=(zones||[]).filter(z=>z&&z.zone_id);
   if(!list.length)return "";
   const areas=[],byArea={};
   for(const z of list){const a=z.area||"(구역)"; if(!byArea[a]){byArea[a]=[];areas.push(a);} byArea[a].push(z);}
-  const BW=140,BH=50,GX=168,GY=96,PADX=14,TOP=24; const pos={}; let maxCols=1;
+  const BW=132,BH=54,GX=180,GY=112,PADX=18,TOP=28; const pos={}; let maxCols=1;
   areas.forEach((a,ai)=>{ byArea[a].forEach((z,ci)=>{ pos[z.zone_id]={x:PADX+ci*GX,y:TOP+ai*GY,z}; }); if(byArea[a].length>maxCols)maxCols=byArea[a].length; });
-  const W=PADX*2+(maxCols-1)*GX+BW, H=TOP+(areas.length-1)*GY+BH+14;
+  const W=PADX*2+(maxCols-1)*GX+BW, H=TOP+(areas.length-1)*GY+BH+18;
   const cx=id=>pos[id].x+BW/2, cy=id=>pos[id].y+BH/2;
-  let edges="",seen={};
+  // 청사진 격자 배경(설계도 느낌)
+  const bg=`<defs><pattern id="bpg" width="22" height="22" patternUnits="userSpaceOnUse"><path d="M22 0H0V22" fill="none" stroke="#273052" stroke-width="0.6"/></pattern></defs>`
+    +`<rect width="${W}" height="${H}" fill="#0f1424"/><rect width="${W}" height="${H}" fill="url(#bpg)"/>`;
+  // ── 복도: 두 방의 '문'(테두리 교점) 사이를 평행 이중선으로 이어 통로처럼 그린다 ──
+  let corr="",seen={};
+  const ln=(x1,y1,x2,y2,c,w)=>`<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${c}" stroke-width="${w}"/>`;
   for(const z of list)for(const ct of connTargets(z)){ const c=ct.to; if(!pos[c])continue; const k=[z.zone_id,c].sort().join("|"); if(seen[k])continue; seen[k]=1;
-    const x1=cx(z.zone_id),y1=cy(z.zone_id),x2=cx(c),y2=cy(c);
-    edges+=`<line x1="${x1|0}" y1="${y1|0}" x2="${x2|0}" y2="${y2|0}" stroke="#6a5db0" stroke-width="2" opacity="0.5"/>`;
-    const dl=distLabel(ct.dist); if(dl)edges+=`<text x="${(x1+x2)/2|0}" y="${((y1+y2)/2-2)|0}" text-anchor="middle" font-size="9" fill="#cabfff">${esc(dl)}</text>`;
+    const A=borderPt(pos[z.zone_id].x,pos[z.zone_id].y,BW,BH,cx(c),cy(c));
+    const B=borderPt(pos[c].x,pos[c].y,BW,BH,cx(z.zone_id),cy(z.zone_id));
+    const dx=B.x-A.x,dy=B.y-A.y,len=Math.hypot(dx,dy)||1,nx=-dy/len,ny=dx/len,w=6; // 복도 반폭
+    corr+=ln(A.x+nx*w,A.y+ny*w,B.x+nx*w,B.y+ny*w,'#aeb9d4',1.4)   // 복도 두 벽(평행)
+        + ln(A.x-nx*w,A.y-ny*w,B.x-nx*w,B.y-ny*w,'#aeb9d4',1.4);
+    const dl=distLabel(ct.dist); if(dl)corr+=`<text x="${((A.x+B.x)/2)|0}" y="${((A.y+B.y)/2-3)|0}" text-anchor="middle" font-size="9" fill="#cabfff">${esc(dl)}</text>`;
   }
+  // ── 방(설계도식 사각형): 각진 모서리·또렷한 선, 대분류는 옅은 색조로 구분, 격자가 비치게 반투명 ──
   let boxes="";
   for(const z of list){ const p=pos[z.zone_id],dead=isCommDeadZone(z),nm=z.name||z.zone_id,short=nm.length>9?nm.slice(0,8)+"…":nm;
     boxes+=`<g><title>${esc(nm)}${z.area?" — "+esc(z.area):""}${dead?" · 통신불가":""}</title>`
-      +`<rect x="${p.x}" y="${p.y}" width="${BW}" height="${BH}" rx="8" fill="${areaTint(z.area||"")}" stroke="${dead?'#ff5a5a':'#8a7fd0'}" stroke-width="${dead?2.5:1.4}" ${dead?'stroke-dasharray="5 3"':''}/>`
-      +`<text x="${p.x+BW/2}" y="${p.y+BH/2+4}" text-anchor="middle" font-size="13" fill="#f0ecff">${esc(short)}${dead?' 📵':''}</text></g>`; }
-  let labels=""; areas.forEach((a,ai)=>{ labels+=`<text x="${PADX}" y="${TOP+ai*GY-6}" font-size="10" fill="#9b8fd6">${esc(a)}</text>`; });
+      +`<rect x="${p.x}" y="${p.y}" width="${BW}" height="${BH}" rx="2" fill="${areaTint(z.area||"")}" fill-opacity="0.5" stroke="${dead?'#ff5a5a':'#c6d0e6'}" stroke-width="${dead?2.2:1.6}" ${dead?'stroke-dasharray="5 3"':''}/>`
+      +`<text x="${p.x+BW/2}" y="${p.y+BH/2+4}" text-anchor="middle" font-size="13" fill="#f2f5fb">${esc(short)}${dead?' 📵':''}</text></g>`; }
+  let labels=""; areas.forEach((a,ai)=>{ labels+=`<text x="${PADX}" y="${TOP+ai*GY-9}" font-size="10" fill="#9b8fd6">${esc(a)}</text>`; });
   return `<div class="zmap" style="overflow:auto;margin-bottom:6px;cursor:zoom-in" onclick="mapZoom(this)" title="클릭하면 크게 보기">`
-    +`<div class="dim2" style="margin-bottom:3px">구역 지도 <span style="background:#2a2450;border:1px solid #4a3f80;border-radius:6px;padding:0 7px;color:#cabfff">🔍 크게 보기</span></div>`
-    +`<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-height:360px;min-width:${Math.min(W,320)}px">${edges}${boxes}${labels}</svg>`
-    +`<div class="dim2">📵 = 통신 불가 구역 · 선 = 연결 · 색 = 대분류(건물)</div></div>`;
+    +`<div class="dim2" style="margin-bottom:3px">구역 지도(설계도) <span style="background:#2a2450;border:1px solid #4a3f80;border-radius:6px;padding:0 7px;color:#cabfff">🔍 크게 보기</span></div>`
+    +`<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-height:380px;min-width:${Math.min(W,320)}px">${bg}${corr}${boxes}${labels}</svg>`
+    +`<div class="dim2">📵 = 통신 불가 · 복도(이중선) = 연결 · 색 = 대분류(건물)</div></div>`;
 }
 // 지도 클릭 → 전체화면 오버레이로 ★크게★ 보기(스크롤 가능). 아무 곳이나 누르면 닫힘. (뷰어 맵이 작다는 피드백)
 function mapZoom(el){
