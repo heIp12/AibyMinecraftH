@@ -2140,6 +2140,10 @@ public class TRPGGameManager {
         //   영감↑=미세 실마리 하나쯤 자연 안내. 평균(5)이면 빈 문자열 → 노이즈 없음. gmCtx로만(플레이어·로그 미노출).
         gmCtx.append(actorStatGmContext(pd));
 
+        // ★같은 구역 동료 목격(#7)★: 옆에 누가 있는지 GM에 결정적으로 알려 '같은 구역 목격 필수' 규칙이 실제로 발화되게 한다
+        //   (인원 많으면 상호작용 대상·영감 예민 동료 우선, 나머지는 가볍게 — 요청 반영).
+        gmCtx.append(sameZoneWitnessContext(pd));
+
         // 괴담이 이 플레이어의 말투·행동을 학습 (정체 차용/흉내에 사용)
         corruptMan.learnPlayerBehavior(player.getName(), message);
 
@@ -8822,6 +8826,33 @@ public class TRPGGameManager {
         if (Math.abs(p.getWalkSpeed() - target) > 0.001f) {
             try { p.setWalkSpeed(target); } catch (IllegalArgumentException ignore) {} // 범위 밖 방어
         }
+    }
+
+    /**
+     * ★같은 구역 동료 목격 컨텍스트(#7)★ — 행동자와 같은 zone에 있는 다른 등장 플레이어 명단을 GM에 결정적으로 주입한다.
+     * 예전엔 GM이 '누가 옆에 있는지'를 몰라 같은 칸 동료의 결정적 행동조차 <WITNESS>가 안 나갔다(밸브를 잠갔는데
+     * 옆 동료 서술은 "누군가 잠근 것처럼"). 명단을 주면 프롬프트의 '같은 구역 목격 필수' 규칙이 실제로 발화된다.
+     * 인원이 많을 때 우선순위(요청): ①직접 상호작용 대상 ②영감 예민한 동료(중요·미묘한 행동을 먼저 알아챔)를 우선
+     * 자세히, 나머지는 가볍게 한 줄로. gmCtx로만(플레이어·로그 미노출).
+     */
+    private String sameZoneWitnessContext(PlayerData actor) {
+        if (actor == null || actor.zone == null || actor.zone.isEmpty()) return "";
+        java.util.List<String> here = new java.util.ArrayList<>();
+        for (PlayerData cp : state.getAllPlayers()) {
+            if (cp == null || cp.uuid.equals(actor.uuid) || cp.isDead) continue;
+            if (!spawnedPlayers.contains(cp.uuid)) continue;
+            if (cp.isTraveling()) continue;                     // 이동 중(구역 경유)은 아직 이 방에 '머무는' 목격자로 치지 않음
+            if (actor.zone.equals(cp.zone)) {
+                String tag = cp.spr >= 8 ? "(영감 예민)" : cp.spr <= 3 ? "(영감 무딤)" : "";
+                here.add(cp.gmDisplayName() + tag);
+            }
+        }
+        if (here.isEmpty()) return "";
+        boolean many = here.size() >= 3;
+        return " [같은 구역 동료(이 행동을 목격 가능): " + String.join(", ", here)
+            + " — 행동자의 ★겉으로 드러나는 행동·말★을 이들이 본다. 드러나는 결정적 행동은 <WITNESS>로 이 동료들에게 전하라(사적 통화·메시지 '내용'은 제외, 겉모습만)."
+            + (many ? " 인원이 많으니 ★①행동자가 직접 상호작용하는 상대 ②'영감 예민' 동료(중요·미묘한 행동을 먼저 알아챔)를 우선 자세히★ 목격시키고, 나머지는 가볍게 한 줄로만 곁들여라." : "")
+            + "]";
     }
 
     /** 통신 성립 시 양쪽이 서로의 연락처를 알게 됨 (착신/대면 교환) */
