@@ -476,9 +476,9 @@ function seekTo(frac){
 function uniName(nm,jb){nm=(nm||"").trim();jb=(jb||"").trim();return (nm&&jb)?nm+"("+jb+")":(nm||jb);}
 // 특정 시점(seq) 기준, 그 플레이어가 '지금까지' 아는 상태를 접어서 계산(체력·정신·능력발동수·단서·아이템).
 function stateAt(vp,seq){
-  let hp=null,hpMax=null,san=null,sanMax=null,abil=0,loc=null; const items=[],clues=[]; const itemMeta={}; const usedByName={};
+  let hp=null,hpMax=null,san=null,sanMax=null,abil=0,loc=null; const items=[],clues=[]; const itemMeta={}; const usedByName={}; const visited=new Set();
   const rp=((REPLAY&&REPLAY.players)||[]).find(p=>uniName(p.charName,p.job)===vp||p.charName===vp||canon(p.charName)===vp);
-  if(rp){ if(Array.isArray(rp.hp)){hp=rp.hp[0];hpMax=rp.hp[1];} if(Array.isArray(rp.san)){san=rp.san[0];sanMax=rp.san[1];} }
+  if(rp){ if(Array.isArray(rp.hp)){hp=rp.hp[0];hpMax=rp.hp[1];} if(Array.isArray(rp.san)){san=rp.san[0];sanMax=rp.san[1];} if(rp.zone){loc=String(rp.zone).trim();if(loc)visited.add(loc);} } // 시작 위치 시드(있으면)
   for(const e of EVENTS){ if((e.seq||0)>seq)break;
     const mine=e.actor===vp, tome=e.to&&e.to.includes(vp);
     if(e.kind==="vital"&&mine){ if(e.hpAfter!=null){hp=e.hpAfter;hpMax=e.hpMax;} if(e.sanAfter!=null){san=e.sanAfter;sanMax=e.sanMax;} }
@@ -491,7 +491,7 @@ function stateAt(vp,seq){
         const noteM=raw.match(/\(([^)]*)\)\s*$/); // 획득 경위(시작 소지·제작 등) + 시각 — 클릭 시 세부정보
         itemMeta[nm]={note:(e.note||(noteM?noteM[1]:"")||""), t:e.t||""}; } }
     else if(e.kind==="clue"&&(mine||tome))clues.push((e.text||"단서").replace(/^→\S+\s*/,""));
-    else if(e.kind==="move"&&mine)loc=e.zone||(e.text||"").replace(/^→\s*/,"").replace(/\s*\(.*$/,"").trim();
+    else if(e.kind==="move"&&mine){loc=e.zone||(e.text||"").replace(/^→\s*/,"").replace(/\s*\(.*$/,"").trim(); if(loc)visited.add(loc);}
   }
   // 내 능력(자신 시점) — replay의 특성 + 로그로 센 사용횟수. 남은 사용/쿨다운(스펙) 표시.
   const abilList=[];
@@ -500,13 +500,15 @@ function stateAt(vp,seq){
     abilList.push({name:t.name||"?",grade:t.grade||"",active:!!t.active,desc:t.description||"",effect:t.effect||"",
       origin:t.origin||"",cd:t.cooldownTurns||0,maxUses,used:usedByName[t.name]||0});
   }
-  return {hp,hpMax,san,sanMax,abil,items,clues,loc,itemMeta,abilList};
+  return {hp,hpMax,san,sanMax,abil,items,clues,loc,itemMeta,abilList,visited};
 }
 function livePanelHtml(vp,st){
   let h=sh('live-state','재생 시점 — 아는 만큼만 <span class="live">● LIVE</span>');
   h+=`<div class="know"><div class="khead" style="color:${colorFor(vp)}">${esc(vp)}</div>`;
   h+=`<span class="hp">체력 ${st.hp??"?"}${st.hpMax!=null?"/"+st.hpMax:""}</span> &nbsp; <span class="san">정신 ${st.san??"?"}${st.sanMax!=null?"/"+st.sanMax:""}</span><br>`;
   h+=`<span class="st">능력 발동</span>${st.abil}회${st.loc?` &nbsp; <span class="st">위치</span>${esc(st.loc)}`:""}</div>`;
+  // ★미니맵(안개)★: 이 인물이 아는 구역만 — 현재(흰)·주변(밝게)·다녀온 곳(어둡게), 모르는 곳은 숨김. 시나리오 구역 있을 때만.
+  if(SCENARIO&&Array.isArray(SCENARIO.zones)&&SCENARIO.zones.length) h+=zoneMapSvg(SCENARIO.zones,{loc:st.loc,visited:st.visited});
   // ★내 능력(자신 시점): 능력별 접기 — 접으면 이름+횟수만, 펴면 등급·설명·효과·쿨다운·남은사용★
   if(st.abilList&&st.abilList.length){
     h+=sh('live-abil',`✦ 내 능력 (${st.abilList.length})`)+`<div class="know kabil">`;
@@ -973,40 +975,60 @@ function borderPt(px,py,bw,bh,tx,ty){ const cx=px+bw/2,cy=py+bh/2,dx=tx-cx,dy=ty
   if(!dx&&!dy)return {x:cx,y:cy}; const s=Math.min(dx?(bw/2)/Math.abs(dx):1e9, dy?(bh/2)/Math.abs(dy):1e9);
   return {x:cx+dx*s,y:cy+dy*s}; }
 // ★설계도(평면도) 지도★ — 방=사각형, 연결=문과 문 사이를 잇는 ★복도(평행 이중선)★, 통신불가=빨간 점선. (요청: 이미지처럼 설계도 형식)
-function zoneMapSvg(zones){
-  const list=(zones||[]).filter(z=>z&&z.zone_id);
-  if(!list.length)return "";
+//  know={loc,visited}가 주어지면 ★시점 지식 미니맵★(안개): 현재=흰색, 주변=밝게, 다녀온 곳=어둡게, 모르는 곳=숨김. (요청 #9)
+function zoneMapSvg(zones, know){
+  const listAll=(zones||[]).filter(z=>z&&z.zone_id);
+  if(!listAll.length)return "";
+  const nameToId={}; for(const z of listAll){ nameToId[(z.name||z.zone_id)]=z.zone_id; nameToId[z.zone_id]=z.zone_id; }
+  const rid=n=>nameToId[String(n||"").trim()]||null;
+  let curId=null; const visitId=new Set(), adjId=new Set(); let shown=null;
+  if(know){ curId=rid(know.loc);
+    for(const v of (know.visited||[])){const id=rid(v); if(id)visitId.add(id);} if(curId)visitId.add(curId);
+    if(curId){ const cz=listAll.find(z=>z.zone_id===curId);
+      if(cz)for(const ct of connTargets(cz)){const t=rid(ct.to); if(t)adjId.add(t);}       // 현재→인접
+      for(const z of listAll)for(const ct of connTargets(z)){ if(rid(ct.to)===curId)adjId.add(z.zone_id); } } // 인접←현재(역방향)
+    shown=new Set([...visitId,...adjId]);
+  }
+  const list=shown?listAll.filter(z=>shown.has(z.zone_id)):listAll;
+  if(!list.length)return `<div class="dim2" style="margin:4px 0 8px">아직 파악한 구역이 없습니다(이동하면 드러납니다).</div>`;
   const areas=[],byArea={};
   for(const z of list){const a=z.area||"(구역)"; if(!byArea[a]){byArea[a]=[];areas.push(a);} byArea[a].push(z);}
   const BW=132,BH=54,GX=180,GY=112,PADX=18,TOP=28; const pos={}; let maxCols=1;
   areas.forEach((a,ai)=>{ byArea[a].forEach((z,ci)=>{ pos[z.zone_id]={x:PADX+ci*GX,y:TOP+ai*GY,z}; }); if(byArea[a].length>maxCols)maxCols=byArea[a].length; });
   const W=PADX*2+(maxCols-1)*GX+BW, H=TOP+(areas.length-1)*GY+BH+18;
   const cx=id=>pos[id].x+BW/2, cy=id=>pos[id].y+BH/2;
-  // 청사진 격자 배경(설계도 느낌)
   const bg=`<defs><pattern id="bpg" width="22" height="22" patternUnits="userSpaceOnUse"><path d="M22 0H0V22" fill="none" stroke="#273052" stroke-width="0.6"/></pattern></defs>`
     +`<rect width="${W}" height="${H}" fill="#0f1424"/><rect width="${W}" height="${H}" fill="url(#bpg)"/>`;
-  // ── 복도: 두 방의 '문'(테두리 교점) 사이를 평행 이중선으로 이어 통로처럼 그린다 ──
+  // ── 복도: 두 방의 '문'(테두리 교점) 사이를 평행 이중선으로 이어 통로처럼. (양쪽 다 보이는 연결만 — 안개 밖은 자동 생략) ──
   let corr="",seen={};
   const ln=(x1,y1,x2,y2,c,w)=>`<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${c}" stroke-width="${w}"/>`;
-  for(const z of list)for(const ct of connTargets(z)){ const c=ct.to; if(!pos[c])continue; const k=[z.zone_id,c].sort().join("|"); if(seen[k])continue; seen[k]=1;
+  for(const z of list)for(const ct of connTargets(z)){ const c=rid(ct.to)||ct.to; if(!pos[c])continue; const k=[z.zone_id,c].sort().join("|"); if(seen[k])continue; seen[k]=1;
     const A=borderPt(pos[z.zone_id].x,pos[z.zone_id].y,BW,BH,cx(c),cy(c));
     const B=borderPt(pos[c].x,pos[c].y,BW,BH,cx(z.zone_id),cy(z.zone_id));
-    const dx=B.x-A.x,dy=B.y-A.y,len=Math.hypot(dx,dy)||1,nx=-dy/len,ny=dx/len,w=6; // 복도 반폭
-    corr+=ln(A.x+nx*w,A.y+ny*w,B.x+nx*w,B.y+ny*w,'#aeb9d4',1.4)   // 복도 두 벽(평행)
-        + ln(A.x-nx*w,A.y-ny*w,B.x-nx*w,B.y-ny*w,'#aeb9d4',1.4);
+    const dx=B.x-A.x,dy=B.y-A.y,len=Math.hypot(dx,dy)||1,nx=-dy/len,ny=dx/len,w=6;
+    const cc=know?'#8fd4b0':'#aeb9d4'; // 미니맵: 이동가능 복도는 초록빛으로 강조
+    corr+=ln(A.x+nx*w,A.y+ny*w,B.x+nx*w,B.y+ny*w,cc,1.4)+ln(A.x-nx*w,A.y-ny*w,B.x-nx*w,B.y-ny*w,cc,1.4);
     const dl=distLabel(ct.dist); if(dl)corr+=`<text x="${((A.x+B.x)/2)|0}" y="${((A.y+B.y)/2-3)|0}" text-anchor="middle" font-size="9" fill="#cabfff">${esc(dl)}</text>`;
   }
-  // ── 방(설계도식 사각형): 각진 모서리·또렷한 선, 대분류는 옅은 색조로 구분, 격자가 비치게 반투명 ──
+  // ── 방: 미니맵이면 현재(흰)·주변(밝게)·다녀온 곳(어둡게)로 색 구분, 전체맵이면 대분류 색조 ──
   let boxes="";
   for(const z of list){ const p=pos[z.zone_id],dead=isCommDeadZone(z),nm=z.name||z.zone_id,short=nm.length>9?nm.slice(0,8)+"…":nm;
-    boxes+=`<g><title>${esc(nm)}${z.area?" — "+esc(z.area):""}${dead?" · 통신불가":""}</title>`
-      +`<rect x="${p.x}" y="${p.y}" width="${BW}" height="${BH}" rx="2" fill="${areaTint(z.area||"")}" fill-opacity="0.5" stroke="${dead?'#ff5a5a':'#c6d0e6'}" stroke-width="${dead?2.2:1.6}" ${dead?'stroke-dasharray="5 3"':''}/>`
-      +`<text x="${p.x+BW/2}" y="${p.y+BH/2+4}" text-anchor="middle" font-size="13" fill="#f2f5fb">${esc(short)}${dead?' 📵':''}</text></g>`; }
+    let fill=areaTint(z.area||""),fop=0.5,stroke=dead?'#ff5a5a':'#c6d0e6',sw=dead?2.2:1.6,txt='#f2f5fb';
+    if(know){ const st=z.zone_id===curId?'cur':adjId.has(z.zone_id)?'adj':'known';
+      if(st==='cur'){fill='#eef2fb';fop=0.97;stroke='#ffffff';sw=2.6;txt='#14203a';}
+      else if(st==='adj'){fill=areaTint(z.area||'');fop=0.72;stroke='#e2e8f6';sw=1.9;txt='#f2f5fb';}
+      else {fill='#161d2e';fop=0.92;stroke='#3f4a66';sw=1.2;txt='#8792ab';}
+      if(dead){stroke='#ff5a5a';sw=2.2;} }
+    boxes+=`<g><title>${esc(nm)}${z.area?" — "+esc(z.area):""}${dead?" · 통신불가":""}${z.zone_id===curId?" · 현재 위치":""}</title>`
+      +`<rect x="${p.x}" y="${p.y}" width="${BW}" height="${BH}" rx="2" fill="${fill}" fill-opacity="${fop}" stroke="${stroke}" stroke-width="${sw}" ${dead?'stroke-dasharray="5 3"':''}/>`
+      +`<text x="${p.x+BW/2}" y="${p.y+BH/2+4}" text-anchor="middle" font-size="13" fill="${txt}">${(z.zone_id===curId?'▶ ':'')+esc(short)}${dead?' 📵':''}</text></g>`; }
   let labels=""; areas.forEach((a,ai)=>{ labels+=`<text x="${PADX}" y="${TOP+ai*GY-9}" font-size="10" fill="#9b8fd6">${esc(a)}</text>`; });
+  const title=know?'미니맵 — 아는 구역만':'구역 지도(설계도)';
+  const legend=know?'▶흰색=현재 · 밝음=주변 · 어두움=다녀온 곳 · 초록 복도=이동 가능(모르는 곳은 숨김)':'📵 = 통신 불가 · 복도(이중선) = 연결 · 색 = 대분류(건물)';
   return `<div class="zmap" style="overflow:auto;margin-bottom:6px;cursor:zoom-in" onclick="mapZoom(this)" title="클릭하면 크게 보기">`
-    +`<div class="dim2" style="margin-bottom:3px">구역 지도(설계도) <span style="background:#2a2450;border:1px solid #4a3f80;border-radius:6px;padding:0 7px;color:#cabfff">🔍 크게 보기</span></div>`
+    +`<div class="dim2" style="margin-bottom:3px">${title} <span style="background:#2a2450;border:1px solid #4a3f80;border-radius:6px;padding:0 7px;color:#cabfff">🔍 크게 보기</span></div>`
     +`<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-height:380px;min-width:${Math.min(W,320)}px">${bg}${corr}${boxes}${labels}</svg>`
-    +`<div class="dim2">📵 = 통신 불가 · 복도(이중선) = 연결 · 색 = 대분류(건물)</div></div>`;
+    +`<div class="dim2">${legend}</div></div>`;
 }
 // 지도 클릭 → 전체화면 오버레이로 ★크게★ 보기(스크롤 가능). 아무 곳이나 누르면 닫힘. (뷰어 맵이 작다는 피드백)
 function mapZoom(el){
