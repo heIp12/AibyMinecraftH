@@ -1770,11 +1770,17 @@ public class TRPGGameManager {
                 }
             }
             // 조우판정: 같은 위치(zone)에서 함께 시작하는 등장 동료가 있으면, 서로 인지한 채 시작하도록 한다.
+            //   ★구면/초면은 .gdam relationships로 결정적·대칭 판정★ — 예전엔 배역별 프롤로그가 독립 생성돼
+            //   한쪽은 '아는 청소당번', 다른쪽은 '처음 보는 수리공'으로 관계가 어긋났다(#11). 관계 정의가 있으면
+            //   그 관계로, 없으면 '초면'으로 양쪽 동일하게 고정해 모순을 없앤다(relationshipBetween은 대칭).
             List<String> sameZoneStart = new ArrayList<>();
             if (pd.zone != null && !pd.zone.isEmpty()) {
                 for (PlayerData cp : state.getAllPlayers()) {
                     if (cp.uuid.equals(pd.uuid) || !spawnedPlayers.contains(cp.uuid)) continue;
-                    if (pd.zone.equals(cp.zone)) sameZoneStart.add(cp.gmDisplayName());
+                    if (!pd.zone.equals(cp.zone)) continue;
+                    String relDesc = relationshipBetween(gdamForRel, pd.roleId, cp.roleId);
+                    sameZoneStart.add(cp.gmDisplayName() + (relDesc != null && !relDesc.isBlank()
+                        ? "(아는 사이 — " + relDesc + ")" : "(초면 — 서로 모르는 사이)"));
                 }
             }
             // ★도입 강도★: 시나리오에 따라 프롤로그가 담담한 일상일 수도, 시작부터 심각한 상황일 수도 있다.
@@ -1790,7 +1796,10 @@ public class TRPGGameManager {
                 promptSb.append("다른 플레이어의 존재 직접 언급 금지. ");
             } else {
                 promptSb.append("★같은 장소에서 함께 시작하는 인물: ").append(String.join(", ", sameZoneStart))
-                    .append(" — 이들은 처음부터 같은 공간에 있다. 서로의 존재를 ★인지한 채★ 시작하도록 "
+                    .append(" — 이들은 처음부터 같은 공간에 있다. 서로의 존재를 ★인지한 채★ 시작하되, "
+                        + "★괄호로 표기된 관계를 반드시 지켜라★: '아는 사이'면 구면답게(이름·안부·편한 말투) 대하고, "
+                        + "'초면'이면 서로 모르는 사이로(이름을 부르거나 아는 척하지 말고, 낯선 사람으로) 그려라 — "
+                        + "이 관계 판정은 양쪽 프롤로그가 동일하니 어긋나게 쓰지 마라. "
                         + "가벼운 조우(눈인사·짧은 한마디 등)를 프롤로그에 자연스럽게 넣어라. ");
             }
             promptSb.append("이 인물은 '특별히 선택된 주인공'이 아니라 사건에 얽혀들 한 사람이다. 거창한 영웅 도입은 피해라. ");
@@ -8853,6 +8862,27 @@ public class TRPGGameManager {
             + " — 행동자의 ★겉으로 드러나는 행동·말★을 이들이 본다. 드러나는 결정적 행동은 <WITNESS>로 이 동료들에게 전하라(사적 통화·메시지 '내용'은 제외, 겉모습만)."
             + (many ? " 인원이 많으니 ★①행동자가 직접 상호작용하는 상대 ②'영감 예민' 동료(중요·미묘한 행동을 먼저 알아챔)를 우선 자세히★ 목격시키고, 나머지는 가볍게 한 줄로만 곁들여라." : "")
             + "]";
+    }
+
+    /**
+     * 두 배역 사이의 .gdam 관계 설명 — relationships[].roles에 ★둘 다★ 포함된 항목의 description(없으면 null=초면).
+     * ★대칭★: relationshipBetween(A,B)와 (B,A)가 같은 결과 → 양쪽 프롤로그의 구면/초면 판정이 어긋나지 않는다(#11).
+     */
+    private static String relationshipBetween(JsonObject gdam, String roleA, String roleB) {
+        if (gdam == null || roleA == null || roleB == null || !gdam.has("relationships") || !gdam.get("relationships").isJsonArray()) return null;
+        for (var relEl : gdam.getAsJsonArray("relationships")) {
+            if (!relEl.isJsonObject()) continue;
+            JsonObject rel = relEl.getAsJsonObject();
+            if (!rel.has("roles") || !rel.get("roles").isJsonArray()) continue;
+            boolean hasA = false, hasB = false;
+            for (var rId : rel.getAsJsonArray("roles")) {
+                String s = rId.getAsString();
+                if (s.equals(roleA)) hasA = true;
+                if (s.equals(roleB)) hasB = true;
+            }
+            if (hasA && hasB) return rel.has("description") && !rel.get("description").isJsonNull() ? rel.get("description").getAsString() : "";
+        }
+        return null;
     }
 
     /** 통신 성립 시 양쪽이 서로의 연락처를 알게 됨 (착신/대면 교환) */
