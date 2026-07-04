@@ -2,6 +2,10 @@ package heipsys;
 
 import heipsys.trpg.TRPGGameManager;
 import io.papermc.paper.event.player.AsyncChatEvent;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.event.ClickEvent;
+import net.kyori.adventure.text.event.HoverEvent;
+import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 
 import org.bukkit.Bukkit;
@@ -87,7 +91,8 @@ public class ChatListener implements Listener {
     }
 
     /** 관전자가 인물을 클릭해 그 시점으로 '들어가면' — ★자동으로 소지품을 열지 않는다(#8)★. 대상에게 뜨는 서술을 그대로
-     *  지켜보다가, 소지품이 보고 싶을 때 ★우클릭★하면 미러가 열린다(onInfoItemUse의 관전 분기). 들어간 순간엔 안내만 띄운다. */
+     *  지켜보다가, 소지품이 보고 싶을 때 ★채팅 버튼[소지품 보기]★로 미러를 연다(관전 중 월드 우클릭은 이벤트가 안 떠서
+     *  못 쓰던 문제 → 클릭형 버튼/자기 인벤 클릭으로 대체). 들어간 순간엔 안내 버튼만 띄운다. */
     @EventHandler
     public void onStartSpectating(com.destroystokyo.paper.event.player.PlayerStartSpectatingEntityEvent event) {
         TRPGGameManager trpgManager = trpg();
@@ -95,7 +100,10 @@ public class ChatListener implements Listener {
         if (!(event.getNewSpectatorTarget() instanceof Player)) return;
         Player spectator = event.getPlayer();
         Bukkit.getScheduler().runTask(plugin, () ->
-            spectator.sendMessage("§8(관전 중 — 이 인물에게 뜨는 서술을 함께 봅니다. 소지품이 궁금하면 §f우클릭§8하세요.)"));
+            spectator.sendMessage(Component.text("(관전 중 — 이 인물에게 뜨는 서술을 함께 봅니다.) ", NamedTextColor.GRAY)
+                .append(Component.text("[소지품 보기]", NamedTextColor.AQUA)
+                    .clickEvent(ClickEvent.runCommand("/trpg mirror"))
+                    .hoverEvent(HoverEvent.showText(Component.text("클릭 — 이 인물의 소지품·정보·기록 열람 (자기 인벤토리를 열어 클릭해도 됩니다)"))))));
     }
 
     /** 캐릭터 정보 / 기록 아이템 우클릭 → 해당 GUI 열기 */
@@ -175,9 +183,14 @@ public class ChatListener implements Listener {
         if (!(event.getWhoClicked() instanceof Player player)) return;
         if (player.getGameMode() != GameMode.SPECTATOR) return;
         event.setCancelled(true); // 관전 중 인벤 클릭은 아이템 이동 불가(열람 전용)
+        TRPGGameManager trpgManager = trpg();
+        // ★자신의 인벤토리(E)를 열어 클릭 → 보고 있는 대상의 소지품 미러★ — 관전 중 월드 우클릭이 이벤트를 안 띄우는 것의 대체 진입(요청).
+        if (trpgManager != null && event.getView().getTopInventory().getType() == org.bukkit.event.inventory.InventoryType.CRAFTING) {
+            Bukkit.getScheduler().runTask(plugin, () -> trpgManager.openSpectatorMirror(player));
+            return;
+        }
         ItemStack clicked = event.getCurrentItem();
         if (clicked == null || clicked.getType() == Material.AIR) return;
-        TRPGGameManager trpgManager = trpg();
         if (clicked.getType() == Material.WRITTEN_BOOK) {
             player.openBook(clicked);
         } else if (trpgManager != null && trpgManager.isInfoItem(clicked)) {

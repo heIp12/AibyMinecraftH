@@ -1835,6 +1835,7 @@ public class TRPGGameManager {
                     String narrative = ai.stripTags(response);
                     if (!narrative.isBlank()) {
                         narrativeDelivery.deliver(p, narrative);
+                        relayToSpectators(p, narrative); // 관전자에게도 프롤로그 전달(도입부부터 대상 서술을 함께 보게)
                         gameLogger.logGmOutput(pd.gmDisplayName() + "(프롤로그)", narrative); // 계정명 대신 캐릭터명(뷰어는 logAlias로 매핑)
                         // (#164 후속) 시작 자동 추천(<-#...-> 1인칭 힌트) 제거 — 프롤로그 서술이 이미 '이 인물이 다음에
                         //   하려던 행동·의도'를 자연스럽게 내비치므로, 별도 assistant AI 호출은 중복이자 토큰 낭비였다.
@@ -5914,11 +5915,18 @@ public class TRPGGameManager {
     /** 행동 플레이어에게 GM 서술 전달 + WITNESS 태그로 주변 플레이어에게 간접 단서 전달 */
     /** ★관전 중계(#7)★: target에게 전달되는 서술을 그를 '보고 있는' 관전자에게도 그대로 전달한다.
      *  관전 카메라는 대상의 월드만 보여줄 뿐 대상의 HUD(타이틀)·채팅은 안 보여줘, 관전자가 대상에게 뜨는 텍스트를 못 보던 문제 해결. */
+    /** sp가 target을 관전(그 시점으로 들어가 봄) 중인가 — ★UUID로 견고하게★ 판정. 엔티티 equals 구현/프록시 차이로
+     *  관전 중계가 통째로 실패(관전자가 대상 서술·메시지를 전혀 못 보던 문제)하지 않게 한다. */
+    private static boolean isWatching(Player sp, Player target) {
+        if (sp == null || target == null) return false;
+        org.bukkit.entity.Entity t = sp.getSpectatorTarget();
+        return t instanceof Player tp && tp.getUniqueId().equals(target.getUniqueId());
+    }
     private void relayToSpectators(Player target, String text) {
         if (target == null || text == null || text.isBlank()) return;
         for (Player sp : Bukkit.getOnlinePlayers()) {
             if (sp.getGameMode() != GameMode.SPECTATOR || sp.getUniqueId().equals(target.getUniqueId())) continue;
-            if (target.equals(sp.getSpectatorTarget())) narrativeDelivery.deliver(sp, text);
+            if (isWatching(sp, target)) narrativeDelivery.deliver(sp, text);
         }
     }
     private void deliverNarrative(Player actor, String raw) {
@@ -7743,7 +7751,7 @@ public class TRPGGameManager {
     private void proximityBroadcast(Player sender, PlayerData senderPd, String message) {
         String z = senderPd.zone == null ? "" : senderPd.zone;
         String disp = senderPd.gmDisplayName();
-        sender.sendMessage("§7[근처에 말함] §f" + message);
+        msgToWatchers(sender, "§7[근처에 말함] §f" + message); // 발신자+그 관전자에게(관전 중계)
         List<PlayerData> heard = new ArrayList<>();
         for (PlayerData op : state.getAllPlayers()) {
             if (op.uuid.equals(senderPd.uuid) || op.isDead) continue;
@@ -7757,7 +7765,7 @@ public class TRPGGameManager {
         if (heard.isEmpty()) sender.sendMessage("§8(근처에 들을 사람이 없습니다.)");
         for (PlayerData op : heard) {
             Player op2 = Bukkit.getPlayer(op.uuid);
-            if (op2 != null && op2.isOnline()) op2.sendMessage("§e[근처] §f" + disp + ": " + message);
+            if (op2 != null && op2.isOnline()) msgToWatchers(op2, "§e[근처] §f" + disp + ": " + message); // 수신자+그 관전자에게(관전 중계)
             exchangeContacts(senderPd, op); // 대면 성공 → 서로 번호를 알게 됨
         }
         state.log("comm", senderPd.name, "[근처] " + message);
@@ -7858,7 +7866,8 @@ public class TRPGGameManager {
         for (PlayerData op : targets) {
             Player op2 = Bukkit.getPlayer(op.uuid);
             if (op2 != null && op2.isOnline() && (bypass || hasCommDevice(op))) // 개방 시 수신자 기기 부재도 관통
-                op2.sendMessage("§b[📞 " + disp + " → " + (senderNet != null ? senderNet + "망" : "전체") + "] §f" + message);
+                msgToWatchers(op2, "§b[📞 " + disp + " → " + (senderNet != null ? senderNet + "망" : "전체") + "] §f" + message); // 수신자+관전자
+
         }
         state.log("comm", senderPd.name, "[" + (senderNet != null ? senderNet + "망발신" : "전체발신") + "] " + message);
         // 뷰어 통화내역: 전체 발신도 ★수신자 전원을 기록★(그들 시점에도 보이게). 폐쇄망이면 via=망이름.
@@ -9573,7 +9582,7 @@ public class TRPGGameManager {
             String tdisp = commDisplayName(tp);
             String viaName = d.via == null || d.via.isBlank() ? "편지" : d.via;
             Player p = Bukkit.getPlayer(d.targetUuid);
-            if (p != null && p.isOnline()) p.sendMessage("§b[✉ " + viaName + " 도착] §f" + d.senderDisp + ": " + heard);
+            if (p != null && p.isOnline()) msgToWatchers(p, "§b[✉ " + viaName + " 도착] §f" + d.senderDisp + ": " + heard); // 수신자+관전자(관전 중계)
             appendNarrativeLog(tp, "[" + viaName + " 도착] " + d.senderDisp + ": " + heard);
             if (tampered) gameLogger.logCommTampered(d.kind, d.senderDisp, java.util.List.of(tdisp), d.content, heard, "전달 중 괴담 변조", d.via);
             else gameLogger.logComm(d.kind, d.senderDisp, java.util.List.of(tdisp), d.content, d.via);
@@ -9593,7 +9602,7 @@ public class TRPGGameManager {
         String medium  = hasMedium ? media : "근거리";
         String outLine = tag + " §f" + commDisplayName(senderPd) + " → " + commDisplayName(targetPd) + ": " + message;
 
-        sender.sendMessage(outLine); // 발신자는 자기가 한 말 그대로 본다
+        msgToWatchers(sender, outLine); // 발신자는 자기가 한 말 그대로 본다 + 그 관전자에게도(관전 중계)
         Player target = Bukkit.getPlayer(targetPd.uuid);
         // ★통신 변조★: 매체 모달리티(음성/문서/신호/전자/정신)가 맞는 괴담이 원격 전달을 가로채 수신 내용을 바꾼다(30%).
         String modality = commModality(media, written);
@@ -9601,7 +9610,7 @@ public class TRPGGameManager {
         boolean tampered = interfered && new java.util.Random().nextInt(100) < 30;
         String heard = tampered ? tamperText(message, new java.util.Random()) : message;
         String inLine = tag + " §f" + commDisplayName(senderPd) + ": " + heard;
-        if (target != null && target.isOnline()) target.sendMessage(inLine);
+        if (target != null && target.isOnline()) msgToWatchers(target, inLine); // 수신자+그 관전자에게(관전 중계)
 
         state.log("comm", commDisplayName(senderPd),
             "→ " + commDisplayName(targetPd) + " (" + medium + "): " + message);
@@ -9691,7 +9700,7 @@ public class TRPGGameManager {
         PlayerData tpd = spectatedPd(spectator);
         Player tp = tpd == null ? null : Bukkit.getPlayer(tpd.uuid);
         if (tpd == null || tp == null) {
-            spectator.sendMessage("§7먼저 관전할 인물을 §f클릭§7해 그 시점으로 들어가세요(그 뒤 웅크리기).");
+            spectator.sendMessage("§7먼저 관전할 인물을 §f클릭§7해 그 시점으로 들어간 뒤 다시 시도하세요.");
             return;
         }
         org.bukkit.inventory.Inventory mirror = Bukkit.createInventory(null, 45,
@@ -10781,7 +10790,7 @@ public class TRPGGameManager {
         target.showTitle(t);
         for (Player sp : Bukkit.getOnlinePlayers()) {
             if (sp.getGameMode() != GameMode.SPECTATOR || sp.getUniqueId().equals(target.getUniqueId())) continue;
-            if (target.equals(sp.getSpectatorTarget())) sp.showTitle(t);
+            if (isWatching(sp, target)) sp.showTitle(t);
         }
     }
     /** 대상 + 그 시점 관전자에게 같은 채팅 줄 전달(판정 사전 안내·최종 결과 줄). */
@@ -10790,7 +10799,7 @@ public class TRPGGameManager {
         target.sendMessage(msg);
         for (Player sp : Bukkit.getOnlinePlayers()) {
             if (sp.getGameMode() != GameMode.SPECTATOR || sp.getUniqueId().equals(target.getUniqueId())) continue;
-            if (target.equals(sp.getSpectatorTarget())) sp.sendMessage(msg);
+            if (isWatching(sp, target)) sp.sendMessage(msg);
         }
     }
 
