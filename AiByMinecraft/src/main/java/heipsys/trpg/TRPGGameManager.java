@@ -6747,10 +6747,9 @@ public class TRPGGameManager {
             if (name.isBlank()) continue;
             // 라벨은 ★전각 괄호 【】★ — 뷰어의 '[화자] 대사' 파싱(ASCII 대괄호)에 걸려 '대사'로 오분류되지 않게.
             StringBuilder sb = new StringBuilder("【시작 상황】 ").append(name);
-            String roleType = getStr(npc, "role_type");
-            if (!roleType.isBlank()) sb.append("(").append(roleType).append(")");
-            String zone = npcZones.getOrDefault(getStr(npc, "id"), getStr(npc, "zone"));
-            sb.append(zone.isBlank() ? "." : " — " + zone + "에서 시작.");
+            // ★role_type은 내부 설계 라벨(약화된열쇠·발생원+수상한자 등)이라 노출 금지★. zone도 zone_id가 아니라 표시명으로(메타 누출 방지).
+            String zone = zoneDisplayName(npcZones.getOrDefault(getStr(npc, "id"), getStr(npc, "zone")));
+            sb.append(zone == null || zone.isBlank() || "?".equals(zone) ? "." : " — " + zone + "에서 시작.");
             // 지금 하는 일 (schedule 첫 항목: action 우선, 없으면 goal)
             if (npc.has("schedule") && npc.get("schedule").isJsonArray() && npc.getAsJsonArray("schedule").size() > 0
                     && npc.getAsJsonArray("schedule").get(0).isJsonObject()) {
@@ -7916,7 +7915,10 @@ public class TRPGGameManager {
         // 대상 토큰 식별: 캐릭터명·NPC명에 띄어쓰기가 있을 수 있으므로(예: "라비 샤르마"),
         // 알려진 이름 중 content가 시작하는 ★가장 긴★ 이름을 토큰으로 본다. 없으면 첫 단어.
         String token   = matchCommToken(content);
-        String message = content.length() > token.length() ? content.substring(token.length()).trim() : "";
+        String after   = content.length() > token.length() ? content.substring(token.length()) : "";
+        // 이름 바로 뒤에 호격 조사(씨/님/아/야)가 공백 없이 붙었으면 그 한 자만 대상 호칭으로 떼어낸다("류시온씨반갑…"→"반갑…").
+        if (!after.isEmpty() && "씨님아야".indexOf(after.charAt(0)) >= 0) after = after.substring(1);
+        String message = after.trim();
 
         // @전체 → 내가 아는 번호의 모든 사람에게 발신
         if (token.equals("전체") || token.equalsIgnoreCase("all")) {
@@ -8289,23 +8291,37 @@ public class TRPGGameManager {
         for (String c : cands) {
             if (c == null || c.isEmpty()) continue;
             String clc = c.toLowerCase();
-            if ((lc.equals(clc) || lc.startsWith(clc + " ")) && (best == null || c.length() > best.length()))
-                best = c;
+            // 이름 뒤 경계: 공백뿐 아니라 ★호격 조사(씨/님/아/야)★가 공백 없이 붙어도 대상으로 인식(예: "류시온씨…").
+            boolean hit = lc.equals(clc) || lc.startsWith(clc + " ")
+                || lc.startsWith(clc + "씨") || lc.startsWith(clc + "님") || lc.startsWith(clc + "아") || lc.startsWith(clc + "야");
+            if (hit && (best == null || c.length() > best.length())) best = c;
         }
         if (best != null) return content.substring(0, best.length()); // 입력 원문 그대로(대소문자 보존)
         int sp = content.indexOf(' ');
         return sp == -1 ? content : content.substring(0, sp);
     }
 
-    /** critical NPC 목록에서 이름으로 검색 */
+    /** critical NPC 목록에서 이름으로 검색 — 정확 일치 우선, 없으면 ★짧은 호칭(이름의 한 단어)★으로도 매칭.
+     *  긴 서술형 NPC명(예: '토끼팀 해결사 하리')을 짧게 '하리'로 부르는 게 자연스러운데 정확일치만 하면 @대화가 실패하던 문제.
+     *  단어 매칭은 그 단어를 가진 NPC가 ★유일할 때만★(모호하면 오배송 방지로 매칭 안 함). */
     private JsonObject findNpcByName(String name) {
+        if (name == null || name.isBlank()) return null;
+        String n = name.trim();
         for (JsonObject npc : getCriticalNpcs()) { // ★주요(critical) NPC만 @직접 대화·통화 대상 — 단역 제외
             String npcName = npc.has("name") ? npc.get("name").getAsString() : "";
             String npcId   = npc.has("id")   ? npc.get("id").getAsString()   : "";
-            if ((!npcName.isEmpty() && npcName.equalsIgnoreCase(name))
-                || (!npcId.isEmpty() && npcId.equalsIgnoreCase(name))) return npc;
+            if ((!npcName.isEmpty() && npcName.equalsIgnoreCase(n))
+                || (!npcId.isEmpty() && npcId.equalsIgnoreCase(n))) return npc;
         }
-        return null;
+        // 짧은 호칭 — 이름의 한 단어와 일치하는 NPC가 유일하면 그 NPC.
+        JsonObject uniq = null; int hits = 0;
+        for (JsonObject npc : getCriticalNpcs()) {
+            String npcName = npc.has("name") ? npc.get("name").getAsString() : "";
+            if (npcName.isBlank()) continue;
+            for (String w : npcName.trim().split("\\s+"))
+                if (w.length() >= 2 && w.equalsIgnoreCase(n)) { hits++; uniq = npc; break; }
+        }
+        return hits == 1 ? uniq : null;
     }
 
     /**
