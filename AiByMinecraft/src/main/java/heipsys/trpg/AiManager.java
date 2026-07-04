@@ -565,8 +565,17 @@ public class AiManager {
                 try {
                     String result = send(npcModel(), systemPrompt, snapshot, ASST_MAX_TOKENS, true); // 히스토리 프리픽스 캐싱
                     // #1(컨텍스트 오염): 자율(3인칭) 응답을 raw로 저장하면 이후 ★대화★ 호출이 그 3인칭·보고체를 흉내낸다(약한 모델의 이력 모방).
-                    //   → 자율 응답은 태그를 떼고 '[지난 자율 행동] 요약' 중립 로그로 저장한다(사실 기억은 npcAcquired가 별도 보존, 대화 1인칭 응답은 verbatim 유지해 대화 연속성 보존).
-                    synchronized (ctx) { ctx.add(msg("assistant", dialogue ? result : "[지난 자율 행동] " + stripTags(result).trim())); }
+                    //   → 자율 응답은 태그를 떼고 '[지난 자율 행동] 요약' 중립 로그로 저장한다(대화 1인칭 응답은 verbatim 유지해 대화 연속성 보존).
+                    //   ★단 stripTags가 통째로 지우는 <NPC_CALL>(제가 먼저 건 연락)의 요지는 1인칭 기억으로 되살려 둔다★ —
+                    //   자기 발화·계획을 잃어 다음 콜백에서 제 말과 어긋나던 회귀 보완(제 목소리라 스타일 오염 없음).
+                    String stored;
+                    if (dialogue) {
+                        stored = result;
+                    } else {
+                        String memo = extractOwnCallMemo(result);
+                        stored = "[지난 자율 행동] " + stripTags(result).trim() + (memo.isEmpty() ? "" : " " + memo);
+                    }
+                    synchronized (ctx) { ctx.add(msg("assistant", stored)); }
                     return result;
                 } catch (Exception e) {
                     return "§c[NPC AI 오류] " + e.getMessage();
@@ -816,7 +825,35 @@ public class AiManager {
             .replaceAll("<COMM_BLOCK [^/]*/?>", "")
             .replaceAll("<COMM_UNBLOCK [^/]*/?>", "")
             .replaceAll("<TIME_VISIBLE [^/]*/?>", "")
+            // ★[지난 자율 행동] 마커 누적 방지★: 미니 모델이 이전 턴의 이 내부 마커를 에코해 매턴 하나씩
+            //   불어나던 버그(1→57, 오타 '자울'까지 전파). 어디에 있든 전부 제거 — 저장 시 정확히 1개만
+            //   다시 붙인다(callNpcAi). 출력 누출(플레이어/GM 로그)도 함께 차단.
+            .replaceAll("\\[지난\\s*자[율울]\\s*행동\\]\\s*", "")
             .trim();
+    }
+
+    /**
+     * 자율(비대화) 응답에서 ★이 NPC가 스스로 먼저 건 연락(&lt;NPC_CALL&gt;)★의 요지만 뽑아 1인칭 기억 문구로 만든다.
+     * stripTags가 NPC_CALL을 통째로 지워, 제가 한 말·계획을 잊고 다음 콜백에서 제 말과 어긋나던 회귀를 보완한다.
+     * (보존 대상은 ★제 목소리(대사)★뿐이라 3인칭·보고체 오염 없음. 없으면 빈 문자열.)
+     */
+    private String extractOwnCallMemo(String raw) {
+        if (raw == null || raw.isEmpty() || raw.indexOf("NPC_CALL") < 0) return "";
+        java.util.regex.Matcher m = java.util.regex.Pattern
+            .compile("(?is)<NPC_CALL[^>]*\\bplayer\\s*=\\s*\"([^\"]*)\"[^>]*>([\\s\\S]*?)</NPC_CALL>")
+            .matcher(raw);
+        StringBuilder sb = new StringBuilder();
+        int count = 0;
+        while (m.find() && count < 3) {                         // 한 응답에 여러 연락이면 최대 3건까지만(기억 비대화 방지)
+            String who  = m.group(1) == null ? "" : m.group(1).trim();
+            String said = m.group(2) == null ? "" : stripTags(m.group(2)).replaceAll("\\s+", " ").trim();
+            if (said.isEmpty()) continue;
+            if (said.length() > 120) said = said.substring(0, 120) + "…"; // 요지만(장문 방지)
+            if (sb.length() > 0) sb.append(" ");
+            sb.append("(연락 기억 — ").append(who.isEmpty() ? "상대" : who).append("에게 \"").append(said).append("\"라고 먼저 전했다.)");
+            count++;
+        }
+        return sb.toString();
     }
 
     public JsonObject parseClearTag(String response) {
