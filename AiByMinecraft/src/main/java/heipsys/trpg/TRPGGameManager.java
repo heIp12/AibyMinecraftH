@@ -9787,7 +9787,11 @@ public class TRPGGameManager {
         if (zoneChanged) {
             String nzRealm = mapMan.realmOf(newZone);
             for (String nb : mapMan.getAdjacentZones(newZone))
-                if (mapMan.realmOf(nb).equals(nzRealm)) moved.visitedZones.add(nb);
+                // ★같은 realm + 같은 대분류(area) + 비봉쇄★만 공개. realm만 걸러선 ★다른 area(미발견 대분류)★가
+                //   약도·개요에 새어 #165 스포가 회귀했다(realm≠area). area까지 좁혀 '같은 건물/구획의 옆 방'만
+                //   공개하고, 다른 대분류·봉쇄 구역은 실제 진입 전까지 숨긴다. (대분류 경계는 GM 서술로 넘는다.)
+                if (mapMan.realmOf(nb).equals(nzRealm) && mapMan.sameArea(newZone, nb) && !state.isZoneSealed(nb))
+                    moved.visitedZones.add(nb);
         }
         // 첫 배치 시: 지도 자동 지급
         if (firstAssignment) {
@@ -10690,10 +10694,10 @@ public class TRPGGameManager {
         }
         // '왜 굴리는지'를 먼저 알려준다(요청 사항)
         player.sendMessage("§e[판정] " + (reason.isEmpty() ? "행동 판정" : reason)
-            + " §7— 주사위 d" + max + (dc > 0 ? " (" + dc + " 이상 성공)" : "")
+            + " §7— 주사위 d" + max + " (" + effDc + " 이상 성공)"   // ★실제 성공기준(effDc) 표시★ — 영감 완화·난이도 가산 반영, dc와 어긋나던 문제 해소
             + (statLabel.isEmpty() ? "" : " §8[" + statLabel + " 반영]") + "§7 굴립니다…");
-        // 서브타이틀: 굴린 주사위 크기(d{max})와 '어디까지가 성공인지(DC)'를 명확히
-        String thresh = dc > 0 ? (dc + " 이상이면 성공") : "판정";
+        // 서브타이틀: 굴린 주사위 크기(d{max})와 '어디까지가 성공인지' — 실제 성공기준(effDc)으로 표시(판정과 일치)
+        String thresh = effDc + " 이상이면 성공";
         String sub = "d" + max + "  ·  " + thresh + "  ·  " + outcome;
         final int fmax = max;
         // ★GM 다음 전개 일관성★: 코드가 정한 결과를 컨텍스트에 주입 — 다음 서술이 이 결과와 어긋나지 않게.
@@ -10701,7 +10705,7 @@ public class TRPGGameManager {
                         : critFail    ? " ★대실패★이므로 크게 그르쳐 추가 대가(부상·소음·새 위협 노출·자원/단서 손실 등)를 함께 서술하라."
                         : "";
         ai.injectGmSystem("[판정 결과] " + (reason.isEmpty() ? "" : reason + " — ")
-            + "주사위 d" + max + "=" + roll + modNote + (dc > 0 ? (", 성공기준 " + dc) : "") + " → ★" + outcome + "★." + critHint
+            + "주사위 d" + max + "=" + roll + modNote + (effDc > 0 ? (", 성공기준 " + effDc) : "") + " → ★" + outcome + "★." + critHint   // ★실제 판정 기준(effDc)으로 주입 — dc와 어긋나 '11<14인데 성공' 같은 모순 서술 유발하던 문제 해소
             + " 이 결과대로 다음 전개를 이어서 서술하라. 결과와 어긋나게(실패인데 성공한 듯, 또는 그 반대로) 쓰지 마라.");
         // ★영감 통찰: '아는 정보만' 엮어 결론을 이끌게 한다★ — 성공/부분성공 시 GM이 지금 아는 것만으로 진실에 한 걸음
         //   다가간 결론을 서술로 보여주도록, 이 인물이 현재 아는 것을 함께 주입한다(모르는 비밀 누설 방지 = 공정성).
@@ -10763,7 +10767,7 @@ public class TRPGGameManager {
             lastTick = landTick + 12L + frames * 3L;
         }
         // 3) 최종 결과 강조 — 《N》 3초 유지 + 성공 기준 서브타이틀
-        final int froll = roll, fdc = dc;
+        final int froll = roll, fdc = effDc;   // ★표시 성공기준도 실제 판정값(effDc)으로 통일 — 판정/표시 불일치 제거
         final String fmodNote = modNote;
         plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
             if (!player.isOnline()) return;
