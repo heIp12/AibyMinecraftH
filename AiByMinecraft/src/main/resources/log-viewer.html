@@ -339,7 +339,9 @@ function animateDrolls(scope){ if(!scope||!scope.querySelectorAll)return;
     rollNumber(el,max,fin,14,34,120);
   } }
 // ── ★대화 타이핑★: 통화·근처·귓속말 등 '상호 대화'와 대사(say)를 한 글자씩 노출(재생속도 비례, 요청). GM 서술은 제외 ──
-const TYPE_KINDS=new Set(["call","nearby","broadcast","shout","letter","whisper","signal","psychic","npc"]);
+// ★npc는 제외★ — NPC 자율출력은 대사가 아니라 행동·서술이 섞인 통짜라, 통째로 타이핑하면 모든 행동이 대화처럼 느려진다(버그).
+//   NPC 대사는 통신류(통화·근처 등)나 서술 속 대사(say 블록)로 들어오며 그쪽에서 타이핑된다.
+const TYPE_KINDS=new Set(["call","nearby","broadcast","shout","letter","whisper","signal","psychic"]);
 function isConvoEvent(e){ return !!e && TYPE_KINDS.has(e.kind); }
 // 타이핑 대상? 대사(say)는 항상, 서술(narr)은 통신류 이벤트일 때만(GM 서술문은 제외).
 function typeBlock(b,e){ if(!b)return false; if(b.type==="say")return true; if(b.type==="narr"&&isConvoEvent(e))return true; return false; }
