@@ -1704,6 +1704,7 @@ public class TRPGGameManager {
         injectSavedNpcs(state.getGdamData());
         // 중요 NPC 초기 위치 로드
         initNpcZones(state.getGdamData());
+        logNpcOpenings(state.getGdamData()); // ★NPC 시점 도입부 맥락★(제보: NPC 시점 초반 이해 불가) — 각 NPC 시점에 시작 상황 1회 로그(AI 호출 없음, 비용 0)
         // 약도(지도) 그래프 로드 (zones + connections)
         mapMan.loadScenario(state.getGdamData());
         // 재현 파일 기록 (정상 시작 한정 — 재현 세션에선 다시 기록하지 않음)
@@ -6720,6 +6721,46 @@ public class TRPGGameManager {
             if (!npc.has("id")) continue;
             String zone = npc.has("zone") ? npc.get("zone").getAsString() : "";
             npcZones.put(npc.get("id").getAsString(), zone);
+        }
+    }
+
+    /**
+     * ★NPC 시작 상황 브리핑(로그 전용)★ — NPC 시점 뷰어가 도입부에 맥락 없이 시작해 이해 불가하던 문제(제보).
+     * 플레이어 프롤로그의 NPC판: gdam npcs[] 데이터(역할·위치·지금 하는 일·아는 것)로 개막 상황을 1회 구성해
+     * ★그 NPC 시점(과 전체 감사뷰)에만★ 남긴다 — logGmOutput의 'GM→이름(프롤로그)' 라우팅을 재사용하므로
+     * 뷰어가 to=이름으로 그 NPC에게만 귀속하고 플레이어 시점엔 노출되지 않는다. AI 호출 없이 결정적 구성 — 비용 0.
+     */
+    private void logNpcOpenings(JsonObject gdam) {
+        if (gdam == null || !gdam.has("npcs") || !gdam.get("npcs").isJsonArray()) return;
+        for (JsonElement el : gdam.getAsJsonArray("npcs")) {
+            if (!el.isJsonObject()) continue;
+            JsonObject npc = el.getAsJsonObject();
+            String name = getStr(npc, "name");
+            if (name.isBlank()) continue;
+            // 라벨은 ★전각 괄호 【】★ — 뷰어의 '[화자] 대사' 파싱(ASCII 대괄호)에 걸려 '대사'로 오분류되지 않게.
+            StringBuilder sb = new StringBuilder("【시작 상황】 ").append(name);
+            String roleType = getStr(npc, "role_type");
+            if (!roleType.isBlank()) sb.append("(").append(roleType).append(")");
+            String zone = npcZones.getOrDefault(getStr(npc, "id"), getStr(npc, "zone"));
+            sb.append(zone.isBlank() ? "." : " — " + zone + "에서 시작.");
+            // 지금 하는 일 (schedule 첫 항목: action 우선, 없으면 goal)
+            if (npc.has("schedule") && npc.get("schedule").isJsonArray() && npc.getAsJsonArray("schedule").size() > 0
+                    && npc.getAsJsonArray("schedule").get(0).isJsonObject()) {
+                JsonObject s = npc.getAsJsonArray("schedule").get(0).getAsJsonObject();
+                String action = getStr(s, "action"), goal = getStr(s, "goal");
+                String doing = !action.isBlank() ? action : goal;
+                if (!doing.isBlank()) sb.append(" 지금 하는 일: ").append(doing).append(doing.endsWith(".") ? "" : ".");
+            }
+            // 아는 것 (knowledge 최대 2개 — 그 NPC 시점에만 보이므로 스포일러 무관)
+            if (npc.has("knowledge") && npc.get("knowledge").isJsonArray()) {
+                java.util.List<String> ks = new java.util.ArrayList<>();
+                for (JsonElement k : npc.getAsJsonArray("knowledge")) {
+                    if (ks.size() >= 2) break;
+                    if (k.isJsonPrimitive()) { String kv = k.getAsString().trim(); if (!kv.isEmpty()) ks.add(kv); }
+                }
+                if (!ks.isEmpty()) sb.append(" 알고 있는 것: ").append(String.join("; ", ks)).append(".");
+            }
+            gameLogger.logGmOutput(name + "(프롤로그)", sb.toString());
         }
     }
 
