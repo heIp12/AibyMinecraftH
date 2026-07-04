@@ -505,7 +505,9 @@ public class GameStateManager {
     public boolean isEndEventFired() { return endEventFired; }
 
     /** 현재 인게임 시각. 첫날이면 "HH:MM", 여러 날(60일 미만)이면 "N일차 HH:MM",
-     *  장기 도약(60일 이상)이면 "N년 M개월 D일차 HH:MM"(1년=365·1개월=30일 환산)로 압축 표시한다. 시계 없으면 "". */
+     *  장기 도약(60일 이상)이면 "N년 M개월 D일차 HH:MM"로 압축 표시한다. 시계 없으면 "".
+     *  ★환산은 1개월=30일·1년=12개월(=360일)로 내부 정합★ — 예전엔 1년=365·1개월=30일이 서로
+     *  안 맞아 개월이 12로 넘쳐 "12개월 …"이 뜨던 표기 오류가 있었다(365%30 잔여가 최대 12개월). */
     public String getCurrentTimeString() {
         if (clockMinutes < 0) return "";
         int m = ((clockMinutes % 1440) + 1440) % 1440;
@@ -513,9 +515,9 @@ public class GameStateManager {
         int dayIdx = (clockStart >= 0 ? clockMinutes - clockStart : clockMinutes) / 1440; // 0=첫날
         if (dayIdx <= 0) return hhmm;
         if (dayIdx < 60)  return (dayIdx + 1) + "일차 " + hhmm;      // ~2개월 미만은 종전대로 "N일차"
-        int years  = dayIdx / 365;
-        int months = (dayIdx % 365) / 30;
-        int days   = (dayIdx % 365) % 30;
+        int years  = dayIdx / 360;                                    // 1년=12개월×30일=360일(개월 오버플로 방지)
+        int months = (dayIdx % 360) / 30;                             // 0~11로 정확히 떨어짐
+        int days   = (dayIdx % 360) % 30;
         StringBuilder sb = new StringBuilder();
         if (years  > 0) sb.append(years).append("년 ");
         if (months > 0) sb.append(months).append("개월 ");

@@ -2343,12 +2343,16 @@ public class TRPGGameManager {
             if (state.getTurnMode() == 1) {
                 state.advanceActionClock(durEff); // 가변: 행동 소요만큼 시계 진행
             } else if (state.getTurnMode() >= 2) {
-                // ★#151 Stage B 비동기 busy★: 행동자를 그 소요만큼 '행동 중'으로 잠근다. 시계는 여기서 직접 안 밀고,
-                //   전원 busy가 되면 다음 입력·유휴 워치독 시점에 busyClockJumpIfAllBusy가 다음 자유 시점으로 점프한다.
-                //   (여기서 busyClockJumpIfAllBusy를 직접 호출하지 않는다 — onGmResponse는 비동기 스레드라 Bukkit API 접근 금지.)
+                // ★#151 Stage B 비동기 busy★: 행동자를 그 소요만큼 '행동 중'으로 잠근다. 시계는 per-action으로 밀지 않고,
+                //   ★전원 busy가 된 순간★ 다음 자유 시점으로 점프시킨다(busyClockJumpIfAllBusy).
                 PlayerData actorPd = player != null ? state.getPlayer(player) : null;
                 int nowMin = state.getClockMinutes();
                 if (actorPd != null && nowMin >= 0) { actorPd.actionStartMin = nowMin; actorPd.busyUntilMin = nowMin + Math.max(1, durEff); }
+                // ★행동 완료 시점에도 점프 시도★(코드리뷰 수정): onGmResponse 본문은 runTask로 ★메인 스레드★에서 돌므로
+                //   Bukkit API·스코어보드 접근이 안전하다(예전 주석의 '비동기라 금지'는 오해였다). 이 행동으로 마지막 자유
+                //   인원이 busy가 됐다면, 다음 키 입력을 기다리지 않고 즉시 시계를 다음 자유 시점으로 밀어 도래 사건을
+                //   발화한다 — 비동기 모드가 '입력 전까지 얼어붙던' 문제 해소. (자유 인원이 남아 있으면 내부에서 무동작.)
+                busyClockJumpIfAllBusy();
             }
             ai.parseEventBlockTags(raw).forEach(state::blockEvent);
             ai.parseEventTriggerTags(raw).forEach(state::triggerEvent);
@@ -7061,12 +7065,13 @@ public class TRPGGameManager {
     }
 
     /** ★#179 능동 비트★ 라운드로빈으로 '대화 중이 아닌' 다음 critical NPC 1명을 고른다(전원 대화 중이면 null). */
-    private JsonObject pickNpcBeat(List<JsonObject> pool, int nowTurn) {
+    private JsonObject pickNpcBeat(List<JsonObject> pool, int nowTurn, java.util.Set<JsonObject> exclude) {
         int n = pool.size();
         if (n == 0) return null;
         for (int i = 0; i < n; i++) {
             npcBeatCursor = (npcBeatCursor + 1) % n;
             JsonObject npc = pool.get(npcBeatCursor);
+            if (exclude != null && exclude.contains(npc)) continue; // 이미 이번 턴 발화 예정 — 중복이면 Set 추가가 no-op이라 라운드로빈 1명이 증발했다(커버리지 손실) → 건너뛰고 다른 NPC를 고른다
             int ld = npcLastDirectTurn.getOrDefault(getStr(npc, "id"), Integer.MIN_VALUE);
             if (ld >= 0 && nowTurn - ld <= 1) continue; // 대화 중(직전 1턴) — 건너뜀(맥락오염 방지)
             if (npcAutoStale.getOrDefault(getStr(npc, "id"), 0) >= 2) continue; // 무진행 반복 — 라운드로빈에서 제외(상호작용 시 리셋)
@@ -7105,7 +7110,7 @@ public class TRPGGameManager {
             if (au >= nowTurn && !cooldown && !stale) { toFire.add(npc0); if (toFire.size() >= 2) break; } // 활성 NPC는 최대 2명까지 매턴
         }
         // 라운드로빈 베이스라인은 ★주기 턴(cadence)에만★ 1명 — 활성 NPC 없는 조용한 턴은 스파스하게(N주기마다 1명). 활성 NPC는 위에서 매턴 이미 잡힘.
-        if (cadenceTurn && toFire.size() < 2) { JsonObject rr = pickNpcBeat(pool, nowTurn); if (rr != null) toFire.add(rr); }
+        if (cadenceTurn && toFire.size() < 2) { JsonObject rr = pickNpcBeat(pool, nowTurn, toFire); if (rr != null) toFire.add(rr); } // toFire 전달 → 활성창 NPC와 중복된 라운드로빈 픽 방지
         boolean anyFired = false;
         // ★막후 진행(층1)★: 이번 턴 비트 없는 '못 닿는' NPC의 예정만 GM에 정적 주입(AI 호출 없이 진행 보장).
         java.util.List<String> offscreenIntents = new java.util.ArrayList<>();
