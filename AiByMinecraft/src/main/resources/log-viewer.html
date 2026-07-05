@@ -186,7 +186,8 @@ function isPerson(s){return s&&!["GM","SYSTEM","시스템"].includes(s)&&!isGlob
 //  이름이 갈라지던 문제 방지. 이름 뒤 경계(공백/끝) 확인으로 부분오검출(미즈노↔미즈노아야) 차단.
 function matchKnownName(s){ if(!s)return ""; let best="";
   for(const nm of KNOWN){ if(!nm||nm.length<=best.length||nm.length<2)continue;
-    if(s===nm||s.startsWith(nm+" "))best=nm; }
+    // 이름 뒤 경계=공백/개행/끝(부분오검출 미즈노↔미즈노아야 차단). 개행 직후(능력 서술 첫 줄 뒤 <-독백->)도 경계로 인정.
+    if(s===nm||(s.startsWith(nm)&&/\s/.test(s.charAt(nm.length))))best=nm; }
   return best; }
 function colorFor(name){ if(!name)return "#cdbbff"; let h=0; for(let i=0;i<name.length;i++)h=(h*31+name.charCodeAt(i))>>>0; return `hsl(${h%360},62%,72%)`; }
 
@@ -817,12 +818,12 @@ function buildAlias(){
     else if(ev.cat==="배역"&&ev.who){const m=(ev.text||"").match(/=\s*(.+)$/);if(m)setAll(m[1].trim(),ev.who,m[1].trim());}
     // 신형 개인 '배역 배정 → 이름 (나이세 직업, …)' → 이름(직업)
     else if(ev.cat==="개인"&&ev.who){
-      const m=(ev.text||"").match(/배역 배정 →\s*([^(（]+?)\s*[(（]\s*(?:\d+\s*세\s*)?([^,，()）]+?)\s*[,，)）]/);
+      const m=(ev.text||"").match(/배역 배정 →\s*([^(（]+?)\s*[(（]\s*(?:\d+\s*세\s*)?((?:[^,，()）]|[(（][^)）]*[)）])+?)\s*[,，)）]/);
       if(m)setAll(uni(m[1],m[2]),ev.who,m[1],m[2]);
       else{const m2=(ev.text||"").match(/배역 배정 →\s*([^(（]+?)\s*[(（]/);if(m2)setAll(m2[1].trim(),ev.who,m2[1]);}
     }
     // 구형 이벤트 '배역 배정: 계정 → role_id (나이세 직업, zone …)' → 이름(직업)(이름은 replay 조인, 없으면 직업만)
-    const am=(ev.text||"").match(/배역 배정:\s*(\S+)\s*→\s*(\S+)\s*[(（]\s*(?:\d+\s*세\s*)?([^,，()）]+?)\s*[,，)）]/);
+    const am=(ev.text||"").match(/배역 배정:\s*(\S+)\s*→\s*(\S+)\s*[(（]\s*(?:\d+\s*세\s*)?((?:[^,，()）]|[(（][^)）]*[)）])+?)\s*[,，)）]/);
     if(am){const acct=am[1],role=am[2],job=am[3].trim();const nm=byRole[role]?byRole[role].char:"";
       setAll(uni(nm,job),acct,role,job,nm);}
   }
@@ -830,7 +831,7 @@ function buildAlias(){
   //  아래 서술매칭 폴백이 같은 방 인물 이름 빈도로 신원을 ★뒤섞던★ 버그(Neo__Guri↔미즈노 오귀속)를 근절한다.
   //  텍스트에서 '<계정> 배역 배정 → <이름> (<나이>세 <직업>, …)'을 바로 읽어 계정→이름(직업)을 정확히 잇는다.
   for(const ev of RAWCACHE){
-    const m=(ev.text||"").match(/(\S+)\s+배역 배정 →\s*([^(（]+?)\s*[(（]\s*(?:\d+\s*세\s*)?([^,，()）]+?)\s*[,，)）]/);
+    const m=(ev.text||"").match(/(\S+)\s+배역 배정 →\s*([^(（]+?)\s*[(（]\s*(?:\d+\s*세\s*)?((?:[^,，()）]|[(（][^)）]*[)）])+?)\s*[,，)）]/);
     if(m)setAll(uni(m[2],m[3]),m[1],m[2],m[3]); // 계정=m[1], 이름=m[2], 직업=m[3]
   }
   // replay 이름·NPC명도 KNOWN에 등록(@대상 검증용) — 시나리오 NPC 포함
@@ -857,7 +858,9 @@ function buildAlias(){
     const acctText={};
     for(const ev of RAWCACHE){const c=ev.cat||"";
       if(c.startsWith("GM→")){const acct=c.slice(3).replace(/[(（].*$/,"").trim();
-        if(acct&&!isGlobal(acct)&&!acct.startsWith("NPC")) acctText[acct]=(acctText[acct]||"")+" "+(ev.text||""); }}
+        // ★계정(예: sohxx)만 대상★ — 공백 포함(캐릭터·NPC명: '제리코 반'·'토끼팀 해결사 하리')이나 이미 알려진 표시명은 제외.
+        //   안 그러면 이 휴리스틱이 캐릭터/NPC명을 엉뚱한 이름으로 덮어써 시점이 뒤섞인다(회귀: 제리코 반→모지현, 토끼팀 해결사 하리→토끼팀).
+        if(acct&&!isGlobal(acct)&&!acct.startsWith("NPC")&&!/\s/.test(acct)&&!KNOWN.has(acct)) acctText[acct]=(acctText[acct]||"")+" "+(ev.text||""); }}
     for(const acct in acctText){ if(ALIAS[acct])continue; // 정상 로그(별칭 존재)는 건드리지 않음
       let best="",bestN=0;
       for(const ch of charList){ const re=new RegExp(ch.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"),"g");
