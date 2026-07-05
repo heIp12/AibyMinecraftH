@@ -10349,8 +10349,14 @@ public class TRPGGameManager {
                 String loc  = getStr(c, "location");
                 String subj = getStr(c, "clue_subject");
                 boolean mislead = "mislead".equalsIgnoreCase(getStr(c, "type"));
+                String access = getStr(c, "access"); // easy|normal|hard(얻는 난이도)
+                String gate   = getStr(c, "gate");   // always|puppet|doomed(획득 조건)
                 if (content.isBlank() && subj.isBlank()) continue;
                 sb.append("- ").append(mislead ? "[거짓] " : "");
+                if ("hard".equalsIgnoreCase(access)) sb.append("[어려움] ");
+                else if ("easy".equalsIgnoreCase(access)) sb.append("[쉬움] ");
+                if ("puppet".equalsIgnoreCase(gate)) sb.append("[조종중에만] ");
+                else if ("doomed".equalsIgnoreCase(gate)) sb.append("[파국국면에만] ");
                 if (!subj.isBlank()) sb.append("(").append(subj).append(") ");
                 sb.append(content.isBlank() ? subj : content);
                 if (!loc.isBlank()) sb.append(" — 위치: ").append(loc);
@@ -10359,6 +10365,7 @@ public class TRPGGameManager {
             sb.append("- 위 단서를 해당 위치·대상에 ★실제로 배치★하고, 플레이어가 그곳을 탐색하거나 관련 NPC·사물과 상호작용하면 그 단서를 ★분명히 드러내라★(먼저 떠먹이진 말되, 닿으면 확실히 보여줄 것).\n");
             sb.append("- 단서를 드러낸 턴에는 ★반드시 STATE_UPDATE의 new_clue★에 그 단서 내용을 한국어 한 줄로 적어 기록되게 하라(빠지면 '정보'에 남지 않는다). [거짓] 단서도 진짜처럼 흘리고 new_clue로 기록하라(플레이어가 비교로 가려내게).\n");
             sb.append("- 즉흥 단서만 흘리고 위 설계 단서를 끝내 안 보여주는 일이 없게 하라. 단, 한 응답에 몰아 쏟지 말고 탐색 흐름에 맞춰 풀어라.\n");
+            sb.append("- ★난이도·조건 태그 적용★: [쉬움]=자연스러운 관찰로도 슬쩍, [어려움]=여러 단서·위험·조건을 거쳐야 준다. ★[어려움]이라도 결정적 정답을 초반에 쥐여주지 말고 '중의적 복선'으로만 흘려라 — 당장은 뜻이 모호해 여러 갈래로 읽히다가, 나중에 다른 단서와 맞물릴 때 '아, 이거였구나'로 이해되게(함정처럼 위장해도 좋다 — 사람이 아닌 출처인 듯). [조종중에만]=그 플레이어가 꼭두각시(괴담 조종) 상태일 때만, [파국국면에만]=해결이 불가능해진(탈출·생존만 남은) 국면에서만 드러내라. 단 늦게 합류한 배역(knowledge_advantage)에겐 좋은 단서를 앞당겨 줘도 된다.\n");
             sb.append("- ★함정 발동: 플레이어가 관련 단서를 모른 채 '당연해 보이는' 핵심 행동(문 열기·부적 태우기·이름 부르기·NPC 제거·의식 따라하기 등)을 섣불리 하면, 설계된 함정/역효과(괴담 진행·피해·경로 차단)를 ★발동시켜라★ — 단서를 아는 자는 피하고 모르는 자는 당한다. 단 즉사·완전 교착이 아니라 ★만회 가능한 대가★로(되돌리거나 다른 길로 갈 여지를 남겨라).\n");
         }
 
