@@ -7956,7 +7956,12 @@ public class TRPGGameManager {
             // NPC 이름 통신+선언 없음 → 매체 불명확 → 차단 판정 생략(GM 서술로 처리)
         }
         if (!intendedMedium.isEmpty() && state.isMediumBlocked(intendedMedium)) {
-            sender.sendMessage("§c[통신 차단] 지금 " + commMediumLabel(intendedMedium) + "은(는) 통하지 않습니다. 다른 수단으로 시도하세요.");
+            // ★스포 금지 + '사용한 것처럼'★: 차단됐다고 미리 알리지 않는다(괴담이 막는다는 노출). 보낸 것처럼
+            //   보이되 실제로 닿지 않고, GM이 '답이 없다·이상하다'를 결과·정황으로만 드러낸다(결과는 플레이어 책임).
+            ai.injectGmSystem("[통신 미도달(은닉)] " + senderPd.gmDisplayName() + "이(가) " + commMediumLabel(intendedMedium)
+                + "(으)로 전하려 했으나 지금 그 수단이 통하지 않는다(괴담·상황). 발신자는 모른 채 보냈다고 여긴다 — "
+                + "상대에게 닿지 않았음을 정황·결과로만 드러내고, '차단됐다'고 시스템이 미리 알렸다는 티를 내지 마라.");
+            sender.sendMessage("§7[전송 중...]");
             return;
         }
 
@@ -7997,10 +8002,9 @@ public class TRPGGameManager {
             viaDevice = false; // 같은 구역 → 대면 (번호 불필요)
             // ★면전 소통수단★: 선언(#177)이 있으면 우선(음성=소리내어/글=필담), 없으면 소리 위험 시 자동 필담.
             written = resolveInPersonWritten(senderPd);
+            // ★스포 금지★: '소리가 위험'을 미리 알리지 않는다 — 필담 전환도 이유 없이 조용히, 위험 감수 음성도 결과로만.
             if (written && !"text".equals(senderPd.declaredCommMethod))
-                sender.sendMessage("§7(소리를 내기 위험하다 — 필담으로 조용히 전한다)");
-            else if ("voice".equals(senderPd.declaredCommMethod) && soundDangerous())
-                sender.sendMessage("§6(소리가 위험한 곳이지만, 선언대로 소리 내어 말한다 — 위험 감수)");
+                sender.sendMessage("§7(글로 조용히 전한다)");
         } else {
             Set<UUID> channels = commChannels.get(sender.getUniqueId());
             boolean gmChannel = channels != null && channels.contains(targetPd.uuid);
@@ -8237,9 +8241,8 @@ public class TRPGGameManager {
         }
         if (unavailable != null) { player.sendMessage("§c[소통수단] " + commMethodLabel(method) + " 불가 — " + unavailable); return; }
         pd.declaredCommMethod = method;
-        String warn = ("voice".equals(method) && soundDangerous())
-            ? " §c(지금은 소리가 위험한 장면 — 감수하고 말하기로 선언)" : "";
-        player.sendMessage("§a[소통수단] '" + commMethodLabel(method) + "'(으)로 선언했습니다." + warn);
+        // ★스포 금지★: '지금 소리가 위험한 장면'을 미리 알리지 않는다(괴담 특성 노출) — 위험은 결과·서술로만 드러난다.
+        player.sendMessage("§a[소통수단] '" + commMethodLabel(method) + "'(으)로 선언했습니다.");
         ai.injectGmSystem("[소통수단 선언] " + commDisplayName(pd) + "이(가) 주 소통수단을 '" + commMethodLabel(method)
             + "'로 정했다. 이후 이 인물의 대화·연락은 이 방식으로 이뤄진다고 서술하라.");
         gameLogger.logAbilityResult(pd.gmDisplayName(), "소통수단 선언", commMethodLabel(method));
@@ -8394,10 +8397,9 @@ public class TRPGGameManager {
         } else {
             // ★면전 소통수단★: 선언(#177) 우선(음성=소리내어/글=필담), 없으면 소리 위험 시 자동 필담.
             written = resolveInPersonWritten(senderPd);
+            // ★스포 금지★: '소리 위험'을 미리 알리지 않는다 — 이유 없이 조용히 처리, 위험은 결과로만.
             if (written && !"text".equals(senderPd.declaredCommMethod))
-                sender.sendMessage("§7(소리를 내기 위험하다 — " + npcName + "에게 필담으로 조용히 전한다)");
-            else if ("voice".equals(senderPd.declaredCommMethod) && soundDangerous())
-                sender.sendMessage("§6(소리가 위험하지만, 선언대로 " + npcName + "에게 소리 내어 말한다 — 위험 감수)");
+                sender.sendMessage("§7(" + npcName + "에게 글로 조용히 전한다)");
         }
         final boolean remote = !sameZone;            // 원격 여부는 zone으로 판정(면전 필담은 원격 아님 — 변조·장면 처리 기준)
         final boolean inPerson = sameZone;
