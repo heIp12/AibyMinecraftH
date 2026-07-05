@@ -9906,12 +9906,22 @@ public class TRPGGameManager {
     }
 
     /** 이동 경로 계산용 '아는 통과 가능 구역' 집합 — 방문 구역 중 잠기지 않은(또는 통과수단 보유) 곳 + 현위치.
-     *  잠긴 중간 구역으로 경로가 뚫려 불필요하게 그 앞에서 멈추던 문제(RISK9)를 막는다. */
+     *  잠긴 중간 구역으로 경로가 뚫려 불필요하게 그 앞에서 멈추던 문제(RISK9)를 막는다.
+     *  ★현재 위치의 바로 옆 칸은 대분류(area) 무관하게 항상 이동 가능★ — 대분류 라벨·지도 표시는 계속
+     *  숨겨도(#165 스포 방지), '눈앞에 보이는 문/통로로 실제로 걸어 들어가는 것'까지 막을 이유는 없다
+     *  (GM의 <ZONE_UPDATE> 자유 서술 이동은 애초에 이 제약과 무관하게 항상 가능했다 — 구조화 선택기만 막혀 있었다). */
     private java.util.Set<String> passableKnownZones(PlayerData pd) {
         java.util.Set<String> allowed = new java.util.HashSet<>();
         for (String z : pd.visitedZones)
             if (!state.isZoneSealed(z) && (findGatedZone(z) == null || !gatePassReason(pd, z).isEmpty())) allowed.add(z); // 봉쇄(#180)·잠금 제외
-        if (pd.zone != null) allowed.add(pd.zone); // 현위치는 이미 그곳에 있으므로 포함(잠겨/봉쇄돼 있어도 떠날 수는 있다)
+        if (pd.zone != null) {
+            allowed.add(pd.zone); // 현위치는 이미 그곳에 있으므로 포함(잠겨/봉쇄돼 있어도 떠날 수는 있다)
+            String curRealm = mapMan.realmOf(pd.zone);
+            for (String nb : mapMan.getAdjacentZones(pd.zone))
+                if (mapMan.realmOf(nb).equals(curRealm) && !state.isZoneSealed(nb)
+                    && (findGatedZone(nb) == null || !gatePassReason(pd, nb).isEmpty()))
+                    allowed.add(nb);
+        }
         return allowed;
     }
 
@@ -10009,20 +10019,14 @@ public class TRPGGameManager {
             gameLogger.logMove(moved.gmDisplayName(), zoneDisplayName(newZone), forced ? "강제" : (bypass ? "우회" : ""));
         // ★편지 두고가기★: 새 구역에 들어오면 그곳에 남겨진 쪽지를 발견(엉뚱한 손·훼손본 포함).
         if (zoneChanged && spawnedPlayers.contains(moved.uuid)) discoverDroppedNotes(moved, newZone);
-        // ★나가는 길 공개★: 새 구역에 들어서면 그곳에서 '보이는' 인접 구역(=나가는 길)을 약도·이동 목록
-        //   (/trpg 이동 선택기)에 공개한다. 예전엔 첫 배치 때만 공개해, 한 번 이동한 뒤로는 다음 방이
-        //   어디로 이어지는지 알 수 없어 '둘러본다'를 여러 번 선언해야 이동이 열리던 문제를 없앤다.
-        //   다른 realm(꿈·이세계 등)은 걸어서 못 넘으므로 제외 — 약도 스포도 함께 방지.
-        // ★버그 수정(대분류 경계 인접구역 누락)★: 예전엔 여기에 '같은 대분류(area)'까지 요구해, 다른 대분류로
-        //   넘어가는 바로 옆 인접 구역(예: 시청→대피소 진입점)이 이동 목록·지도에 전혀 안 떴다 — 그런데
-        //   바로 아래 '길목 안내' GM 서술은 이 area 제한이 없어 그 구역 이름을 이미 그대로 말해주고 있었다
-        //   (서술=언급, 시스템=미등록 불일치). 이제 realm·비봉쇄만 맞으면 등록해 서술과 맞춘다.
-        //   ★#165 스포 재발 없음★: visibleZones는 이 구역과의 교집합만 그리므로 그 대분류의 '진입점 한 칸'만
-        //   보이고 안쪽은 실제 방문 전까지 계속 숨겨진다(대분류 전체가 새는 게 아니다).
+        // ★나가는 길 공개(지도·대분류 표시용)★: 새 구역에 들어서면 그곳에서 '보이는' 같은 대분류의 인접 구역만
+        //   약도·지도에 공개한다(다른 realm·대분류는 제외 — #165 스포 방지). ★이동 가능 여부와는 별개★ —
+        //   다른 대분류로 넘어가는 경계 인접 구역은 여기선 계속 숨기되(대분류 라벨·지도 미노출), 실제 이동은
+        //   passableKnownZones()가 '현재 위치의 바로 옆 칸'을 대분류 무관하게 별도로 허용한다(아래 참고).
         if (zoneChanged) {
             String nzRealm = mapMan.realmOf(newZone);
             for (String nb : mapMan.getAdjacentZones(newZone))
-                if (mapMan.realmOf(nb).equals(nzRealm) && !state.isZoneSealed(nb))
+                if (mapMan.realmOf(nb).equals(nzRealm) && mapMan.sameArea(newZone, nb) && !state.isZoneSealed(nb))
                     moved.visitedZones.add(nb);
         }
         // 첫 배치 시: 지도 자동 지급
