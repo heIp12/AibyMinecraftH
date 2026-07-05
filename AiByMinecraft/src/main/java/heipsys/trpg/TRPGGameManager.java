@@ -10013,13 +10013,16 @@ public class TRPGGameManager {
         //   (/trpg 이동 선택기)에 공개한다. 예전엔 첫 배치 때만 공개해, 한 번 이동한 뒤로는 다음 방이
         //   어디로 이어지는지 알 수 없어 '둘러본다'를 여러 번 선언해야 이동이 열리던 문제를 없앤다.
         //   다른 realm(꿈·이세계 등)은 걸어서 못 넘으므로 제외 — 약도 스포도 함께 방지.
+        // ★버그 수정(대분류 경계 인접구역 누락)★: 예전엔 여기에 '같은 대분류(area)'까지 요구해, 다른 대분류로
+        //   넘어가는 바로 옆 인접 구역(예: 시청→대피소 진입점)이 이동 목록·지도에 전혀 안 떴다 — 그런데
+        //   바로 아래 '길목 안내' GM 서술은 이 area 제한이 없어 그 구역 이름을 이미 그대로 말해주고 있었다
+        //   (서술=언급, 시스템=미등록 불일치). 이제 realm·비봉쇄만 맞으면 등록해 서술과 맞춘다.
+        //   ★#165 스포 재발 없음★: visibleZones는 이 구역과의 교집합만 그리므로 그 대분류의 '진입점 한 칸'만
+        //   보이고 안쪽은 실제 방문 전까지 계속 숨겨진다(대분류 전체가 새는 게 아니다).
         if (zoneChanged) {
             String nzRealm = mapMan.realmOf(newZone);
             for (String nb : mapMan.getAdjacentZones(newZone))
-                // ★같은 realm + 같은 대분류(area) + 비봉쇄★만 공개. realm만 걸러선 ★다른 area(미발견 대분류)★가
-                //   약도·개요에 새어 #165 스포가 회귀했다(realm≠area). area까지 좁혀 '같은 건물/구획의 옆 방'만
-                //   공개하고, 다른 대분류·봉쇄 구역은 실제 진입 전까지 숨긴다. (대분류 경계는 GM 서술로 넘는다.)
-                if (mapMan.realmOf(nb).equals(nzRealm) && mapMan.sameArea(newZone, nb) && !state.isZoneSealed(nb))
+                if (mapMan.realmOf(nb).equals(nzRealm) && !state.isZoneSealed(nb))
                     moved.visitedZones.add(nb);
         }
         // 첫 배치 시: 지도 자동 지급
