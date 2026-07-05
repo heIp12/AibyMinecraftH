@@ -5014,7 +5014,7 @@ public class TRPGGameManager {
             if (text.isEmpty()) return;
             plugin.getServer().getScheduler().runTask(plugin, () -> {
                 if (!player.isOnline()) return;
-                player.sendMessage("§d[" + traitName + "] §7당신은 어렴풋이 알고 있습니다:");
+                player.sendMessage("§d[" + traitName + "]\n");
                 for (String line : text.split("\n")) {
                     String l = line.trim();
                     if (!l.isEmpty()) player.sendMessage("§7  " + l);
