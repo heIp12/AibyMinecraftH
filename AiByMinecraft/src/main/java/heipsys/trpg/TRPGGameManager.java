@@ -195,8 +195,10 @@ public class TRPGGameManager {
     private final Map<UUID, String[]> pendingHops = new ConcurrentHashMap<>();
     /** uuid → 마지막으로 홉을 전진시킨 턴번호(같은 턴 이중 전진 방지). */
     private final Map<UUID, Integer> lastHopTurn = new ConcurrentHashMap<>();
-    /** ★대화 방식 제약★: uuid → 필담·수신호를 마지막으로 쓴 턴(같은 턴 재사용 차단, 한 턴 1회). */
+    /** ★통신 발신 제약★: uuid → 지정통신·@전체·필담·수신호를 마지막으로 쓴 턴(횟수 카운트 기준 턴). */
     private final Map<UUID, Integer> lastLimitedCommTurn = new ConcurrentHashMap<>();
+    /** ★한 턴 발신 횟수★: uuid → 위 '그 턴'에 발신한 횟수(지정통신 @이름·@번호·NPC와 @전체 합산, 한 턴 2회까지). */
+    private final Map<UUID, Integer> commUsesThisTurn = new ConcurrentHashMap<>();
     /** ★편지 두고가기(dead-drop)★: 구역 id → 그곳에 남겨진 쪽지 목록. 그 구역에 들어온 사람(플레이어/괴담)이 발견한다. */
     private final Map<String, List<DroppedNote>> droppedNotes = new ConcurrentHashMap<>();
     /** 남겨진 쪽지(편지) — 위치에 놓여 발견을 기다린다. 문서형 괴담이 발견하면 훼손(orig→content). */
@@ -701,7 +703,7 @@ public class TRPGGameManager {
         pendingLuckModifier.clear();
         pendingHops.clear(); lastHopTurn.clear(); // 이동 홉 추적(#190) — 스테이지/재도전 리셋 시 남으면 다음 판에서 오복귀·홉 스킵 유발
         noHopeStreak = 0; allIncapTicks = 0; // 자동 배드엔딩(#2) 누적 — 리셋 시 초기화
-        lastLimitedCommTurn.clear(); // 대화 방식 제약(필담·수신호 한 턴 1회) 턴 기록 초기화
+        lastLimitedCommTurn.clear(); commUsesThisTurn.clear(); // 통신 발신 제약(한 턴 2회) 기록 초기화
         pendingOracleChoices.clear();
         pendingSaintTrait.clear();
         pendingAreaScanInput.clear();
@@ -820,7 +822,7 @@ public class TRPGGameManager {
         pendingLuckModifier.clear();
         pendingHops.clear(); lastHopTurn.clear(); // 이동 홉 추적(#190) — 스테이지/재도전 리셋 시 남으면 다음 판에서 오복귀·홉 스킵 유발
         noHopeStreak = 0; allIncapTicks = 0; // 자동 배드엔딩(#2) 누적 — 리셋 시 초기화
-        lastLimitedCommTurn.clear(); // 대화 방식 제약(필담·수신호 한 턴 1회) 턴 기록 초기화
+        lastLimitedCommTurn.clear(); commUsesThisTurn.clear(); // 통신 발신 제약(한 턴 2회) 기록 초기화
         pendingOracleChoices.clear();
         pendingSaintTrait.clear();
         pendingAreaScanInput.clear();
@@ -912,7 +914,7 @@ public class TRPGGameManager {
         pendingLuckModifier.clear();
         pendingHops.clear(); lastHopTurn.clear(); // 이동 홉 추적(#190) — 스테이지/재도전 리셋 시 남으면 다음 판에서 오복귀·홉 스킵 유발
         noHopeStreak = 0; allIncapTicks = 0; // 자동 배드엔딩(#2) 누적 — 리셋 시 초기화
-        lastLimitedCommTurn.clear(); // 대화 방식 제약(필담·수신호 한 턴 1회) 턴 기록 초기화
+        lastLimitedCommTurn.clear(); commUsesThisTurn.clear(); // 통신 발신 제약(한 턴 2회) 기록 초기화
         pendingOracleChoices.clear();
         pendingSaintTrait.clear();
         pendingAreaScanInput.clear();
@@ -7880,21 +7882,13 @@ public class TRPGGameManager {
         if (commDetectableByEntity(senderPd)) noteCommUsedIfDangerous(senderPd, "전체 발신"); // 은밀 개방이면 괴담이 감지 못함
     }
 
-    /** ★대화 방식별 제약★: 필담·수신호는 한 턴 1회, 수신호는 띄어쓰기 빼고 5글자까지. 막히면 true(발신 취소).
-     *  ★지정 대상 통신(@이름·@번호·NPC)은 매체 불문 한 턴 1회★ — 메시지 후 통화로 바꿔 이중 사용하거나
-     *  @이름 말로 계속 연락하는 것을 막는다(연락 = 한 턴 1행동). 근처에 소리내어 말하기(무지정 음성)만 자유.
-     *  payload = 실제 전할 내용(수신호 글자수 판정용). directed = 특정 대상 지정 통신 여부. */
+    /** ★대화 방식별 제약★: 수신호는 띄어쓰기 빼고 5글자까지 + 발신 횟수 제한. 막히면 true(발신 취소).
+     *  ★지정 대상 통신(@이름·@번호·NPC)은 매체 불문 한 턴 2회까지★(@전체와 합산) — 근처에 소리내어
+     *  말하기(무지정 음성)만 자유. payload = 실제 전할 내용(수신호 글자수 판정용). directed = 지정 통신 여부. */
     private boolean commMethodLimitBlocks(Player sender, PlayerData senderPd, String payload, boolean directed) {
         String m = senderPd.declaredCommMethod;
         boolean textSig = "text".equals(m) || "signal".equals(m);
         if (!textSig && !directed) return false; // 근처 무지정 음성(그냥 말하기)만 자유
-        int turn = state.getCurrentTurn();
-        Integer last = lastLimitedCommTurn.get(sender.getUniqueId());
-        if (last != null && last == turn) {
-            sender.sendMessage("§7(" + ("signal".equals(m) ? "수신호" : "text".equals(m) ? "필담" : "연락")
-                + "은(는) 한 턴에 한 번만 " + (textSig ? "전할" : "할") + " 수 있습니다.)");
-            return true;
-        }
         if ("signal".equals(m)) {
             String compact = payload == null ? "" : payload.replaceAll("\\s+", "");
             if (compact.length() > 5) {
@@ -7902,7 +7896,22 @@ public class TRPGGameManager {
                 return true;
             }
         }
-        lastLimitedCommTurn.put(sender.getUniqueId(), turn);
+        return commRateLimitBlocks(sender); // 한 턴 발신 횟수(2회) — @전체와 공용 카운터
+    }
+
+    /** ★한 턴 통신 발신 횟수 제한★: 지정 통신(@이름·@번호·NPC)과 @전체를 ★합산해 한 턴 2회까지★.
+     *  초과면 true(발신 취소). 턴이 바뀌면 마지막 사용 턴이 달라 자동으로 0부터 다시 센다. */
+    private boolean commRateLimitBlocks(Player sender) {
+        int turn = state.getCurrentTurn();
+        UUID id = sender.getUniqueId();
+        Integer lastTurn = lastLimitedCommTurn.get(id);
+        int uses = (lastTurn != null && lastTurn == turn) ? commUsesThisTurn.getOrDefault(id, 0) : 0;
+        if (uses >= 2) {
+            sender.sendMessage("§7(연락은 한 턴에 두 번까지만 할 수 있습니다.)");
+            return true;
+        }
+        lastLimitedCommTurn.put(id, turn);
+        commUsesThisTurn.put(id, uses + 1);
         return false;
     }
 
@@ -7923,6 +7932,7 @@ public class TRPGGameManager {
         // @전체 → 내가 아는 번호의 모든 사람에게 발신
         if (token.equals("전체") || token.equalsIgnoreCase("all")) {
             if (message.isEmpty()) { sender.sendMessage("§c사용법: @전체 메시지"); return; }
+            if (commRateLimitBlocks(sender)) return; // ★한 턴 2회 제한에 @전체도 1회로 합산(#215)
             broadcastToKnownContacts(sender, senderPd, message);
             return;
         }
