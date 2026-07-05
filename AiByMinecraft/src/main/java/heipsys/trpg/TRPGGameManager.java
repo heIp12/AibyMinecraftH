@@ -195,8 +195,10 @@ public class TRPGGameManager {
     private final Map<UUID, String[]> pendingHops = new ConcurrentHashMap<>();
     /** uuid → 마지막으로 홉을 전진시킨 턴번호(같은 턴 이중 전진 방지). */
     private final Map<UUID, Integer> lastHopTurn = new ConcurrentHashMap<>();
-    /** ★대화 방식 제약★: uuid → 필담·수신호를 마지막으로 쓴 턴(같은 턴 재사용 차단, 한 턴 1회). */
+    /** ★통신 발신 제약★: uuid → 지정통신·@전체·필담·수신호를 마지막으로 쓴 턴(횟수 카운트 기준 턴). */
     private final Map<UUID, Integer> lastLimitedCommTurn = new ConcurrentHashMap<>();
+    /** ★한 턴 발신 횟수★: uuid → 위 '그 턴'에 발신한 횟수(지정통신 @이름·@번호·NPC와 @전체 합산, 한 턴 2회까지). */
+    private final Map<UUID, Integer> commUsesThisTurn = new ConcurrentHashMap<>();
     /** ★편지 두고가기(dead-drop)★: 구역 id → 그곳에 남겨진 쪽지 목록. 그 구역에 들어온 사람(플레이어/괴담)이 발견한다. */
     private final Map<String, List<DroppedNote>> droppedNotes = new ConcurrentHashMap<>();
     /** 남겨진 쪽지(편지) — 위치에 놓여 발견을 기다린다. 문서형 괴담이 발견하면 훼손(orig→content). */
@@ -701,7 +703,7 @@ public class TRPGGameManager {
         pendingLuckModifier.clear();
         pendingHops.clear(); lastHopTurn.clear(); // 이동 홉 추적(#190) — 스테이지/재도전 리셋 시 남으면 다음 판에서 오복귀·홉 스킵 유발
         noHopeStreak = 0; allIncapTicks = 0; // 자동 배드엔딩(#2) 누적 — 리셋 시 초기화
-        lastLimitedCommTurn.clear(); // 대화 방식 제약(필담·수신호 한 턴 1회) 턴 기록 초기화
+        lastLimitedCommTurn.clear(); commUsesThisTurn.clear(); // 통신 발신 제약(한 턴 2회) 기록 초기화
         pendingOracleChoices.clear();
         pendingSaintTrait.clear();
         pendingAreaScanInput.clear();
@@ -820,7 +822,7 @@ public class TRPGGameManager {
         pendingLuckModifier.clear();
         pendingHops.clear(); lastHopTurn.clear(); // 이동 홉 추적(#190) — 스테이지/재도전 리셋 시 남으면 다음 판에서 오복귀·홉 스킵 유발
         noHopeStreak = 0; allIncapTicks = 0; // 자동 배드엔딩(#2) 누적 — 리셋 시 초기화
-        lastLimitedCommTurn.clear(); // 대화 방식 제약(필담·수신호 한 턴 1회) 턴 기록 초기화
+        lastLimitedCommTurn.clear(); commUsesThisTurn.clear(); // 통신 발신 제약(한 턴 2회) 기록 초기화
         pendingOracleChoices.clear();
         pendingSaintTrait.clear();
         pendingAreaScanInput.clear();
@@ -912,7 +914,7 @@ public class TRPGGameManager {
         pendingLuckModifier.clear();
         pendingHops.clear(); lastHopTurn.clear(); // 이동 홉 추적(#190) — 스테이지/재도전 리셋 시 남으면 다음 판에서 오복귀·홉 스킵 유발
         noHopeStreak = 0; allIncapTicks = 0; // 자동 배드엔딩(#2) 누적 — 리셋 시 초기화
-        lastLimitedCommTurn.clear(); // 대화 방식 제약(필담·수신호 한 턴 1회) 턴 기록 초기화
+        lastLimitedCommTurn.clear(); commUsesThisTurn.clear(); // 통신 발신 제약(한 턴 2회) 기록 초기화
         pendingOracleChoices.clear();
         pendingSaintTrait.clear();
         pendingAreaScanInput.clear();
@@ -7880,21 +7882,13 @@ public class TRPGGameManager {
         if (commDetectableByEntity(senderPd)) noteCommUsedIfDangerous(senderPd, "전체 발신"); // 은밀 개방이면 괴담이 감지 못함
     }
 
-    /** ★대화 방식별 제약★: 필담·수신호는 한 턴 1회, 수신호는 띄어쓰기 빼고 5글자까지. 막히면 true(발신 취소).
-     *  ★지정 대상 통신(@이름·@번호·NPC)은 매체 불문 한 턴 1회★ — 메시지 후 통화로 바꿔 이중 사용하거나
-     *  @이름 말로 계속 연락하는 것을 막는다(연락 = 한 턴 1행동). 근처에 소리내어 말하기(무지정 음성)만 자유.
-     *  payload = 실제 전할 내용(수신호 글자수 판정용). directed = 특정 대상 지정 통신 여부. */
+    /** ★대화 방식별 제약★: 수신호는 띄어쓰기 빼고 5글자까지 + 발신 횟수 제한. 막히면 true(발신 취소).
+     *  ★지정 대상 통신(@이름·@번호·NPC)은 매체 불문 한 턴 2회까지★(@전체와 합산) — 근처에 소리내어
+     *  말하기(무지정 음성)만 자유. payload = 실제 전할 내용(수신호 글자수 판정용). directed = 지정 통신 여부. */
     private boolean commMethodLimitBlocks(Player sender, PlayerData senderPd, String payload, boolean directed) {
         String m = senderPd.declaredCommMethod;
         boolean textSig = "text".equals(m) || "signal".equals(m);
         if (!textSig && !directed) return false; // 근처 무지정 음성(그냥 말하기)만 자유
-        int turn = state.getCurrentTurn();
-        Integer last = lastLimitedCommTurn.get(sender.getUniqueId());
-        if (last != null && last == turn) {
-            sender.sendMessage("§7(" + ("signal".equals(m) ? "수신호" : "text".equals(m) ? "필담" : "연락")
-                + "은(는) 한 턴에 한 번만 " + (textSig ? "전할" : "할") + " 수 있습니다.)");
-            return true;
-        }
         if ("signal".equals(m)) {
             String compact = payload == null ? "" : payload.replaceAll("\\s+", "");
             if (compact.length() > 5) {
@@ -7902,7 +7896,22 @@ public class TRPGGameManager {
                 return true;
             }
         }
-        lastLimitedCommTurn.put(sender.getUniqueId(), turn);
+        return commRateLimitBlocks(sender); // 한 턴 발신 횟수(2회) — @전체와 공용 카운터
+    }
+
+    /** ★한 턴 통신 발신 횟수 제한★: 지정 통신(@이름·@번호·NPC)과 @전체를 ★합산해 한 턴 2회까지★.
+     *  초과면 true(발신 취소). 턴이 바뀌면 마지막 사용 턴이 달라 자동으로 0부터 다시 센다. */
+    private boolean commRateLimitBlocks(Player sender) {
+        int turn = state.getCurrentTurn();
+        UUID id = sender.getUniqueId();
+        Integer lastTurn = lastLimitedCommTurn.get(id);
+        int uses = (lastTurn != null && lastTurn == turn) ? commUsesThisTurn.getOrDefault(id, 0) : 0;
+        if (uses >= 2) {
+            sender.sendMessage("§7(연락은 한 턴에 두 번까지만 할 수 있습니다.)");
+            return true;
+        }
+        lastLimitedCommTurn.put(id, turn);
+        commUsesThisTurn.put(id, uses + 1);
         return false;
     }
 
@@ -7923,6 +7932,7 @@ public class TRPGGameManager {
         // @전체 → 내가 아는 번호의 모든 사람에게 발신
         if (token.equals("전체") || token.equalsIgnoreCase("all")) {
             if (message.isEmpty()) { sender.sendMessage("§c사용법: @전체 메시지"); return; }
+            if (commRateLimitBlocks(sender)) return; // ★한 턴 2회 제한에 @전체도 1회로 합산(#215)
             broadcastToKnownContacts(sender, senderPd, message);
             return;
         }
@@ -10339,8 +10349,14 @@ public class TRPGGameManager {
                 String loc  = getStr(c, "location");
                 String subj = getStr(c, "clue_subject");
                 boolean mislead = "mislead".equalsIgnoreCase(getStr(c, "type"));
+                String access = getStr(c, "access"); // easy|normal|hard(얻는 난이도)
+                String gate   = getStr(c, "gate");   // always|puppet|doomed(획득 조건)
                 if (content.isBlank() && subj.isBlank()) continue;
                 sb.append("- ").append(mislead ? "[거짓] " : "");
+                if ("hard".equalsIgnoreCase(access)) sb.append("[어려움] ");
+                else if ("easy".equalsIgnoreCase(access)) sb.append("[쉬움] ");
+                if ("puppet".equalsIgnoreCase(gate)) sb.append("[조종중에만] ");
+                else if ("doomed".equalsIgnoreCase(gate)) sb.append("[파국국면에만] ");
                 if (!subj.isBlank()) sb.append("(").append(subj).append(") ");
                 sb.append(content.isBlank() ? subj : content);
                 if (!loc.isBlank()) sb.append(" — 위치: ").append(loc);
@@ -10349,6 +10365,7 @@ public class TRPGGameManager {
             sb.append("- 위 단서를 해당 위치·대상에 ★실제로 배치★하고, 플레이어가 그곳을 탐색하거나 관련 NPC·사물과 상호작용하면 그 단서를 ★분명히 드러내라★(먼저 떠먹이진 말되, 닿으면 확실히 보여줄 것).\n");
             sb.append("- 단서를 드러낸 턴에는 ★반드시 STATE_UPDATE의 new_clue★에 그 단서 내용을 한국어 한 줄로 적어 기록되게 하라(빠지면 '정보'에 남지 않는다). [거짓] 단서도 진짜처럼 흘리고 new_clue로 기록하라(플레이어가 비교로 가려내게).\n");
             sb.append("- 즉흥 단서만 흘리고 위 설계 단서를 끝내 안 보여주는 일이 없게 하라. 단, 한 응답에 몰아 쏟지 말고 탐색 흐름에 맞춰 풀어라.\n");
+            sb.append("- ★난이도·조건 태그 적용★: [쉬움]=자연스러운 관찰로도 슬쩍, [어려움]=여러 단서·위험·조건을 거쳐야 준다. ★[어려움]이라도 결정적 정답을 초반에 쥐여주지 말고 '중의적 복선'으로만 흘려라 — 당장은 뜻이 모호해 여러 갈래로 읽히다가, 나중에 다른 단서와 맞물릴 때 '아, 이거였구나'로 이해되게(함정처럼 위장해도 좋다 — 사람이 아닌 출처인 듯). [조종중에만]=그 플레이어가 꼭두각시(괴담 조종) 상태일 때만, [파국국면에만]=해결이 불가능해진(탈출·생존만 남은) 국면에서만 드러내라. 단 늦게 합류한 배역(knowledge_advantage)에겐 좋은 단서를 앞당겨 줘도 된다.\n");
             sb.append("- ★함정 발동: 플레이어가 관련 단서를 모른 채 '당연해 보이는' 핵심 행동(문 열기·부적 태우기·이름 부르기·NPC 제거·의식 따라하기 등)을 섣불리 하면, 설계된 함정/역효과(괴담 진행·피해·경로 차단)를 ★발동시켜라★ — 단서를 아는 자는 피하고 모르는 자는 당한다. 단 즉사·완전 교착이 아니라 ★만회 가능한 대가★로(되돌리거나 다른 길로 갈 여지를 남겨라).\n");
         }
 

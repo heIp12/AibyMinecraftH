@@ -20,7 +20,7 @@ import java.util.stream.Collectors;
  *
  * 생성 순서:
  *  1. 나이/직업 — 배역 age_range·job_pool 우선, 없으면 전체 풀
- *  2. 기본 스탯 배분 (총합 25, 각 최소 1)
+ *  2. 기본 스탯 배분 (총합 23, 각 최소 1)
  *  3. 최저 스탯 +1, 무작위 [+4,+2,+1,-2] 적용
  *  4. Haiku AI로 나이/직업/배역 보정
  *  5. AI 초기 특성 생성 (1~2개, 직업·나이 맥락)
@@ -422,8 +422,8 @@ public class CharacterGenerator {
             pd.job = pickUnusedJob(pd.uuid, pool);
         }
 
-        // 총합 25를 6개 스탯에 배분
-        int[] stats = distributePoints(25, 6, 1, 10);
+        // 총합 23을 6개 스탯에 배분(기본 무작위 총합 -2 — 시작을 살짝 더 약하게)
+        int[] stats = distributePoints(23, 6, 1, 10);
         pd.hp  = new int[]{stats[0], stats[0]};
         pd.str = stats[1];
         pd.san = new int[]{stats[2], stats[2]};
