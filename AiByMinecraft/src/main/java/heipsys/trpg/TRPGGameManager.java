@@ -11080,7 +11080,8 @@ public class TRPGGameManager {
         gameLogger.logAbilityResult(dpd != null ? dpd.gmDisplayName() : player.getName(), "주사위 판정",
             (reason.isEmpty() ? "행동 판정" : reason) + " — d" + max + "=" + roll + modNote
             + " (기준 " + effDc + " 이상 성공) → " + outcome);
-        // 1) 숫자가 바뀌는 연출(약 1.5초, d{max} 무작위) — 3틱 간격
+        // ★#209 굴림 먼저 → 보정 하나씩 가산★
+        // 1) '굴리는 중' 연출(약 1.5초, d{max} 무작위) — 3틱 간격.
         final int FRAMES = 10;
         for (int i = 0; i < FRAMES; i++) {
             final int n = ThreadLocalRandom.current().nextInt(1, fmax + 1);
@@ -11091,33 +11092,40 @@ public class TRPGGameManager {
                     Title.Times.times(Duration.ZERO, Duration.ofMillis(220), Duration.ZERO)));
             }, i * 3L);
         }
-        // 2) ★행운 요행 연출★: 요행 보정이 있으면 '자연 착지값(preLuck)'을 먼저 보여준 뒤 최종값으로 오르내리는 극적 연출.
-        //    (대성공/대실패는 생굴림을 그대로 보여주므로 요행 연출 없음.)
-        final int fpre = preLuck;
-        final int fnudge = (critSuccess || critFail) ? 0 : (roll - preLuck); // 실제 적용된 요행 변화량(클램프 반영) — 연출이 최종값을 넘지 않게
-        final long landTick = FRAMES * 3L + 2L;
-        long lastTick = landTick;
-        if (fnudge != 0) {
+        // 2) ★생굴림 착지 → 보정 하나씩 가산★: 먼저 생굴림(baseRoll)을 보이고, 스탯·행운 보정을 순서대로 하나씩 더해
+        //    최종값에 이른다(값이 깜빡이며 증가). 대성공/대실패는 생굴림이 곧 최종이라 가산 없음.
+        final long settleTick = FRAMES * 3L + 2L;
+        plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+            titleToWatchers(player, Title.title(
+                Component.text("🎲 " + baseRoll, NamedTextColor.WHITE, TextDecoration.BOLD),
+                Component.text("굴림!", NamedTextColor.DARK_GRAY),
+                Title.Times.times(Duration.ZERO, Duration.ofMillis(500), Duration.ZERO)));
+        }, settleTick);
+        // 가산 스텝(순서: 스탯 → 행운보정 → 행운요행) — [누적 표시값, 증감방향] + 라벨.
+        java.util.List<int[]> stepVal = new java.util.ArrayList<>();
+        java.util.List<String> stepLbl = new java.util.ArrayList<>();
+        if (!critSuccess && !critFail) {
+            int acc = baseRoll;
+            if (statBonus != 0 && !statLabel.isEmpty()) { acc = Math.max(1, Math.min(max, acc + statBonus)); stepVal.add(new int[]{acc, statBonus > 0 ? 1 : -1}); stepLbl.add((statBonus > 0 ? "+" : "") + statBonus + " " + statLabel); }
+            if (luckB != 0)    { acc = Math.max(1, Math.min(max, acc + luckB));    stepVal.add(new int[]{acc, luckB > 0 ? 1 : -1});    stepLbl.add((luckB > 0 ? "+" : "") + luckB + " 행운보정"); }
+            if (lukNudge != 0) { acc = Math.max(1, Math.min(max, acc + lukNudge)); stepVal.add(new int[]{acc, lukNudge > 0 ? 1 : -1}); stepLbl.add((lukNudge > 0 ? "+" : "") + lukNudge + (lukNudge > 0 ? " 행운" : " 불운")); }
+            if (!stepVal.isEmpty()) stepVal.get(stepVal.size() - 1)[0] = roll; // 마지막 스텝=실제 최종값(중간 클램프 오차 보정)
+        }
+        final long stepStart = settleTick + 11L;      // 생굴림 잠깐 본 뒤 가산 시작
+        final long STEP = 9L;
+        for (int j = 0; j < stepVal.size(); j++) {
+            final int shown = stepVal.get(j)[0];
+            final boolean up = stepVal.get(j)[1] > 0;
+            final String lbl = stepLbl.get(j);
             plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
                 titleToWatchers(player, Title.title(
-                    Component.text("🎲 " + fpre, NamedTextColor.GRAY, TextDecoration.BOLD),
-                    Component.text(fnudge > 0 ? "행운이 깃든다…" : "운이 비껴간다…", NamedTextColor.DARK_GRAY),
-                    Title.Times.times(Duration.ZERO, Duration.ofMillis(600), Duration.ZERO)));
-            }, landTick);
-            int frames = Math.min(Math.abs(fnudge), 10);                // 큰 요행도 최대 10프레임으로 압축(빠르게 오르내림)
-            for (int k = 1; k <= frames; k++) {
-                final int shown = fpre + (int) Math.round((double) fnudge * k / frames); // 선형 보간, 마지막 프레임=froll
-                final boolean up = fnudge > 0;
-                plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
-                    titleToWatchers(player, Title.title(
-                        Component.text((up ? "🍀 " : "💧 ") + shown, up ? NamedTextColor.AQUA : NamedTextColor.GOLD, TextDecoration.BOLD),
-                        Component.text(up ? "행운!" : "불운…", up ? NamedTextColor.AQUA : NamedTextColor.GOLD),
-                        Title.Times.times(Duration.ZERO, Duration.ofMillis(300), Duration.ZERO)));
-                }, landTick + 12L + k * 3L);
-            }
-            lastTick = landTick + 12L + frames * 3L;
+                    Component.text((up ? "🍀 " : "💧 ") + shown, up ? NamedTextColor.AQUA : NamedTextColor.GOLD, TextDecoration.BOLD),
+                    Component.text(lbl, up ? NamedTextColor.AQUA : NamedTextColor.GOLD),
+                    Title.Times.times(Duration.ZERO, Duration.ofMillis(430), Duration.ZERO)));
+            }, stepStart + j * STEP);
         }
-        // 3) 최종 결과 강조 — 《N》 3초 유지 + 성공 기준 서브타이틀
+        final long lastTick = stepVal.isEmpty() ? settleTick : stepStart + (stepVal.size() - 1) * STEP;
+        // 3) 최종 결과 강조 — 《N》 3초 유지 + 성공 기준 서브타이틀.
         final int froll = roll, fdc = effDc;   // ★표시 성공기준도 실제 판정값(effDc)으로 통일 — 판정/표시 불일치 제거
         final String fmodNote = modNote;
         plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
@@ -11130,7 +11138,7 @@ public class TRPGGameManager {
                 + (fmodNote.isEmpty() ? "" : " §8" + fmodNote)
                 + (fdc > 0 ? " §8(성공 기준 " + fdc + " 이상)" : "")
                 + " §7→ " + colorCode(col) + (outcome.isEmpty() ? "판정" : outcome));
-        }, fnudge != 0 ? lastTick + 3L : landTick);
+        }, lastTick + 7L);
     }
 
     /** NamedTextColor → §코드 (채팅 기록 강조용) */
