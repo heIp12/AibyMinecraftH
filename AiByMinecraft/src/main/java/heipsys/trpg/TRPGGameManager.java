@@ -500,18 +500,19 @@ public class TRPGGameManager {
         }
         // 게임 모드 선택 → AI 품질 선택 순서로 진행
         initiator.sendMessage("§e세션을 시작합니다. 게임 모드를 선택하세요...");
+        final int np = plugin.getServer().getOnlinePlayers().size(); // ★인원수별 비용 추정★ — 지금 접속 인원 기준(사람 많을수록 API 호출↑)
         dialogMan.showModeChoice(initiator,
             () -> dialogMan.showQualityChoice(initiator,
-                ai.providerLabel(), ai.hourlyCostLabel(AiManager.Quality.LOW),
-                ai.hourlyCostLabel(AiManager.Quality.MEDIUM), ai.hourlyCostLabel(AiManager.Quality.HIGH),
+                ai.providerLabel(), ai.hourlyCostLabel(AiManager.Quality.LOW, np),
+                ai.hourlyCostLabel(AiManager.Quality.MEDIUM, np), ai.hourlyCostLabel(AiManager.Quality.HIGH, np),
                 () -> beginSession(initiator, AiManager.Quality.LOW,    false, "random"),
                 () -> beginSession(initiator, AiManager.Quality.MEDIUM, false, "random"),
                 () -> beginSession(initiator, AiManager.Quality.HIGH,   false, "random")),
             // 친숙 모드 → 괴담 범위(필터) 선택 → 품질 선택 순서
             () -> dialogMan.showFamiliarFilter(initiator, filter ->
                 dialogMan.showQualityChoice(initiator,
-                    ai.providerLabel(), ai.hourlyCostLabel(AiManager.Quality.LOW),
-                    ai.hourlyCostLabel(AiManager.Quality.MEDIUM), ai.hourlyCostLabel(AiManager.Quality.HIGH),
+                    ai.providerLabel(), ai.hourlyCostLabel(AiManager.Quality.LOW, np),
+                    ai.hourlyCostLabel(AiManager.Quality.MEDIUM, np), ai.hourlyCostLabel(AiManager.Quality.HIGH, np),
                     () -> beginSession(initiator, AiManager.Quality.LOW,    true, filter),
                     () -> beginSession(initiator, AiManager.Quality.MEDIUM, true, filter),
                     () -> beginSession(initiator, AiManager.Quality.HIGH,   true, filter))));
