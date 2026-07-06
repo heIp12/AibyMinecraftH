@@ -1073,7 +1073,7 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
             case "korean" -> { scope = "대한민국 괴담·전설·도시전설 (한국 한정)";
                 criterion = "한국에서 실제로 전해지는 괴담 중 규칙·약점이 뚜렷한 것을 택하라."; }
             case "japan" -> { scope = "일본 괴담·요괴·유령·학교괴담·도시전설 (일본 한정)";
-                criterion = "일본에서 실제로 전해지는 괴담/요괴 중 규칙·약점이 뚜렷한 것을 택하라(예: 핫샤쿠사마·쿠치사케온나·테케테케·토일렛의 하나코·요괴 전승 등)."; }
+                criterion = "일본에서 실제로 전해지는 괴담/요괴 중 규칙·약점이 뚜렷한 것을 택하라"; }
             case "urban" -> { scope = region + " — 단 SCP·창작 재단물 제외, '실제 도시전설·민간전승'만";
                 criterion = "규칙과 약점이 뚜렷한 실존 도시전설을 택하라."; }
             case "common" -> { scope = region;
