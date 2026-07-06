@@ -7904,18 +7904,36 @@ public class TRPGGameManager {
         if (targets.isEmpty()) { sender.sendMessage(senderNet != null
                 ? "§7같은 " + senderNet + "망에 접속한 상대가 없습니다."
                 : "§7아는 번호가 없습니다. (먼저 연락처를 알아야 합니다)"); return; }
+        // ★매체 차단(#180) — @이름과 동일 게이트(#214)★: 전자통신이 막혀 있으면 보낸 것처럼 보이되 실제로 닿지 않는다(은닉).
+        if (!bypass && state.isMediumBlocked("electronic")) {
+            ai.injectGmSystem("[통신 미도달(은닉)] " + disp + "이(가) " + (senderNet != null ? senderNet + "망" : "전체")
+                + " 발신을 시도했으나 지금 전자통신이 통하지 않는다(괴담·상황). 발신자는 모른 채 보냈다고 여긴다 — "
+                + "닿지 않았음을 정황·결과로만 드러내고 '차단됐다'고 티내지 마라.");
+            sender.sendMessage("§7[전송 중...]");
+            return;
+        }
         sender.sendMessage((senderNet != null ? "§7[" + senderNet + "망 발신 " : "§7[전체 발신 ") + targets.size() + "명] §f" + message);
+        // ★통신 변조(#215) — @이름과 동일★: 전자 채널이 괴담 간섭권이면 수신자별 30% 변조(원문처럼 은닉 전달).
+        boolean chanInterfered = entityInterferes("electronic");
+        java.util.Random tamperRng = new java.util.Random();
+        java.util.List<String> cleanNames = new ArrayList<>();
         for (PlayerData op : targets) {
             Player op2 = Bukkit.getPlayer(op.uuid);
-            if (op2 != null && op2.isOnline() && (bypass || hasCommDevice(op))) // 개방 시 수신자 기기 부재도 관통
-                msgToWatchers(op2, "§b[📞 " + disp + " → " + (senderNet != null ? senderNet + "망" : "전체") + "] §f" + message); // 수신자+관전자
-
+            if (op2 == null || !op2.isOnline() || !(bypass || hasCommDevice(op))) continue; // 개방 시 수신자 기기 부재도 관통
+            boolean tampered = chanInterfered && tamperRng.nextInt(100) < 30; // @이름과 동일 30%
+            String heard = tampered ? tamperText(message, tamperRng) : message;
+            msgToWatchers(op2, "§b[📞 " + disp + " → " + (senderNet != null ? senderNet + "망" : "전체") + "] §f" + heard); // 변조돼도 원문처럼(은닉)
+            if (tampered)
+                gameLogger.logCommTampered("call", disp, java.util.List.of(op.gmDisplayName()), message, heard, "괴담의 음성 변조", senderNet);
+            else
+                cleanNames.add(op.gmDisplayName());
         }
+        if (chanInterfered)
+            ai.injectGmSystem("[통신 채널 불안정] 전자통신이 괴담의 간섭권 안이다 — 전체 발신 일부가 잡음·왜곡될 수 있음(정황에 은근히 반영).");
         state.log("comm", senderPd.name, "[" + (senderNet != null ? senderNet + "망발신" : "전체발신") + "] " + message);
-        // 뷰어 통화내역: 전체 발신도 ★수신자 전원을 기록★(그들 시점에도 보이게). 폐쇄망이면 via=망이름.
-        java.util.List<String> callNames = new ArrayList<>();
-        for (PlayerData op : targets) callNames.add(op.gmDisplayName());
-        gameLogger.logComm("call", disp, callNames, message, senderNet);
+        // 뷰어 통화내역: 온전히 받은 수신자만 한 줄로(변조된 수신자는 위에서 개별 기록).
+        if (!cleanNames.isEmpty())
+            gameLogger.logComm("call", disp, cleanNames, message, senderNet);
         // 폐쇄망은 전자형 괴담이 그 망에 붙어야만 수집(아니면 0=미수집). 개방 전체발신은 항상 강(3).
         noteEntityIntel(senderNet != null ? (entityInterferes("electronic") ? 3 : 0) : 3, disp, message,
             senderNet != null ? senderNet + "망 발신" : "전체 발신");
@@ -7956,6 +7974,33 @@ public class TRPGGameManager {
         return false;
     }
 
+    /** ★#220 관계 호칭 주소어★ — 친족·관계로 부르는 말(이름이 아님). 이 말로 근처 NPC를 부르면 관계로 연결한다. */
+    private static final java.util.Set<String> HONORIFIC_ADDRESS_TERMS = java.util.Set.of(
+        "형","형님","형아","누나","누님","오빠","오라버니","언니","동생","막내",
+        "삼촌","삼춘","외삼촌","이모","이모부","고모","고모부","숙모","숙부","아저씨","아주머니","아줌마",
+        "할머니","할매","할머님","할아버지","할배","할아버님","엄마","어머니","어머님",
+        "아빠","아버지","아버님","선배","선배님","후배","사부","스승님","대장","반장","선생님");
+
+    /** ★#220★ 플레이어가 근처 NPC를 관계 호칭(형/누나/삼촌 등)으로 부르면, 같은 구역의 '관계가 정의된' 소통가능
+     *  critical NPC가 ★정확히 1명★일 때 그 NPC로 연결한다(모호하면 null → 근처 발화로). NPC엔 별명 필드가 없어
+     *  이름 매칭이 실패하던 호칭 발화를 대면 대화로 잇는 최소 보정. */
+    private JsonObject resolveHonorificNpc(PlayerData senderPd, String token) {
+        if (senderPd == null || token == null || !HONORIFIC_ADDRESS_TERMS.contains(token.trim())) return null;
+        if (senderPd.zone == null || senderPd.zone.isEmpty()) return null;
+        JsonObject only = null;
+        for (JsonObject npc : getCriticalNpcs()) {
+            String nid = getStr(npc, "id");
+            if (nid.isEmpty()) continue;
+            String nz = npcZones.getOrDefault(nid, getStr(npc, "zone"));
+            if (!senderPd.zone.equals(nz)) continue;                          // 같은 구역(대면)만
+            if (!isNpcCommunicable(npc)) continue;                            // 반응할 수 있는 NPC만
+            if (relationshipLabel(senderPd.roleId, nid).isBlank()) continue;  // 관계가 정의돼 있어야(가족·지인 등)
+            if (only != null) return null;                                    // 후보 2명↑ → 모호 → 연결 안 함
+            only = npc;
+        }
+        return only;
+    }
+
     private void handleDirectComm(Player sender, PlayerData senderPd, String raw) {
         String content = raw.substring(1).trim(); // '@' 제거
         if (content.isEmpty()) {
@@ -7982,6 +8027,8 @@ public class TRPGGameManager {
         boolean dialedByNumber = token.matches("\\d{3,5}");
         PlayerData targetPd = dialedByNumber ? findByContactId(token) : findByName(token);
         JsonObject npcObj = (!dialedByNumber && targetPd == null) ? findNpcByName(token) : null;
+        // ★#220★ 이름 매칭 실패 + 관계 호칭(형/누나 등)이면 같은 구역의 '관계 정의된' NPC 1명으로 연결(모호하면 근처 발화).
+        if (npcObj == null && !dialedByNumber && targetPd == null) npcObj = resolveHonorificNpc(senderPd, token);
 
         // ★대화 방식별 제약★: @전체(전자 발신)는 위에서 이미 처리됨. 근처 무명발화는 content 전체가 내용.
         boolean isProximity = !dialedByNumber && targetPd == null && npcObj == null;
