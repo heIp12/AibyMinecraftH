@@ -276,7 +276,7 @@ function normalize(ev){
   actor=canon(actor); to=to.map(canon);
   if(kind==="assign")bodyText=(/등장/.test(text)?"배역 등장: ":"배역 배정: ")+(actor||"?"); // 계정→role_id·zone_id 메타 제거 + 표시명으로
   return {seq:ev.seq||0,t:ev.t||"",gt:ev.gt||"",kind,actor,to,ability,detail:ev.detail||"",phase:ev.phase||"",cause:ev.cause||"",
-          text:bodyText,cat,orig:ev.orig||"",via:viaName,item:ev.item||"",zone,remove,
+          text:bodyText,cat,orig:ev.orig||"",via:viaName,item:ev.item||"",note:ev.note||"",zone,remove,
           hpAfter,hpMax,sanAfter,sanMax,hpDelta,sanDelta};
 }
 // 특정 인물의 seq 시점 구역(마지막 이동 기준). 이동 기록이 없으면 null(불명).
@@ -513,8 +513,13 @@ function headHtml(e){
 }
 // 본문 HTML — 괴담·NPC가 메시지를 변형(변절)했으면 원본/변형됨을 대조해 보여준다.
 function bodyHtmlOf(e){
-  if(e.orig) return `<div class="ln"><span class="tamper-tag">원본</span><span class="tamper-orig">${esc(e.orig)}</span></div>`
+  if(e.orig){
+    // ★#216 변조 은폐★: 변조 사실은 당사자에게 숨긴다 — 전지적 '전체 타임라인'(__all__)에서만 원본/변형 대조.
+    //   개별 시점에선 발신자=자기가 보낸 원문만, 그 외(수신자 등)=실제로 받은(변형된) 내용만 정상 표시.
+    if(curVP==="__all__") return `<div class="ln"><span class="tamper-tag">원본</span><span class="tamper-orig">${esc(e.orig)}</span></div>`
                   + `<div class="ln"><span class="tamper-tag">변형됨</span><span class="tamper-new">${esc(e.text)}</span></div>`;
+    return parseBody(e.actor===curVP?e.orig:e.text).map(blockHtml).join("");
+  }
   return parseBody(e.text).map(blockHtml).join("");
 }
 // 짧은 메타 이벤트(아이템·배역·이동·상태)는 헤더 줄에 내용을 ★인라인★으로 붙여 카드 높이를 반으로 —
@@ -739,7 +744,8 @@ function stateAt(vp,seq){
       if(e.remove){ const i=items.lastIndexOf(nm); if(i>=0)items.splice(i,1); }
       else if(nm){ items.push(nm);
         const noteM=raw.match(/\(([^)]*)\)\s*$/); // 획득 경위(시작 소지·제작 등) + 시각 — 클릭 시 세부정보
-        itemMeta[nm]={note:(e.note||(noteM?noteM[1]:"")||""), t:e.t||""}; } }
+        const nt=(e.note||(noteM?noteM[1]:"")||"");
+        itemMeta[nm]={note:nt, t:e.t||"", start:(nt==="시작 소지")}; } } // start=시작 소지품(게임 중 획득과 구분, #212)
     else if(e.kind==="clue"&&(mine||tome))clues.push((e.text||"단서").replace(/^→\S+\s*/,""));
     else if(e.kind==="move"&&mine){loc=e.zone||(e.text||"").replace(/^→\s*/,"").replace(/\s*\(.*$/,"").trim(); if(loc)visited.add(loc);}
   }
@@ -776,15 +782,19 @@ function livePanelHtml(vp,st){
     return sh(id,`${icon} ${esc(label)} (${uq.length})`)+`<div class="know ${cls}">`+uq.map(x=>`<div>· ${esc(x)}</div>`).join("")+`</div>`;};
   h+=list(st.clues,"kclue","live-clue","알아낸 단서","🔍");
   // ★가진 아이템: 클릭하면 펼쳐져 플레이어 시점에서 아는 세부정보(획득 경위·종류·설명·관련 단서)를 보여준다★
+  // ★#212 시작 소지품 vs 게임 중 획득 분리★: itemMeta[nm].start 기준으로 두 섹션. 클릭 펼침(획득 경위·설명)은 동일.
   const uqItems=[...new Set((st.items||[]).filter(Boolean))];
-  if(uqItems.length){
-    h+=sh('live-item',`🎒 가진 아이템 (${uqItems.length})`)+`<div class="know kitem">`;
-    for(const nm of uqItems){ const open=ITEM_OPEN.has(nm);
-      h+=`<div class="iexp" data-item="${escAttr(nm)}" onclick="toggleItem(this)" style="cursor:pointer"><span class="iarrow" style="color:var(--dim);font-size:11px">${open?"▾":"▸"}</span> ${esc(nm)}</div>`
+  const isStart=nm=>!!(st.itemMeta&&st.itemMeta[nm]&&st.itemMeta[nm].start);
+  const itemSection=(names,id,label)=>{ if(!names.length)return "";
+    let s=sh(id,`${label} (${names.length})`)+`<div class="know kitem">`;
+    for(const nm of names){ const open=ITEM_OPEN.has(nm);
+      s+=`<div class="iexp" data-item="${escAttr(nm)}" onclick="toggleItem(this)" style="cursor:pointer"><span class="iarrow" style="color:var(--dim);font-size:11px">${open?"▾":"▸"}</span> ${esc(nm)}</div>`
         +`<div class="idet" style="display:${open?"":"none"};margin:1px 0 6px 15px;font-size:12px;color:#b9c2cf">${itemDetailHtml(nm,st)}</div>`;
     }
-    h+=`</div>`;
-  }
+    return s+`</div>`;
+  };
+  h+=itemSection(uqItems.filter(isStart),'live-item','🎒 시작 소지품');
+  h+=itemSection(uqItems.filter(nm=>!isStart(nm)),'live-gain','✨ 게임 중 획득');
   return h;
 }
 // 아이템 세부정보(플레이어 시점 공개분): 획득 경위 + 시나리오의 '보이는' 설명(종류·설명) + 이 아이템을 언급한 알아낸 단서. GM 전용(단서가치·내막)은 제외.
