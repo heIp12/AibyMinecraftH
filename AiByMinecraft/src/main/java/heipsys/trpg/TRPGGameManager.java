@@ -1947,7 +1947,7 @@ public class TRPGGameManager {
         // ★#151 Stage B(turnMode=2 비동기 busy)★: 아직 이전 행동을 '수행 중'인 시간(busyUntil)이 남았으면 새 행동을 받지 않는다.
         //   교착 방지: 전원 busy면 먼저 시계를 다음 자유 시점으로 점프해 본다(혼자 플레이 시 즉시 자유화). 그래도 busy면(다른 인물이 먼저 움직일 차례) 대기 안내.
         //   (handleGameChat은 runTask로 메인 스레드에서 돌므로 busyClockJumpIfAllBusy의 스코어보드 갱신이 안전하다.)
-        if (state.getTurnMode() >= 2) {
+        if (state.getTurnMode() >= 2 && !state.isDailyPhase()) { // ★#208★ 일상(프롤로그)엔 시계가 얼어 busy가 안 풀리므로 잠금 미적용
             busyClockJumpIfAllBusy();
             int nowMin = state.getClockMinutes();
             if (nowMin >= 0 && pd.isBusy(nowMin)) {
@@ -2402,7 +2402,7 @@ public class TRPGGameManager {
             int durEff = durMin > 0 ? durMin : state.getMinutesPerTurn();
             if (state.getTurnMode() == 1) {
                 state.advanceActionClock(durEff); // 가변: 행동 소요만큼 시계 진행
-            } else if (state.getTurnMode() >= 2) {
+            } else if (state.getTurnMode() >= 2 && !state.isDailyPhase()) { // ★#208★ 일상엔 시계가 얼어 busy가 안 풀리므로 잠금 안 검
                 // ★#151 Stage B 비동기 busy★: 행동자를 그 소요만큼 '행동 중'으로 잠근다. 시계는 per-action으로 밀지 않고,
                 //   ★전원 busy가 된 순간★ 다음 자유 시점으로 점프시킨다(busyClockJumpIfAllBusy).
                 PlayerData actorPd = player != null ? state.getPlayer(player) : null;
@@ -7127,6 +7127,24 @@ public class TRPGGameManager {
         }
     }
 
+    /** 어미 렌더(pass2 restyleDialogue)용 스타일 스펙 — ending_style 우선, 없으면 speech_style가 '문장 끝 어미'를
+     *  규정한 흔적이 있을 때 그걸 쓴다. #207: 어미를 speech_style에 넣은 NPC는 pass1(미니 모델)이 필러('뭐랄까')는
+     *  살려도 어미는 곧잘 흘려서 미적용되던 것 → speech_style도 어미 렌더 대상으로 승격. 순수 어조·필러만이면 미적용(빈값). */
+    private String endingRenderSpec(JsonObject npcObj) {
+        String es = getStr(npcObj, "ending_style");
+        if (!es.isBlank()) return es;
+        String ss = getStr(npcObj, "speech_style");
+        return (!ss.isBlank() && mentionsEnding(ss)) ? ss : "";
+    }
+    /** speech_style 서술이 '문장 끝 말투(어미)'를 규정하는지 — 메타 단서(어미·말끝·맺는다 류)로만 판정(특정 어미 나열 X).
+     *  어조·리듬·필러만 담은 speech_style엔 어미 렌더를 강제하지 않으려는 안전 게이트. */
+    private static boolean mentionsEnding(String s) {
+        if (s == null) return false;
+        String t = s.replace(" ", "");
+        return t.contains("어미") || t.contains("말끝") || t.contains("말꼬리")
+            || t.contains("문장끝") || t.contains("문장을맺") || t.contains("맺는") || t.contains("맺고") || t.contains("체로맺");
+    }
+
     /** 자율 행동용 시스템 프롬프트 = CORE + 캐릭터 데이터 + 예정표 + 자율 출력 규칙. */
     private String buildNpcSystemPrompt(JsonObject npcObj, String context) {
         StringBuilder sb = new StringBuilder(npcCorePrompt(npcObj));
@@ -7315,7 +7333,7 @@ public class TRPGGameManager {
                 if (!npcCalls.isEmpty()) {
                     // #5(말투 2-pass 자율 확장): NPC 선연락도 1인칭 발화 → ending_style 지정 NPC면 어미를 렌더한다(@대화와 동일).
                     //   ★렌더는 여기(비동기)서★ — deliverNpcInitiatedContact는 메인 스레드(runTask)에서 도니 거기서 blocking send()를 부르면 서버가 멈춘다.
-                    String callEndingStyle = getStr(npcObj, "ending_style");
+                    String callEndingStyle = endingRenderSpec(npcObj); // #207: 어미를 speech_style에 넣은 NPC도 pass2로 렌더
                     final java.util.Map<String, String> calls;
                     if (callEndingStyle.isBlank()) calls = npcCalls;
                     else {
@@ -7776,7 +7794,8 @@ public class TRPGGameManager {
                 + "\". 이 문구는 시스템이 ★같은 건물(대분류) 안 인원에게만★ 전달했다(같은 문구를 다시 <WITNESS>로 중복 전달 금지). "
                 + "★범위★: 시스템이 이미 같은 건물·시설 안 사람에게만 닿게 처리했다 — 다른 건물·바깥·먼 곳의 인원은 ★못 들은 것으로★ 다음 서술에 반영하라(광역 라디오·도시 방송 설정이면 서술로 넓게 확장 가능). 방송 설비가 없거나 소리가 위험한 상황이면 육성 외침이 가까운 곳까지만 닿았음을 반영하라. "
                 + "장면(스피커·반향)과 결과를 서술하고, 같은 건물의 소통 가능한 NPC들도 들은 것으로 반영하라. "
-                + "★괴담 개입★: 통신·소리를 감지·간섭하는 괴담이면 이 방송을 ★듣고 반응하거나, 내용을 왜곡해 스피커로 되쏘는(왜곡 재송출)★ 식으로 능동적으로 끼어들 수 있다(평범한 안내 방송에 둔감한 괴담은 무시).");
+                + "★괴담 개입★: 통신·소리를 감지·간섭하는 괴담이면 이 방송을 ★듣고 반응하거나 능동적으로 끼어들 수 있다★(평범한 안내 방송엔 둔감한 괴담은 무시). "
+                + "★단 변조(왜곡)는 발신자에게 은폐(#216)★ — 발신자에게 '네 방송이 이렇게 바뀌어 되돌아왔다'고 드러내지 마라(발신자는 자기 말이 그대로 나간 줄 안다). 왜곡은 ★듣는 쪽(다른 인원)★에게만 다르게 닿거나, 스피커의 잡음·이상 징후·이후 결과로만 은근히 드러내라 — 발신자 본인이 자기 발화가 변조됐음을 직접 확인하게 만들지 마라.");
         }
     }
 
@@ -8569,8 +8588,8 @@ public class TRPGGameManager {
             if (visible.isEmpty()) return;
             // ★말투 2-pass(pass2)★: ending_style이 지정된 NPC(시나리오당 1~2명)만 완성 대사의 ★어미·말투★를 지정 스타일로 렌더한다.
             //   생성(pass1)은 내용+감정에 집중(중립 말씨) → 여기서 개성 말끝을 한 번에 얹는다(미니 모델은 '변환'이 안정적). 실패 시 원본 유지.
-            String endingStyle = getStr(npcObj, "ending_style");
-            if (!endingStyle.isBlank()) visible = ai.restyleDialogue(visible, endingStyle);
+            String endStyle = endingRenderSpec(npcObj); // ending_style 우선, 없으면 '어미'를 규정한 speech_style(#207)
+            if (!endStyle.isBlank()) visible = ai.restyleDialogue(visible, endStyle);
             // ★통신 변조★: 매체 모달리티가 맞는 괴담이 원격 답신을 가로채 바꿔 전달(30%). 대면(sameZone)은 변조 안 함.
             final boolean tamperedR = remote && entityInterferes(commModality(media, writtenF)) && new java.util.Random().nextInt(100) < 30;
             final String heardR = tamperedR ? tamperText(visible, new java.util.Random()) : visible;

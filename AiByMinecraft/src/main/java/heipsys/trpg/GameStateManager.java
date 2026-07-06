@@ -616,6 +616,9 @@ public class GameStateManager {
     }
     /** 현재 게임 내 분(절대). 시계 없으면 -1. busy 판정·점프용(#151 Stage B). */
     public int getClockMinutes() { return clockMinutes; }
+    /** 일상(프롤로그) 단계 여부 — 이 동안 시계는 얼어 있다(advanceClockTo/ActionClock no-op).
+     *  turnMode=2 busy 모델은 시계가 흘러야 풀리므로, 이 단계엔 busy 잠금을 적용하면 안 된다(#208). */
+    public boolean isDailyPhase() { return dailyPhase; }
     /** ★#151 Stage B★ 시계를 절대 목표 분(absMin)까지 진행(뒤로는 안 감). 도래 사건 발화 + 단계 동기화. 비동기 busy 점프 전용. */
     public void advanceClockTo(int absMin) {
         if (dailyPhase || clockMinutes < 0 || absMin <= clockMinutes) return;
