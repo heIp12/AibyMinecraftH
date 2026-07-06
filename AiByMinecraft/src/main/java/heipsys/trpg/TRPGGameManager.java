@@ -1947,7 +1947,7 @@ public class TRPGGameManager {
         // ★#151 Stage B(turnMode=2 비동기 busy)★: 아직 이전 행동을 '수행 중'인 시간(busyUntil)이 남았으면 새 행동을 받지 않는다.
         //   교착 방지: 전원 busy면 먼저 시계를 다음 자유 시점으로 점프해 본다(혼자 플레이 시 즉시 자유화). 그래도 busy면(다른 인물이 먼저 움직일 차례) 대기 안내.
         //   (handleGameChat은 runTask로 메인 스레드에서 돌므로 busyClockJumpIfAllBusy의 스코어보드 갱신이 안전하다.)
-        if (state.getTurnMode() >= 2) {
+        if (state.getTurnMode() >= 2 && !state.isDailyPhase()) { // ★#208★ 일상(프롤로그)엔 시계가 얼어 busy가 안 풀리므로 잠금 미적용
             busyClockJumpIfAllBusy();
             int nowMin = state.getClockMinutes();
             if (nowMin >= 0 && pd.isBusy(nowMin)) {
@@ -2402,7 +2402,7 @@ public class TRPGGameManager {
             int durEff = durMin > 0 ? durMin : state.getMinutesPerTurn();
             if (state.getTurnMode() == 1) {
                 state.advanceActionClock(durEff); // 가변: 행동 소요만큼 시계 진행
-            } else if (state.getTurnMode() >= 2) {
+            } else if (state.getTurnMode() >= 2 && !state.isDailyPhase()) { // ★#208★ 일상엔 시계가 얼어 busy가 안 풀리므로 잠금 안 검
                 // ★#151 Stage B 비동기 busy★: 행동자를 그 소요만큼 '행동 중'으로 잠근다. 시계는 per-action으로 밀지 않고,
                 //   ★전원 busy가 된 순간★ 다음 자유 시점으로 점프시킨다(busyClockJumpIfAllBusy).
                 PlayerData actorPd = player != null ? state.getPlayer(player) : null;
@@ -2588,34 +2588,8 @@ public class TRPGGameManager {
                     // 빙의 중 큰 피해 → 무방비 본체가 공격받은 것 → 본체로 강제 복귀(치명상이면 아래에서 사망 처리)
                     if (delta <= -2 && pd.hp[0] > 0 && possessingNpc.containsKey(pd.uuid))
                         endPossession(Bukkit.getPlayer(pd.uuid), pd, "본체가 공격받아 끌려 돌아옴");
-                    // ★사망 모델★: 체력 1 → 행동불가(기절, 회복 가능) / 체력 0 → 사망(부활 능력으로만 복구).
-                    //   큰 피해로 2→0이면 기절 없이 즉시 사망(피해규모가 곧 치명성). delta<0(실제 피해)일 때만 전환.
-                    if (horrorActive && delta < 0 && !pd.isDead && pd.hp[0] <= 1) {
-                        Player target = Bukkit.getPlayer(pd.uuid);
-                        possessingNpc.remove(pd.uuid); // 본체가 위태로우면 빙의 종료
-                        if (pd.hp[0] <= 0) {
-                            // 체력 0 → 사망. 동물 형태면 소멸, (동물 아니고) 소생 특성 보유 시 동물로 전환.
-                            boolean wasAnimal = animalForm.remove(pd.uuid);
-                            pd.isDead = true;
-                            boolean asAnimal = !wasAnimal && fireAnimalRevival(pd); // 소생 시 isDead=false로 되돌리고 동물 형태로
-                            if (!asAnimal) {
-                                pd.status = "dead";
-                                fireDeathRelay(pd);   // 사후 전언: 밝힌 사실을 아군에게
-                                if (target != null) target.sendMessage(wasAnimal
-                                    ? "§4동물의 몸마저 스러집니다. 이번엔 정말 끝입니다..."
-                                    : "§4치명상으로 목숨을 잃었습니다... §7(부활 능력으로만 되살아날 수 있습니다)");
-                                ai.injectGmSystem("[사망] " + commDisplayName(pd) + "이(가) 체력이 다해 사망했다. 서술에 반영하라(부활 능력 외엔 복구 불가).");
-                            }
-                        } else if (!"faint".equals(pd.status)) {
-                            // 체력 1 → 행동불가(기절). ★피해가 클수록 오래 쓰러져 있다(2~5턴).★
-                            // ★홀림/완전조종 중이었다면 그 통제가 풀리고 기절로 전환된다 — 아군이 때려 눕혀 정신을 되돌리는 '부활 경로'.★
-                            if ("puppet".equals(pd.status)) {
-                                pd.puppetRecoveryTurns = 0; // 조종(완전조종 sentinel 포함) 해제
-                                ai.injectGmSystem("[통제 해제] " + commDisplayName(pd) + "이(가) 강한 충격으로 쓰러지며 괴담의 조종에서 풀려났다(기절 전환).");
-                            }
-                            applyFaint(pd, Math.min(5, 2 + Math.abs(delta)));
-                        }
-                    }
+                    // ★사망 모델★: 체력 1 → 기절(회복 가능) / 체력 0 → 사망. STATE_UPDATE·능력 대가(sacrifice) 공용.
+                    checkHpCollapse(pd, delta);
                     // ★부활 경로: 기절한 이의 체력이 회복되면 깨어나고 정신력도 2까지 돌아온다(비-능력 회복).★
                     if (delta > 0 && "faint".equals(pd.status) && pd.hp[0] > 1) {
                         pd.status = "normal";
@@ -3827,8 +3801,13 @@ public class TRPGGameManager {
     }
 
     private void activateSacrifice(Player player, PlayerData pd, TraitData td) {
-        int cost    = td.param("cost", 2);
         boolean useSan = td.param("use_san", 0) == 1;
+        int rawCost = Math.max(1, td.param("cost", 2));
+        // ★대가 비례화(#3)★: #219 스탯 축소로 풀(체력·정신력)이 5~10대로 작아진 뒤, 프리셋의 절대 cost(예:
+        //   피의 계약 cost=10)가 최대치보다 커 한 번에 풀을 통째로 날리던 문제 — 최대치의 70%를 상한으로 둬
+        //   '무거운 대가'는 유지하되(온전한 상태에서의) 즉발 전멸은 막는다. 이미 약해진 상태면 아래 붕괴검사로 쓰러진다.
+        int poolMax = useSan ? pd.san[1] : pd.hp[1];
+        int cost = Math.max(1, Math.min(rawCost, (int) Math.ceil(poolMax * 0.7)));
         String resource = useSan ? "정신력" : "체력";
         int hpBefore = pd.hp[0], sanBefore = pd.san[0];
         if (useSan) {
@@ -3839,6 +3818,8 @@ public class TRPGGameManager {
         updateAllScoreboards();
         gameLogger.logVital(pd.gmDisplayName(), pd.hp[0] - hpBefore, pd.hp[0], pd.hp[1],
             pd.san[0] - sanBefore, pd.san[0], pd.san[1], "능력 대가: " + td.name); // 뷰어: 체력·정신력 소모 실시간 반영
+        // ★체력 대가로 0~1이 됐으면 사망(0)·기절(1) 전환(#4)★ — 능력으로 체력이 0이어도 죽지 않던 버그 방지.
+        if (!useSan) checkHpCollapse(pd, pd.hp[0] - hpBefore);
         applyTraitUsed(pd, td.id, state.getCurrentTurn());
         int scale = td.param("scale", 2);
         String scaleStr = switch (scale) {
@@ -6952,6 +6933,7 @@ public class TRPGGameManager {
         sb.append("- 감정은 ★말투에 배게★ — 겁나도 단어 토막·\"…\"만 늘어놓지 말고 ★온전한 문장★으로(극도의 공황·기절 직전만 예외).\n");
         sb.append("- 주변 묘사·동작을 대사에 '—방금 그 움직임' 같은 토막 명사구로 끼우지 마라(할 말이면 온전한 문장, 아니면 빼라).\n");
         sb.append("- 얼버무리기·발뺌·거짓말도 사람답게 OK(말 돌리기·헛웃음·핑계·발끈). 금지는 하나 — 암호 같은 수수께끼식 얼버무림.\n");
+        sb.append("- ★없는 인연·연락을 지어내지 마라★: 실제로 만나거나 번호를 주고받은 적 없는 사람은 그 이름·얼굴·번호를 ★모른다★. 걸려온 적 없는 전화를 '받았다'고 하거나, 낯선 사람 이름이 화면·발신자에 떴다고 서술하지 마라. 처음 보는 상대는 낯선 사람으로 대하라(아는 척·이름 부르기 금지 — 통성명은 만나서 이름을 밝힌 뒤에). ★지금 너에게 실제로 전달된 말·상황(입력으로 주어진 것)에만 반응하라★ — 일어나지 않은 접촉을 상상해 만들지 마라.\n");
         // ── 말투·언어 수준(주사위) + 나이·존댓말 정합 ──
         String npcId0 = getStr(npcObj, "id");
         int intel = npcId0.isEmpty() ? 3 : npcIntel.computeIfAbsent(npcId0, k -> ThreadLocalRandom.current().nextInt(1, 6));
@@ -7145,6 +7127,24 @@ public class TRPGGameManager {
         }
     }
 
+    /** 어미 렌더(pass2 restyleDialogue)용 스타일 스펙 — ending_style 우선, 없으면 speech_style가 '문장 끝 어미'를
+     *  규정한 흔적이 있을 때 그걸 쓴다. #207: 어미를 speech_style에 넣은 NPC는 pass1(미니 모델)이 필러('뭐랄까')는
+     *  살려도 어미는 곧잘 흘려서 미적용되던 것 → speech_style도 어미 렌더 대상으로 승격. 순수 어조·필러만이면 미적용(빈값). */
+    private String endingRenderSpec(JsonObject npcObj) {
+        String es = getStr(npcObj, "ending_style");
+        if (!es.isBlank()) return es;
+        String ss = getStr(npcObj, "speech_style");
+        return (!ss.isBlank() && mentionsEnding(ss)) ? ss : "";
+    }
+    /** speech_style 서술이 '문장 끝 말투(어미)'를 규정하는지 — 메타 단서(어미·말끝·맺는다 류)로만 판정(특정 어미 나열 X).
+     *  어조·리듬·필러만 담은 speech_style엔 어미 렌더를 강제하지 않으려는 안전 게이트. */
+    private static boolean mentionsEnding(String s) {
+        if (s == null) return false;
+        String t = s.replace(" ", "");
+        return t.contains("어미") || t.contains("말끝") || t.contains("말꼬리")
+            || t.contains("문장끝") || t.contains("문장을맺") || t.contains("맺는") || t.contains("맺고") || t.contains("체로맺");
+    }
+
     /** 자율 행동용 시스템 프롬프트 = CORE + 캐릭터 데이터 + 예정표 + 자율 출력 규칙. */
     private String buildNpcSystemPrompt(JsonObject npcObj, String context) {
         StringBuilder sb = new StringBuilder(npcCorePrompt(npcObj));
@@ -7333,7 +7333,7 @@ public class TRPGGameManager {
                 if (!npcCalls.isEmpty()) {
                     // #5(말투 2-pass 자율 확장): NPC 선연락도 1인칭 발화 → ending_style 지정 NPC면 어미를 렌더한다(@대화와 동일).
                     //   ★렌더는 여기(비동기)서★ — deliverNpcInitiatedContact는 메인 스레드(runTask)에서 도니 거기서 blocking send()를 부르면 서버가 멈춘다.
-                    String callEndingStyle = getStr(npcObj, "ending_style");
+                    String callEndingStyle = endingRenderSpec(npcObj); // #207: 어미를 speech_style에 넣은 NPC도 pass2로 렌더
                     final java.util.Map<String, String> calls;
                     if (callEndingStyle.isBlank()) calls = npcCalls;
                     else {
@@ -7794,7 +7794,8 @@ public class TRPGGameManager {
                 + "\". 이 문구는 시스템이 ★같은 건물(대분류) 안 인원에게만★ 전달했다(같은 문구를 다시 <WITNESS>로 중복 전달 금지). "
                 + "★범위★: 시스템이 이미 같은 건물·시설 안 사람에게만 닿게 처리했다 — 다른 건물·바깥·먼 곳의 인원은 ★못 들은 것으로★ 다음 서술에 반영하라(광역 라디오·도시 방송 설정이면 서술로 넓게 확장 가능). 방송 설비가 없거나 소리가 위험한 상황이면 육성 외침이 가까운 곳까지만 닿았음을 반영하라. "
                 + "장면(스피커·반향)과 결과를 서술하고, 같은 건물의 소통 가능한 NPC들도 들은 것으로 반영하라. "
-                + "★괴담 개입★: 통신·소리를 감지·간섭하는 괴담이면 이 방송을 ★듣고 반응하거나, 내용을 왜곡해 스피커로 되쏘는(왜곡 재송출)★ 식으로 능동적으로 끼어들 수 있다(평범한 안내 방송에 둔감한 괴담은 무시).");
+                + "★괴담 개입★: 통신·소리를 감지·간섭하는 괴담이면 이 방송을 ★듣고 반응하거나 능동적으로 끼어들 수 있다★(평범한 안내 방송엔 둔감한 괴담은 무시). "
+                + "★단 변조(왜곡)는 발신자에게 은폐(#216)★ — 발신자에게 '네 방송이 이렇게 바뀌어 되돌아왔다'고 드러내지 마라(발신자는 자기 말이 그대로 나간 줄 안다). 왜곡은 ★듣는 쪽(다른 인원)★에게만 다르게 닿거나, 스피커의 잡음·이상 징후·이후 결과로만 은근히 드러내라 — 발신자 본인이 자기 발화가 변조됐음을 직접 확인하게 만들지 마라.");
         }
     }
 
@@ -8587,8 +8588,8 @@ public class TRPGGameManager {
             if (visible.isEmpty()) return;
             // ★말투 2-pass(pass2)★: ending_style이 지정된 NPC(시나리오당 1~2명)만 완성 대사의 ★어미·말투★를 지정 스타일로 렌더한다.
             //   생성(pass1)은 내용+감정에 집중(중립 말씨) → 여기서 개성 말끝을 한 번에 얹는다(미니 모델은 '변환'이 안정적). 실패 시 원본 유지.
-            String endingStyle = getStr(npcObj, "ending_style");
-            if (!endingStyle.isBlank()) visible = ai.restyleDialogue(visible, endingStyle);
+            String endStyle = endingRenderSpec(npcObj); // ending_style 우선, 없으면 '어미'를 규정한 speech_style(#207)
+            if (!endStyle.isBlank()) visible = ai.restyleDialogue(visible, endStyle);
             // ★통신 변조★: 매체 모달리티가 맞는 괴담이 원격 답신을 가로채 바꿔 전달(30%). 대면(sameZone)은 변조 안 함.
             final boolean tamperedR = remote && entityInterferes(commModality(media, writtenF)) && new java.util.Random().nextInt(100) < 30;
             final String heardR = tamperedR ? tamperText(visible, new java.util.Random()) : visible;
@@ -8786,7 +8787,12 @@ public class TRPGGameManager {
                 }
             }
         }
-        gameLogger.logEvent("아이템 사용: " + (pname == null ? "?" : pname) + " / " + itemRef
+        // ★메타 누출 방지(#167 회귀)★: GM이 <ITEM_USE item="smartphone">처럼 영문 내부 id를 넣어도
+        //   로그엔 한글 표시명으로. inst.name(있으면) → itemDisplayName(def/공용 매핑) 순.
+        String useName = (inst != null && inst.name != null && !inst.name.isBlank())
+            ? inst.name : itemDisplayName(itemRef);
+        if (useName == null || useName.isBlank()) useName = itemRef;
+        gameLogger.logEvent("아이템 사용: " + (pname == null ? "?" : pname) + " / " + useName
             + (inst != null ? " (잔량 " + inst.charges + (inst.broken ? ", 소진" : "") + ")" : ""));
     }
 
@@ -9013,14 +9019,15 @@ public class TRPGGameManager {
             n.append(" [신체 열세(근력 ").append(str).append("): 이 인물은 몹시 약하고 굼뜨다. 힘·속도·순발력이 필요한 행동(빨리 달아나기·힘껏 밀기·재빠른 회피·무거운 것 다루기)은 크게 버거워 남보다 뒤처지고 숨이 차며, 설령 판정이 성공이라도 그 '과정'을 힘겹고 아슬아슬하게 그려라. 판정이 정한 성패 자체는 지켜라.]");
         else if (str <= 3)
             n.append(" [체력 부침(근력 ").append(str).append("): 이 인물은 힘·순발력이 평균 이하다. 빠르거나 힘쓰는 행동은 다소 굼뜨고 벅차게, 남보다 한 박자 늦거나 힘에 부치는 결을 곁들여라(성패는 판정대로).]");
-        // ★영감(SPR) = 단서·힌트 '해상도'★: 탐색으로 단서가 나오는지(힌트 절제 원칙)는 그대로 두되,
-        //   나온 단서를 얼마나 또렷이 읽어주는지를 영감이 좌우한다(10↑ 방향 분명 · 6~9 애매·복수해석 ·
-        //   5↓ 흐릿·노이즈). 높아도 탐색으로 안 얻은 정답은 만들어 주지 않는다 — 쥔 단서의 '선명도'만 조절.
+        // ★영감(SPR) = 단서·힌트 '해상도'★ — ★항상 중의적으로★ 준다(플레이어가 추리해야 수수께끼; GM 진행을
+        //   따라오게 만들지 마라). 탐색으로 단서가 나오는지(힌트 절제)는 그대로 두고, 나온 단서 해석에 '얼마나
+        //   유력한 쪽에 무게가 실리나'만 영감이 좌우한다: 15+만 정답에 근접(그래도 정답 문장은 대신 말 안 함) ·
+        //   10~14 유력한 쪽에 무게 실린 애매한 힌트 · 6~9 고르게 열린 복수해석 · 5↓ 흐릿·노이즈. 높아도 탐색 없이 정답을 지어 주지 않는다.
         int spr = Math.max(1, Math.min(20, pd.spr));
         if (spr >= 15)
-            n.append(" [꿰뚫는 직감(영감 ").append(spr).append("): 통찰이 예언에 가깝다. 스스로 접한 단서·징후는 그 ★핵심 의미를 거의 정확히★ 짚어 읽어준다(해설이 아니라 인물의 확신처럼). 단, 아직 탐색·노력으로 얻지 않은 정답·비밀·약점을 지어내 주지는 마라 — 이미 쥔 단서를 또렷이 해석해 줄 뿐이다.]");
+            n.append(" [꿰뚫는 직감(영감 ").append(spr).append("): 통찰이 예언에 가깝다. 스스로 접한 단서·징후의 ★핵심에 거의 닿는 강한 확신★으로 읽어주되, ★정답 문장을 대신 말해 주진 마라★ — 인물이 그 확신을 스스로 세우고 마지막 연결은 플레이어가 짓게(여전히 한 겹 중의적으로). 아직 탐색·노력으로 얻지 않은 정답·비밀·약점을 지어내 주지도 마라.]");
         else if (spr >= 10)
-            n.append(" [예리한 직감(영감 ").append(spr).append("): 촉이 날카롭다. 접한 단서·이상은 ★방향이 분명한 힌트★로 읽어준다(맞는 쪽을 가리키되 세부는 인물이 추론하게). 미세한 어긋남(놓인 물건·틀어진 배치·공기의 결)도 곧잘 알아챈다. 정답·비밀은 여전히 아껴라.]");
+            n.append(" [예리한 직감(영감 ").append(spr).append("): 촉이 날카롭다. 접한 단서를 ★여러 갈래 해석 중 유력한 쪽에 무게가 실린★ 애매한 힌트로 전하라 — 남보다 결이 또렷하되 ★단정은 금지(중의성 유지)★, 어느 쪽인지는 인물이 추론해 짚게 한다. 미세한 어긋남(놓인 물건·틀어진 배치·공기의 결)도 곧잘 알아챈다. 정답·비밀은 여전히 아껴라.]");
         else if (spr >= 6)
             n.append(" [트인 촉(영감 ").append(spr).append("): 남들만큼은 알아챈다. 접한 단서를 ★여러 갈래로 해석되는 애매한 힌트★로 전하라 — '뭔가 걸리는' 인상은 주되 그 뜻은 두세 가지로 열어 두고, 인물이 직접 곱씹어 판단하게 한다(단정·정리 금지).]");
         else if (spr >= 3)
@@ -9793,6 +9800,40 @@ public class TRPGGameManager {
     /** 통신·GM 주입·로그 표시용 이름. ★계정(닉네임)을 절대 노출하지 않는다(gmDisplayName 사용). */
     private static String commDisplayName(PlayerData pd) {
         return pd.gmDisplayName();
+    }
+
+    /** 체력이 피해/능력 대가로 0~1이 됐을 때의 사망(0)·기절(1) 전환.
+     *  STATE_UPDATE(hp_change)와 sacrifice 능력 대가가 ★같은 사망 모델★을 타도록 공용화 —
+     *  전엔 sacrifice 대가가 이 검사를 안 거쳐 체력 0이어도 살아있고 회복까지 되던 버그(#4)를 막는다.
+     *  delta = 이번 체력 변화(음수=피해). 호출부에서 hp[0]는 이미 갱신된 상태여야 한다. */
+    private void checkHpCollapse(PlayerData pd, int delta) {
+        if (pd == null) return;
+        boolean horrorActive = (currentPhase == Phase.HORROR);
+        if (!(horrorActive && delta < 0 && !pd.isDead && pd.hp[0] <= 1)) return;
+        Player target = Bukkit.getPlayer(pd.uuid);
+        possessingNpc.remove(pd.uuid); // 본체가 위태로우면 빙의 종료
+        if (pd.hp[0] <= 0) {
+            // 체력 0 → 사망. 동물 형태면 소멸, (동물 아니고) 소생 특성 보유 시 동물로 전환.
+            boolean wasAnimal = animalForm.remove(pd.uuid);
+            pd.isDead = true;
+            boolean asAnimal = !wasAnimal && fireAnimalRevival(pd); // 소생 시 isDead=false로 되돌리고 동물 형태로
+            if (!asAnimal) {
+                pd.status = "dead";
+                fireDeathRelay(pd);   // 사후 전언: 밝힌 사실을 아군에게
+                if (target != null) target.sendMessage(wasAnimal
+                    ? "§4동물의 몸마저 스러집니다. 이번엔 정말 끝입니다..."
+                    : "§4치명상으로 목숨을 잃었습니다... §7(부활 능력으로만 되살아날 수 있습니다)");
+                ai.injectGmSystem("[사망] " + commDisplayName(pd) + "이(가) 체력이 다해 사망했다. 서술에 반영하라(부활 능력 외엔 복구 불가).");
+            }
+        } else if (!"faint".equals(pd.status)) {
+            // 체력 1 → 행동불가(기절). ★피해가 클수록 오래 쓰러져 있다(2~5턴).★
+            // ★홀림/완전조종 중이었다면 그 통제가 풀리고 기절로 전환된다 — 아군이 때려 눕혀 정신을 되돌리는 '부활 경로'.★
+            if ("puppet".equals(pd.status)) {
+                pd.puppetRecoveryTurns = 0; // 조종(완전조종 sentinel 포함) 해제
+                ai.injectGmSystem("[통제 해제] " + commDisplayName(pd) + "이(가) 강한 충격으로 쓰러지며 괴담의 조종에서 풀려났다(기절 전환).");
+            }
+            applyFaint(pd, Math.min(5, 2 + Math.abs(delta)));
+        }
     }
 
     private void applyFaint(PlayerData pd) { applyFaint(pd, 3); }
