@@ -311,11 +311,11 @@ public class AiManager {
         };
     }
 
-    /** 시간당 예상 비용(USD) — 거친 추정(턴/시간·토큰 가정). */
-    private double estimateHourlyUsd(Quality q) {
+    /** 시간당 예상 비용(USD) — 거친 추정(턴/시간·토큰 가정). ★인원수에 비례★(행동마다 GM 호출 → 사람이 많을수록 턴↑). */
+    private double estimateHourlyUsd(Quality q, int players) {
         double[] gmP  = modelPriceUsd(nominalModel(q));
         double[] auxP = modelPriceUsd(nominalModel(Quality.LOW)); // 괴담/NPC/보조 = 저품질 모델
-        final int TURNS = 50;                  // 시간당 GM 턴(3~4인 가정)
+        final int TURNS = 15 * Math.max(1, players); // 시간당 GM 턴 — 1인당 ~15턴(3~4인이면 ~50, 기존 기준과 정합)
         final int GM_IN = 8000, GM_OUT = 800;  // 턴당 GM 토큰(컨텍스트 성장·시나리오 생성 포함 평균)
         final int AUX_CALLS = 2, AUX_IN = 2500, AUX_OUT = 400; // 괴담/NPC 등 보조 호출
         double gm  = TURNS * (GM_IN * gmP[0] + GM_OUT * gmP[1]) / 1_000_000.0;
@@ -323,10 +323,11 @@ public class AiManager {
         return gm + aux;
     }
 
-    /** 품질별 시간당 예상 비용 라벨(원화 추정). 선택 화면·시작 로그용. */
-    public String hourlyCostLabel(Quality q) {
-        long krw = Math.round(estimateHourlyUsd(q) * 1400.0); // 환율 ~₩1,400/$
-        return "약 ₩" + String.format("%,d", krw) + "/시간(추정)";
+    /** 품질별 시간당 예상 비용 라벨(원화 추정, ★인원수 반영★). 선택 화면·시작 로그용. */
+    public String hourlyCostLabel(Quality q, int players) {
+        int p = Math.max(1, players);
+        long krw = Math.round(estimateHourlyUsd(q, p) * 1400.0); // 환율 ~₩1,400/$
+        return "약 ₩" + String.format("%,d", krw) + "/시간(" + p + "인 추정)";
     }
 
     // ── 실사용량 조회·마킹 (실제 토큰 사용 기반, /trpg status용) ──
@@ -1223,6 +1224,28 @@ public class AiManager {
             String target = extractAttr(attrs, "target").orElse(null);
             if (to != null && target != null) out.add(new String[]{to, target});
             from = end + 2;
+        }
+        return out;
+    }
+
+    /** <DROP_NOTE by="X" to="Y">내용</DROP_NOTE> 파싱 → [by, to(없으면 ""), content]. 플레이어가 장소에 쪽지를 남긴다고 선언하면 GM이 실물 쪽지를 남기는 용도(그 구역에 오는 사람이 발견). */
+    public java.util.List<String[]> parseDropNoteTags(String response) {
+        java.util.List<String[]> out = new ArrayList<>();
+        final String PREFIX = "<DROP_NOTE ";
+        int from = 0;
+        while (true) {
+            int open = response.indexOf(PREFIX, from);
+            if (open == -1) break;
+            int attrsEnd = response.indexOf(">", open + PREFIX.length());
+            if (attrsEnd == -1) break;
+            String attrs = response.substring(open + PREFIX.length(), attrsEnd);
+            int close = response.indexOf("</DROP_NOTE>", attrsEnd + 1);
+            if (close == -1) break;
+            String content = response.substring(attrsEnd + 1, close).trim();
+            String by = extractAttr(attrs, "by").orElse(null);
+            String to = extractAttr(attrs, "to").orElse("");
+            if (by != null && !by.isBlank() && !content.isEmpty()) out.add(new String[]{by, to == null ? "" : to, content});
+            from = close + "</DROP_NOTE>".length();
         }
         return out;
     }

@@ -27,9 +27,33 @@ public class NarrativeDelivery {
     private final Plugin plugin;
     private final Map<UUID, ArrayDeque<Block>>  queues  = new ConcurrentHashMap<>();
     private final Map<UUID, Integer>            taskIds = new ConcurrentHashMap<>();
+    // ★서술 후 연출★: 이 플레이어의 서술 배달이 ★끝난 뒤★ 실행할 콜백(주사위·핵심정보 팝업 등 '연출'을 서술 뒤로 미룸).
+    private final Map<UUID, Runnable>           onDone  = new ConcurrentHashMap<>();
 
     public NarrativeDelivery(Plugin plugin) {
         this.plugin = plugin;
+    }
+
+    /**
+     * 이 플레이어의 서술 배달이 모두 끝난 뒤(큐가 비워질 때) r을 ★메인 스레드에서★ 실행한다.
+     * 지금 대기 중인 서술이 없으면(배달할 게 없거나 이미 끝났으면) 즉시 실행한다.
+     * '연출(주사위·핵심정보 알림 등)이 서술보다 먼저 나오는' 순서 역전을 막는 용도.
+     */
+    public void runAfterDelivery(Player player, Runnable r) {
+        if (r == null || player == null) return;
+        UUID uuid = player.getUniqueId();
+        ArrayDeque<Block> q = queues.get(uuid);
+        boolean active = taskIds.containsKey(uuid) || (q != null && !q.isEmpty());
+        if (active) onDone.merge(uuid, r, (a, b) -> () -> { a.run(); b.run(); }); // 두 콜백이 겹치면 순서대로 이어 실행
+        else r.run(); // 대기 중 서술 없음 → 즉시
+    }
+
+    /** 큐가 비워질 때 호출 — 예약된 '서술 후 연출' 콜백을 실행(예외는 삼켜 배달을 깨지 않는다). */
+    private void fireDone(UUID uuid) {
+        Runnable r = onDone.remove(uuid);
+        if (r == null) return;
+        try { r.run(); }
+        catch (Exception e) { plugin.getLogger().warning("서술 후 연출 실행 실패: " + e.getMessage()); }
     }
 
     /** 출력 한 단위(세그먼트). trailingBlank=true면 출력 뒤에 빈 줄(여백)을 둔다(= 문단 마지막 세그먼트). */
@@ -183,12 +207,12 @@ public class NarrativeDelivery {
         plugin.getServer().getScheduler().cancelTask(tid);
 
         ArrayDeque<Block> q = queues.get(uuid);
-        if (q == null || q.isEmpty()) { queues.remove(uuid); return; }
+        if (q == null || q.isEmpty()) { queues.remove(uuid); fireDone(uuid); return; }
 
         Block b = q.poll();
         if (player.isOnline()) sendLine(player, b);
         if (!q.isEmpty()) scheduleNext(player, delayFor(b));
-        else queues.remove(uuid);
+        else { queues.remove(uuid); fireDone(uuid); } // 마지막 줄 즉시출력으로 큐 소진 → 연출 실행
     }
 
     public boolean hasPending(Player player) {
@@ -200,12 +224,14 @@ public class NarrativeDelivery {
         Integer tid = taskIds.remove(uuid);
         if (tid != null) plugin.getServer().getScheduler().cancelTask(tid);
         queues.remove(uuid);
+        onDone.remove(uuid); // 배달 취소 → 예약된 연출도 취소(리셋·퇴장 등)
     }
 
     public void clearAll() {
         taskIds.values().forEach(plugin.getServer().getScheduler()::cancelTask);
         taskIds.clear();
         queues.clear();
+        onDone.clear(); // 예약된 연출 일괄 취소
     }
 
     /**
@@ -217,9 +243,11 @@ public class NarrativeDelivery {
             Integer tid = taskIds.remove(uuid);
             if (tid != null) plugin.getServer().getScheduler().cancelTask(tid);
             ArrayDeque<Block> q = queues.remove(uuid);
-            if (q == null) continue;
-            Player p = plugin.getServer().getPlayer(uuid);
-            if (p != null && p.isOnline()) while (!q.isEmpty()) sendLine(p, q.poll());
+            if (q != null) {
+                Player p = plugin.getServer().getPlayer(uuid);
+                if (p != null && p.isOnline()) while (!q.isEmpty()) sendLine(p, q.poll());
+            }
+            fireDone(uuid); // 서술을 즉시 방출한 뒤 예약된 연출 실행
         }
     }
 
@@ -289,13 +317,13 @@ public class NarrativeDelivery {
         UUID uuid = player.getUniqueId();
         int tid = plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
             taskIds.remove(uuid);
-            if (!player.isOnline()) { queues.remove(uuid); return; }
+            if (!player.isOnline()) { queues.remove(uuid); fireDone(uuid); return; }
             ArrayDeque<Block> q = queues.get(uuid);
-            if (q == null || q.isEmpty()) { queues.remove(uuid); return; }
+            if (q == null || q.isEmpty()) { queues.remove(uuid); fireDone(uuid); return; }
             Block b = q.poll();
             sendLine(player, b);
             if (!q.isEmpty()) scheduleNext(player, delayFor(b)); // 방금 블록 읽는 시간만큼 뒤 다음
-            else queues.remove(uuid);
+            else { queues.remove(uuid); fireDone(uuid); } // 서술 소진 → 예약된 연출 실행(주사위·핵심정보 등)
         }, delayTicks).getTaskId();
         taskIds.put(uuid, tid);
     }
