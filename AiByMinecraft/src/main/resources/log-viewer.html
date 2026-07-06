@@ -1360,6 +1360,8 @@ function zoneMapSvg(zones, know){
     for(const id of ids){ if(id===a||id===b)continue; const r=box[id]; if(xb>r.x&&xa<r.x+r.w&&yb>r.y&&ya<r.y+r.h)n++; } return n; };
   const ep=(b,tx,ty)=>Math.abs(tx-b.cx)<0.5?{x:b.cx,y:ty<b.cy?b.y+2:b.y+b.h-2}:{x:tx<b.cx?b.x+2:b.x+b.w-2,y:b.cy}; // 방 테두리 2px 안쪽 = 문
   let corr="",dists="";
+  // ── 1) 모든 복도 경로 먼저 계산(분리·라벨 충돌 회피를 위해 한 번에 모아 처리) ──
+  const EG=[];
   for(const e of edges){ const A=box[e.a],B=box[e.b]; if(!A||!B)continue;
     let pts=null,lab=null;
     if(Math.abs(A.cy-B.cy)<Math.min(A.h,B.h)/2){ const y=(A.cy+B.cy)/2,L=A.cx<B.cx?A:B,R=A.cx<B.cx?B:A,x1=L.x+L.w-2,x2=R.x+2;
@@ -1379,14 +1381,43 @@ function zoneMapSvg(zones, know){
         const zv=[[A.cx,A.cy<B.cy?A.y+A.h-2:A.y+2],[A.cx,gy],[B.cx,gy],[B.cx,A.cy<B.cy?B.y+2:B.y+B.h-2]];
         for(const zp of [zh,zv]){ let h=0;
           for(let i=0;i+1<zp.length;i++)h+=hitOthers(e.a,e.b,zp[i][0],zp[i][1],zp[i+1][0],zp[i+1][1]);
-          if(h<bh){bh=h;pts=zp;lab=[zp[1][0]===zp[2][0]?zp[1][0]:(zp[1][0]+zp[2][0])/2, zp[1][1]===zp[2][1]?zp[1][1]:(zp[1][1]+zp[2][1])/2];} }
+          if(h<bh){bh=h;pts=zp;lab=null;} }
       }
     }
-    const d=pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join('');
+    EG.push({pts,lab,dist:e.dist});
+  }
+  // ── 2) ★평행 복도 분리★: 같은 세로/가로 트랙에 겹치는 '중간 꺾임 구간'을 레인으로 조금씩 벌린다.
+  //    ★문(경로 양 끝점)은 방 벽에 붙어 있어야 하므로 절대 움직이지 않고, 내부 꺾임점만 이동★ → 축 정렬·연결 유지.
+  (function separateCorridors(){ const SEP=10, LANES=[0,1,-1,2,-2,3,-3,4,-4];
+    const pass=(vert)=>{ const segs=[];
+      EG.forEach((g,gi)=>{ const P=g.pts; for(let i=0;i+1<P.length;i++){ const a=P[i],b=P[i+1];
+        const isV=Math.abs(a[0]-b[0])<1&&Math.abs(a[1]-b[1])>6, isH=Math.abs(a[1]-b[1])<1&&Math.abs(a[0]-b[0])>6;
+        if((vert?isV:isH) && i>0 && i+1<P.length-1)  // 양끝(문) 제외 — 내부 구간만
+          segs.push({gi,i,track:vert?a[0]:a[1],lo:Math.min(vert?a[1]:a[0],vert?b[1]:b[0]),hi:Math.max(vert?a[1]:a[0],vert?b[1]:b[0])}); } });
+      segs.sort((s,t)=>s.track-t.track);
+      const placed=[];
+      for(const s of segs){ let chosen=s.track;
+        for(const ln of LANES){ const t=s.track+ln*SEP;
+          if(!placed.some(P=>Math.abs(P.t-t)<SEP-1 && P.hi>s.lo+2 && P.lo<s.hi-2)){ chosen=t; break; } }
+        placed.push({t:chosen,lo:s.lo,hi:s.hi});
+        const P=EG[s.gi].pts; if(vert){P[s.i][0]=chosen;P[s.i+1][0]=chosen;} else {P[s.i][1]=chosen;P[s.i+1][1]=chosen;} }
+    };
+    pass(true); pass(false);
+  })();
+  // ── 3) 복도 렌더 + ★거리 라벨 충돌 회피★(겹치면 위/아래로 살짝 밀어 '4분/5분' 겹침 방지) ──
+  const placedLab=[]; const lolap=(a,b)=>a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;
+  for(const g of EG){ const P=g.pts;
+    const d=P.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join('');
     corr+=`<path d="${d}" stroke="${wallC}" stroke-width="15" fill="none" stroke-linejoin="miter" stroke-linecap="butt"/>`
         +`<path d="${d}" stroke="${holl}" stroke-width="11" fill="none" stroke-linejoin="miter" stroke-linecap="butt"/>`;
-    const dl=distLabel(e.dist);
-    if(dl)dists+=`<text x="${lab[0].toFixed(1)}" y="${(lab[1]+3).toFixed(1)}" text-anchor="middle" font-size="9" fill="#cfd6ea" style="paint-order:stroke" stroke="#0f1424" stroke-width="3">${esc(dl)}</text>`;
+    const dl=distLabel(g.dist); if(!dl)continue;
+    // 라벨 기준점: 가장 긴 구간의 중점(분리로 꺾임점이 이동했을 수 있어 pts에서 다시 계산)
+    let bi=0,bl=-1; for(let i=0;i+1<P.length;i++){const L=Math.abs(P[i][0]-P[i+1][0])+Math.abs(P[i][1]-P[i+1][1]); if(L>bl){bl=L;bi=i;}}
+    let lx=(P[bi][0]+P[bi+1][0])/2, ly=(P[bi][1]+P[bi+1][1])/2+3;
+    const lw=String(dl).length*8+4, lh=12;
+    for(let k=0;k<7;k++){ const bx={x:lx-lw/2,y:ly-lh+2,w:lw,h:lh}; if(!placedLab.some(Q=>lolap(bx,Q)))break; ly+= (k%2?-1:1)*(k+1)*7; }
+    placedLab.push({x:lx-lw/2,y:ly-lh+2,w:lw,h:lh});
+    dists+=`<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" font-size="9" fill="#cfd6ea" style="paint-order:stroke" stroke="#0f1424" stroke-width="3">${esc(dl)}</text>`;
   }
   // ── 대분류 범례(하단): 색=건물/구획 ──
   let legendSvg="";
