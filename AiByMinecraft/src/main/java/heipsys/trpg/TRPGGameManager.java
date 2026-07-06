@@ -2204,6 +2204,17 @@ public class TRPGGameManager {
     //  GM AI 응답 처리 (TurnManager 콜백)
     // ──────────────────────────────────────────────────────────────
 
+    /** ★연출 순차화★: onGmResponse 처리 중이면 non-null. 플레이어 눈에 보이는 '연출'(주사위·핵심정보 팝업·상태 알림)을
+     *  여기 모았다가 서술 배달이 끝난 뒤 실행한다(선출력 방지). null이면(=GM 응답 처리 밖) 즉시 실행. 메인 스레드 전용. */
+    private java.util.List<Runnable> gmPresentationSink = null;
+
+    /** 연출 실행: 서술 뒤로 미룰 수 있으면(GM 응답 처리 중) 싱크에 모으고, 아니면 즉시 실행한다. */
+    private void present(Runnable effect) {
+        java.util.List<Runnable> sink = gmPresentationSink;
+        if (sink != null) sink.add(effect);
+        else effect.run();
+    }
+
     private void onGmResponse(TurnManager.GmResponse response) {
         plugin.getServer().getScheduler().runTask(plugin, () -> {
             // 게임이 이미 종료(엔딩)됐거나 클리어/엔딩 처리 중이면 뒤늦게 도착한 응답은 무시
@@ -2236,6 +2247,11 @@ public class TRPGGameManager {
             maybeCaptureRewind(); // 시간 회귀용 턴 스냅샷 + 변신·관조 지속 틱(턴 가드로 턴당 1회, 변화 적용 전 상태)
             maybeAutoSave();      // 자동 세이브(턴당 1회) — 예기치 못한 중단 후 이어하기용
 
+            // ★연출 순차화(선출력 방지)★: 여기부터 주사위까지의 '플레이어 연출'(핵심정보 팝업·상태 알림·주사위)을
+            //   present()로 모아 두었다가, 서술 배달이 끝난 뒤 실행한다. 상태 변화(HP/SAN·구역·아이템)는 그대로 즉시 반영.
+            java.util.List<Runnable> presSink = new java.util.ArrayList<>();
+            gmPresentationSink = presSink;
+            try {
             // 2. STATE_UPDATE 파싱 및 적용
             JsonObject stateUpdate = ai.parseStateUpdate(raw);
             if (stateUpdate != null) applyStateUpdate(stateUpdate);
@@ -2267,11 +2283,20 @@ public class TRPGGameManager {
             deliverNarrative(player, raw);
 
             // 4a. 주사위 판정 연출 — GM이 <DICE> 태그로 실제 굴린 숫자를 주면 그 숫자를 강조 연출.
-            //     태그가 없고 판정 키워드만 있으면 기존 무난한 연출로 폴백.
+            //     태그가 없고 판정 키워드만 있으면 기존 무난한 연출로 폴백. ★서술 배달 뒤로 미룬다(present).★
             if (player != null && player.isOnline()) {
                 JsonObject dice = ai.parseDiceTag(raw);
-                if (dice != null) playDiceResult(player, dice);
-                else if (needsDiceAnimation(raw)) playDiceAnimation(player);
+                if (dice != null) { final JsonObject fdice = dice; present(() -> { if (player.isOnline()) playDiceResult(player, fdice); }); }
+                else if (needsDiceAnimation(raw)) present(() -> { if (player.isOnline()) playDiceAnimation(player); });
+            }
+            } finally {
+                gmPresentationSink = null; // 연출 수집 종료(예외가 나도 싱크 누수 방지)
+            }
+            // ★서술 뒤 연출 실행★: 모아둔 연출을 서술 배달이 끝난 시점에 실행(대기 서술 없으면 즉시). 하나 실패해도 나머지 진행.
+            if (!presSink.isEmpty()) {
+                Runnable runAll = () -> { for (Runnable eff : presSink) { try { eff.run(); } catch (Exception ignore) {} } };
+                if (player != null && player.isOnline()) narrativeDelivery.runAfterDelivery(player, runAll);
+                else runAll.run();
             }
 
             // 5. SPAWN 태그 처리
@@ -2667,8 +2692,11 @@ public class TRPGGameManager {
                         if (horrorActive) {
                             pd.puppetRecoveryTurns = computePuppetRecoveryTurns(pd); // 가변
                             if (target != null) {
-                                target.sendMessage("§5자아의 흔적마저 지워집니다... 완전히 조종됩니다.");
-                                target.sendMessage("§8(관전 상태 — 약 " + pd.puppetRecoveryTurns + "턴 후 자아 일부 회복 · 아군의 도움으로 단축 가능)");
+                                final int prt = pd.puppetRecoveryTurns;
+                                present(() -> { // 서술 뒤로 미룸(선출력 방지)
+                                    target.sendMessage("§5자아의 흔적마저 지워집니다... 완전히 조종됩니다.");
+                                    target.sendMessage("§8(관전 상태 — 약 " + prt + "턴 후 자아 일부 회복 · 아군의 도움으로 단축 가능)");
+                                });
                             }
                         }
                     } else if ("faint".equals(newStatus) && !pd.isDead) {
@@ -2678,11 +2706,11 @@ public class TRPGGameManager {
                         boolean wasPuppet = "puppet".equals(pd.status);
                         pd.status = "normal";
                         pd.faintTurnsRemaining = 0;
-                        if (wasFaint  && target != null) target.sendMessage("§a의식이 돌아왔다. 간신히 일어선다...");
-                        if (wasPuppet && target != null) target.sendMessage("§a정신이 들었다. 잠시 동안 자신으로 돌아온 것 같다.");
+                        if (wasFaint  && target != null) present(() -> target.sendMessage("§a의식이 돌아왔다. 간신히 일어선다..."));
+                        if (wasPuppet && target != null) present(() -> target.sendMessage("§a정신이 들었다. 잠시 동안 자신으로 돌아온 것 같다."));
                     } else {
                         if ("puppet".equals(newStatus) && target != null)
-                            target.sendMessage("§5당신의 의지가 서서히 녹아내리는 것이 느껴진다...");
+                            present(() -> target.sendMessage("§5당신의 의지가 서서히 녹아내리는 것이 느껴진다..."));
                         pd.status = newStatus;
                     }
                 }
@@ -2707,7 +2735,7 @@ public class TRPGGameManager {
                     String kf = update.get("key_fact").getAsString().trim();
                     if (!kf.isEmpty() && pd.addKeyFact(kf)) {
                         Player kfp = Bukkit.getPlayer(pd.uuid);
-                        if (kfp != null && kfp.isOnline()) kfp.sendMessage("§b[핵심 정보] §f" + kf);
+                        if (kfp != null && kfp.isOnline()) { final Player fkfp = kfp; present(() -> { if (fkfp.isOnline()) fkfp.sendMessage("§b[핵심 정보] §f" + kf); }); } // 서술 뒤로 미룸(선출력 방지)
                         gameLogger.logItem("clue", pd.gmDisplayName(), kf, "핵심"); // 뷰어: 정보획득(핵심) 실시간 반영
                     }
                 }
