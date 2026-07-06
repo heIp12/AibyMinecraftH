@@ -1249,6 +1249,28 @@ public class AiManager {
         return out;
     }
 
+    /** <DROP_NOTE by="X" to="Y">내용</DROP_NOTE> 파싱 → [by, to(없으면 ""), content]. 플레이어가 장소에 쪽지를 남긴다고 선언하면 GM이 실물 쪽지를 남기는 용도(그 구역에 오는 사람이 발견). */
+    public java.util.List<String[]> parseDropNoteTags(String response) {
+        java.util.List<String[]> out = new ArrayList<>();
+        final String PREFIX = "<DROP_NOTE ";
+        int from = 0;
+        while (true) {
+            int open = response.indexOf(PREFIX, from);
+            if (open == -1) break;
+            int attrsEnd = response.indexOf(">", open + PREFIX.length());
+            if (attrsEnd == -1) break;
+            String attrs = response.substring(open + PREFIX.length(), attrsEnd);
+            int close = response.indexOf("</DROP_NOTE>", attrsEnd + 1);
+            if (close == -1) break;
+            String content = response.substring(attrsEnd + 1, close).trim();
+            String by = extractAttr(attrs, "by").orElse(null);
+            String to = extractAttr(attrs, "to").orElse("");
+            if (by != null && !by.isBlank() && !content.isEmpty()) out.add(new String[]{by, to == null ? "" : to, content});
+            from = close + "</DROP_NOTE>".length();
+        }
+        return out;
+    }
+
     /** <CONTACT_CHANGE player="X"/> 모두 파싱 → [X, ...] */
     public java.util.List<String> parseContactChangeTags(String response) {
         return parseSelfClosingAttr(response, "<CONTACT_CHANGE ", "player");

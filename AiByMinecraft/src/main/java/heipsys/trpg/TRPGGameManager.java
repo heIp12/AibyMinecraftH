@@ -2377,6 +2377,14 @@ public class TRPGGameManager {
                 else mp.hasFullMap = true;
             });
 
+            // 5d-3. ★쪽지 두고가기(#211)★: 플레이어가 '장소에 쪽지를 쓴다/둔다'고 선언하면 GM이 <DROP_NOTE>로 실물 쪽지를
+            //   그 구역에 남긴다(그곳에 오는 사람·괴담이 발견). @통신으로 부치는 건 통신일 뿐 실물이 아니다 — 장소에 둘 때만 실물.
+            for (String[] dn : ai.parseDropNoteTags(raw)) {
+                PlayerData authorPd = findAnyByName(dn[0]);
+                PlayerData toPd = (dn[1] == null || dn[1].isBlank()) ? null : findAnyByName(dn[1]);
+                if (authorPd != null) leaveDroppedNote(authorPd, toPd, dn[2]);
+            }
+
             // 5c. 괴담의 정체 차용 시작/종료
             ai.parseImpersonateTags(raw).forEach(this::startImpersonation);
             ai.parseImpersonateEndTags(raw).forEach(this::endImpersonation);
@@ -8143,7 +8151,12 @@ public class TRPGGameManager {
                 exchangeContacts(senderPd, targetPd);
                 return;
             }
-            leaveDroppedNote(sender, senderPd, targetPd, message);
+            // ★운반 매개 없음 → 자동으로 땅에 두지 않는다(#211)★: 멀리 있는 상대에게 글을 부칠 인편·전서구 등이 없다.
+            //   쪽지를 어딘가에 놓아두는 것은 ★행동으로 선언★해야 GM이 실물로 남긴다(DROP_NOTE) — @통신 폴백으로 만들지 않는다.
+            sender.sendMessage("§7[전달 불가] 멀리 있는 " + commDisplayName(targetPd) + "에게 글을 부칠 인편·전서구 등 운반 수단이 없습니다. "
+                + "§f쪽지를 어딘가에 두려면 채팅으로 '~에 쪽지를 둔다'처럼 행동으로 선언하세요.");
+            ai.injectGmSystem("[전달 불가] " + commDisplayName(senderPd) + "이(가) 멀리 있는 " + commDisplayName(targetPd)
+                + "에게 글을 부치려 했으나 운반 수단(인편·전서구 등)이 없어 지금은 전할 방법이 없다 — 직접 찾아가거나 쪽지를 장소에 두는 등 다른 수가 필요함을 정황으로만 드러내라.");
             return;
         }
 
@@ -9627,19 +9640,24 @@ public class TRPGGameManager {
     }
 
     /** ★편지 두고가기★: 현재 위치에 쪽지를 남긴다 — 그 구역에 오는 사람(플레이어/괴담)이 발견. 즉시 전달되지 않음. */
-    private void leaveDroppedNote(Player sender, PlayerData senderPd, PlayerData targetPd, String message) {
-        String zone = senderPd.zone == null ? "" : senderPd.zone;
-        String authorDisp = commDisplayName(senderPd);
+    /** ★쪽지 두고가기(dead-drop)★ — 플레이어가 '장소에 쪽지를 쓴다/둔다'고 선언했을 때 GM의 &lt;DROP_NOTE&gt;로만 호출된다
+     *  (@통신 자동 폴백 아님). 실물 쪽지를 그 구역에 남겨, 이후 그곳에 오는 사람(엉뚱한 이·괴담 포함)이 발견하게 한다. */
+    private void leaveDroppedNote(PlayerData authorPd, PlayerData targetPd, String message) {
+        if (authorPd == null || message == null || message.isBlank()) return;
+        String zone = authorPd.zone == null ? "" : authorPd.zone;
+        String authorDisp = commDisplayName(authorPd);
         String targetDisp = targetPd == null ? "" : commDisplayName(targetPd);
         droppedNotes.computeIfAbsent(zone, k -> new java.util.concurrent.CopyOnWriteArrayList<>())
             .add(new DroppedNote(authorDisp, targetDisp, message, state.getCurrentTurn()));
-        sender.sendMessage("§b[편지] §f" + (targetDisp.isEmpty() ? "" : targetDisp + "에게 남기는 ") + "쪽지를 "
-            + zoneDisplayName(zone) + "에 두었다. §7(이곳에 오는 사람이 발견한다 — 엉뚱한 이나 괴담이 먼저 볼 수도 있다.)");
+        Player author = Bukkit.getPlayer(authorPd.uuid);
+        if (author != null && author.isOnline())
+            author.sendMessage("§b[쪽지] §f" + (targetDisp.isEmpty() ? "" : targetDisp + "에게 남기는 ") + "쪽지를 "
+                + zoneDisplayName(zone) + "에 두었다. §7(이곳에 오는 사람이 발견한다 — 엉뚱한 이나 괴담이 먼저 볼 수도 있다.)");
         state.log("comm", authorDisp, "→ (두고감@" + zoneDisplayName(zone) + ") "
             + (targetDisp.isEmpty() ? "" : targetDisp + ": ") + message);
-        gameLogger.logItem("item", authorDisp, "편지를 남김"
+        gameLogger.logItem("item", authorDisp, "쪽지를 남김"
             + (targetDisp.isEmpty() ? "" : " (→" + targetDisp + ")") + ": " + notePreview(message), "두고감@" + zoneDisplayName(zone));
-        ai.injectGmSystem("[편지 두고감] " + authorDisp + "이(가) " + zoneDisplayName(zone) + "에 "
+        ai.injectGmSystem("[쪽지 두고감] " + authorDisp + "이(가) " + zoneDisplayName(zone) + "에 "
             + (targetDisp.isEmpty() ? "" : targetDisp + "에게 보내는 ") + "쪽지를 남겼다 — 그 구역에 오는 인물이 발견할 수 있다(엉뚱한 손·괴담 포함).");
     }
 
