@@ -8786,7 +8786,12 @@ public class TRPGGameManager {
                 }
             }
         }
-        gameLogger.logEvent("아이템 사용: " + (pname == null ? "?" : pname) + " / " + itemRef
+        // ★메타 누출 방지(#167 회귀)★: GM이 <ITEM_USE item="smartphone">처럼 영문 내부 id를 넣어도
+        //   로그엔 한글 표시명으로. inst.name(있으면) → itemDisplayName(def/공용 매핑) 순.
+        String useName = (inst != null && inst.name != null && !inst.name.isBlank())
+            ? inst.name : itemDisplayName(itemRef);
+        if (useName == null || useName.isBlank()) useName = itemRef;
+        gameLogger.logEvent("아이템 사용: " + (pname == null ? "?" : pname) + " / " + useName
             + (inst != null ? " (잔량 " + inst.charges + (inst.broken ? ", 소진" : "") + ")" : ""));
     }
 
