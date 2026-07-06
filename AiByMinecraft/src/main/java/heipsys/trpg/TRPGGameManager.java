@@ -8127,9 +8127,11 @@ public class TRPGGameManager {
             }
         }
 
-        // ★서면(원격 문서) 전달★: 매개(전서구·인편·우편)가 있으면 ★지연 전달★(N턴 뒤 도착·전달 중 변조 가능),
-        //   없으면 현재 위치에 ★두고감(dead-drop)★ — 그 구역에 오는 사람(엉뚱한 이·괴담 포함)이 발견한다.
-        if (written) {
+        // ★원격 서면 전달(viaDevice일 때만)★: 멀리 있는 상대에게 글로 부칠 때 — 매개(전서구·인편·우편)가 있으면
+        //   ★지연 전달★(N턴 뒤 도착·전달 중 변조 가능), 없으면 현재 위치에 ★두고감(dead-drop)★(그 구역에 오는 사람이 발견).
+        //   ★면전 필담(같은 구역, viaDevice=false)★은 상대가 바로 앞에 있으니 여기 오지 않고 아래 일반 경로에서
+        //   deliverDirectMessage로 ★직접 건넨다★ — 이 게이트가 없으면 메모(서면) 선언 후 면전 발화가 무조건 두고가기로 샜다.
+        if (written && viaDevice) {
             if (hasCarrier(senderPd)) {
                 String cvia = commMediumName(senderPd, "text", false);
                 int turns = 1 + new java.util.Random().nextInt(2); // 1~2턴
