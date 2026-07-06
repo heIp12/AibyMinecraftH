@@ -2588,34 +2588,8 @@ public class TRPGGameManager {
                     // 빙의 중 큰 피해 → 무방비 본체가 공격받은 것 → 본체로 강제 복귀(치명상이면 아래에서 사망 처리)
                     if (delta <= -2 && pd.hp[0] > 0 && possessingNpc.containsKey(pd.uuid))
                         endPossession(Bukkit.getPlayer(pd.uuid), pd, "본체가 공격받아 끌려 돌아옴");
-                    // ★사망 모델★: 체력 1 → 행동불가(기절, 회복 가능) / 체력 0 → 사망(부활 능력으로만 복구).
-                    //   큰 피해로 2→0이면 기절 없이 즉시 사망(피해규모가 곧 치명성). delta<0(실제 피해)일 때만 전환.
-                    if (horrorActive && delta < 0 && !pd.isDead && pd.hp[0] <= 1) {
-                        Player target = Bukkit.getPlayer(pd.uuid);
-                        possessingNpc.remove(pd.uuid); // 본체가 위태로우면 빙의 종료
-                        if (pd.hp[0] <= 0) {
-                            // 체력 0 → 사망. 동물 형태면 소멸, (동물 아니고) 소생 특성 보유 시 동물로 전환.
-                            boolean wasAnimal = animalForm.remove(pd.uuid);
-                            pd.isDead = true;
-                            boolean asAnimal = !wasAnimal && fireAnimalRevival(pd); // 소생 시 isDead=false로 되돌리고 동물 형태로
-                            if (!asAnimal) {
-                                pd.status = "dead";
-                                fireDeathRelay(pd);   // 사후 전언: 밝힌 사실을 아군에게
-                                if (target != null) target.sendMessage(wasAnimal
-                                    ? "§4동물의 몸마저 스러집니다. 이번엔 정말 끝입니다..."
-                                    : "§4치명상으로 목숨을 잃었습니다... §7(부활 능력으로만 되살아날 수 있습니다)");
-                                ai.injectGmSystem("[사망] " + commDisplayName(pd) + "이(가) 체력이 다해 사망했다. 서술에 반영하라(부활 능력 외엔 복구 불가).");
-                            }
-                        } else if (!"faint".equals(pd.status)) {
-                            // 체력 1 → 행동불가(기절). ★피해가 클수록 오래 쓰러져 있다(2~5턴).★
-                            // ★홀림/완전조종 중이었다면 그 통제가 풀리고 기절로 전환된다 — 아군이 때려 눕혀 정신을 되돌리는 '부활 경로'.★
-                            if ("puppet".equals(pd.status)) {
-                                pd.puppetRecoveryTurns = 0; // 조종(완전조종 sentinel 포함) 해제
-                                ai.injectGmSystem("[통제 해제] " + commDisplayName(pd) + "이(가) 강한 충격으로 쓰러지며 괴담의 조종에서 풀려났다(기절 전환).");
-                            }
-                            applyFaint(pd, Math.min(5, 2 + Math.abs(delta)));
-                        }
-                    }
+                    // ★사망 모델★: 체력 1 → 기절(회복 가능) / 체력 0 → 사망. STATE_UPDATE·능력 대가(sacrifice) 공용.
+                    checkHpCollapse(pd, delta);
                     // ★부활 경로: 기절한 이의 체력이 회복되면 깨어나고 정신력도 2까지 돌아온다(비-능력 회복).★
                     if (delta > 0 && "faint".equals(pd.status) && pd.hp[0] > 1) {
                         pd.status = "normal";
@@ -3827,8 +3801,13 @@ public class TRPGGameManager {
     }
 
     private void activateSacrifice(Player player, PlayerData pd, TraitData td) {
-        int cost    = td.param("cost", 2);
         boolean useSan = td.param("use_san", 0) == 1;
+        int rawCost = Math.max(1, td.param("cost", 2));
+        // ★대가 비례화(#3)★: #219 스탯 축소로 풀(체력·정신력)이 5~10대로 작아진 뒤, 프리셋의 절대 cost(예:
+        //   피의 계약 cost=10)가 최대치보다 커 한 번에 풀을 통째로 날리던 문제 — 최대치의 70%를 상한으로 둬
+        //   '무거운 대가'는 유지하되(온전한 상태에서의) 즉발 전멸은 막는다. 이미 약해진 상태면 아래 붕괴검사로 쓰러진다.
+        int poolMax = useSan ? pd.san[1] : pd.hp[1];
+        int cost = Math.max(1, Math.min(rawCost, (int) Math.ceil(poolMax * 0.7)));
         String resource = useSan ? "정신력" : "체력";
         int hpBefore = pd.hp[0], sanBefore = pd.san[0];
         if (useSan) {
@@ -3839,6 +3818,8 @@ public class TRPGGameManager {
         updateAllScoreboards();
         gameLogger.logVital(pd.gmDisplayName(), pd.hp[0] - hpBefore, pd.hp[0], pd.hp[1],
             pd.san[0] - sanBefore, pd.san[0], pd.san[1], "능력 대가: " + td.name); // 뷰어: 체력·정신력 소모 실시간 반영
+        // ★체력 대가로 0~1이 됐으면 사망(0)·기절(1) 전환(#4)★ — 능력으로 체력이 0이어도 죽지 않던 버그 방지.
+        if (!useSan) checkHpCollapse(pd, pd.hp[0] - hpBefore);
         applyTraitUsed(pd, td.id, state.getCurrentTurn());
         int scale = td.param("scale", 2);
         String scaleStr = switch (scale) {
@@ -9798,6 +9779,40 @@ public class TRPGGameManager {
     /** 통신·GM 주입·로그 표시용 이름. ★계정(닉네임)을 절대 노출하지 않는다(gmDisplayName 사용). */
     private static String commDisplayName(PlayerData pd) {
         return pd.gmDisplayName();
+    }
+
+    /** 체력이 피해/능력 대가로 0~1이 됐을 때의 사망(0)·기절(1) 전환.
+     *  STATE_UPDATE(hp_change)와 sacrifice 능력 대가가 ★같은 사망 모델★을 타도록 공용화 —
+     *  전엔 sacrifice 대가가 이 검사를 안 거쳐 체력 0이어도 살아있고 회복까지 되던 버그(#4)를 막는다.
+     *  delta = 이번 체력 변화(음수=피해). 호출부에서 hp[0]는 이미 갱신된 상태여야 한다. */
+    private void checkHpCollapse(PlayerData pd, int delta) {
+        if (pd == null) return;
+        boolean horrorActive = (currentPhase == Phase.HORROR);
+        if (!(horrorActive && delta < 0 && !pd.isDead && pd.hp[0] <= 1)) return;
+        Player target = Bukkit.getPlayer(pd.uuid);
+        possessingNpc.remove(pd.uuid); // 본체가 위태로우면 빙의 종료
+        if (pd.hp[0] <= 0) {
+            // 체력 0 → 사망. 동물 형태면 소멸, (동물 아니고) 소생 특성 보유 시 동물로 전환.
+            boolean wasAnimal = animalForm.remove(pd.uuid);
+            pd.isDead = true;
+            boolean asAnimal = !wasAnimal && fireAnimalRevival(pd); // 소생 시 isDead=false로 되돌리고 동물 형태로
+            if (!asAnimal) {
+                pd.status = "dead";
+                fireDeathRelay(pd);   // 사후 전언: 밝힌 사실을 아군에게
+                if (target != null) target.sendMessage(wasAnimal
+                    ? "§4동물의 몸마저 스러집니다. 이번엔 정말 끝입니다..."
+                    : "§4치명상으로 목숨을 잃었습니다... §7(부활 능력으로만 되살아날 수 있습니다)");
+                ai.injectGmSystem("[사망] " + commDisplayName(pd) + "이(가) 체력이 다해 사망했다. 서술에 반영하라(부활 능력 외엔 복구 불가).");
+            }
+        } else if (!"faint".equals(pd.status)) {
+            // 체력 1 → 행동불가(기절). ★피해가 클수록 오래 쓰러져 있다(2~5턴).★
+            // ★홀림/완전조종 중이었다면 그 통제가 풀리고 기절로 전환된다 — 아군이 때려 눕혀 정신을 되돌리는 '부활 경로'.★
+            if ("puppet".equals(pd.status)) {
+                pd.puppetRecoveryTurns = 0; // 조종(완전조종 sentinel 포함) 해제
+                ai.injectGmSystem("[통제 해제] " + commDisplayName(pd) + "이(가) 강한 충격으로 쓰러지며 괴담의 조종에서 풀려났다(기절 전환).");
+            }
+            applyFaint(pd, Math.min(5, 2 + Math.abs(delta)));
+        }
     }
 
     private void applyFaint(PlayerData pd) { applyFaint(pd, 3); }
