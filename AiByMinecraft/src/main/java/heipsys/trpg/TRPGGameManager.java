@@ -180,8 +180,8 @@ public class TRPGGameManager {
     private final Map<String, Integer> npcLastDirectTurn = new ConcurrentHashMap<>();
     /** ★#179 능동 비트 활성 창★ NPC id → 이 턴까지 매턴 구동한다(플레이어 지시 이행 중이거나 NPC가 &lt;BUSY&gt;로 '다급한 일 중'을 선언). 지나면 라운드로빈 베이스라인으로. */
     private final Map<String, Integer> npcActiveUntil = new ConcurrentHashMap<>();
-    /** NPC별 직전 자율 행동 출력 — 무진행 반복(같은 비트 재탕) 감지용. */
-    private final Map<String, String> npcLastAutoOutput = new ConcurrentHashMap<>();
+    /** NPC별 최근 자율 행동 서명(생각+대사) 창(최근 4개) — 무진행 반복(같은 비트 재탕·핑퐁 재탕) 감지용. 단일 직전값이 아니라 창으로 비교해 표현만 살짝 바꾼 되풀이도 잡는다. */
+    private final Map<String, java.util.Deque<String>> npcLastAutoOutput = new ConcurrentHashMap<>();
     /** NPC별 연속 자율 반복 횟수 — 임계 이상이면 자율 구동을 게이트(플레이어 상호작용 시 리셋). */
     private final Map<String, Integer> npcAutoStale = new ConcurrentHashMap<>();
     /** ★#179 능동 비트★ 라운드로빈 커서 — 매 비트마다 다음 critical NPC 1명을 순번대로 고른다(전원 매턴=파산 방지). */
@@ -7124,6 +7124,7 @@ public class TRPGGameManager {
         sb.append("- 2~3문장으로 이 NPC의 행동·반응·대사를 ★3인칭★ 서술한다(1인칭 '나는…' 금지).\n");
         sb.append("- 성격·목표에 충실하게 — 플레이어에게 불리한 행동도 가능.\n");
         sb.append("- 단서를 통째로 알려주지 마라 — ★정보 공개는 강제가 아니라 네 자율 판단★이다. 네 목적·거짓말 성향에 따라 흘리거나·은폐하거나·(성향이 허락하면) 거짓·과장을 섞어라(정직형=침묵·회피, 방어형=자기 이해 걸리면 둘러댐, 목적형=목적 걸릴 때만 계산적 거짓, 상습형=능청스레).\n");
+        sb.append("- ★같은 생각·바람을 턴마다 되풀이 금지(제자리 정지 금지)★: 이미 말한 의도·감정(누굴 찾고 싶다·걱정된다 등)을 지금 실행 못 하면 같은 혼잣말을 반복하지 말고 — (a) 상황을 실제로 바꾸는 ★다른 구체 행동★을 하라(다른 곳으로 이동·직접 찾아 나섬·수단 시도·누군가에게 연락·주변 조사 등 → 그 결과로 사건이 진행된다) 또는 (b) 정말 지금 할 게 없으면 이번 턴은 억지로 꾸미지 말고 짧은 생각 한 줄만 남기고 그쳐라(군더더기 대사 금지). 두세 턴 넘게 제자리에서 같은 바람만 되뇌는 것은 금지 — 움직여 사건을 진행시키거나, 물러나 조용히 있어라.\n");
         return sb.toString();
     }
 
@@ -7255,8 +7256,30 @@ public class TRPGGameManager {
             ai.callNpcAi(npcId, npcPromptFinal, actionLog).thenAccept(npcResp -> {
                 if (npcResp == null || npcResp.startsWith("§c")) return;
 
-                // 내면 생각 — (a) 뷰어 로그: 그 NPC 시점 전용 / (b) 게임 내: 같은 zone 엿보기 플레이어에게만 비공개 전달
                 String thought = ai.parseThoughtTag(npcResp);
+                String trimmed = ai.stripThought(ai.stripTags(npcResp)).trim();
+                if (trimmed.isEmpty() && (thought == null || thought.isEmpty())) return; // 완전 빈 응답
+                if (looksLikeMetaRequest(trimmed)) return; // 인물 이탈 메타 응답("로그 제공해주세요" 등)은 무시 — GM 오염 방지
+
+                // ★무진행 반복 억제(창 비교 + 생각 포함 서명) — 로그·비용·과보호의 핵심 차단★:
+                //   최근 4개 자율 출력(생각+대사) 중 하나와 사실상 같으면(표현만 살짝 바꾼 되풀이·A-B-A-B 핑퐁 재탕까지)
+                //   이번 출력 전부(생각 로그·선연락·GM 주입)를 버리고 스테일↑. 임계(2) 이상이면 발화 선택에서 이 NPC를
+                //   아예 건너뛴다(=할 일 없을 때 AI 미할당, 플레이어 상호작용 시 리셋). 생각까지 서명에 넣어 비교하므로
+                //   "언니 찾기" 같은 같은 바람만 수십 턴 되뇌는 독백 스팸(=미유 버그)이 두세 턴 안에 멎는다.
+                String autoSig = ((thought == null ? "" : thought) + " " + trimmed).trim();
+                java.util.Deque<String> autoWin = npcLastAutoOutput.computeIfAbsent(npcId, k -> new java.util.concurrent.ConcurrentLinkedDeque<>());
+                boolean staleRepeat = false;
+                for (String prev : autoWin) if (autoOutputSimilar(prev, autoSig)) { staleRepeat = true; break; }
+                if (staleRepeat) {
+                    npcAutoStale.merge(npcId, 1, Integer::sum);
+                    return; // 생각·대사·연락·주입 전부 드롭(제자리 되풀이 = 무진행)
+                }
+                npcAutoStale.remove(npcId);              // 새 진행 → 스테일 해제
+                autoWin.addLast(autoSig);
+                while (autoWin.size() > 4) autoWin.pollFirst();
+
+                // (여기부터는 '진행이 있는' 새 출력만 도달한다)
+                // 내면 생각 — (a) 뷰어 로그: 그 NPC 시점 전용 / (b) 게임 내: 같은 zone 엿보기 플레이어에게만 비공개 전달
                 if (thought != null && !thought.isEmpty()) {
                     gameLogger.logNpcThought(npcName, npcZone.isEmpty() ? "" : zoneDisplayName(npcZone), thought);
                     if (!eavesdroppers.isEmpty())
@@ -7298,17 +7321,7 @@ public class TRPGGameManager {
                 int busyN = ai.parseNpcBusyTurns(npcResp);
                 if (busyN > 0) npcActiveUntil.put(npcId, state.getCurrentTurn() + Math.min(5, busyN));
 
-                String trimmed = ai.stripThought(ai.stripTags(npcResp)).trim();
-                if (trimmed.isEmpty()) return;
-                if (looksLikeMetaRequest(trimmed)) return; // 인물 이탈 메타 응답("로그 제공해주세요" 등)은 무시 — GM 오염 방지
-                // ★무진행 반복 억제★: 직전 자율 출력과 거의 같으면(같은 비트 재탕) 주입·로그를 버리고 스테일 카운트↑
-                //   — 임계(2) 이상이면 위 발화 선택에서 이 NPC를 건너뛴다(플레이어 상호작용 시 리셋). 진행이 있으면 리셋.
-                if (autoOutputSimilar(npcLastAutoOutput.get(npcId), trimmed)) {
-                    npcAutoStale.merge(npcId, 1, Integer::sum);
-                    return; // GM 컨텍스트·로그 오염 방지(중복 서술 드롭)
-                }
-                npcAutoStale.remove(npcId);            // 새 진행 → 스테일 해제
-                npcLastAutoOutput.put(npcId, trimmed);
+                if (trimmed.isEmpty()) return; // 생각만 있고 대사 없음 — 생각 로그·활성창은 위에서 이미 갱신, GM 주입만 생략
 
                 // GM 컨텍스트에만 주입 — 플레이어에게 직접 전달하지 않음.
                 // GM이 다음 턴 서술에서 NPC 행동을 자연스럽게 녹여 낸다.
