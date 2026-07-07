@@ -213,6 +213,8 @@ public class GameStateManager {
         o.add("foundItems", SNAP_GSON.toJsonTree(foundItems));
         o.add("discoveredFacts", SNAP_GSON.toJsonTree(discoveredFacts));
         o.add("unlockedZones", SNAP_GSON.toJsonTree(unlockedZones));
+        o.add("sealedZones", SNAP_GSON.toJsonTree(sealedZones));    // ★#180 §6-4★ 런타임 구역 봉쇄 영속(이어하기 유지)
+        o.add("blockedMedia", SNAP_GSON.toJsonTree(blockedMedia));  // ★#180 §6-4★ 매체별 통신 차단 영속(이어하기 유지)
         o.add("activeNpcs", SNAP_GSON.toJsonTree(activeNpcs));
         o.add("corruption", SNAP_GSON.toJsonTree(corruption));
         JsonObject ps = new JsonObject();
@@ -256,6 +258,8 @@ public class GameStateManager {
         snapStrInto(foundItems, o, "foundItems");
         snapStrInto(discoveredFacts, o, "discoveredFacts");
         snapStrInto(unlockedZones, o, "unlockedZones");
+        snapStrInto(sealedZones, o, "sealedZones");   // ★#180 §6-4★ 런타임 봉쇄 복원
+        snapStrInto(blockedMedia, o, "blockedMedia"); // ★#180 §6-4★ 매체 차단 복원
         snapStrInto(activeNpcs, o, "activeNpcs");
         if (o.has("corruption")) {
             CorruptionData c = SNAP_GSON.fromJson(o.get("corruption"), CorruptionData.class);
