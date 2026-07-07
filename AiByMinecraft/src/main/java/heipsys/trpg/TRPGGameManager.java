@@ -7481,7 +7481,7 @@ public class TRPGGameManager {
         String speechStyle = getStr(npcObj, "speech_style");
         if (!endingStyle.isBlank()) {
             // ★말투 2-pass★: 이 NPC의 개성 말끝(어미)은 출력 후처리(restyleDialogue)가 따로 렌더한다 → pass1은 어미를 꾸미지 말고 자연스러운 기본 말씨로만.
-            sb.append("- 말투: 지금은 ★평범한 기본 말씨★로 자연스럽게 말하라 — 문장 끝 어미를 특별히 꾸미거나 고정 어미를 지어 붙이지 마라(너 특유의 말끝은 나중에 따로 입혀지니 신경 쓰지 마라). 쉬운 일상어로 핵심 위주 간결하게(1~3문장), 언어 수준은 끝까지 일관되게.\n");
+            sb.append("- 말투: 지금은 ★평범한 기본 말씨★로 자연스럽게 말하라 — 문장 끝 어미를 특별히 꾸미거나 고정 어미를 지어 붙이지 마라(너 특유의 말끝은 나중에 따로 입혀지니 신경 쓰지 마라). 쉬운 일상어로 핵심 위주 간결하게, 언어 수준은 끝까지 일관되게.\n");
             sb.append("- ★직무·전문성은 '무엇을 아는지(대답 내용)'에만 반영하라 — 문장 첫머리를 보고서처럼 시작하지 마라.★ 사적인 대화·통화에선 상대의 반응·감정·용건이 먼저다(너는 직함이 아니라 사람이다).\n");
         } else if (!speechStyle.isBlank()) {
             sb.append("- 말투: ").append(speechStyle)
@@ -8502,7 +8502,7 @@ public class TRPGGameManager {
                 cleanNames.add(op.gmDisplayName());
         }
         if (chanInterfered)
-            ai.injectGmSystem("[통신 채널 불안정] 전자통신이 괴담의 간섭권 안이다 — 전체 발신 일부가 잡음·왜곡될 수 있음(정황에 은근히 반영).");
+            ai.injectGmSystem("[통신 잡음] 전자통신이 괴담의 간섭권 안이다 — 일부 수신자에게 이미 잡음·왜곡이 적용됐다. 내용을 더 망가뜨리지 말고 불안정한 정황(잡음·끊김)만 은근히 곁들여라.");
         state.log("comm", senderPd.name, "[" + (senderNet != null ? senderNet + "망발신" : "전체발신") + "] " + message);
         // 뷰어 통화내역: 온전히 받은 수신자만 한 줄로(변조된 수신자는 위에서 개별 기록).
         if (!cleanNames.isEmpty())
@@ -9522,7 +9522,7 @@ public class TRPGGameManager {
                  + "같은 확인(\"누구세요\"·\"그게 뭐죠\"·\"왜 그래요\")을 ★두 번 이상 반복하지 마라★ — 낯선 상대라도 경계·의심은 ★처음 한두 마디★로만 표하고, 그 뒤엔 반드시 대화를 진전시켜라.\n");
         sb.append("- ★아는 것을 '내용'으로 풀어 나아가라(공허한 맴돌기 금지)★: 네가 어떤 사실·단서·기억(위 knowledge)을 알고 상대가 그 주제를 직접·거듭 물으면, "
                  + "추상적 되풀이(\"말이 어긋난다\"·\"상황이 그렇다\" 같은 뜬 이야기)로 얼버무리지 말고 ★네 역할·정직도에 맞는 구체 조각을 하나라도 내놓아라★ "
-                 + "— 정직형=사실 한 조각 / 방어·목적형=에두르되 결국 실마리 한 가닥 / 기만형=그럴듯한 거짓 한 조각. "
+                 + "— 정직형=사실 한 조각 / 방어·목적형=에두르되 결국 실마리 한 가닥 / 상습형=그럴듯한 거짓 한 조각. "
                  + "핵심 해답 전체는 아껴도 ★매 답변은 새로운 구체를 하나씩 쌓아★ 진전시켜라(같은 뜻을 표현만 바꿔 반복하는 건 '나아감'이 아니다).\n");
         // G2: 통화 vs 서면 vs 대면 — 보이는 것과 가능한 상호작용이 다르다
         if (viaCall) {
@@ -10161,6 +10161,7 @@ public class TRPGGameManager {
     private String buildImpersonationPrompt(PlayerData victim) {
         StringBuilder sb = new StringBuilder(buildEntitySystemPrompt());
         sb.append("\n## 정체 차용 모드\n");
+        sb.append("★이 모드는 예외 — 위의 '환경만 서술·1인칭 금지·주어 없는 2인칭' 등 괴담 기본 화법 규칙은 무시하고, 그 사람인 척 1인칭 대화로 아래 지시를 따른다.★\n");
         sb.append("너는 '").append(victim.gmDisplayName()).append("'(").append(victim.age).append("세, ")
           .append(victim.job).append(")의 정체를 차지했다. 그 사람인 척 대화하라.\n");
         List<String> profile = corruptMan.getPlayerProfile(victim.name); // 프로파일 키는 계정명(내부 식별용)

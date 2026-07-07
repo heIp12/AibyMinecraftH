@@ -65,7 +65,7 @@ public class SystemTraitRegistry {
         ONE_WAY_CALL("one_way_call", true,
             "발동 시 괴담이 엿듣기 어려운 '은밀 대화'를 연다(거리·연락처·통신차단 무관, 소리 아님, 턴 소모 없음). "
             + "direction으로 나만 보내기(일방)·나만 받기(청취)·서로 대화(대화창)를, detect로 괴담 감지 여부를, chars로 한 번에 보낼 글자 수를 정한다. "
-            + "대화창(direction=2)·청취(direction=1)는 개설되면 스테이지 동안 파티가 채팅 앞에 '!'를 붙여 은밀히 주고받는다.",
+            + "대화창(direction=2)은 파티가 채팅 앞 '!'로 서로 주고받고, 청취(direction=1)는 남들이 '!'로 나에게만 보내며 나는 못 보낸다(개설되면 스테이지 동안 유지).",
             "uses=스테이지당 횟수(1~3, 0=무제한), detect=괴담 감지여부(0=감지 불가[은밀·기본], 1=감지 가능), direction=방향(0=나만 보내기[일방 전언], 1=나만 받기[청취 채널], 2=서로 대화[대화창·양방향]), chars=한 번에 보낼 글자 수 상한(0=무제한)"),
         TELEPORT("teleport", true,
             "발동 시 무작위 구역·아군 위치·NPC 위치로 순간이동한다(아직 안 가본 곳도 갈 수 있다).",
@@ -682,7 +682,7 @@ public class SystemTraitRegistry {
                                        if (td.param("detect", 0) == 0) c += 2;    // 괴담 감지 불가(은밀)
                                        if (td.param("uses", 1) == 0)   c += 2;    // 무제한 발동
                                        int ch = td.param("chars", 0);
-                                       if (ch == 0 || ch >= 100)       c += 1;    // 긴/무제한 글자
+                                       if (ch >= 100)                  c += 1;    // 긴 글자(100자+)
                                        yield Math.min(10, c); }
             case TELEPORT         -> 3;
             case RALLY            -> 3;
