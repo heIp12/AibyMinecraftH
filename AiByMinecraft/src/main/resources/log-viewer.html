@@ -1356,6 +1356,8 @@ function zoneMapSvg(zones, know){
   }
   // ── 복도: 직선 우선(다른 방 안 지날 때만), 아니면 ㄱ자 중 덜 부딪히는 코너. 벽 15px 위에 배경 11px 덧그림=속 빈 통로 ──
   const wallC=know?'#8fd4b0':'#aeb9d4', holl='#0f1424';
+  // ★경로별 색(설계도 전용)★: 통로가 겹치거나 다른 통로 밑에 깔려도 색으로 한 경로를 끝까지 따라가게 내부를 칠한다.
+  const INK=['#e08a8a','#e0a565','#d9d071','#74a9e0','#9a8ae0','#c07fe0','#e07fb0','#6fcfd9'];  // 방(구역) 초록·올리브 계열과 안 겹치게 초록 제외
   const hitOthers=(a,b,x1,y1,x2,y2)=>{const xa=Math.min(x1,x2)-1,xb=Math.max(x1,x2)+1,ya=Math.min(y1,y2)-1,yb=Math.max(y1,y2)+1;let n=0;
     for(const id of ids){ if(id===a||id===b)continue; const r=box[id]; if(xb>r.x&&xa<r.x+r.w&&yb>r.y&&ya<r.y+r.h)n++; } return n; };
   const ep=(b,tx,ty)=>Math.abs(tx-b.cx)<0.5?{x:b.cx,y:ty<b.cy?b.y+2:b.y+b.h-2}:{x:tx<b.cx?b.x+2:b.x+b.w-2,y:b.cy}; // 방 테두리 2px 안쪽 = 문
@@ -1438,12 +1440,28 @@ function zoneMapSvg(zones, know){
         if(vert){ const ny=Math.max(b.y+7,Math.min(b.y+b.h-7,b.cy+off)); P[ei][1]=ny; P[bend][1]=ny; }   // 좌/우 변: 문·직전꺾임 Y 함께
         else    { const nx=Math.max(b.x+7,Math.min(b.x+b.w-7,b.cx+off)); P[ei][0]=nx; P[bend][0]=nx; } }); } // 상/하 변: X 함께
   })();
+  // ── 2.7) ★경로 색 배정(그리디)★: 같은 방에서 갈라지거나 서로 교차하는 통로끼리 다른 색이 되게 배정
+  //    → 긴 경로가 다른 통로 밑에 깔려도(교차) 색으로 끝까지 구분·추적 가능. ──
+  (function colorCorridors(){
+    const cross=(A,B)=>{ for(let i=0;i+1<A.length;i++)for(let j=0;j+1<B.length;j++){
+      const a1=A[i],a2=A[i+1],b1=B[j],b2=B[j+1], aH=Math.abs(a1[1]-a2[1])<1, bH=Math.abs(b1[1]-b2[1])<1;
+      if(aH===bH)continue; const H=aH?[a1,a2]:[b1,b2], V=aH?[b1,b2]:[a1,a2];
+      const hy=H[0][1], hx0=Math.min(H[0][0],H[1][0]), hx1=Math.max(H[0][0],H[1][0]);
+      const vx=V[0][0], vy0=Math.min(V[0][1],V[1][1]), vy1=Math.max(V[0][1],V[1][1]);
+      if(vx>hx0+1&&vx<hx1-1&&hy>vy0+1&&hy<vy1-1)return true; } return false; };
+    EG.forEach((g,gi)=>{ const nb=new Set();
+      for(let hi=0;hi<gi;hi++){ const h=EG[hi];
+        const shareBox=g.a===h.a||g.a===h.b||g.b===h.a||g.b===h.b;
+        if(shareBox||cross(g.pts,h.pts))nb.add(h._ink); }
+      let ci=gi%INK.length, t=0; while(t<INK.length&&nb.has(INK[ci])){ci=(ci+1)%INK.length;t++;} g._ink=INK[ci]; }); // 회전 시드로 무충돌 통로도 색 다양하게
+  })();
   // ── 3) 복도 렌더 + ★거리 라벨 충돌 회피★(겹치면 위/아래로 살짝 밀어 '4분/5분' 겹침 방지) ──
   const placedLab=[]; const lolap=(a,b)=>a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;
   for(const g of EG){ const P=g.pts;
     const d=P.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join('');
+    const inner=know?holl:g._ink;   // 미니맵은 초록=이동가능 유지 / 설계도는 경로별 색으로 내부 채움
     corr+=`<path d="${d}" stroke="${wallC}" stroke-width="12" fill="none" stroke-linejoin="miter" stroke-linecap="butt"/>`
-        +`<path d="${d}" stroke="${holl}" stroke-width="8" fill="none" stroke-linejoin="miter" stroke-linecap="butt"/>`;
+        +`<path d="${d}" stroke="${inner}" stroke-width="8" fill="none" stroke-linejoin="miter" stroke-linecap="butt"/>`;
     const dl=distLabel(g.dist); if(!dl)continue;
     // 라벨 기준점: 가장 긴 구간의 중점(분리로 꺾임점이 이동했을 수 있어 pts에서 다시 계산)
     let bi=0,bl=-1; for(let i=0;i+1<P.length;i++){const L=Math.abs(P[i][0]-P[i+1][0])+Math.abs(P[i][1]-P[i+1][1]); if(L>bl){bl=L;bi=i;}}
@@ -1459,7 +1477,7 @@ function zoneMapSvg(zones, know){
     for(const a of areasUsed){ legendSvg+=`<rect x="${lx}" y="${ly-8}" width="9" height="9" fill="${areaTint(a)}" fill-opacity="0.8" stroke="#c6d0e6" stroke-width="0.7"/>`
       +`<text x="${lx+13}" y="${ly}" font-size="9.5" fill="#aab3cf">${esc(a)}</text>`; lx+=13+Math.round(estW(a)*0.73)+18; } }
   const title=know?'미니맵 — 아는 구역만':'구역 지도(설계도)';
-  const foot=know?'▶흰색=현재 · 밝음=주변 · 어두움=다녀온 곳 · 초록 통로=이동 가능(모르는 곳은 숨김)':'통로=연결(안의 숫자=소요 시간) · 📵=통신 불가 · 색=대분류(하단 범례)';
+  const foot=know?'▶흰색=현재 · 밝음=주변 · 어두움=다녀온 곳 · 초록 통로=이동 가능(모르는 곳은 숨김)':'통로=연결(안 숫자=소요 시간, 색=경로 구분) · 📵=통신 불가 · 방 색=대분류(하단 범례)';
   return `<div class="zmap" style="overflow:auto;margin-bottom:6px;cursor:zoom-in" onclick="mapZoom(this)" title="클릭하면 크게 보기">`
     +`<div class="dim2" style="margin-bottom:3px">${title} <span style="background:#2a2450;border:1px solid #4a3f80;border-radius:6px;padding:0 7px;color:#cabfff">🔍 크게 보기</span></div>`
     +`<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-height:400px;min-width:${Math.min(W,320)}px">${bg}${rects}${corr}${dists}${labels}${legendSvg}</svg>`
