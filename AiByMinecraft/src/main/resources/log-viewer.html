@@ -1304,7 +1304,7 @@ function zoneMapSvg(zones, know){
     const need=Math.round(estW(nm))+extra+22;
     dim[z.zone_id]={w:Math.max(86,Math.min(160,need)), h:deg>=3?66:50, squeeze:need>160}; }
   // ── 인접 배치(BFS): 이웃을 빈 옆 칸에 → 안 되면 한 칸 건너(사이 칸은 복도로 예약해 직선 긴 복도) → 나선 탐색 ──
-  const cellW=182, cellH=104, key=(x,y)=>x+","+y;
+  const cellW=214, cellH=128, key=(x,y)=>x+","+y;   // ★복도 겹침 완화★: 셀 간격을 넓혀 통로가 퍼질 여유를 준다
   const cellOf={}, at={};
   const free=(x,y)=>!at[key(x,y)];
   const place=(id,x,y)=>{cellOf[id]=[x,y];at[key(x,y)]=id;};
@@ -1382,13 +1382,29 @@ function zoneMapSvg(zones, know){
         for(const zp of [zh,zv]){ let h=0;
           for(let i=0;i+1<zp.length;i++)h+=hitOthers(e.a,e.b,zp[i][0],zp[i][1],zp[i+1][0],zp[i+1][1]);
           if(h<bh){bh=h;pts=zp;lab=null;} }
+        // ★같은 행/열이라 위 ㄹ자 거터가 직선으로 붕괴(중간 방 관통)하면 ★행·열 사이 빈 거터로 크게 우회(ㄷ자)★.
+        //   방은 셀 중앙에 있어 cy±cellH/2·cx±cellW/2는 방이 없는 틈 → 그 트랙을 가로질러 중간 방을 피한다.
+        //   ★바깥 여백(다른 방이 없는 쪽)을 우선★: 붐비는 방 사이 거터 대신 지도 가장자리로 빼
+        //   이웃 방의 통로(위 모서리로 드나드는 E-F 등)와 평행 붕괴하지 않게 한다.
+        if(bh>0){
+          const rMin=Math.min(A.cy,B.cy),rMax=Math.max(A.cy,B.cy),cMin=Math.min(A.cx,B.cx),cMax=Math.max(A.cx,B.cx);
+          const hasBox=(pred)=>ids.some(id=>id!==e.a&&id!==e.b&&pred(box[id]));
+          const gys=[[rMin-cellH/2, hasBox(r=>r.cy<rMin-2)],[rMax+cellH/2, hasBox(r=>r.cy>rMax+2)]].sort((p,q)=>p[1]-q[1]);
+          const gxs=[[cMin-cellW/2, hasBox(r=>r.cx<cMin-2)],[cMax+cellW/2, hasBox(r=>r.cx>cMax+2)]].sort((p,q)=>p[1]-q[1]);
+          const cand=[];
+          for(const g of gys){ const gyy=g[0];
+            cand.push([[A.cx,gyy<A.cy?A.y+2:A.y+A.h-2],[A.cx,gyy],[B.cx,gyy],[B.cx,gyy<B.cy?B.y+2:B.y+B.h-2]]); }
+          for(const g of gxs){ const gxx=g[0];
+            cand.push([[gxx<A.cx?A.x+2:A.x+A.w-2,A.cy],[gxx,A.cy],[gxx,B.cy],[gxx<B.cx?B.x+2:B.x+B.w-2,B.cy]]); }
+          for(const cp of cand){ let h=0; for(let i=0;i+1<cp.length;i++)h+=hitOthers(e.a,e.b,cp[i][0],cp[i][1],cp[i+1][0],cp[i+1][1]);
+            if(h<bh){bh=h;pts=cp;lab=null;} } }
       }
     }
-    EG.push({pts,lab,dist:e.dist});
+    EG.push({pts,lab,dist:e.dist,a:e.a,b:e.b});
   }
   // ── 2) ★평행 복도 분리★: 같은 세로/가로 트랙에 겹치는 '중간 꺾임 구간'을 레인으로 조금씩 벌린다.
   //    ★문(경로 양 끝점)은 방 벽에 붙어 있어야 하므로 절대 움직이지 않고, 내부 꺾임점만 이동★ → 축 정렬·연결 유지.
-  (function separateCorridors(){ const SEP=10, LANES=[0,1,-1,2,-2,3,-3,4,-4];
+  (function separateCorridors(){ const SEP=17, LANES=[0,1,-1,2,-2,3,-3,4,-4,5,-5];  // ★SEP≥복도폭(12)★: 레인이 복도보다 좁으면 나눠도 겹친다 → 17로 벌림
     const pass=(vert)=>{ const segs=[];
       EG.forEach((g,gi)=>{ const P=g.pts; for(let i=0;i+1<P.length;i++){ const a=P[i],b=P[i+1];
         const isV=Math.abs(a[0]-b[0])<1&&Math.abs(a[1]-b[1])>6, isH=Math.abs(a[1]-b[1])<1&&Math.abs(a[0]-b[0])>6;
@@ -1404,12 +1420,30 @@ function zoneMapSvg(zones, know){
     };
     pass(true); pass(false);
   })();
+  // ── 2.5) ★포트(문) 분산★: 한 방의 같은 변에 복도가 여럿 닿으면 전부 변 중앙 한 점으로 모여
+  //    어디로 잇는지 모호해진다(예: 작은침실→옆집부엌이 진흙마당→옆집부엌과 같은 문에 포개짐).
+  //    같은 변의 문들을 변을 따라 나눠 배치하고, 직전 꺾임점을 같이 옮겨 직각·연결을 유지한다. ──
+  (function distributePorts(){ const PSEP=20;
+    const sideOf=(b,p)=>{ const iX=p[0]>b.x-3&&p[0]<b.x+b.w+3, iY=p[1]>b.y-3&&p[1]<b.y+b.h+3;  // ★수직축도 방 범위 안이어야★(같은 행 다른 방의 밑변 y가 같아 오판 방지)
+      return iY&&Math.abs(p[0]-(b.x+2))<3?'L':iY&&Math.abs(p[0]-(b.x+b.w-2))<3?'R':iX&&Math.abs(p[1]-(b.y+2))<3?'T':iX&&Math.abs(p[1]-(b.y+b.h-2))<3?'B':null; };
+    const groups={};
+    EG.forEach((g,gi)=>{ const P=g.pts,last=P.length-1;
+      [0,last].forEach(function(ei){                       // ★경로 점 순서는 좌→우(a/b 순서 아님) → 끝점이 실제 닿은 방을 기하로 판정★
+        for(const bid of [g.a,g.b]){ const b=box[bid]; if(!b)continue; const s=sideOf(b,P[ei]); if(!s)continue;
+          const far=P[ei===0?last:0]; (groups[bid+'|'+s]=groups[bid+'|'+s]||[]).push({gi,ei,side:s,bid,far}); break; } }); });
+    for(const k in groups){ const grp=groups[k]; if(grp.length<2)continue;
+      const b=box[grp[0].bid], vert=(grp[0].side==='L'||grp[0].side==='R'), n=grp.length;
+      grp.sort((u,v)=>vert?u.far[1]-v.far[1]:u.far[0]-v.far[0]);   // 상대편 위치 순 → 선 교차 최소화
+      grp.forEach((u,idx)=>{ const off=(idx-(n-1)/2)*PSEP, P=EG[u.gi].pts, ei=u.ei, bend=ei===0?1:P.length-2;
+        if(vert){ const ny=Math.max(b.y+7,Math.min(b.y+b.h-7,b.cy+off)); P[ei][1]=ny; P[bend][1]=ny; }   // 좌/우 변: 문·직전꺾임 Y 함께
+        else    { const nx=Math.max(b.x+7,Math.min(b.x+b.w-7,b.cx+off)); P[ei][0]=nx; P[bend][0]=nx; } }); } // 상/하 변: X 함께
+  })();
   // ── 3) 복도 렌더 + ★거리 라벨 충돌 회피★(겹치면 위/아래로 살짝 밀어 '4분/5분' 겹침 방지) ──
   const placedLab=[]; const lolap=(a,b)=>a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;
   for(const g of EG){ const P=g.pts;
     const d=P.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join('');
-    corr+=`<path d="${d}" stroke="${wallC}" stroke-width="15" fill="none" stroke-linejoin="miter" stroke-linecap="butt"/>`
-        +`<path d="${d}" stroke="${holl}" stroke-width="11" fill="none" stroke-linejoin="miter" stroke-linecap="butt"/>`;
+    corr+=`<path d="${d}" stroke="${wallC}" stroke-width="12" fill="none" stroke-linejoin="miter" stroke-linecap="butt"/>`
+        +`<path d="${d}" stroke="${holl}" stroke-width="8" fill="none" stroke-linejoin="miter" stroke-linecap="butt"/>`;
     const dl=distLabel(g.dist); if(!dl)continue;
     // 라벨 기준점: 가장 긴 구간의 중점(분리로 꺾임점이 이동했을 수 있어 pts에서 다시 계산)
     let bi=0,bl=-1; for(let i=0;i+1<P.length;i++){const L=Math.abs(P[i][0]-P[i+1][0])+Math.abs(P[i][1]-P[i+1][1]); if(L>bl){bl=L;bi=i;}}
