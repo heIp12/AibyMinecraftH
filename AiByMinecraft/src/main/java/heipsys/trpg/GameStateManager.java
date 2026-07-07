@@ -1008,7 +1008,6 @@ public class GameStateManager {
     /** 제한 시각까지 남은 인게임 분. 시계·종료시각 없으면 -1, 이미 지났으면 0. (무행동 가속이 마감을 넘지 못하게 캡할 때 사용) */
     public int         getMinutesUntilEnd()  { return (clockMinutes < 0 || clockEnd < 0) ? -1 : Math.max(0, clockEnd - clockMinutes); }
     public int         getDailyTurnsLeft()  { return dailyTurnsLeft; }
-    public boolean     isDailyPhase()       { return dailyPhase; }
     public String      getCurrentSeed()     { return currentSeed; }
     public JsonObject  getGdamData()        { return gdamData; }
     public CorruptionData getCorruption()   { return corruption; }
