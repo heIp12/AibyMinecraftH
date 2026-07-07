@@ -63,6 +63,11 @@ public class ScoreboardManager {
             String t = state.isTimeKnown(pd) ? "§e" + state.getCurrentTimeString() : "§8불명";
             set(obj, "§f시간: " + t,                      line--);
         }
+        // ★내 차례 표시★: 가변·비동기 턴에서 '지금 행동할 수 있는지 / 몇 분 뒤인지'를 상시 보여준다
+        //   (가변턴에서 내 턴이 온지 몰라 답답하던 것 해소). 일상(프롤로그)엔 턴 압박이 없어 생략.
+        if (!state.isDailyPhase()) {
+            set(obj, turnStatusLine(pd),                 line--);
+        }
         set(obj, divider(2),                             line--);
         set(obj, "§7상세: §b네더의 별 우클릭",            line);
 
@@ -77,6 +82,23 @@ public class ScoreboardManager {
     // ──────────────────────────────────────────────────────────────
     //  위치 라벨 계산
     // ──────────────────────────────────────────────────────────────
+
+    /**
+     * 턴 상태 한 줄. 가변(turnMode 1)에선 언제든 행동 가능하므로 '지금 행동 가능', 비동기(turnMode 2)에선
+     * busy 중이면 '다음 행동까지 N분'을 보여준다. 행동 불가 상태(사망·홀림·기절·관전)는 그 사유를 표시한다.
+     */
+    private String turnStatusLine(PlayerData pd) {
+        if (pd.isDead)                  return "§7관전 중 — 행동할 수 없습니다";
+        if ("puppet".equals(pd.status)) return "§7홀림 — 스스로 움직일 수 없습니다";
+        if ("faint".equals(pd.status) || pd.faintTurnsRemaining > 0)
+                                        return "§7기절 — 정신을 차리는 중";
+        if (pd.puppetRecoveryTurns > 0) return "§7관전 — 곧 깨어납니다";
+        int clk = state.getClockMinutes();
+        if (state.getTurnMode() >= 2 && clk >= 0 && pd.isBusy(clk)) {
+            return "§e다음 행동까지 §f" + Math.max(1, pd.busyUntilMin - clk) + "분";
+        }
+        return "§a▶ 지금 행동할 수 있습니다";
+    }
 
     /** 위치 라벨: "존이름" 또는 "존이름§7[세부위치]" */
     private String resolveLocationLabel(PlayerData pd) {
