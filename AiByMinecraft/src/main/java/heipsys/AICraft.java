@@ -116,6 +116,13 @@ public class AICraft extends JavaPlugin {
             getConfig().getString("models.npc", ""),
             getConfig().getString("models.assistant", ""),
             getConfig().getString("models.gdam", ""));
+        // ★생성/응답 속도(effort)★ — Opus 4.8 등 적응형 thinking 깊이(low<medium<high<xhigh<max). 비우면 모델 기본.
+        //   낮출수록 thinking 토큰↓ → 시나리오 생성·GM 응답이 빨라진다(품질 트레이드오프). effort-gdam=시나리오 생성.
+        trpgAi.setEfforts(
+            getConfig().getString("models.effort-gdam", ""),
+            getConfig().getString("models.effort-gm", ""),
+            getConfig().getString("models.effort-npc", ""),
+            getConfig().getString("models.effort-assistant", ""));
         trpgAi.warmUpModels(); // 백그라운드로 최신 모델 탐지 — 메인 스레드 비차단
         final int estBaseline = 4; // 시작 로그엔 접속 인원이 없으니 대표 인원(4인) 기준으로 추정 표시
         getLogger().info("[AI] provider=" + trpgAi.providerLabel()

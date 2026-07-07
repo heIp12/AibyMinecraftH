@@ -74,6 +74,9 @@ public class AiManager {
                    assistantOverride = null, gdamOverride = null;
     // 최신 모델 자동 탐지 (claude/openai/gemini 모두 지원). 고·중품질만 자동 탐지(저품질은 비용 최소로 고정).
     private boolean autoLatest = true;
+    // ★생성/응답 속도 조절(config: models.effort-*)★ — Opus 4.8 등 적응형 thinking 깊이(low<medium<high<xhigh<max).
+    //   빈 값=모델 기본. 낮출수록 thinking 토큰↓ → 빠름(품질 트레이드오프). gdam=시나리오 생성 티어.
+    private String gdamEffort = "", gmEffort = "", npcEffort = "", assistantEffort = "";
     private volatile boolean modelsDiscovered = false;
     private volatile String autoHigh = null, autoMedium = null, autoLow = null;
     /** 미니 티어(나노↑·중품질↓) 자동 탐지값 — NPC 등 '싸지만 나노보단 똑똑해야 하는' 역할용. */
@@ -110,6 +113,13 @@ public class AiManager {
     public void setMediumModelOverride(String m) { this.mediumModelOverride = norm(m); }
     public void setLowModelOverride(String m)    { this.lowModelOverride    = norm(m); }
     public void setAutoLatest(boolean b)         { this.autoLatest = b; }
+    /** config models.effort-* → 티어별 effort(빈 값=모델 기본 유지). 낮출수록 thinking↓·빠름. */
+    public void setEfforts(String gdam, String gm, String npc, String assistant) {
+        this.gdamEffort      = gdam      == null ? "" : gdam.trim();
+        this.gmEffort        = gm        == null ? "" : gm.trim();
+        this.npcEffort       = npc       == null ? "" : npc.trim();
+        this.assistantEffort = assistant == null ? "" : assistant.trim();
+    }
     public String providerLabel() {
         return switch (apiType) { case "claude" -> "Claude"; case "openai" -> "OpenAI"; default -> "Gemini"; };
     }
@@ -478,7 +488,7 @@ public class AiManager {
                 }
                 try {
                     // cacheHistory=true: 마지막 메시지 프리픽스 캐싱 → 매 턴 커지는 히스토리를 다음 턴에 0.1× 읽기(핵심 절감).
-                    String result = send(gmModel(), systemPrompt, snapshot, GM_MAX_TOKENS, true); // 락 미보유 — 블로킹 I/O
+                    String result = send(gmModel(), systemPrompt, snapshot, GM_MAX_TOKENS, true, gmEffort); // 락 미보유 — 블로킹 I/O
                     // 히스토리에는 태그 제거 버전 저장 → 다음 턴에 STATE_UPDATE JSON 재전송 방지
                     synchronized (gmLock) { gmContext.add(msg("assistant", stripTags(result))); }
                     return result;
@@ -494,7 +504,7 @@ public class AiManager {
         return CompletableFuture.supplyAsync(() -> {
             try {
                 List<JsonObject> single = List.of(msg("user", userMessage));
-                return send(gmModel(), systemPrompt, single, GM_MAX_TOKENS);
+                return send(gmModel(), systemPrompt, single, GM_MAX_TOKENS, gmEffort);
             } catch (Exception e) {
                 return "§c[GM AI 오류] " + e.getMessage();
             }
@@ -506,7 +516,7 @@ public class AiManager {
         return CompletableFuture.supplyAsync(() -> {
             try {
                 List<JsonObject> single = List.of(msg("user", userMessage));
-                return send(gdamModel(), systemPrompt, single, GDAM_MAX_TOKENS);
+                return send(gdamModel(), systemPrompt, single, GDAM_MAX_TOKENS, gdamEffort);
             } catch (Exception e) {
                 return "§c[GM AI 오류] " + e.getMessage();
             }
@@ -527,7 +537,7 @@ public class AiManager {
                     snapshot = new ArrayList<>(entityContext);
                 }
                 try {
-                    String result = send(entityModel(), systemPrompt, snapshot, ASST_MAX_TOKENS, true); // 히스토리 프리픽스 캐싱
+                    String result = send(entityModel(), systemPrompt, snapshot, ASST_MAX_TOKENS, true, npcEffort); // 히스토리 프리픽스 캐싱
                     synchronized (entityLock) { entityContext.add(msg("assistant", result)); }
                     return result;
                 } catch (Exception e) {
@@ -564,7 +574,7 @@ public class AiManager {
                     snapshot = new ArrayList<>(ctx);
                 }
                 try {
-                    String result = send(npcModel(), systemPrompt, snapshot, ASST_MAX_TOKENS, true); // 히스토리 프리픽스 캐싱
+                    String result = send(npcModel(), systemPrompt, snapshot, ASST_MAX_TOKENS, true, npcEffort); // 히스토리 프리픽스 캐싱
                     // #1(컨텍스트 오염): 자율(3인칭) 응답을 raw로 저장하면 이후 ★대화★ 호출이 그 3인칭·보고체를 흉내낸다(약한 모델의 이력 모방).
                     //   → 자율 응답은 태그를 떼고 '[지난 자율 행동] 요약' 중립 로그로 저장한다(대화 1인칭 응답은 verbatim 유지해 대화 연속성 보존).
                     //   ★단 stripTags가 통째로 지우는 <NPC_CALL>(제가 먼저 건 연락)의 요지는 1인칭 기억으로 되살려 둔다★ —
@@ -602,7 +612,7 @@ public class AiManager {
                 + "출력은 ★변환된 대사 본문만★(따옴표·머리말·해설·목록 금지).\n"
                 + "[스타일] " + styleSpec;
             List<JsonObject> m = List.of(msg("user", "[원본 대사]\n" + dialogue));
-            String out = send(npcModel(), sys, m, ASST_MAX_TOKENS);
+            String out = send(npcModel(), sys, m, ASST_MAX_TOKENS, npcEffort);
             out = out == null ? "" : out.trim();
             return (out.isEmpty() || out.startsWith("§c")) ? dialogue : out;
         } catch (Exception e) {
@@ -625,7 +635,7 @@ public class AiManager {
                 List<JsonObject> messages = List.of(msg("user", task + "\n\n" + data));
                 return send(assistantModel(),
                     "너는 간단한 데이터 처리 도우미야. 요청받은 작업만 수행해.",
-                    messages, maxTokens);
+                    messages, maxTokens, assistantEffort);
             } catch (Exception e) {
                 return "§c[보조 AI 오류] " + e.getMessage();
             }
@@ -647,7 +657,7 @@ public class AiManager {
                 List<JsonObject> messages = List.of(msg("user", system + "\n\n" + data));
                 return send(gmModel(),
                     "너는 TRPG 특성(능력) 생성기다. 요청받은 JSON 형식으로만 정확히 응답한다.",
-                    messages, maxTokens);
+                    messages, maxTokens, gmEffort);
             } catch (Exception e) {
                 return "§c[특성 AI 오류] " + e.getMessage();
             }
@@ -665,7 +675,7 @@ public class AiManager {
                 List<JsonObject> messages = List.of(msg("user", task + "\n\n" + data));
                 return send(highModel(),
                     "너는 정확한 자료 큐레이터다. ★검증된 실존 사실만★ 다루고, 불확실하면 가장 확실하고 유명한 것을 택하며, 그럴듯한 이름을 ★새로 지어내지 않는다★.",
-                    messages, ASST_MAX_TOKENS);
+                    messages, ASST_MAX_TOKENS, gdamEffort);
             } catch (Exception e) {
                 return "§c[보조 AI 오류] " + e.getMessage();
             }
@@ -1012,16 +1022,28 @@ public class AiManager {
 
     private String send(String model, String system, List<JsonObject> messages, int maxTokens)
             throws Exception {
-        return send(model, system, messages, maxTokens, 0, false);
+        return send(model, system, messages, maxTokens, 0, false, null);
+    }
+
+    /** effort(빈 값=모델 기본) 지정 단일 호출 오버로드. */
+    private String send(String model, String system, List<JsonObject> messages, int maxTokens, String effort)
+            throws Exception {
+        return send(model, system, messages, maxTokens, 0, false, effort);
     }
 
     /** cacheHistory=true면 마지막 메시지에 cache_control을 달아 히스토리 프리픽스를 캐시(멀티턴 GM 전용). */
     private String send(String model, String system, List<JsonObject> messages, int maxTokens, boolean cacheHistory)
             throws Exception {
-        return send(model, system, messages, maxTokens, 0, cacheHistory);
+        return send(model, system, messages, maxTokens, 0, cacheHistory, null);
     }
 
-    private String send(String model, String system, List<JsonObject> messages, int maxTokens, int attempt, boolean cacheHistory)
+    /** effort + 히스토리 캐싱 지정 오버로드(멀티턴 GM·NPC). */
+    private String send(String model, String system, List<JsonObject> messages, int maxTokens, boolean cacheHistory, String effort)
+            throws Exception {
+        return send(model, system, messages, maxTokens, 0, cacheHistory, effort);
+    }
+
+    private String send(String model, String system, List<JsonObject> messages, int maxTokens, int attempt, boolean cacheHistory, String effort)
             throws Exception {
 
         String body;
@@ -1042,6 +1064,13 @@ public class AiManager {
                 JsonObject req = new JsonObject();
                 req.addProperty("model", model);
                 req.addProperty("max_tokens", maxTokens);
+                // ★effort(적응형 thinking 깊이)★ — 지정 시 output_config.effort로 전달(빈 값이면 모델 기본).
+                //   낮출수록 thinking 토큰↓ → 생성/응답 빨라짐. Opus 4.8 등은 budget_tokens 대신 effort만 허용.
+                if (effort != null && !effort.isBlank()) {
+                    JsonObject oc = new JsonObject();
+                    oc.addProperty("effort", effort.trim());
+                    req.add("output_config", oc);
+                }
                 if (system != null && !system.isBlank()) {
                     // system을 cache_control 포함 배열로 전송 → 캐시 히트 시 입력 토큰 ~90% 절약
                     JsonObject sysBlock = new JsonObject();
@@ -1124,14 +1153,14 @@ public class AiManager {
         if (response.statusCode() == 429) {
             if (attempt >= 3) throw new RuntimeException("API 429: 재시도 횟수 초과 (3회)");
             Thread.sleep(7000L * (attempt + 1));
-            return send(model, system, messages, maxTokens, attempt + 1, cacheHistory);
+            return send(model, system, messages, maxTokens, attempt + 1, cacheHistory, effort);
         }
         // 모델 ID가 이 키에서 안 먹히면(404 not_found) 탐지된 '가용' 모델로 1회 폴백 — 잘못된 모델로 게임이 죽지 않게.
         if (response.statusCode() == 404 && attempt < 2 && response.body().toLowerCase().contains("not_found")) {
             ensureModelsDiscovered();
             String fb = autoMedium != null ? autoMedium : (autoLow != null ? autoLow : autoHigh);
             if (fb != null && !fb.equals(model)) {
-                return send(fb, system, messages, maxTokens, attempt + 1, cacheHistory);
+                return send(fb, system, messages, maxTokens, attempt + 1, cacheHistory, effort);
             }
         }
         if (response.statusCode() != 200) {
@@ -1156,7 +1185,7 @@ public class AiManager {
             //   thinking 모델에서 간헐 발생) 곧장 죽지 말고 429처럼 재시도한다 — 대개 다음 시도에서 온전한 응답을 받는다.
             if (attempt < 3) {
                 Thread.sleep(3000L * (attempt + 1));
-                return send(model, system, messages, maxTokens, attempt + 1, cacheHistory);
+                return send(model, system, messages, maxTokens, attempt + 1, cacheHistory, effort);
             }
             throw new RuntimeException("API 응답 파싱 실패: " + response.body().substring(0, Math.min(200, response.body().length())), e);
         }

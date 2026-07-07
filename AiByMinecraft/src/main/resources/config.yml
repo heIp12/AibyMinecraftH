@@ -21,6 +21,13 @@ models:
   npc: ""       # NPC AI (서브 NPC 포함)
   assistant: "" # 특성·데이터 보조 처리 AI
   gdam: ""      # 시나리오(.gdam) 생성 — 비우면 최소 Sonnet(고품질 선택 시 Opus)
+  # ── 속도(effort) ── Opus 4.8 등 적응형 thinking 깊이를 조절해 속도/품질을 바꿉니다.
+  #   값: low < medium < high < xhigh < max (비우면 모델 기본). 낮출수록 thinking 토큰이 줄어 빨라집니다(대신 품질↓).
+  #   예: 시나리오 생성이 느리면 effort-gdam: "medium"(또는 "low")로. 창의성이 중요하면 비워두거나 high.
+  effort-gdam: ""      # 시나리오(.gdam) 생성 속도 — 느리면 medium/low 권장
+  effort-gm: ""        # GM 서술·판정(매 턴) 응답 속도
+  effort-npc: ""       # NPC·괴담 AI 응답 속도
+  effort-assistant: "" # 보조 처리 속도
 
 # (구버전 호환) 아래 키는 models.high 가 비어 있을 때만 고품질 모델로 사용됩니다.
 gm-model-high: ""
