@@ -1518,24 +1518,49 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
 
     private JsonObject tryParseObject(String raw) {
         if (raw == null || raw.startsWith("§c")) return null;
+        String stripped = stripMarkdown(raw);
         try {
-            JsonElement el = gson.fromJson(stripMarkdown(raw), JsonElement.class);
+            JsonElement el = gson.fromJson(stripped, JsonElement.class);
             return (el != null && el.isJsonObject()) ? el.getAsJsonObject() : null;
-        } catch (Exception e) { return null; }
+        } catch (Exception e) {
+            // ★절단 복구(JsonSalvage) — max_tokens 절단·경미한 깨짐이면 균형 prefix 복구를 시도(값비싼 32K 재생성 전 저렴한 마지막 시도).
+            try {
+                String fixed = JsonSalvage.salvageTruncatedJson(stripped);
+                if (fixed != null) {
+                    JsonElement el = gson.fromJson(fixed, JsonElement.class);
+                    if (el != null && el.isJsonObject()) {
+                        logger.warning("[gdam] 절단 JSON 복구 성공 (object, " + stripped.length() + "→" + fixed.length() + "자)");
+                        return el.getAsJsonObject();
+                    }
+                }
+            } catch (Exception ignore) { }
+            return null;
+        }
     }
 
     /** 응답에서 지정 key의 배열을 추출. {"key":[...]} 와 바로 [...] 둘 다 허용. 실패 시 null. */
     private JsonArray tryParseArray(String raw, String key) {
         if (raw == null || raw.startsWith("§c")) return null;
+        String stripped = stripMarkdown(raw);
+        JsonElement el = null;
         try {
-            JsonElement el = gson.fromJson(stripMarkdown(raw), JsonElement.class);
-            if (el == null) return null;
-            if (el.isJsonArray()) return el.getAsJsonArray();          // 모델이 배열만 출력
-            if (el.isJsonObject()) {
-                JsonObject o = el.getAsJsonObject();
-                if (o.has(key) && o.get(key).isJsonArray()) return o.getAsJsonArray(key);
-            }
-        } catch (Exception ignore) { }
+            el = gson.fromJson(stripped, JsonElement.class);
+        } catch (Exception e) {
+            // ★절단 복구(JsonSalvage) — 청크 배열이 잘려도 완성된 앞쪽 항목들은 살린다(재호출 1회 절약).
+            try {
+                String fixed = JsonSalvage.salvageTruncatedJson(stripped);
+                if (fixed != null) {
+                    el = gson.fromJson(fixed, JsonElement.class);
+                    if (el != null) logger.warning("[gdam] 절단 JSON 복구 성공 (array:" + key + ", " + stripped.length() + "→" + fixed.length() + "자)");
+                }
+            } catch (Exception ignore) { }
+        }
+        if (el == null) return null;
+        if (el.isJsonArray()) return el.getAsJsonArray();          // 모델이 배열만 출력
+        if (el.isJsonObject()) {
+            JsonObject o = el.getAsJsonObject();
+            if (o.has(key) && o.get(key).isJsonArray()) return o.getAsJsonArray(key);
+        }
         return null;
     }
 
