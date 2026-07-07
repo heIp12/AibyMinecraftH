@@ -826,6 +826,8 @@ public class AiManager {
             .replaceAll("<COMM_BLOCK [^/]*/?>", "")
             .replaceAll("<COMM_UNBLOCK [^/]*/?>", "")
             .replaceAll("<TIME_VISIBLE [^/]*/?>", "")
+            .replaceAll("<THREAT [^/]*/?>", "")
+            .replaceAll("<ANGER [^/]*/?>", "")
             // ★[지난 자율 행동] 마커 누적 방지★: 미니 모델이 이전 턴의 이 내부 마커를 에코해 매턴 하나씩
             //   불어나던 버그(1→57, 오타 '자울'까지 전파). 어디에 있든 전부 제거 — 저장 시 정확히 1개만
             //   다시 붙인다(callNpcAi). 출력 누출(플레이어/GM 로그)도 함께 차단.
@@ -1323,6 +1325,45 @@ public class AiManager {
             String player = extractAttr(attrs, "player").orElse(null);
             String reason = extractAttr(attrs, "reason").orElse("");
             if (player != null) out.add(new String[]{player, reason});
+            from = end + 2;
+        }
+        return out;
+    }
+
+    /** <THREAT delta="±N" reason="…"/> 파싱 → [{delta, reason}, ...] — 위협도(괴담 세력) 가감. delta는 부호 정수. */
+    public java.util.List<String[]> parseThreatTags(String response) {
+        java.util.List<String[]> out = new ArrayList<>();
+        final String PREFIX = "<THREAT ";
+        int from = 0;
+        while (true) {
+            int idx = response.indexOf(PREFIX, from);
+            if (idx == -1) break;
+            int end = response.indexOf("/>", idx);
+            if (end == -1) break;
+            String attrs  = response.substring(idx + PREFIX.length(), end);
+            String delta  = extractAttr(attrs, "delta").orElse(null);
+            String reason = extractAttr(attrs, "reason").orElse("");
+            if (delta != null) out.add(new String[]{delta, reason});
+            from = end + 2;
+        }
+        return out;
+    }
+
+    /** <ANGER delta="±N" target="이름" reason="…"/> 파싱 → [{delta, target, reason}, ...] — 분노도 가감·표적. */
+    public java.util.List<String[]> parseAngerTags(String response) {
+        java.util.List<String[]> out = new ArrayList<>();
+        final String PREFIX = "<ANGER ";
+        int from = 0;
+        while (true) {
+            int idx = response.indexOf(PREFIX, from);
+            if (idx == -1) break;
+            int end = response.indexOf("/>", idx);
+            if (end == -1) break;
+            String attrs  = response.substring(idx + PREFIX.length(), end);
+            String delta  = extractAttr(attrs, "delta").orElse(null);
+            String target = extractAttr(attrs, "target").orElse("");
+            String reason = extractAttr(attrs, "reason").orElse("");
+            if (delta != null) out.add(new String[]{delta, target, reason});
             from = end + 2;
         }
         return out;

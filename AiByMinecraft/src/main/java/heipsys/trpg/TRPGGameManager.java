@@ -2163,6 +2163,9 @@ public class TRPGGameManager {
         //   영감↑=미세 실마리 하나쯤 자연 안내. 평균(5)이면 빈 문자열 → 노이즈 없음. gmCtx로만(플레이어·로그 미노출).
         gmCtx.append(actorStatGmContext(pd));
 
+        // ★괴담 세력 게이지(위협도·분노도) GM 전용★ — 현재 세력을 알려 그에 맞게 서술·증분하게 한다(플레이어·로그 미노출).
+        gmCtx.append(threatAngerGmContext());
+
         // ★같은 구역 동료 목격(#7)★: 옆에 누가 있는지 GM에 결정적으로 알려 '같은 구역 목격 필수' 규칙이 실제로 발화되게 한다
         //   (인원 많으면 상호작용 대상·영감 예민 동료 우선, 나머지는 가볍게 — 요청 반영).
         gmCtx.append(sameZoneWitnessContext(pd));
@@ -2256,6 +2259,9 @@ public class TRPGGameManager {
             // 2. STATE_UPDATE 파싱 및 적용
             JsonObject stateUpdate = ai.parseStateUpdate(raw);
             if (stateUpdate != null) applyStateUpdate(stateUpdate);
+
+            // 2b. ★위협도·분노도 게이지★ 태그 소비(플레이어 비노출) — 함정·도발·전파 등으로 GM이 세력을 올린다.
+            applyThreatAngerTags(raw);
 
             // 3. ITEM_GRANT 파싱 및 처리 + heldItemIds 추적
             JsonObject itemGrant = ai.parseItemGrant(raw);
@@ -4260,6 +4266,58 @@ public class TRPGGameManager {
         // 위상 이탈 무적 턴 감소(턴당 1회) — 0 이하면 해제
         phaseOutTurns.entrySet().removeIf(e -> { int t = e.getValue() - 1; if (t <= 0) return true; e.setValue(t); return false; });
         tickRestrictionStates(); // 변신·관조 지속 턴 감소(턴당 1회)
+        // ★분노도 자연 감쇠(턴당 1회)★ — 분노는 휘발성. 이번 턴 도발이 있으면 뒤이어 <ANGER>로 다시 오른다(순감).
+        state.decayAnger(15);
+    }
+
+    /** ★괴담 세력 게이지(위협도·분노도)★ GM 전용 컨텍스트 — 플레이어·로그 미노출. 매 행동 입력 앞단에 주입해
+     *  GM이 현재 세력을 알고 그에 맞게 서술·증분(<THREAT>/<ANGER>)하게 한다. 밴드 라벨로 임계를 인지시킨다. */
+    private String threatAngerGmContext() {
+        if (currentPhase != Phase.HORROR) return "";
+        int th = state.getThreat(), an = state.getAnger();
+        String thBand = th >= 90 ? "임계-정석 클리어 사실상 닫힘: 탈출·생존으로 선회"
+                      : th >= 70 ? "격상-국소 파훼로는 부족·대가 요구"
+                      : th >= 40 ? "경계-압박 상승"
+                      : "낮음";
+        String anBand = an >= 90 ? "폭주 임계-규칙 무시 표적 살해 임박(붕괴창 동반)"
+                      : an >= 70 ? "분격-표적 맹공"
+                      : an >= 40 ? "격앙"
+                      : "잠잠";
+        StringBuilder sb = new StringBuilder(" [괴담 세력(GM 전용): 위협도 ").append(th).append("/100(").append(thBand).append(")")
+            .append(" · 분노도 ").append(an).append("/100(").append(anBand).append(")");
+        String tgt = state.getAngerTarget();
+        if (an >= 40 && tgt != null && !tgt.isBlank()) sb.append(" 표적=").append(tgt);
+        sb.append("]");
+        return sb.toString();
+    }
+
+    /** GM 응답의 <THREAT>/<ANGER> 태그를 소비해 게이지에 반영(클램프·로깅). 플레이어 비노출(stripTags가 제거). */
+    private void applyThreatAngerTags(String raw) {
+        if (raw == null || raw.isEmpty()) return;
+        for (String[] t : ai.parseThreatTags(raw)) {
+            int d = parseGaugeDelta(t[0], 0);
+            if (d == 0) continue;
+            int after = state.adjustThreat(d);
+            gameLogger.logEvent("위협도 " + (d > 0 ? "+" : "") + d + " → " + after + "/100"
+                + (t.length > 1 && !t[1].isBlank() ? " (" + t[1] + ")" : ""));
+        }
+        for (String[] a : ai.parseAngerTags(raw)) {
+            int d = parseGaugeDelta(a[0], 0);
+            String tgt = a.length > 1 ? a[1] : "";
+            if (d == 0 && tgt.isBlank()) continue;
+            int after = state.adjustAnger(d, tgt);
+            gameLogger.logEvent("분노도 " + (d > 0 ? "+" : "") + d + " → " + after + "/100"
+                + (!tgt.isBlank() ? " 표적=" + tgt : "")
+                + (a.length > 2 && !a[2].isBlank() ? " (" + a[2] + ")" : ""));
+        }
+    }
+
+    /** 부호 정수 파싱("+15"/"15"/"-10"). 실패 시 def. */
+    private static int parseGaugeDelta(String s, int def) {
+        if (s == null) return def;
+        s = s.trim();
+        if (s.startsWith("+")) s = s.substring(1);
+        try { return Integer.parseInt(s.trim()); } catch (Exception e) { return def; }
     }
 
     /** 턴당 1회: 괴담 변신(morph) 종료 처리 + 관조자의 눈(observer) 지속 발동·감소. maybeCaptureRewind에서만 호출. */
@@ -4696,11 +4754,18 @@ public class TRPGGameManager {
             : "- ★유무만★: 이 범위에 '살펴볼 만한 단서가 있다/없다' 정도만 알려준다(구체 내용은 아직 모른다).\n";
         String traitName = td != null ? td.name : "환경 탐색";
         gameLogger.logAbilityResult(pd.gmDisplayName(), traitName, "탐색 대상 → " + target); // 뷰어: 능력 입력(탐색 대상) 기록
+        // ★#227 이미 아는 단서 되풀이 금지 + '여기선 못 찾음'을 정직한 신호로★
+        java.util.List<String> knownClues = state.getDiscoveredClues();
+        String knownCtx = knownClues.isEmpty() ? ""
+            : "- ★이미 밝혀진 단서(되풀이 금지)★: " + String.join(" / ",
+                  knownClues.size() > 12 ? knownClues.subList(knownClues.size() - 12, knownClues.size()) : knownClues)
+              + " — 이건 다시 '발견'으로 보고하지 마라. ★처음 드러나는 새 조각★만 알린다.\n";
         String scanCtx = "\n## " + traitName + " 탐색 처리 (범위: " + scopeStr + ", 등급: " + (td != null ? td.grade : "?") + ")\n"
             + "플레이어가 체계적 탐색으로 단서를 찾고 있다. 규칙:\n"
             + "- 탐색 범위(" + scopeStr + ") 안에서 찾을 수 있는 것만 서술한다.\n"
             + findRule
-            + "- ★정말 아무것도 없으면 억지로 지어내지 말고 눈에 보이는 광경을 담담히 서술한다(정직한 빈손).★\n"
+            + knownCtx
+            + "- ★이 범위에 '새로' 찾을 단서가 없으면★ 억지로 지어내거나 이미 아는 걸 되풀이하지 말고, ★'여기선 (더는) 나올 게 없다'를 분명한 신호로 알려라★ — 그 자체가 탐색 범위를 좁히는 큰 단서다(딴 데·다른 방식을 보라는 뜻). 눈에 보이는 광경은 담담히 곁들이되 '없음'을 흐리지 마라.\n"
             + "- 탐색 행동 자체도 타임라인에 적절히 반영한다.\n"
             + INFO_OBSERVE_PRINCIPLE;
         String charDisplay = pd.gmDisplayName();
