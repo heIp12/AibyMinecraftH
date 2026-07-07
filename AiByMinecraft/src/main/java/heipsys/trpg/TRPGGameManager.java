@@ -5712,8 +5712,7 @@ public class TRPGGameManager {
 
         StringBuilder playerInfo = new StringBuilder();
         for (PlayerData pd : allPd) {
-            playerInfo.append("- ").append(pd.name);
-            if (!pd.charName.isEmpty()) playerInfo.append("(").append(pd.charName).append(")");
+            playerInfo.append("- ").append(pd.gmDisplayName()); // ★계정명 미전송★ 프롬프트엔 캐릭터명(gmDisplayName)만
             playerInfo.append(": ").append(pd.isDead ? "사망" : pd.status);
             playerInfo.append(", HP=").append(pd.hp[0]).append("/").append(pd.hp[1]);
             playerInfo.append(", SAN=").append(pd.san[0]).append("/").append(pd.san[1]);
@@ -5732,9 +5731,7 @@ public class TRPGGameManager {
                 java.util.List<String> nl;
                 synchronized (pd.narrativeLog) { nl = new ArrayList<>(pd.narrativeLog); }
                 if (nl.isEmpty()) continue;
-                perPlayer.append("[").append(pd.name);
-                if (!pd.charName.isEmpty()) perPlayer.append("(").append(pd.charName).append(")");
-                perPlayer.append(" 개인 행동로그]\n");
+                perPlayer.append("[").append(pd.gmDisplayName()).append(" 개인 행동로그]\n"); // 계정명 미전송
                 for (String ln : nl) perPlayer.append("  ").append(ln).append("\n");
             }
         }
@@ -5752,8 +5749,7 @@ public class TRPGGameManager {
             for (PlayerData pd : allPd) {
                 if (!pd.roleAssigned && pd.contribution == 0) continue;
                 double avg = pd.contribution / (double) stages;
-                sb2.append("- ").append(pd.name);
-                if (!pd.charName.isEmpty()) sb2.append("(").append(pd.charName).append(")");
+                sb2.append("- ").append(pd.gmDisplayName()); // 계정명 미전송
                 sb2.append(": 스테이지 평균 기여 ").append(String.format("%.1f", avg)).append("/5")
                    .append(" (누적 ").append(pd.contribution).append("점 ÷ ").append(stages).append("스테이지)\n");
             }
@@ -5796,8 +5792,8 @@ public class TRPGGameManager {
             + "role_label 예시: 핵심 해결자, 정보 수집가, 정보 전달자, 팀 지원자, 생존자, 방관자, 사고뭉치, 놀았음, 산화한 영웅\n"
             + "★ growth: 이 플레이어가 ★이번 시나리오 '행동'으로 실제 단련한 스탯★ 1~2개를 str/cha/luk/spr 중에서 고른다(종료 보상 스텟 배분용).\n"
             + "  - 전투·완력·돌파=str / 설득·교섭·연기=cha / 도박·요행·위기모면=luk / 통찰·관찰·정신버팀=spr. 반드시 실제 행동 근거로만 고른다(무행동이면 빈 배열).\n"
-            + "player 필드: 위 '플레이어 목록'의 이름(괄호 앞 부분)을 그대로 사용한다. 빠짐없이 전원 평가한다.\n"
-            + "★ 단 player 필드는 ★내부 식별자★일 뿐이다 — role_label·desc 등 사람이 읽는 텍스트에는 계정/영문 ID(예: heIp12)를 절대 쓰지 말고 행동만 서술하라(이름이 필요하면 괄호 안 캐릭터명).\n\n"
+            + "player 필드: 위 '플레이어 목록'의 이름을 그대로 사용한다(빠짐없이 전원 평가). 같은 이름이 둘이면 '배역'으로 구분하라.\n"
+            + "★ role_label·desc 등 사람이 읽는 텍스트에는 인물의 이름 그대로만 쓰고 행동을 서술하라(내부 ID·영문 식별자 금지).\n\n"
             + "★ 출력 형식(G20): 플레이어마다 '항목별 평가'를 여러 개 만든다. 각 항목(item)은\n"
             + "  desc='<그 플레이어의 구체적 행동·판단·결과 한 줄>', grade='<S~F>' 이다.\n"
             + "  잘한 행동(S/A)과 못한 행동(D/F)을 섞어서 사실대로 나열하라(보통 2~4개).\n"
@@ -5875,24 +5871,31 @@ public class TRPGGameManager {
                 String total = getStr(e, "total");
                 if (total.isBlank()) total = getStr(e, "grade");
 
+                // ★프롬프트엔 계정명을 안 보낸다(charName/직업으로 식별)★ → AI가 돌려준 player를 실제 플레이어로 매칭한다.
+                //   이름/캐릭터명/배역id/표시명 어느 것으로 와도 잡고, ★내부 grades/growth 키는 계정명(epd.name)으로 정규화★한다
+                //   (grantClearTraitRewards 등 하위 소비가 계정명 키를 그대로 쓰도록 유지 — 다운스트림 무변경).
+                PlayerData epd = state.getAllPlayers().stream()
+                    .filter(p -> p.name.equalsIgnoreCase(pName)
+                              || (p.charName != null && !p.charName.isEmpty() && p.charName.equalsIgnoreCase(pName))
+                              || (p.roleId != null && !p.roleId.isEmpty() && p.roleId.equalsIgnoreCase(pName))
+                              || p.gmDisplayName().equalsIgnoreCase(pName))
+                    .findFirst().orElse(null);
+                String key = epd != null ? epd.name : pName; // 내부 조회 키(계정명으로 정규화)
+
                 // ★ grantClearTraitRewards가 쓰는 이름→총합등급 맵은 반드시 유지한다.
-                if (!pName.isBlank() && !total.isBlank()) grades.put(pName, total);
+                if (!key.isBlank() && !total.isBlank()) grades.put(key, total);
 
                 // 행동 기반 성장 스탯 파싱(str/cha/luk/spr) — 종료 보상 스텟 배분에 사용
-                if (!pName.isBlank() && e.has("growth") && e.get("growth").isJsonArray()) {
+                if (!key.isBlank() && e.has("growth") && e.get("growth").isJsonArray()) {
                     java.util.List<String> gs = new java.util.ArrayList<>();
                     for (JsonElement ge : e.getAsJsonArray("growth")) {
                         String s = ge.getAsString().trim().toLowerCase();
                         if (s.equals("str") || s.equals("cha") || s.equals("luk") || s.equals("spr")) gs.add(s);
                     }
-                    if (!gs.isEmpty()) growth.put(pName, gs);
+                    if (!gs.isEmpty()) growth.put(key, gs);
                 }
 
-                // 헤더 줄: ★캐릭터명(직업)★ [역할] — 계정명 절대 노출 금지(gmDisplayName 사용)  예) 한소율(프리랜서) [핵심해결자]
-                // (pName=계정명은 위 grades/growth 맵의 내부 조회 키로만 쓰고, 화면 표시엔 절대 쓰지 않는다.)
-                PlayerData epd = state.getAllPlayers().stream()
-                    .filter(p -> p.name.equalsIgnoreCase(pName) || p.charName.equalsIgnoreCase(pName))
-                    .findFirst().orElse(null);
+                // 헤더 줄: ★캐릭터명(직업)★ [역할] — 계정명은 화면(메타)에만.  예) 한소율(프리랜서) [핵심해결자]
                 String who;
                 if (epd != null) {
                     who = epd.gmDisplayName(); // charName → 직업 → "이름 모를 인물"
@@ -6877,7 +6880,7 @@ public class TRPGGameManager {
 
         StringBuilder prompt = new StringBuilder();
         prompt.append("## 미등장 배역 서술 요청\n");
-        prompt.append("아직 이야기에 합류하지 않은 ").append(pd.name)
+        prompt.append("아직 이야기에 합류하지 않은 ").append(pd.gmDisplayName())
               .append("(").append(pd.age).append("세, ").append(pd.job).append(")의\n");
         prompt.append("현재 순간을 2인칭 2~3문장으로 서술한다.\n\n");
         prompt.append("### 현재 장면 가이드\n").append(beatGuide).append("\n\n");

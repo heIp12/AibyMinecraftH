@@ -868,7 +868,7 @@ public class GameStateManager {
             sb.append("\n");
         }
 
-        String actorDisplay = (actorData != null) ? actorData.gmDisplayName() : actor.getName();
+        String actorDisplay = (actorData != null) ? actorData.gmDisplayName() : "이름 모를 인물"; // ★계정명 프롬프트 유출 차단★ 폴백도 계정명(actor.getName()) 대신 익명
         sb.append("행동: [").append(actorDisplay).append("] ").append(action);
         return sb.toString();
     }
