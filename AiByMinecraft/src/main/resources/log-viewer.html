@@ -130,6 +130,11 @@
   #info .st{display:inline-block;min-width:58px;color:var(--dim)} #info .tr{color:#ffd27a}
   #info .sub{color:var(--dim);font-size:11px;margin:5px 0 2px;text-transform:uppercase;letter-spacing:.04em}
   #info .dim2{color:var(--dim);font-size:11px}
+  /* 이름 칩 토글: 플레이어·NPC·배역·핵심아이템을 칩으로 골라 하나씩 상세 보기 */
+  #info .chiprow{display:flex;flex-wrap:wrap;gap:4px;margin:1px 0 6px}
+  #info .chip{cursor:pointer;font-size:12px;padding:2px 10px;border-radius:12px;background:var(--panel2);border:1px solid var(--line);color:var(--dim);user-select:none;white-space:nowrap}
+  #info .chip:hover{border-color:#6a5a9a;color:#cbd3e6}
+  #info .chip.on{background:#2a2450;border-color:#7a68b0;color:#eae4ff;font-weight:600}
   #info .trait{border-top:1px solid var(--line);padding:4px 0 3px}
   #info .trait:first-of-type{border-top:0}
   #info .grd{color:#ffd27a;font-weight:600}
@@ -1025,6 +1030,22 @@ function applyCollapsed(){
   }
 }
 function toggleSec(h){ const id=h.dataset.sid; if(COLLAPSED.has(id))COLLAPSED.delete(id); else COLLAPSED.add(id); applyCollapsed(); }
+// ★이름 칩 토글★: 항목이 여럿인 목록(플레이어·NPC·배역·핵심아이템)을 칩으로 골라 하나씩만 상세 표시.
+//  entries=[{name, html}]. 칩줄 + 본문(선택 항목만 보임)을 반환 — 섹션 헤더 뒤 형제로 붙어 접힘도 그대로 동작.
+function chipList(gid, entries){
+  if(!entries||!entries.length) return "";
+  if(entries.length===1) return entries[0].html;   // 하나뿐이면 칩 없이 그대로
+  let chips=`<div class="chiprow" data-cg="${gid}">`;
+  entries.forEach((e,i)=>{ chips+=`<span class="chip${i?"":" on"}" onclick="pickChip('${gid}',${i},this)">${esc(e.name||"?")}</span>`; });
+  chips+=`</div><div class="chipbody" data-cg="${gid}">`;
+  entries.forEach((e,i)=>{ chips+=`<div class="chipitem" data-ci="${i}"${i?' style="display:none"':""}>${e.html}</div>`; });
+  return chips+`</div>`;
+}
+function pickChip(gid, idx, el){
+  const row=el&&el.parentNode; if(row)for(let i=0;i<row.children.length;i++)row.children[i].classList.toggle("on",i===idx);
+  const body=document.querySelector('.chipbody[data-cg="'+gid+'"]');
+  if(body)for(const it of body.querySelectorAll(".chipitem"))it.style.display=(+it.dataset.ci===idx)?"":"none";
+}
 // role_id/npc_id → 표시 이름 (배역 char_name → NPC 이름 → replay → 원본 id)
 function scNameOf(rid){
   if(!rid) return rid;
@@ -1076,45 +1097,49 @@ function scenarioExtraHtml(){
         +`</div>`;}
   }
   if(Array.isArray(SCENARIO.npcs)&&SCENARIO.npcs.length){
-    h+=sh('npc','NPC 상세');
+    const ent=[];
     for(const n of SCENARIO.npcs){
-      h+=`<div class="card"><b>${esc(n.name||n.id||"?")}</b> <span class="dim2">${esc(S(n.role_type))}${n.zone?" · "+esc(n.zone):""}${n.critical?" · ★핵심":""}${n.communicable===false?" · 대화불가":""}</span>`;
-      if(S(n.motivation))  h+=`<br><span class="st">동기</span>${esc(n.motivation)}`;
-      if(S(n.personality)) h+=`<br><span class="st">성격</span>${esc(n.personality)}`;
+      let c=`<div class="card"><b>${esc(n.name||n.id||"?")}</b> <span class="dim2">${esc(S(n.role_type))}${n.zone?" · "+esc(n.zone):""}${n.critical?" · ★핵심":""}${n.communicable===false?" · 대화불가":""}</span>`;
+      if(S(n.motivation))  c+=`<br><span class="st">동기</span>${esc(n.motivation)}`;
+      if(S(n.personality)) c+=`<br><span class="st">성격</span>${esc(n.personality)}`;
       const sched=n.schedule;
       if(Array.isArray(sched)&&sched.length){
-        h+=`<div class="sub">할 일 · 일정</div>`;
+        c+=`<div class="sub">할 일 · 일정</div>`;
         for(const s of sched){
-          if(typeof s==="string"){h+=`<div class="tdesc">· ${esc(s)}</div>`;continue;}
+          if(typeof s==="string"){c+=`<div class="tdesc">· ${esc(s)}</div>`;continue;}
           // ★한눈에 보이게 [조건]/[행동]/[목적] 라벨 줄로 정리★ (있는 것만).
           const when=S(s.time||s.when||s.turn), goal=S(s.goal||s.intent), act=S(s.action||s.what||s.plan),
                 cond=S(s.condition), will=S(s.will), dur=S(s.duration_turns);
-          const lab=(k,v,c)=>v?`<div><span style="color:${c};font-weight:600">[${k}]</span> ${esc(v)}</div>`:"";
+          const lab=(k,v,cc)=>v?`<div><span style="color:${cc};font-weight:600">[${k}]</span> ${esc(v)}</div>`:"";
           let blk=`<div style="margin:3px 0 6px;padding-left:7px;border-left:2px solid #3a4252">`;
           if(when||dur) blk+=`<div class="dim2">⏱ ${esc(when||"")}${dur?(when?" · ":"")+esc(dur)+"턴":""}</div>`;
           blk+=lab("조건",cond,"#e0b060")+lab("행동",act,"#7fc7ff")+lab("목적",goal,"#8fd98f");
           if(will) blk+=`<div class="dim2">[의지] ${esc(will)}</div>`;
           if(!cond&&!act&&!goal&&!when&&!will) blk+=`<div>· ${esc(JSON.stringify(s))}</div>`; // 알수없는 형식 폴백
           blk+=`</div>`;
-          h+=blk;
+          c+=blk;
         }
       }
       const sp=[];
       if(S(n.true_role)) sp.push(`<span class="st">진짜역할</span>${esc(n.true_role)}`);
       if(Array.isArray(n.knowledge)&&n.knowledge.length) sp.push(`<span class="st">아는것</span>${J(n.knowledge)}`);
-      if(sp.length)h+=`<div class="spoiler" style="margin-top:5px"><div class="teff" style="color:#ff9a8f">GM 전용</div>${sp.join("<br>")}</div>`;
-      h+=`</div>`;
+      if(sp.length)c+=`<div class="spoiler" style="margin-top:5px"><div class="teff" style="color:#ff9a8f">GM 전용</div>${sp.join("<br>")}</div>`;
+      c+=`</div>`;
+      ent.push({name:n.name||n.id||"?",html:c});
     }
+    h+=sh('npc','NPC 상세')+chipList('npc',ent);
   }
   if(Array.isArray(SCENARIO.roles)&&SCENARIO.roles.length){
-    h+=sh('roles','배역');
+    const ent=[];
     for(const r of SCENARIO.roles){
-      h+=`<div class="card"><b>${esc(r.char_name||r.name||r.role_id||"?")}</b> <span class="dim2">${esc(S(r.name))}${r.zone?" · "+esc(r.zone):""}${r.is_core?" · ★핵심":""}</span>`;
-      if(S(r.spawn_location)) h+=`<br><span class="st">등장</span>${esc(r.spawn_location)}`;
-      if(Array.isArray(r.initial_info)&&r.initial_info.length) h+=`<br><span class="st">초기정보</span>${J(r.initial_info)}`;
-      if(Array.isArray(r.hidden_info)&&r.hidden_info.length) h+=`<div class="spoiler" style="margin-top:5px"><span class="st" style="color:#ff9a8f">숨은정보</span>${J(r.hidden_info)}</div>`;
-      h+=`</div>`;
+      let c=`<div class="card"><b>${esc(r.char_name||r.name||r.role_id||"?")}</b> <span class="dim2">${esc(S(r.name))}${r.zone?" · "+esc(r.zone):""}${r.is_core?" · ★핵심":""}</span>`;
+      if(S(r.spawn_location)) c+=`<br><span class="st">등장</span>${esc(r.spawn_location)}`;
+      if(Array.isArray(r.initial_info)&&r.initial_info.length) c+=`<br><span class="st">초기정보</span>${J(r.initial_info)}`;
+      if(Array.isArray(r.hidden_info)&&r.hidden_info.length) c+=`<div class="spoiler" style="margin-top:5px"><span class="st" style="color:#ff9a8f">숨은정보</span>${J(r.hidden_info)}</div>`;
+      c+=`</div>`;
+      ent.push({name:r.char_name||r.name||r.role_id||"?",html:c});
     }
+    h+=sh('roles','배역')+chipList('roles',ent);
   }
   const tl=SCENARIO.timeline;
   if(tl&&typeof tl==="object"){
@@ -1150,18 +1175,20 @@ function scenarioExtraHtml(){
     h+=`</div>`;
   }
   if(Array.isArray(SCENARIO.key_items)&&SCENARIO.key_items.length){
-    h+=sh('items','핵심 아이템');
+    const ent=[];
     for(const it of SCENARIO.key_items){
-      h+=`<div class="card"><b>${esc(it.name||it.id||"?")}</b> <span class="dim2">${esc(S(it.item_type||it.type))}</span>`
+      let c=`<div class="card"><b>${esc(it.name||it.id||"?")}</b> <span class="dim2">${esc(S(it.item_type||it.type))}</span>`
         +(S(it.description)?`<br>${esc(it.description)}`:"")
         +(S(it.location)?`<br><span class="st">위치</span>${esc(it.location)}`:"");
       const sp=[];
       if(S(it.clue_value)) sp.push(`<span class="st">단서가치</span>${esc(it.clue_value)}`);
       if(S(it.lore_info))  sp.push(`<span class="st">내막</span>${esc(it.lore_info)}`);
       if(Array.isArray(it.content)&&it.content.length) sp.push(`<span class="st">내용</span>${J(it.content)}`);
-      if(sp.length)h+=`<div class="spoiler" style="margin-top:5px">${sp.join("<br>")}</div>`;
-      h+=`</div>`;
+      if(sp.length)c+=`<div class="spoiler" style="margin-top:5px">${sp.join("<br>")}</div>`;
+      c+=`</div>`;
+      ent.push({name:it.name||it.id||"?",html:c});
     }
+    h+=sh('items','핵심 아이템')+chipList('items',ent);
   }
   const cons=SCENARIO.constraints;
   if(cons&&typeof cons==="object"){
@@ -1192,29 +1219,31 @@ function renderInfo(){
   }
   const row=(label,val)=>{const s=S(val);return s?`<br><span class="st">${esc(label)}</span>${esc(s)}`:"";};
   const rowArr=(label,val)=>{if(!Array.isArray(val))return "";const it=val.map(S).filter(Boolean);return it.length?`<br><span class="st">${esc(label)}</span>${it.map(esc).join(" · ")}`:"";};
-  if(REPLAY){h+=sh('players',`플레이어 ${REPLAY.stage!=null?"(스테이지 "+REPLAY.stage+")":""}`);
+  if(REPLAY){const ent=[];
     for(const p of (REPLAY.players||[])){const hp=Array.isArray(p.hp)?p.hp.join("/"):p.hp,san=Array.isArray(p.san)?p.san.join("/"):p.san;
       const stat=(cur,base)=>base!=null&&base!==cur?`${cur??"?"}<span class="dim2">(${base})</span>`:`${cur??"?"}`;
-      h+=`<div class="card"><b style="color:${colorFor(p.charName||p.name)}">${esc(p.charName||p.name||"?")}</b> <span style="color:var(--dim)">${esc(p.job||"")} · ${p.age??"?"}세 · ${esc(p.zone||"")}</span><br>
+      let c=`<div class="card"><b style="color:${colorFor(p.charName||p.name)}">${esc(p.charName||p.name||"?")}</b> <span style="color:var(--dim)">${esc(p.job||"")} · ${p.age??"?"}세 · ${esc(p.zone||"")}</span><br>
         <span class="st">체력</span>${esc(hp)} <span class="st">정신</span>${esc(san)}<br>
         <span class="st">근력</span>${stat(p.str,p.baseStr)} <span class="st">매력</span>${stat(p.cha,p.baseCha)} <span class="st">행운</span>${stat(p.luk,p.baseLuk)} <span class="st">영감</span>${stat(p.spr,p.baseSpr)}
         <div class="dim2">스탯 5=평균 · 범위 1~20 · 괄호=기본값</div>`;
-      if(Array.isArray(p.traits)&&p.traits.length){h+=`<div class="sub">능력 · 특성</div>`;
+      if(Array.isArray(p.traits)&&p.traits.length){c+=`<div class="sub">능력 · 특성</div>`;
         for(const t of p.traits){
           const boosts=[["근",t.str_add],["매",t.cha_add],["행",t.luk_add],["영",t.spr_add],["체력",t.hp_max_add],["정신",t.san_max_add]].filter(x=>x[1]).map(x=>x[0]+(x[1]>0?"+":"")+x[1]).join(" ");
-          h+=`<div class="trait"><span class="tr">✦ ${esc(t.name||"?")}</span>${t.grade?` <span class="grd">${esc(t.grade)}</span>`:""}${t.active?` <span class="act">발동</span>`:""}${t.level>1?` <span class="dim2">Lv.${t.level}</span>`:""}`;
-          if(S(t.description))h+=`<div class="tdesc">${esc(t.description)}</div>`;
-          if(boosts)h+=`<div class="tboost">스탯 ${esc(boosts)}</div>`;
-          if(S(t.effect))h+=`<div class="teff">⚙ ${esc(t.effect)}</div>`;
-          h+=`</div>`;}}
+          c+=`<div class="trait"><span class="tr">✦ ${esc(t.name||"?")}</span>${t.grade?` <span class="grd">${esc(t.grade)}</span>`:""}${t.active?` <span class="act">발동</span>`:""}${t.level>1?` <span class="dim2">Lv.${t.level}</span>`:""}`;
+          if(S(t.description))c+=`<div class="tdesc">${esc(t.description)}</div>`;
+          if(boosts)c+=`<div class="tboost">스탯 ${esc(boosts)}</div>`;
+          if(S(t.effect))c+=`<div class="teff">⚙ ${esc(t.effect)}</div>`;
+          c+=`</div>`;}}
       // 시작 소지품 + 시작 정보(아는 것) — 시나리오 역할(role) 조인, 없으면 replay heldItemIds(코드 id 중복 제거)
       {const role=(SCENARIO&&Array.isArray(SCENARIO.roles))?SCENARIO.roles.find(r=>r&&(r.role_id===p.roleId||r.char_name===p.charName)):null;
         let si=(role&&Array.isArray(role.start_item))?role.start_item.slice():null;
         if(!si&&Array.isArray(p.heldItemIds)){const seen=new Set();si=[];for(const it of p.heldItemIds){const s=S(it);if(!s||/^[A-Za-z0-9_]+$/.test(s)||seen.has(s))continue;seen.add(s);si.push(s);}}
-        if(si&&si.length)h+=`<div class="sub">시작 소지품</div><div class="dim2">${si.map(esc).join(" · ")}</div>`;
+        if(si&&si.length)c+=`<div class="sub">시작 소지품</div><div class="dim2">${si.map(esc).join(" · ")}</div>`;
         const ii=(role&&Array.isArray(role.initial_info))?role.initial_info:[];
-        if(ii.length){h+=`<div class="sub">시작 정보 (아는 것)</div>`;for(const inf of ii){const s=S(inf);if(s)h+=`<div style="font-size:12px;color:#b9c2cf;margin:1px 0">· ${esc(s)}</div>`;}}}
-      h+=`</div>`;}}
+        if(ii.length){c+=`<div class="sub">시작 정보 (아는 것)</div>`;for(const inf of ii){const s=S(inf);if(s)c+=`<div style="font-size:12px;color:#b9c2cf;margin:1px 0">· ${esc(s)}</div>`;}}}
+      c+=`</div>`;
+      ent.push({name:p.charName||p.name||"?",html:c});}
+    h+=sh('players',`플레이어 ${REPLAY.stage!=null?"(스테이지 "+REPLAY.stage+")":""}`)+chipList('players',ent);}
   if(SCENARIO){const e=SCENARIO.entity||{},ai=e.ai_context||{},ph=e.physical||{};
     h+=sh('entity','괴담 개요')+`<div class="card"><b>${esc(e.name||"?")}</b> <span style="color:var(--dim)">${esc(S(SCENARIO.scale))}${e.type?" · "+esc(e.type):""}</span>`;
     h+=row("성격",ai.personality||ai.disposition);
