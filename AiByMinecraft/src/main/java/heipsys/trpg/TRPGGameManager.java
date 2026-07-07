@@ -5517,24 +5517,28 @@ public class TRPGGameManager {
         }
         boolean haveAny = !fullLog.isBlank() || perPlayer.length() > 0;
 
-        // ★평가 정합성★: 최종 총평(campaignWide)은 스테이지별로 이미 매긴 A~F가 누적된 pd.contribution을
-        //   ★권위 근거★로 받아, 캠페인 로그가 300개 캡으로 잘려 초반 활약이 빠져도 같은 행동을 근거 없이
-        //   낮추지 않게 한다(스테이지 A → 최종 C 뒤집힘 방지).
+        // ★평가 정합성 — 스테이지 평균으로 정규화★: 최종 총평(campaignWide)은 스테이지별 등급 누적치를
+        //   ★스테이지 수로 나눈 평균★을 권위 근거로 받는다. 그냥 누적 총점을 쓰면 5~6스테이지에선 누구나
+        //   총점이 커져(D만 받아도 6점=핵심공헌자) 전원이 영웅으로 인플레되고, 캠페인 로그 300캡으로 초반
+        //   활약이 잘려 재평가가 뒤집히던 문제(A→C)도 남는다. 평균 기준이면 둘 다 해결(잘한 사람은 유지, 평범한
+        //   사람은 스테이지가 많아도 평범).
         String stageBasis = "";
         if (campaignWide) {
+            int stages = Math.max(1, state.getRoomNumber());
             StringBuilder sb2 = new StringBuilder();
             for (PlayerData pd : allPd) {
                 if (!pd.roleAssigned && pd.contribution == 0) continue;
+                double avg = pd.contribution / (double) stages;
                 sb2.append("- ").append(pd.name);
                 if (!pd.charName.isEmpty()) sb2.append("(").append(pd.charName).append(")");
-                sb2.append(": 스테이지별 누적 기여도 ").append(pd.contribution)
-                   .append(" (").append(contributionLabel(pd.contribution)).append(")\n");
+                sb2.append(": 스테이지 평균 기여 ").append(String.format("%.1f", avg)).append("/5")
+                   .append(" (누적 ").append(pd.contribution).append("점 ÷ ").append(stages).append("스테이지)\n");
             }
             if (sb2.length() > 0)
-                stageBasis = "★스테이지별 기존 평가(누적) — 최종은 이와 ★일관★되게 매겨라★:\n" + sb2
-                    + "위 누적치는 각 스테이지에서 이미 A~F로 평가받아 합산된 값이다. 최종 total은 이를 ★존중·반영★하라 — "
-                    + "누적이 높은(스테이지에서 좋게 평가된) 플레이어를 로그가 부족하다는 이유로 근거 없이 낮추지 마라. "
-                    + "대략 기준: 누적 5+ → A~B급 활약 / 3~4 → 최소 B / 1~2 → C / 0 → 무행동(D~F).\n\n";
+                stageBasis = "★스테이지별 기존 평가 요약 — 최종은 이 ★스테이지 평균★과 일관되게 매겨라★:\n" + sb2
+                    + "위 '스테이지 평균'은 각 스테이지 등급(S=5·A=4·B=3·C=2·D=1·F=0)을 스테이지 수로 나눈 값이다. "
+                    + "최종 total은 이 평균에 대응하는 글자로 매겨라 — 평균 4.5+→S, 3.5~4.4→A, 2.5~3.4→B, 1.5~2.4→C, 0.5~1.4→D, 0.5↓→F. "
+                    + "★스테이지가 5~6개로 많다는 이유만으로 전원을 영웅(A/S)으로 매기지 마라 — 누적 총점이 커도 평균이 평범(B~C)이면 최종도 B~C다. 평균이 높은데 로그 부족을 이유로 내리지도, 낮은데 임의로 올리지도 마라.★\n\n";
         }
 
         String prompt = "게임 클리어 등급: " + clearGrade + "\n\n"
