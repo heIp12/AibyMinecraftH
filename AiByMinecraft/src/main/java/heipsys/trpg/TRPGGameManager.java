@@ -2359,9 +2359,9 @@ public class TRPGGameManager {
                  .append(" 같은 구역이면 그 모습을 WITNESS로 동료에게 전하고, 아니면 한 줄로만 곁들여라.]");
         }
 
-        // ★방송 설비로 건물 전체에 외치는 '대규모 발화' → 시스템이 ★모든 플레이어에게 직접★ 전달한다.
-        //   (GM 서술/WITNESS에만 의존하면 다른 플레이어에게 누락되던 문제 — 번호 공지·집결 호출 등 협업 수단 보장)
-        if (looksLikeBroadcast(message)) deliverPlayerBroadcast(player, pd, message);
+        // ★방송(PA) 판정은 GM이 한다★: 입력 즉시 키워드로 추정해 송출하던 것을 폐지(‘방송을 끄고 말한다’까지 방송되던 오판).
+        //   이제 GM이 응답에서 <BROADCAST>로 '진짜 방송'이라 판정했을 때만, onGmResponse에서 같은 건물 인원에게 결정적 전달한다.
+        //   (그 응답 턴에 재생 — 입력 즉시가 아니라 GM이 판단한 뒤.)
 
         // 특성 버튼 관련 단어 처리는 TurnManager가 GM AI로 전달 (gmCtx=소지품·보정 등 GM전용 지시는 로그 미기록)
         boolean accepted = turnMan.handleAction(player, actionMessage, gmSystemPrompt, gmCtx.toString());
@@ -2473,6 +2473,18 @@ public class TRPGGameManager {
 
             // 4. 서술 + WITNESS 전달 (당사자에게만)
             deliverNarrative(player, raw);
+
+            // 4-B. ★방송(PA) — GM이 <BROADCAST>로 '진짜 방송'이라 판정했을 때만★ 같은 건물 인원에게 결정적 전달(이 응답 턴에 재생).
+            //   판단은 GM이 한다 → '방송을 끄고 말한다'류 오판 없음. from 비면 발신자(anchor) 표시명.
+            if (player != null) {
+                JsonObject bcast = ai.parseBroadcastTag(raw);
+                if (bcast != null) {
+                    PlayerData bpd = state.getPlayer(player);
+                    String bFrom    = bcast.has("from")    && !bcast.get("from").isJsonNull()    ? bcast.get("from").getAsString()    : "";
+                    String bContent = bcast.has("content") && !bcast.get("content").isJsonNull() ? bcast.get("content").getAsString() : "";
+                    if (bpd != null && !bContent.isBlank()) deliverPlayerBroadcast(player, bpd, bFrom, bContent);
+                }
+            }
 
             // 4a. 주사위 판정 연출 — GM이 <DICE> 태그로 실제 굴린 숫자를 주면 그 숫자를 강조 연출.
             //     태그가 없고 판정 키워드만 있으면 기존 무난한 연출로 폴백. ★서술 배달 뒤로 미룬다(present).★
@@ -8159,10 +8171,12 @@ public class TRPGGameManager {
      * GM 서술/WITNESS에만 의존하던 누락을 막아, 번호 공지·집결 호출 같은 협업을 보장한다.
      * 일방향 방송이므로 연락처를 강제 교환하지 않는다(들은 사람은 공지된 번호를 직접 눌러 연락 가능).
      */
-    private void deliverPlayerBroadcast(Player sender, PlayerData senderPd, String message) {
-        String content = extractSpoken(message);
-        if (content.isBlank()) return;
-        String disp = senderPd.gmDisplayName();
+    /** GM이 &lt;BROADCAST&gt;로 '진짜 방송'이라 판정했을 때만 호출 — 내용·화자는 GM 제공. 같은 건물 인원에게 결정적 전달.
+     *  fromDisp가 비면 발신자(anchor)의 표시명을 쓴다. sender/senderPd는 도달범위·피드백의 기준(anchor). */
+    private void deliverPlayerBroadcast(Player sender, PlayerData senderPd, String fromDisp, String content) {
+        if (content == null || content.isBlank()) return;
+        content = content.trim();
+        String disp = (fromDisp != null && !fromDisp.isBlank()) ? fromDisp.trim() : senderPd.gmDisplayName();
         // ★도달 범위 게이트★: PA는 같은 대분류(건물·시설) 안에서만 결정적 전달(멀리·밖은 GM 서술로 처리).
         //   소리 위험/침묵요구 상황이면 크게 못 외치므로 같은 zone(바로 근처)으로 ★축소★한다.
         boolean risky = soundDangerous();
@@ -8183,21 +8197,21 @@ public class TRPGGameManager {
                 heard++;
             }
         }
-        sender.sendMessage(heard > 0 ? ("§7[방송 송출 — " + heard + "명에게 전달됨]" + (risky ? " §8(소리 위험 — 가까운 곳만 닿음)" : ""))
-                                     : (risky ? "§8(소리를 크게 낼 수 없는 상황 — 방송이 멀리 닿지 않았습니다.)"
-                                              : "§8(방송했지만 같은 건물에 들을 다른 인원이 없습니다.)"));
+        if (sender != null && sender.isOnline())
+            sender.sendMessage(heard > 0 ? ("§7[방송 전달 — " + heard + "명에게 닿음]" + (risky ? " §8(소리 위험 — 가까운 곳만)" : ""))
+                                         : (risky ? "§8(소리를 크게 낼 수 없어 방송이 멀리 닿지 않았습니다.)"
+                                                  : "§8(같은 건물에 들을 다른 인원이 없습니다.)"));
         state.log("comm", senderPd.name, "[방송] " + content);
         String bNet = commNetworkKey(senderPd); // 폐쇄망(무전) 방송이면 그 망 접속자만 들었을 수 있음(PA는 개방)
         gameLogger.logComm("broadcast", disp, heardNames, content, bNet); // 뷰어 통화내역: 방송 수신자 기록
         noteEntityIntel(3, disp, content, bNet != null ? bNet + "망 방송" : "방송"); // 방송=개방 채널 → 괴담 수집 강함
-        // GM·NPC 인지: 방송은 건물 전체로 퍼진 큰 행동. 내용은 시스템이 이미 전달했으니 중복 WITNESS 금지.
+        // 방송은 이미 GM이 <BROADCAST>로 판정·서술했다(이 응답 안에서). 시스템은 배달만 했으니 재서술은 요구하지 않고,
+        //   범위·괴담 개입만 다음 서술에 반영하도록 짧게 알린다(같은 문구 <WITNESS> 중복 금지).
         if (currentPhase == Phase.HORROR || currentPhase == Phase.DAILY) {
-            ai.injectGmSystem("[방송 송출] " + disp + "이(가) 방송 설비로 외쳤다: \"" + content
-                + "\". 이 문구는 시스템이 ★같은 건물(대분류) 안 인원에게만★ 전달했다(같은 문구를 다시 <WITNESS>로 중복 전달 금지). "
-                + "★범위★: 시스템이 이미 같은 건물·시설 안 사람에게만 닿게 처리했다 — 다른 건물·바깥·먼 곳의 인원은 ★못 들은 것으로★ 다음 서술에 반영하라(광역 라디오·도시 방송 설정이면 서술로 넓게 확장 가능). 방송 설비가 없거나 소리가 위험한 상황이면 육성 외침이 가까운 곳까지만 닿았음을 반영하라. "
-                + "장면(스피커·반향)과 결과를 서술하고, 같은 건물의 소통 가능한 NPC들도 들은 것으로 반영하라. "
-                + "★괴담 개입★: 통신·소리를 감지·간섭하는 괴담이면 이 방송을 ★듣고 반응하거나 능동적으로 끼어들 수 있다★(평범한 안내 방송엔 둔감한 괴담은 무시). "
-                + "★단 변조(왜곡)는 발신자에게 은폐(#216)★ — 발신자에게 '네 방송이 이렇게 바뀌어 되돌아왔다'고 드러내지 마라(발신자는 자기 말이 그대로 나간 줄 안다). 왜곡은 ★듣는 쪽(다른 인원)★에게만 다르게 닿거나, 스피커의 잡음·이상 징후·이후 결과로만 은근히 드러내라 — 발신자 본인이 자기 발화가 변조됐음을 직접 확인하게 만들지 마라.");
+            ai.injectGmSystem("[방송 전달됨] " + disp + "의 방송 \"" + content + "\"을(를) 시스템이 ★같은 건물 안 인원에게만★ 전달했다"
+                + "(같은 문구를 <WITNESS>로 중복 전달 금지 · 다른 건물·바깥·먼 곳은 못 들음 — 광역 라디오·도시 방송 설정이면 서술로 넓게 확장 가능). "
+                + "통신·소리에 반응하는 괴담이면 이 방송을 듣고 ★다음 전개에서 반응·개입★할 수 있다(평범한 안내엔 둔감한 괴담은 무시). "
+                + "★변조는 발신자에게 은폐(#216)★ — 듣는 쪽(타인)에게만 다르게 닿거나 잡음·이상 징후·결과로만 드러내고, 발신자 본인엔 자기 말이 그대로 나간 것으로 둬라.");
         }
     }
 
