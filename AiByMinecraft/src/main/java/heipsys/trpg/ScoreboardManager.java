@@ -22,8 +22,29 @@ public class ScoreboardManager {
     }
 
     /** 플레이어 스코어보드 갱신 */
-    public void update(Player player, PlayerData pd, int roomNumber) {
+    public void update(Player player, PlayerData pd, int roomNumber) { update(player, pd, roomNumber, null); }
+
+    /** 스코어보드 갱신. mapLegend(방 이름 범례)가 있으면(지도 든 상태) 기존 정보 대신 그 범례를 표시한다. */
+    public void update(Player player, PlayerData pd, int roomNumber, java.util.List<String> mapLegend) {
         Scoreboard sb = sbm.getNewScoreboard();
+
+        // ★지도 든 상태★: 기존 정보 대신 '현재 보는 약도'의 방 이름 범례([n] 이름)를 보여준다.
+        if (mapLegend != null && !mapLegend.isEmpty()) {
+            Objective mo = sb.registerNewObjective("trpg", Criteria.DUMMY, "§e§l[ 현장 약도 ]");
+            mo.setDisplaySlot(DisplaySlot.SIDEBAR);
+            int ml = 14;
+            set(mo, "§f현위치: §a" + resolveLocationLabel(pd), ml--);
+            set(mo, divider(0),                               ml--);
+            int cap = 13;
+            if (mapLegend.size() <= cap) {
+                for (String s : mapLegend) set(mo, s, ml--);
+            } else {
+                for (int i = 0; i < cap - 1; i++) set(mo, mapLegend.get(i), ml--);
+                set(mo, "§8…외 " + (mapLegend.size() - (cap - 1)) + "곳 (지도 참조)", ml);
+            }
+            player.setScoreboard(sb);
+            return;
+        }
 
         Objective obj = sb.registerNewObjective("trpg", Criteria.DUMMY, "§e§l[ TRPG ]");
         obj.setDisplaySlot(DisplaySlot.SIDEBAR);

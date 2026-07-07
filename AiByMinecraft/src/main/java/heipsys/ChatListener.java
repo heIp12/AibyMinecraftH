@@ -150,6 +150,15 @@ public class ChatListener implements Listener {
         }
     }
 
+    /** 지도를 들면 스코어보드에 '현재 보는 약도'의 방 이름 범례를 표시(#지도범례) — 손 슬롯이 바뀔 때 그 플레이어만 갱신. */
+    @EventHandler
+    public void onItemHeld(org.bukkit.event.player.PlayerItemHeldEvent event) {
+        TRPGGameManager trpgManager = trpg();
+        if (trpgManager == null || !trpgManager.isActive()) return;
+        org.bukkit.entity.Player p = event.getPlayer();
+        Bukkit.getScheduler().runTask(plugin, () -> trpgManager.refreshScoreboard(p));
+    }
+
     /** TRPG 아이템·정보/기록/지도 아이템은 블록으로 설치할 수 없음(설치로 인벤에서 물리 제거되어 소지 상태와 어긋나던 문제 방지). */
     @EventHandler(ignoreCancelled = true)
     public void onTrpgItemPlace(org.bukkit.event.block.BlockPlaceEvent event) {

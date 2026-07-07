@@ -5568,11 +5568,11 @@ public class TRPGGameManager {
         if (areas.isEmpty()) { player.sendMessage("§7아직 지도에 표시할 만큼 둘러본 곳이 없습니다."); return; }
         if (areas.size() < 2) { // 아는 대분류가 하나뿐 → 선택 의미 없이 바로 그 지도로 전환
             String only = areas.get(0);
-            Bukkit.getScheduler().runTask(plugin, () -> mapMan.swapMapView(player, only));
+            Bukkit.getScheduler().runTask(plugin, () -> { mapMan.swapMapView(player, only); refreshScoreboard(player); });
             return;
         }
         dialogMan.showMapSelector(player, areas,
-            area -> Bukkit.getScheduler().runTask(plugin, () -> mapMan.swapMapView(player, area)));
+            area -> Bukkit.getScheduler().runTask(plugin, () -> { mapMan.swapMapView(player, area); refreshScoreboard(player); }));
     }
 
     /** 지도 아이템 여부 판별 (ChatListener에서 사용) */
@@ -10740,8 +10740,21 @@ public class TRPGGameManager {
     private void updateAllScoreboards() {
         state.getAllPlayers().forEach(pd -> {
             Player p = Bukkit.getPlayer(pd.uuid);
-            if (p != null) scoreMan.update(p, pd, state.getRoomNumber());
+            if (p == null) return;
+            java.util.List<String> legend = isMapItem(p.getInventory().getItemInMainHand())
+                ? mapMan.currentViewLabels(p) : null;
+            scoreMan.update(p, pd, state.getRoomNumber(), legend);
         });
+    }
+
+    /** ★지도 범례 스코어보드★ 한 플레이어만 갱신 — 지도 들기/놓기·뷰 전환 시 즉시 반영(ChatListener 손 슬롯 변경). */
+    public void refreshScoreboard(Player p) {
+        if (p == null || !isActive()) return;
+        PlayerData pd = state.getPlayer(p);
+        if (pd == null) return;
+        java.util.List<String> legend = isMapItem(p.getInventory().getItemInMainHand())
+            ? mapMan.currentViewLabels(p) : null;
+        scoreMan.update(p, pd, state.getRoomNumber(), legend);
     }
 
     private String buildGmPrompt(JsonObject gdam) {

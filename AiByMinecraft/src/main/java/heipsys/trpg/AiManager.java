@@ -120,6 +120,12 @@ public class AiManager {
         this.npcEffort       = npc       == null ? "" : npc.trim();
         this.assistantEffort = assistant == null ? "" : assistant.trim();
     }
+    /** 이 모델이 output_config.effort(적응형 thinking 깊이)를 지원하는가. Haiku 등 비적응형(4.5 이하) 티어는 미지원 —
+     *  effort를 실어 보내면 400 "does not support the effort parameter". 미지원 모델엔 생략한다(send의 400 폴백은 안전망). */
+    private static boolean modelSupportsEffort(String model) {
+        if (model == null || model.isBlank()) return false;
+        return !model.toLowerCase().contains("haiku"); // Haiku 계열만 제외 — Opus/Sonnet/Fable 등은 지원
+    }
     public String providerLabel() {
         return switch (apiType) { case "claude" -> "Claude"; case "openai" -> "OpenAI"; default -> "Gemini"; };
     }
@@ -1047,7 +1053,7 @@ public class AiManager {
                 req.addProperty("max_tokens", maxTokens);
                 // ★effort(적응형 thinking 깊이)★ — 지정 시 output_config.effort로 전달(빈 값이면 모델 기본).
                 //   낮출수록 thinking 토큰↓ → 생성/응답 빨라짐. Opus 4.8 등은 budget_tokens 대신 effort만 허용.
-                if (effort != null && !effort.isBlank()) {
+                if (effort != null && !effort.isBlank() && modelSupportsEffort(model)) {
                     JsonObject oc = new JsonObject();
                     oc.addProperty("effort", effort.trim());
                     req.add("output_config", oc);
@@ -1143,6 +1149,12 @@ public class AiManager {
             if (fb != null && !fb.equals(model)) {
                 return send(fb, system, messages, maxTokens, attempt + 1, cacheHistory, effort);
             }
+        }
+        // ★effort 미지원 모델(400)★: output_config.effort를 안 받는 모델에 effort가 실려 나가면
+        //   "does not support the effort parameter" 400이 난다 → effort를 빼고 1회 재시도(게임이 죽지 않게).
+        if (response.statusCode() == 400 && effort != null && !effort.isBlank()
+                && response.body().toLowerCase().contains("effort")) {
+            return send(model, system, messages, maxTokens, attempt + 1, cacheHistory, "");
         }
         if (response.statusCode() != 200) {
             throw new RuntimeException("API " + response.statusCode() + ": " + response.body().substring(0, Math.min(200, response.body().length())));
