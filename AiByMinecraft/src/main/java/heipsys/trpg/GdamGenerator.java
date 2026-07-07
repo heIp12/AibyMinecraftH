@@ -900,8 +900,13 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
         "게임 괴담 (게임 도시전설·게임 속 괴물·공포게임 주인공형)"
     );
 
-    /** 친숙 괴담 중복 방지 — 최근 N개 플레이까지 기록해 같은 괴담 재등장을 막는다 (파일 영속). */
-    private static final int FAMILIAR_HISTORY_MAX = 10; // 괴담(친숙) 중복 제외 창 — 너무 크면 유명 원전이 고갈돼 창작·왜곡을 유발하므로 10으로 제한
+    /** 친숙 괴담 중복 방지 — ★태그(문화권/출처)별 최근 N개★ 창으로 같은 괴담 재등장을 막는다 (파일 영속).
+     *  기본 창 20, 로보토미(프로젝트 문)는 알레프 수가 적어 7. 변종은 별개 괴담이되 같은 베이스는 7 내 금지. */
+    private static final int FAMILIAR_WINDOW_DEFAULT  = 20;   // 한국·게임 등 일반 태그
+    private static final int FAMILIAR_WINDOW_LOBOTOMY = 7;    // 로보토미(ALEPH 수가 적음)
+    private static final int FAMILIAR_VARIANT_WINDOW  = 7;    // 같은 베이스의 변종 재등장 금지 창
+    private static final int FAMILIAR_HISTORY_MAX     = 400;  // 전체 이력 상한(태그 다수 × 창 수용)
+    // 각 항목 = "태그\t이름". 구형 파일(이름만)은 로드 시 태그 "기타"로 흡수.
     private final java.util.List<String> familiarHistory =
         java.util.Collections.synchronizedList(new java.util.ArrayList<>());
 
@@ -936,16 +941,67 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
         } catch (Exception ignored) {}
     }
 
-    /** 사용한 괴담 이름을 기록하고(최신화) 파일에 저장한다. */
-    private void recordFamiliar(String name) {
+    /** 사용한 괴담을 ★태그와 함께★ 기록하고(최신화) 파일에 저장한다. */
+    private void recordFamiliar(String tag, String name) {
         if (name == null || name.isBlank()) return;
+        String entry = (tag == null || tag.isBlank() ? "기타" : tag.trim()) + "\t" + name.trim();
         synchronized (familiarHistory) {
-            familiarHistory.remove(name);
-            familiarHistory.add(name);
+            familiarHistory.remove(entry);
+            familiarHistory.add(entry);
             while (familiarHistory.size() > FAMILIAR_HISTORY_MAX) familiarHistory.remove(0);
             try { java.nio.file.Files.write(familiarHistoryFile().toPath(), familiarHistory); }
             catch (Exception ignored) {}
         }
+    }
+
+    /** filter/region → 중복창 태그(문화권/출처). 명시 filter 우선, 없으면 region 키워드로 추론. */
+    private static String familiarTag(String filter, String region) {
+        switch (filter == null ? "random" : filter) {
+            case "projectmoon": return "로보토미";
+            case "korean":      return "한국";
+            case "japan":       return "일본";
+            case "scp":         return "SCP";
+            case "game":        return "게임";
+            case "cosmic":      return "코즈믹";
+            default: break;
+        }
+        String r = region == null ? "" : region;
+        if (r.contains("로보토미") || r.contains("프로젝트 문")) return "로보토미";
+        if (r.contains("한국")) return "한국";
+        if (r.contains("일본")) return "일본";
+        if (r.contains("게임")) return "게임";
+        if (r.contains("SCP"))  return "SCP";
+        if (r.contains("크리피파스타") || r.contains("인터넷")) return "인터넷";
+        int p = r.indexOf(" (");
+        return p > 0 ? r.substring(0, p).trim() : (r.isBlank() ? "기타" : r.trim());
+    }
+    private static int familiarWindow(String tag) { return "로보토미".equals(tag) ? FAMILIAR_WINDOW_LOBOTOMY : FAMILIAR_WINDOW_DEFAULT; }
+    /** 이름에서 '변종'·괄호(원어·발음)를 떼어 베이스 추출 — 같은 베이스 변종 억제용. */
+    private static String variantBase(String name) {
+        if (name == null) return "";
+        String s = name.replaceAll("\\s*\\([^)]*\\)", "").trim();
+        return s.replaceAll("\\s*(변종|변형|variant)\\s*$", "").trim();
+    }
+    /** 태그의 최근 창(win) 이름 + 같은 베이스 변종을 CSV로 (중복 금지 목록). */
+    private String recentFamiliarFor(String tag) {
+        int win = familiarWindow(tag);
+        java.util.List<String> tagNames = new java.util.ArrayList<>();
+        synchronized (familiarHistory) {
+            for (int i = familiarHistory.size() - 1; i >= 0 && tagNames.size() < win; i--) {
+                String e = familiarHistory.get(i);
+                int tab = e.indexOf('\t');
+                String t  = tab >= 0 ? e.substring(0, tab)     : "기타";
+                String nm = tab >= 0 ? e.substring(tab + 1)    : e;
+                if (t.equals(tag)) tagNames.add(nm);
+            }
+        }
+        java.util.LinkedHashSet<String> excl = new java.util.LinkedHashSet<>(tagNames);
+        for (int i = 0; i < tagNames.size() && i < FAMILIAR_VARIANT_WINDOW; i++) {
+            String b = variantBase(tagNames.get(i));
+            if (!b.isBlank()) { excl.add(b); excl.add(b + " 변종"); }
+        }
+        excl.remove("");
+        return String.join(", ", excl);
     }
 
     private File nameHistoryFile() { return new File(gdamDir, ".name_history"); }
@@ -987,12 +1043,6 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
         }
     }
 
-    /** 최근 사용 괴담 목록(중복 회피용 CSV). */
-    private String recentFamiliarCsv() {
-        synchronized (familiarHistory) {
-            return familiarHistory.isEmpty() ? "" : String.join(", ", familiarHistory);
-        }
-    }
 
     // ──────────────────────────────────────────────────────────────
     //  생성
@@ -1071,9 +1121,11 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
     private CompletableFuture<String> generateFamiliarConcept(int roomNumber, String filter) {
         int roll = java.util.concurrent.ThreadLocalRandom.current().nextInt(WORLD_LEGEND_REGIONS.size());
         String region = WORLD_LEGEND_REGIONS.get((roomNumber - 1 + roll) % WORLD_LEGEND_REGIONS.size());
-        String recent = recentFamiliarCsv();
+        final String famTag = familiarTag(filter, region);
+        String recent = recentFamiliarFor(famTag);
         String avoid = recent.isEmpty() ? ""
-            : "최근 " + FAMILIAR_HISTORY_MAX + "개 플레이에서 이미 쓴 괴담(중복 금지): " + recent + "\n";
+            : "이 태그(" + famTag + ")에서 최근 쓴 괴담 — ★재등장 금지(변종·같은 베이스 포함)★: " + recent + "\n"
+            + "★변종(원전을 비튼 버전)을 낼 거면 이름을 '<베이스> 변종'으로 통일하고, 위 금지 목록의 베이스는 피하라.★\n";
         // 괴담 범위 필터별 scope(범위)·criterion(선정 기준)
         String scope, criterion;
         switch (filter == null ? "random" : filter) {
@@ -1137,7 +1189,7 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
                 String t = line.trim();
                 if (t.startsWith("이름:")) {
                     String nm = t.substring(t.indexOf(':') + 1).trim();
-                    if (!nm.isEmpty()) recordFamiliar(nm);
+                    if (!nm.isEmpty()) recordFamiliar(famTag, nm);
                     break;
                 }
             }
@@ -1165,9 +1217,15 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
             var f = FAMILIAR_ENTITIES.stream().filter(e -> e.origin().contains("게임")).toList();
             if (!f.isEmpty()) pool = f;
         }
-        FamiliarEntity entity = pool.get(
-            java.util.concurrent.ThreadLocalRandom.current().nextInt(pool.size()));
-        recordFamiliar(entity.name());
+        // ★no-repeat 창 반영★: 이 태그에서 최근 쓴 괴담은 폴백에서도 제외(전부 소진 시에만 재사용).
+        String fTag = familiarTag(filter, null);
+        String recentF = recentFamiliarFor(fTag);
+        java.util.List<FamiliarEntity> fresh = recentF.isEmpty() ? pool
+            : pool.stream().filter(e -> !recentF.contains(e.name())).toList();
+        java.util.List<FamiliarEntity> pick = fresh.isEmpty() ? pool : fresh;
+        FamiliarEntity entity = pick.get(
+            java.util.concurrent.ThreadLocalRandom.current().nextInt(pick.size()));
+        recordFamiliar(fTag, entity.name());
         String lore = "이름: " + entity.name() + "\n출처: " + entity.origin() + "\n" + entity.lore();
         return wrapFamiliarConcept(lore, roomNumber, filter);
     }
