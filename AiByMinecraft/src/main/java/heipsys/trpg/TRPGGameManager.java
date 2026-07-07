@@ -126,6 +126,8 @@ public class TRPGGameManager {
     private boolean familiarMode = false;
     /** 친숙 모드 괴담 범위 필터: common/heard/minor/urban/scp/korean/rule/random */
     private String familiarFilter = "random";
+    /** ★#228★ 다음 스테이지에 '생성' 대신 불러올 특정 괴담(.gdam 씨드) 예약. 빈 값=예약 없음. /trpg next에서 1회 소비. */
+    private String reservedNextSeed = "";
 
     /** 캐릭터 생성 완료 대기 중인 플레이어 UUID 집합 */
     private final Set<UUID> pendingCreation    = ConcurrentHashMap.newKeySet();
@@ -569,6 +571,7 @@ public class TRPGGameManager {
         replayLock = false; // 정상 시작 — 재현 잠금 해제
         familiarMode = familiar;
         familiarFilter = (familiarFilterKey == null || familiarFilterKey.isBlank()) ? "random" : familiarFilterKey;
+        reservedNextSeed = ""; // ★#228★ 새 게임 시작 — 이전 게임의 미소비 예약이 남아있지 않게 초기화
         ai.setGmQuality(quality);
         String qLabel = switch (quality) {
             case HIGH -> "§b고품질 모드";
@@ -1248,11 +1251,51 @@ public class TRPGGameManager {
     }
 
     /**
+     * ★#228★ 진행 중 다음 스테이지에 '생성' 대신 불러올 특정 괴담(.gdam 씨드)을 예약한다(1회성).
+     * `/trpg reserve <씨드>` (해제: `off`). /trpg next에서 consumePregenOrGenerate가 우선 소비한다.
+     * 스포일러 방지로 괴담 이름은 표시하지 않고 씨드만 확인해준다.
+     */
+    public void reserveNextScenario(Player admin, String seed) {
+        if (admin == null) return;
+        if (seed == null || seed.isBlank()) { admin.sendMessage("§c사용법: §f/trpg reserve <씨드> §7(/trpg list로 씨드 확인 · 해제는 off)"); return; }
+        String s = seed.trim();
+        if (s.equalsIgnoreCase("off") || s.equals("취소") || s.equals("해제") || s.equalsIgnoreCase("none")) {
+            reservedNextSeed = "";
+            admin.sendMessage("§7[예약] 다음 스테이지 예약을 해제했습니다(정상 생성으로 진행).");
+            return;
+        }
+        if (!isActive()) { admin.sendMessage("§c진행 중인 세션이 없습니다. §7(다음 스테이지가 있을 때 예약하세요)"); return; }
+        JsonObject g = gdamGen.load(s);
+        if (g == null || !g.has("entity")) {
+            admin.sendMessage("§c씨드 '" + s + "' 시나리오를 찾을 수 없습니다. §7(/trpg list로 저장된 씨드를 확인하세요)");
+            return;
+        }
+        reservedNextSeed = s;
+        gameLogger.logEvent("[예약] 다음 스테이지 예약 설정: 시드 " + s);
+        admin.sendMessage("§a[예약] 다음 스테이지(/trpg next)에 시드 §f" + s + " §a시나리오를 불러오도록 예약했습니다.");
+        admin.sendMessage("§7  · 1회성(넘긴 뒤 자동 해제) · 취소 §f/trpg reserve off §7· 스포일러 방지로 괴담 이름은 표시하지 않습니다.");
+    }
+
+    /**
      * /trpg next 시 다음 시나리오 future를 얻는다.
      * 사전 생성(startPregenNext)된 것이 있고 대상 스테이지가 일치하면 재사용하고,
      * 사전 생성 결과가 오류/누락이면 즉석 생성으로 자동 폴백한다.
      */
     private CompletableFuture<JsonObject> consumePregenOrGenerate(int nextRoom) {
+        // ★#228★ 예약된 특정 괴담이 있으면 '생성' 대신 그걸 불러온다(1회성 소비 · 사전생성분보다 우선).
+        if (reservedNextSeed != null && !reservedNextSeed.isBlank()) {
+            String seed = reservedNextSeed;
+            reservedNextSeed = "";      // 1회성 — 소비 즉시 예약 해제
+            clearPregen();              // 예약이 우선 — 백그라운드 사전생성분은 버린다
+            JsonObject loaded = gdamGen.load(seed);
+            if (loaded != null && loaded.has("entity")) {
+                loaded.addProperty("room", nextRoom); // 원래 회차와 무관하게 이번 스테이지 번호로 정합
+                stepLoadingBar("예약된 시나리오 불러오기", 0.92f);
+                gameLogger.logEvent("[예약] 다음 스테이지에 예약 시나리오(시드 " + seed + ") 사용");
+                return CompletableFuture.completedFuture(loaded);
+            }
+            plugin.getLogger().warning("[gdam] 예약된 시드(" + seed + ") 로드 실패 — 정상 생성으로 폴백");
+        }
         CompletableFuture<JsonObject> pre = pregenFuture;
         int preRoom = pregenRoom;
         clearPregen(); // 1회성 소비
@@ -11517,6 +11560,7 @@ public class TRPGGameManager {
             root.addProperty("familiarMode", familiarMode);
             root.addProperty("familiarFilter", familiarFilter);
             root.addProperty("autoSkipAllActed", autoSkipAllActed); // ★#163★ 옵트인 자동 스킵 토글(이어하기 유지)
+            root.addProperty("reservedNextSeed", reservedNextSeed);  // ★#228★ 다음 스테이지 예약 씨드(이어하기 유지)
             root.addProperty("quality", ai.getGmQuality().name());
             root.addProperty("nextStageUnlocked", nextStageUnlocked);
             root.addProperty("forceRetryAllowed", forceRetryAllowed);
@@ -11605,6 +11649,7 @@ public class TRPGGameManager {
         familiarMode      = root.has("familiarMode") && root.get("familiarMode").getAsBoolean();
         familiarFilter    = root.has("familiarFilter") ? root.get("familiarFilter").getAsString() : "random";
         autoSkipAllActed  = root.has("autoSkipAllActed") && root.get("autoSkipAllActed").getAsBoolean(); // ★#163★ (기본 off)
+        reservedNextSeed  = root.has("reservedNextSeed") ? root.get("reservedNextSeed").getAsString() : ""; // ★#228★
         nextStageUnlocked = !root.has("nextStageUnlocked") || root.get("nextStageUnlocked").getAsBoolean();
         forceRetryAllowed = root.has("forceRetryAllowed") && root.get("forceRetryAllowed").getAsBoolean();
         if (root.has("quality")) {
