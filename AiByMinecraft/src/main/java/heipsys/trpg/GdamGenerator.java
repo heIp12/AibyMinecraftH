@@ -1019,8 +1019,10 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
     /** 이름에서 '변종'·괄호(원어·발음)를 떼어 베이스 추출 — 같은 베이스 변종 억제용. */
     private static String variantBase(String name) {
         if (name == null) return "";
-        String s = name.replaceAll("\\s*\\([^)]*\\)", "").trim();
-        return s.replaceAll("\\s*(변종|변형|variant)\\s*$", "").trim();
+        String s = name.replaceAll("\\s*\\([^)]*\\)", "").trim();       // 괄호(원어·발음 병기) 제거
+        s = s.replaceAll("\\s*(변종|변형|variant)\\s*$", "").trim();     // '변종' 접미 제거
+        s = s.replaceAll("\\s*\\d+\\s*(번|호)?\\s*$", "").trim();        // 옛 기록의 회차 시드 번호(#91 이전 형식) 제거
+        return s;
     }
     /** 태그의 최근 창(win) 이름 + 같은 베이스 변종을 CSV로 (중복 금지 목록). */
     private String recentFamiliarFor(String tag) {
@@ -1036,12 +1038,35 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
             }
         }
         java.util.LinkedHashSet<String> excl = new java.util.LinkedHashSet<>(tagNames);
+        // ★형식 무관 매칭★: 각 이름의 '핵심 베이스'(괄호·원어·발음·번호 뗀 것)도 넣어 "하나코상(花子さん, Hanako-san)"과
+        //   "하나코상"이 다른 표기로 우회되는 것을 막는다(옛 기록·원어 병기 형식 모두 흡수).
+        for (String n : tagNames) { String b = variantBase(n); if (!b.isBlank()) excl.add(b); }
         for (int i = 0; i < tagNames.size() && i < FAMILIAR_VARIANT_WINDOW; i++) {
             String b = variantBase(tagNames.get(i));
-            if (!b.isBlank()) { excl.add(b); excl.add(b + " 변종"); }
+            if (!b.isBlank()) excl.add(b + " 변종");
         }
         excl.remove("");
         return String.join(", ", excl);
+    }
+
+    /** 태그의 최근 창 이름들의 ★베이스 키★ 집합(형식 무관 폴백 필터용 — 괄호·발음·번호 차이를 흡수). */
+    private java.util.Set<String> recentFamiliarKeys(String tag) {
+        int win = familiarWindow(tag);
+        java.util.Set<String> keys = new java.util.HashSet<>();
+        int cnt = 0;
+        synchronized (familiarHistory) {
+            for (int i = familiarHistory.size() - 1; i >= 0 && cnt < win; i--) {
+                String e = familiarHistory.get(i);
+                int tab = e.indexOf('\t');
+                String t = tab >= 0 ? e.substring(0, tab) : "기타";
+                if (!t.equals(tag)) continue;
+                String nm = tab >= 0 ? e.substring(tab + 1) : e;
+                String b = variantBase(nm);
+                if (!b.isBlank()) keys.add(b);
+                cnt++;
+            }
+        }
+        return keys;
     }
 
     private File nameHistoryFile() { return new File(gdamDir, ".name_history"); }
@@ -1179,6 +1204,7 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
         String recent = recentFamiliarFor(famTag);
         String avoid = recent.isEmpty() ? ""
             : "이 태그(" + famTag + ")에서 최근 쓴 괴담 — ★재등장 금지(변종·같은 베이스 포함)★: " + recent + "\n"
+            + "★표기가 달라도(원어 병기·발음·번호 유무) 이름의 핵심이 같으면 같은 괴담이다 — 위 목록의 것은 어떤 표기로도 다시 내지 마라.★\n"
             + "★변종(원전을 비튼 버전)을 낼 거면 이름을 '<베이스> 변종'으로 통일하고, 위 금지 목록의 베이스는 피하라.★\n";
         // 괴담 범위 필터별 scope(범위)·criterion(선정 기준)
         String scope, criterion;
@@ -1273,9 +1299,9 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
         }
         // ★no-repeat 창 반영★: 이 태그에서 최근 쓴 괴담은 폴백에서도 제외(전부 소진 시에만 재사용).
         String fTag = familiarTag(filter, null);
-        String recentF = recentFamiliarFor(fTag);
-        java.util.List<FamiliarEntity> fresh = recentF.isEmpty() ? pool
-            : pool.stream().filter(e -> !recentF.contains(e.name())).toList();
+        java.util.Set<String> recentKeys = recentFamiliarKeys(fTag); // 형식 무관(베이스) 매칭 — 괄호·발음 병기·번호 차이 흡수
+        java.util.List<FamiliarEntity> fresh = recentKeys.isEmpty() ? pool
+            : pool.stream().filter(e -> !recentKeys.contains(variantBase(e.name()))).toList();
         java.util.List<FamiliarEntity> pick = fresh.isEmpty() ? pool : fresh;
         FamiliarEntity entity = pick.get(
             java.util.concurrent.ThreadLocalRandom.current().nextInt(pick.size()));
