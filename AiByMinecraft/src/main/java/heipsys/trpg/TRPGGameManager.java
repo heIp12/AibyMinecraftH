@@ -301,6 +301,9 @@ public class TRPGGameManager {
     /** 전원 영구 무력화(회복 가망 0) 워치독 틱 누적 — K틱 연속이면 자동 종료(전원 동물·완전조종 무한 틱 방지). */
     private int allIncapTicks = 0;
     private static final int ALL_INCAP_TICKS_REQ = 3; // 10초 간격 × 3 ≈ 30초 연속 확인
+    private int endHangTicks = 0; // ★A5★ 마감 경과 후 무행동 지속(결말 미발) 카운터 — 소프트락(H-1) 차단
+    private static final int END_HANG_NUDGE_TICKS = 3;  // ≈30초 후 GM에 강한 종결 지시
+    private static final int END_HANG_FORCE_TICKS = 18; // 무행동 3분 뒤부터 ≈3분 더 → 코드가 강제 종결
     /** 클리어 보상 특성 성장 3선택지 — /trpg trait 재열기용 */
     private final Map<UUID, TraitManager.StageEndChoices> pendingStageEndChoices = new ConcurrentHashMap<>();
     private final Map<UUID, String[]> pendingStageEndNames = new ConcurrentHashMap<>();
@@ -474,7 +477,26 @@ public class TRPGGameManager {
                 pd.puppetRecoveryTurns == 0 // ★버그수정★ -1(완전조종)은 행동 불능이다(입력 게이트도 !=0로 차단) — <=0이라 -1을 행동가능으로 오판해 전원 완전조종 시 소프트락이던 것 수정
                 && !animalForm.contains(pd.uuid) // 동물 형태는 시나리오를 풀 수 없음 → 행동 가능자로 치지 않음(동물만 남으면 워치독이 진행)
                 && !("faint".equals(pd.status) && pd.faintTurnsRemaining > 0));
-            if (anyoneCanAct) { allIncapTicks = 0; maybeAccelerateIdle(); return; } // 행동 가능 → 정상(누적 리셋). 너무 오래 무행동이면 시간·위협 가속.
+            if (anyoneCanAct) { // 행동 가능 → 정상(누적 리셋). 너무 오래 무행동이면 시간·위협 가속.
+                allIncapTicks = 0;
+                // ★A5 마감 후 결말 백스톱(H-1)★: 종국 사건 발화 + 제한 시각 경과인데도 결말이 안 나고(GM <CLEAR> 미발화)
+                //   플레이어가 오래(3분+) 무행동이면 무한 앰비언트 루프(소프트락)에 빠진다. 유예 후 GM에 강한 종결 지시,
+                //   그래도 안 나면 코드가 매듭짓는다. is_end에 결과 타입 필드가 없어 위협도로 생존/파국을 근사한다(추후 스키마화 권장).
+                if (currentPhase == Phase.HORROR && state.isEndEventFired() && state.getMinutesUntilEnd() == 0
+                        && lastPlayerActionMs > 0 && System.currentTimeMillis() - lastPlayerActionMs >= IDLE_ACCEL_MS) {
+                    endHangTicks++;
+                    if (endHangTicks == END_HANG_NUDGE_TICKS)
+                        ai.injectGmSystem("[종국 — 반드시 매듭] 제한 시각이 지났고 상황은 이미 끝을 향했다. 다음 서술에서 ★반드시★ 이 국면을 <CLEAR …> 또는 결말로 매듭지어라 — 미해결로 시간만 더 흘리지 마라.");
+                    else if (endHangTicks >= END_HANG_FORCE_TICKS && AUTO_BADEND_ENABLED && currentPhase != Phase.GAMEOVER) {
+                        endHangTicks = 0;
+                        // GM이 끝내 매듭짓지 못함 → 코드가 강제 종결(소프트락 차단). 높은 위협=파국, 아니면 살아서 마감 도달=생존.
+                        if (state.getThreat() >= 70) onBadEnding("제한 시각 경과 — 위협에 잠식");
+                        else onClearEnding("D", "제한 시각까지 버텨 생존", false);
+                        return;
+                    }
+                } else endHangTicks = 0;
+                maybeAccelerateIdle(); return;
+            }
             // ★전원 무력화★ → AI 없이 시스템이 한 턴 진행(시간·시계·회복 카운터). 누군가 회복하면 다음 틱에서 멈춘다.
             state.nextTurn();
             if (state.getTurnMode() >= 1) state.advanceActionClock(state.getMinutesPerTurn()); // #151: DUR 모드에선 nextTurn이 시계 안 미니 명시 진행
