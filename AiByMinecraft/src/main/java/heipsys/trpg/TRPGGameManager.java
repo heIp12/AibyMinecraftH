@@ -2234,6 +2234,9 @@ public class TRPGGameManager {
                 JsonObject clearTag = ai.parseClearTag(raw);
                 if (clearTag != null) {
                     String grade = clearTag.has("grade") ? clearTag.get("grade").getAsString() : "C";
+                    // ★위협도 상한★ — 세력이 높으면 '깨끗한 승리' 불가(먹인 대가): 90+ 최대 B, 70~89 최대 A.
+                    String capG = capGradeByThreat(grade);
+                    if (!capG.equals(grade)) { gameLogger.logEvent("위협도 " + state.getThreat() + " → 클리어 등급 상한 " + grade + "→" + capG); grade = capG; }
                     String reason = clearTag.has("reason") ? clearTag.get("reason").getAsString() : "";
                     String by = clearTag.has("by") && !clearTag.get("by").isJsonNull() ? clearTag.get("by").getAsString().trim() : "";
                     // 해결판정 여부: 태그의 resolved 우선, 없으면 등급으로 추론(C 이상=해결, D=생존)
@@ -2586,7 +2589,7 @@ public class TRPGGameManager {
                 final int hpBefore0 = pd.hp[0]; final int sanBefore0 = pd.san[0];
                 final String statusBefore = pd.status; final boolean deadBefore = pd.isDead;
                 if (update.has("hp_change")) {
-                    int delta = update.get("hp_change").getAsInt();
+                    int delta = amplifyEntityDamage(update.get("hp_change").getAsInt()); // ★위협도 비례 피해 증폭★
                     if (phased && delta < 0) delta = 0; // 무적: 피해 차단
                     int before = pd.hp[0];
                     pd.hp[0] = Math.max(0, Math.min(pd.hp[1], pd.hp[0] + delta));
@@ -2607,7 +2610,7 @@ public class TRPGGameManager {
                     }
                 }
                 if (update.has("san_change")) {
-                    int delta = update.get("san_change").getAsInt();
+                    int delta = amplifyEntityDamage(update.get("san_change").getAsInt()); // ★위협도 비례 피해 증폭★
                     if (phased && delta < 0) delta = 0; // 위상 이탈 중 정신 피해도 무효
                     int before = pd.san[0];
                     pd.san[0] = Math.max(0, Math.min(pd.san[1], pd.san[0] + delta));
@@ -4318,6 +4321,31 @@ public class TRPGGameManager {
         s = s.trim();
         if (s.startsWith("+")) s = s.substring(1);
         try { return Integer.parseInt(s.trim()); } catch (Exception e) { return def; }
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  ★위협도 비례 세력 집행(2단계)★ — 위협이 오를수록 괴담이 유의미하게 강해진다(기계적).
+    // ──────────────────────────────────────────────────────────────
+    /** ★위협도 비례 피해 증폭★ — 괴담이 입히는 피해(음수 delta)가 세력에 비례해 커진다.
+     *  HORROR·음수·threat≥40에서만(40~69 ×1.15 / 70~89 ×1.3 / 90+ ×1.5). 능력 대가(sacrifice)는 이 경로를 안 타 불변. */
+    private int amplifyEntityDamage(int delta) {
+        if (delta >= 0 || currentPhase != Phase.HORROR) return delta;
+        int th = state.getThreat();
+        double mult = th >= 90 ? 1.5 : th >= 70 ? 1.3 : th >= 40 ? 1.15 : 1.0;
+        return mult == 1.0 ? delta : (int) Math.round(delta * mult);
+    }
+
+    /** ★위협도 비례 클리어 상한★ — 괴담 세력이 높을수록 '깨끗한 승리'는 불가(먹인 대가). 90+ 최대 B(부분·탈출) / 70~89 최대 A(S 봉쇄). */
+    private String capGradeByThreat(String grade) {
+        int th = state.getThreat();
+        int cap = th >= 90 ? gradeIdx("B") : th >= 70 ? gradeIdx("A") : gradeIdx("S");
+        return gradeIdx(grade) > cap ? GRADE_ORDER[cap] : grade;
+    }
+
+    /** ★위협도 비례 판정 난이도 가산★ — 세력에 비례해 판정 DC가 오른다(성공은 항상 가능하도록 호출부에서 max-1 클램프). */
+    private int threatDcBump(int max) {
+        int th = state.getThreat();
+        return th <= 0 ? 0 : (int) Math.round(th / 100.0 * max * 0.18);
     }
 
     /** 턴당 1회: 괴담 변신(morph) 종료 처리 + 관조자의 눈(observer) 지속 발동·감소. maybeCaptureRewind에서만 호출. */
@@ -11141,6 +11169,9 @@ public class TRPGGameManager {
         int effDc = dc > 0 ? Math.max(2, Math.min(max, dc)) : (int) Math.ceil(max * 0.62); // dc 미지정 시 중앙보다 높게(난도↑)
         int diffBump = Math.max(0, diffStage - 2) + diffCorr;
         if (diffBump > 0) effDc = Math.min(max - 1, effDc + Math.min(diffBump, Math.max(2, max / 6)));
+        // ★위협도(괴담 세력) 비례 난이도★ — 위협이 오를수록 괴담이 유의미하게 강해져 판정이 어려워진다(성공은 max-1로 항상 가능).
+        int thBump = threatDcBump(max);
+        if (thBump > 0) effDc = Math.min(max - 1, effDc + thBump);
         // ★영감: 아는 정보가 많을수록 진실에 가까워진다★ — 통찰(영감) 판정은 수집 단서·밝혀낸 사실이 많을수록 쉬워진다.
         //   (단서 없이도 통찰 자체는 가능하되, 아는 게 많을수록 성공 확률↑ = '정보가 곧 무기'.)
         if ("spr".equals(statKey) && dpd != null) {
