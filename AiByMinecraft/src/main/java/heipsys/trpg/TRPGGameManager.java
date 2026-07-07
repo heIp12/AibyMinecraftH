@@ -419,16 +419,18 @@ public class TRPGGameManager {
         // ★#151 §8.1 사건 직전 정지★: 다음 미발화 사건이 '자연 자유화(earliest)'보다 먼저 오면, 그 사건을
         //   건너뛰지 말고 ★직전까지만★ 시간을 흘린 뒤 전원을 자유화해 '임박한 사건에 반응할 마지막 턴'을 준다.
         int nextEvt = state.nextDueEventMinute(now);
-        if (nextEvt > now && nextEvt <= earliest) {
-            int stopAt = Math.max(now, nextEvt - 1);          // 사건 직전 분(같은 분이면 제자리)
-            if (stopAt > now) state.advanceClockTo(stopAt);
+        // ★조건 = nextEvt-1 > now★(사건 직전 분까지 ★실제로 흘릴 여지가 있을 때만★ 캡). now가 이미 nextEvt-1이면
+        //   (반응 턴을 이미 준 상태) 여기 걸리지 않고 아래 earliest로 흘러 ★사건을 넘겨 발화★한다.
+        //   'nextEvt > now'로 쓰면 시계가 nextEvt-1에 도달한 뒤에도 계속 nextEvt-1에 재캡돼 사건이 영영 발화 안 되는 락이 생긴다.
+        if (nextEvt - 1 > now && nextEvt <= earliest) {
+            state.advanceClockTo(nextEvt - 1);        // 사건 직전 분까지만 흘린다
             int freeAt = state.getClockMinutes();
             for (PlayerData pd : able) pd.busyUntilMin = freeAt; // 반응 턴 부여(즉시 자유화 — 사건 발화 전)
             tickFaintCounters();
             updateAllScoreboards();
             return;
         }
-        state.advanceClockTo(earliest);             // 사건이 더 뒤면 평소대로 다음 자유 시점까지 시간이 흐른다
+        state.advanceClockTo(earliest);             // 사건이 없거나(1분 이내로 임박해 여지 없음 포함) 더 뒤면 다음 자유 시점까지(사건 넘겨 발화)
         tickFaintCounters();                         // 시간 경과분 회복·기절 카운터도 함께 진행
         updateAllScoreboards();
     }
