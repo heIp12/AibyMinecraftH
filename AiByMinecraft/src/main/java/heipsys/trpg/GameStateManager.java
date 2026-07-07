@@ -561,12 +561,18 @@ public class GameStateManager {
             String effect = ev.has("effect") ? ev.get("effect").getAsString() : "";
             justFiredEvents.add(label + (effect.isEmpty() ? "" : " — " + effect));
             lastFiredEventLabel = label; // 상태창 '최근' 패널용(짧은 사건 이름)
-            if (ev.has("is_end") && ev.get("is_end").getAsBoolean()) {
+            boolean evEnd    = ev.has("is_end") && ev.get("is_end").getAsBoolean();
+            boolean evCombat = ev.has("combat") && !ev.get("combat").isJsonNull() && ev.get("combat").getAsBoolean();
+            if (evEnd) {
                 endEventFired = true;
                 timelineStage = getMaxStage(); // CODE-17: 종료 사건 → 최고 단계(가변)
             }
-            if (ev.has("combat") && !ev.get("combat").isJsonNull() && ev.get("combat").getAsBoolean())
-                combatEventFired = true; // ★A3/A4★ 전투 사건 발화 → 코드가 자동 소집·완급(소비성)
+            if (evCombat) combatEventFired = true; // ★A3/A4★ 전투 사건 발화 → 코드가 자동 소집·완급(소비성)
+            // ★위협도 자동 상승(구조적 먹이 — 하드코딩)★: 타임라인 사건 발화 = 괴담의 ★예정된 격상★이다.
+            //   위협도를 GM <THREAT> 태그에만 맡기면 GM이 거의 안 올려 0에 머물러 시스템이 무의미해진다(실측:
+            //   4시간 플레이에 위협 변동 2회·내내 0). 그래서 사건이 터질 때마다 코드가 위협을 올린다 — 전투는
+            //   더 크게, 종국은 가장 크게. 파훼 진척(단서·장애 제거)으로 낮추는 건 GM <THREAT -N>/서술이 맡는다.
+            adjustThreat(evEnd ? 18 : evCombat ? 15 : 9);
         }
         if (clockEnd >= 0 && clockMinutes >= clockEnd && !endEventFired) {
             endEventFired = true;
