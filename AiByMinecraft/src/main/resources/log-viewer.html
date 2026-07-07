@@ -1469,26 +1469,34 @@ function zoneMapSvg(zones, know){
         if(vert){ const ny=Math.max(b.y+7,Math.min(b.y+b.h-7,b.cy+off)); P[ei][1]=ny; P[bend][1]=ny; }   // 좌/우 변: 문·직전꺾임 Y 함께
         else    { const nx=Math.max(b.x+7,Math.min(b.x+b.w-7,b.cx+off)); P[ei][0]=nx; P[bend][0]=nx; } }); } // 상/하 변: X 함께
   })();
-  // ── 2.7) ★경로 색 배정(그리디)★: 같은 방에서 갈라지거나 서로 교차하는 통로끼리 다른 색이 되게 배정
-  //    → 긴 경로가 다른 통로 밑에 깔려도(교차) 색으로 끝까지 구분·추적 가능. ──
+  // ── 2.7) ★겹치는 통로만 색 배정★: 지도가 알록달록해지지 않게, 기본은 중립(회색). 다른 통로와
+  //    ★교차(십자로 지나감)★하거나 ★바로 옆 레인에 나란히 붙어★ 있어 구분이 어려운 통로에만 색을 준다
+  //    (겹친 상대끼리는 서로 다른 색 → 어느 게 어느 길인지 구분). 안 겹치는 통로는 색 없음(=회색). ──
   (function colorCorridors(){
-    const cross=(A,B)=>{ for(let i=0;i+1<A.length;i++)for(let j=0;j+1<B.length;j++){
-      const a1=A[i],a2=A[i+1],b1=B[j],b2=B[j+1], aH=Math.abs(a1[1]-a2[1])<1, bH=Math.abs(b1[1]-b2[1])<1;
-      if(aH===bH)continue; const H=aH?[a1,a2]:[b1,b2], V=aH?[b1,b2]:[a1,a2];
+    const seg=P=>{const s=[];for(let i=0;i+1<P.length;i++)s.push([P[i],P[i+1]]);return s;};
+    const cross=(A,B)=>{ for(const [a1,a2] of seg(A))for(const [b1,b2] of seg(B)){
+      const aH=Math.abs(a1[1]-a2[1])<1, bH=Math.abs(b1[1]-b2[1])<1; if(aH===bH)continue;
+      const H=aH?[a1,a2]:[b1,b2], V=aH?[b1,b2]:[a1,a2];
       const hy=H[0][1], hx0=Math.min(H[0][0],H[1][0]), hx1=Math.max(H[0][0],H[1][0]);
       const vx=V[0][0], vy0=Math.min(V[0][1],V[1][1]), vy1=Math.max(V[0][1],V[1][1]);
       if(vx>hx0+1&&vx<hx1-1&&hy>vy0+1&&hy<vy1-1)return true; } return false; };
-    EG.forEach((g,gi)=>{ const nb=new Set();
-      for(let hi=0;hi<gi;hi++){ const h=EG[hi];
-        const shareBox=g.a===h.a||g.a===h.b||g.b===h.a||g.b===h.b;
-        if(shareBox||cross(g.pts,h.pts))nb.add(h._ink); }
-      let ci=gi%INK.length, t=0; while(t<INK.length&&nb.has(INK[ci])){ci=(ci+1)%INK.length;t++;} g._ink=INK[ci]; }); // 회전 시드로 무충돌 통로도 색 다양하게
+    const nearPar=(A,B)=>{ for(const [a1,a2] of seg(A))for(const [b1,b2] of seg(B)){  // 같은 방향·바로 옆(≤22px)·구간 겹침
+      const aH=Math.abs(a1[1]-a2[1])<1&&Math.abs(a1[0]-a2[0])>8, aV=Math.abs(a1[0]-a2[0])<1&&Math.abs(a1[1]-a2[1])>8;
+      const bH=Math.abs(b1[1]-b2[1])<1&&Math.abs(b1[0]-b2[0])>8, bV=Math.abs(b1[0]-b2[0])<1&&Math.abs(b1[1]-b2[1])>8;
+      if(aH&&bH&&Math.abs(a1[1]-b1[1])<22&&Math.min(a1[0],a2[0])<Math.max(b1[0],b2[0])-6&&Math.max(a1[0],a2[0])>Math.min(b1[0],b2[0])+6)return true;
+      if(aV&&bV&&Math.abs(a1[0]-b1[0])<22&&Math.min(a1[1],a2[1])<Math.max(b1[1],b2[1])-6&&Math.max(a1[1],a2[1])>Math.min(b1[1],b2[1])+6)return true; } return false; };
+    const con=EG.map(()=>[]);
+    for(let i=0;i<EG.length;i++)for(let j=i+1;j<EG.length;j++)
+      if(cross(EG[i].pts,EG[j].pts)||nearPar(EG[i].pts,EG[j].pts)){con[i].push(j);con[j].push(i);}
+    EG.forEach((g,gi)=>{ if(!con[gi].length){g._ink=null;return;}   // 안 겹치면 색 없음(중립 회색)
+      const nb=new Set(); for(const hi of con[gi])if(EG[hi]._ink)nb.add(EG[hi]._ink);
+      let ci=gi%INK.length,t=0; while(t<INK.length&&nb.has(INK[ci])){ci=(ci+1)%INK.length;t++;} g._ink=INK[ci]; });
   })();
   // ── 3) 복도 렌더 + ★거리 라벨 충돌 회피★(겹치면 위/아래로 살짝 밀어 '4분/5분' 겹침 방지) ──
   const placedLab=[]; const lolap=(a,b)=>a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;
   for(const g of EG){ const P=g.pts;
     const d=P.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join('');
-    const inner=know?holl:g._ink;   // 미니맵은 초록=이동가능 유지 / 설계도는 경로별 색으로 내부 채움
+    const inner=(know||!g._ink)?holl:g._ink;   // 미니맵·안 겹치는 통로=중립(회색) / 겹치는 통로만 경로색으로 내부 채움
     corr+=`<path d="${d}" stroke="${wallC}" stroke-width="12" fill="none" stroke-linejoin="miter" stroke-linecap="butt"/>`
         +`<path d="${d}" stroke="${inner}" stroke-width="8" fill="none" stroke-linejoin="miter" stroke-linecap="butt"/>`;
     const dl=distLabel(g.dist); if(!dl)continue;
@@ -1506,7 +1514,7 @@ function zoneMapSvg(zones, know){
     for(const a of areasUsed){ legendSvg+=`<rect x="${lx}" y="${ly-8}" width="9" height="9" fill="${areaTint(a)}" fill-opacity="0.8" stroke="#c6d0e6" stroke-width="0.7"/>`
       +`<text x="${lx+13}" y="${ly}" font-size="9.5" fill="#aab3cf">${esc(a)}</text>`; lx+=13+Math.round(estW(a)*0.73)+18; } }
   const title=know?'미니맵 — 아는 구역만':'구역 지도(설계도)';
-  const foot=know?'▶흰색=현재 · 밝음=주변 · 어두움=다녀온 곳 · 초록 통로=이동 가능(모르는 곳은 숨김)':'통로=연결(안 숫자=소요 시간, 색=경로 구분) · 📵=통신 불가 · 방 색=대분류(하단 범례)';
+  const foot=know?'▶흰색=현재 · 밝음=주변 · 어두움=다녀온 곳 · 초록 통로=이동 가능(모르는 곳은 숨김)':'통로=연결(안 숫자=소요 시간) · 겹치는 통로만 색으로 구분 · 📵=통신 불가 · 방 색=대분류(하단 범례)';
   return `<div class="zmap" style="overflow:auto;margin-bottom:6px;cursor:zoom-in" onclick="mapZoom(this)" title="클릭하면 크게 보기">`
     +`<div class="dim2" style="margin-bottom:3px">${title} <span style="background:#2a2450;border:1px solid #4a3f80;border-radius:6px;padding:0 7px;color:#cabfff">🔍 크게 보기</span></div>`
     +`<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-height:400px;min-width:${Math.min(W,320)}px">${bg}${rects}${corr}${dists}${labels}${legendSvg}</svg>`
