@@ -511,6 +511,27 @@ public class GameStateManager {
         syncStageToClock(); // 정상 턴에서도 시계 진행에 맞춰 추상 단계를 최소 보장(idleAdvance와 동일 정렬)
     }
 
+    /** ★#151 §8.1★ afterMin(현재분) '이후' 아직 발화 안 한 가장 이른 main_event의 절대 분. 없으면 -1.
+     *  비동기 busy 시계 점프가 다음 사건을 건너뛰지 않고 그 '직전'에서 멈춰 반응 턴을 주게 하는 데 쓴다. */
+    public int nextDueEventMinute(int afterMin) {
+        if (gdamData == null || !gdamData.has("timeline")) return -1;
+        JsonObject tl = gdamData.getAsJsonObject("timeline");
+        if (!tl.has("main_events") || !tl.get("main_events").isJsonArray()) return -1;
+        int best = Integer.MAX_VALUE;
+        for (JsonElement el : tl.getAsJsonArray("main_events")) {
+            if (!el.isJsonObject()) continue;
+            JsonObject ev = el.getAsJsonObject();
+            String id = ev.has("id") ? ev.get("id").getAsString() : "";
+            if (id.isEmpty() || firedEvents.contains(id) || blockedEvents.contains(id)) continue;
+            if (!ev.has("time")) continue;
+            int when = parseHhmm(ev.get("time").getAsString());
+            if (when < 0) continue;
+            if (clockStart >= 0 && when < clockStart) when += 1440; // 자정 넘김
+            if (when > afterMin) best = Math.min(best, when);
+        }
+        return best == Integer.MAX_VALUE ? -1 : best;
+    }
+
     /** 현재 시각에 도달한 main_events를 1회씩 발화하여 justFiredEvents에 누적 */
     private void fireDueEvents() {
         if (gdamData == null || !gdamData.has("timeline")) return;

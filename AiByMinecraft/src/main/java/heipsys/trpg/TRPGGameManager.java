@@ -128,6 +128,10 @@ public class TRPGGameManager {
     private String familiarFilter = "random";
     /** ★#228★ 다음 스테이지에 '생성' 대신 불러올 특정 괴담(.gdam 씨드) 예약. 빈 값=예약 없음. /trpg next에서 1회 소비. */
     private String reservedNextSeed = "";
+    /** ★#151 §2.2-4 완급★ 현재 행동 페이스. slow=중요 순간 시간이 천천히(행동 소요 분↓ → 상대적으로 여러 행동). GM <PACE>로 설정. */
+    private String actionPace = "normal";
+    /** 완급 배수: slow=0.5(행동이 절반의 시간만 소모) / fast=1.6 / normal=1.0. durEff에 곱해 시계·busy 진행에 반영. */
+    private double paceMult() { return "slow".equals(actionPace) ? 0.5 : "fast".equals(actionPace) ? 1.6 : 1.0; }
 
     /** 캐릭터 생성 완료 대기 중인 플레이어 UUID 집합 */
     private final Set<UUID> pendingCreation    = ConcurrentHashMap.newKeySet();
@@ -412,9 +416,37 @@ public class TRPGGameManager {
             earliest = Math.min(earliest, pd.busyUntilMin);
         }
         if (earliest == Integer.MAX_VALUE || earliest <= now) return;
-        state.advanceClockTo(earliest);             // 다음 자유 시점까지 시간이 흐른다(타임라인 사건 발화 포함)
+        // ★#151 §8.1 사건 직전 정지★: 다음 미발화 사건이 '자연 자유화(earliest)'보다 먼저 오면, 그 사건을
+        //   건너뛰지 말고 ★직전까지만★ 시간을 흘린 뒤 전원을 자유화해 '임박한 사건에 반응할 마지막 턴'을 준다.
+        int nextEvt = state.nextDueEventMinute(now);
+        if (nextEvt > now && nextEvt <= earliest) {
+            int stopAt = Math.max(now, nextEvt - 1);          // 사건 직전 분(같은 분이면 제자리)
+            if (stopAt > now) state.advanceClockTo(stopAt);
+            int freeAt = state.getClockMinutes();
+            for (PlayerData pd : able) pd.busyUntilMin = freeAt; // 반응 턴 부여(즉시 자유화 — 사건 발화 전)
+            tickFaintCounters();
+            updateAllScoreboards();
+            return;
+        }
+        state.advanceClockTo(earliest);             // 사건이 더 뒤면 평소대로 다음 자유 시점까지 시간이 흐른다
         tickFaintCounters();                         // 시간 경과분 회복·기절 카운터도 함께 진행
         updateAllScoreboards();
+    }
+
+    /** ★#151 §2.2-5 즉시 소집(<SUMMON>·피격)★ 비동기(turnMode≥2)에서 행동가능 전원을 즉시 자유화한다
+     *  (busyUntil=현재분) — 임박한 사건·전투·피격에 모두가 바로 반응하도록. turnMode<2·시계 없음이면 무동작. */
+    private void summonAllFree(String reason) {
+        if (state.getTurnMode() < 2) return;
+        int now = state.getClockMinutes();
+        if (now < 0) return;
+        boolean any = false;
+        for (PlayerData pd : busyAbleSpawned()) {
+            if (pd.isBusy(now)) { pd.busyUntilMin = now; any = true; }
+        }
+        if (any) {
+            gameLogger.logEvent("[즉시 소집] " + (reason == null || reason.isBlank() ? "사건 발생" : reason) + " — 전원 자유화");
+            updateAllScoreboards();
+        }
     }
 
     private void startIncapacitationWatchdog() {
@@ -1950,6 +1982,7 @@ public class TRPGGameManager {
         loadForbiddenWord(); // 금지워드형 괴담의 금지어 로드(entity.forbidden_word)
         lastPlayerActionMs = System.currentTimeMillis(); lastIdleAccelMs = 0L; // 무행동 가속 기준점 초기화
         actedSinceProgress.clear(); // ★#163★ 새 스테이지 — 라운드 행동 집계 초기화
+        actionPace = "normal";      // ★#151 완급★ 새 스테이지 — 페이스 기본값 복귀
         lastAutoSaveTurn = -1; // 새 스테이지 시작 — 첫 턴부터 다시 저장되도록
         autoSave();            // 스테이지 시작 시점 즉시 1회 저장(첫 행동 전 중단돼도 이어하기 가능)
     }
@@ -2497,6 +2530,7 @@ public class TRPGGameManager {
                 gameLogger.write("시간", durPd != null ? durPd.gmDisplayName() : "", "[행동 소요 " + durMin + "분]");
             }
             int durEff = durMin > 0 ? durMin : state.getMinutesPerTurn();
+            durEff = Math.max(1, (int) Math.round(durEff * paceMult())); // ★#151 완급★ slow면 같은 행동이 시간을 적게 소모(중요 순간 촘촘)
             if (state.getTurnMode() == 1) {
                 state.advanceActionClock(durEff); // 가변: 행동 소요만큼 시계 진행
             } else if (state.getTurnMode() >= 2 && !state.isDailyPhase()) { // ★#208★ 일상엔 시계가 얼어 busy가 안 풀리므로 잠금 안 검
@@ -2511,6 +2545,15 @@ public class TRPGGameManager {
                 //   발화한다 — 비동기 모드가 '입력 전까지 얼어붙던' 문제 해소. (자유 인원이 남아 있으면 내부에서 무동작.)
                 busyClockJumpIfAllBusy();
             }
+            // ★#151 §2.2-4 완급★: GM이 <PACE>로 페이스 조절(slow=중요 순간 촘촘). 이후 행동들의 durEff에 반영.
+            String pc = ai.parsePace(raw);
+            if (pc != null && (pc.equals("slow") || pc.equals("normal") || pc.equals("fast"))) {
+                if (!pc.equals(actionPace)) gameLogger.logEvent("[완급] 페이스 " + actionPace + " → " + pc);
+                actionPace = pc;
+            }
+            // ★#151 §2.2-5 즉시 소집★: GM이 <SUMMON>을 내면(임박 사건·전투·피격) 비동기 busy 인원을 전원 자유화(방금 잠긴 행동자 포함).
+            java.util.List<String> summonReasons = ai.parseSummonTags(raw);
+            if (!summonReasons.isEmpty()) summonAllFree(summonReasons.get(0));
             ai.parseEventBlockTags(raw).forEach(state::blockEvent);
             ai.parseEventTriggerTags(raw).forEach(state::triggerEvent);
 
