@@ -5517,8 +5517,29 @@ public class TRPGGameManager {
         }
         boolean haveAny = !fullLog.isBlank() || perPlayer.length() > 0;
 
+        // ★평가 정합성★: 최종 총평(campaignWide)은 스테이지별로 이미 매긴 A~F가 누적된 pd.contribution을
+        //   ★권위 근거★로 받아, 캠페인 로그가 300개 캡으로 잘려 초반 활약이 빠져도 같은 행동을 근거 없이
+        //   낮추지 않게 한다(스테이지 A → 최종 C 뒤집힘 방지).
+        String stageBasis = "";
+        if (campaignWide) {
+            StringBuilder sb2 = new StringBuilder();
+            for (PlayerData pd : allPd) {
+                if (!pd.roleAssigned && pd.contribution == 0) continue;
+                sb2.append("- ").append(pd.name);
+                if (!pd.charName.isEmpty()) sb2.append("(").append(pd.charName).append(")");
+                sb2.append(": 스테이지별 누적 기여도 ").append(pd.contribution)
+                   .append(" (").append(contributionLabel(pd.contribution)).append(")\n");
+            }
+            if (sb2.length() > 0)
+                stageBasis = "★스테이지별 기존 평가(누적) — 최종은 이와 ★일관★되게 매겨라★:\n" + sb2
+                    + "위 누적치는 각 스테이지에서 이미 A~F로 평가받아 합산된 값이다. 최종 total은 이를 ★존중·반영★하라 — "
+                    + "누적이 높은(스테이지에서 좋게 평가된) 플레이어를 로그가 부족하다는 이유로 근거 없이 낮추지 마라. "
+                    + "대략 기준: 누적 5+ → A~B급 활약 / 3~4 → 최소 B / 1~2 → C / 0 → 무행동(D~F).\n\n";
+        }
+
         String prompt = "게임 클리어 등급: " + clearGrade + "\n\n"
             + "플레이어 목록:\n" + playerInfo + "\n"
+            + stageBasis
             + "전체 행동 기록:\n" + (fullLog.isBlank() ? "(전역 기록 없음 — 아래 개인 행동로그로 평가)" : fullLog) + "\n\n"
             + (perPlayer.length() > 0 ? "개인별 행동로그:\n" + perPlayer + "\n" : "")
             + (haveAny ? "" : "※ 상세 행동 기록이 유실됐을 수 있다. 그럴 땐 위 '플레이어 목록'의 생존/상태·배역만으로 ★최대한★ 평가하라 — ★절대 '기록이 없어 평가 불가'라 답하지 마라★. 최소 참여=B, 무행동 추정=C로 매기고 evaluations를 반드시 채워라.\n\n")
