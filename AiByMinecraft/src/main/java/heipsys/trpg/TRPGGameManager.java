@@ -164,6 +164,19 @@ public class TRPGGameManager {
     private boolean forceRetryAllowed = false;
     /** GM이 개설한 기기 통신 채널: A → {B, C, ...} (양방향 저장) */
     private final Map<UUID, Set<UUID>> commChannels = new ConcurrentHashMap<>();
+    /** 은밀 대화(밀담) 채널 — one_way_call direction 1(청취)/2(대화창)로 개설, 스테이지 동안 유지.
+     *  소유자 UUID → 채널. 멤버는 채팅 앞에 '!'를 붙여 은밀히 주고받는다(괴담 감지 여부는 detect). */
+    private final Map<UUID, SecretChannel> secretChannels = new ConcurrentHashMap<>();
+    /** 밀담 채널 설정(불변) + 멤버 집합. direction: 1=청취(멤버→소유자만), 2=대화창(전원 양방향). */
+    private static final class SecretChannel {
+        final UUID owner; final String ownerName; final String label;
+        final boolean detect; final int chars; final int direction;
+        final Set<UUID> members = ConcurrentHashMap.newKeySet(); // 소유자 제외 상대들
+        SecretChannel(UUID owner, String ownerName, String label, boolean detect, int chars, int direction) {
+            this.owner = owner; this.ownerName = ownerName; this.label = label;
+            this.detect = detect; this.chars = chars; this.direction = direction;
+        }
+    }
     /** 탈락 안내 메시지 도배 방지: UUID → 마지막 안내 시각(millis) */
     private final Map<UUID, Long> lastDeadNotice = new ConcurrentHashMap<>();
     /** 중복 입력 디바운스: 같은 플레이어가 같은 메시지를 짧은 시간 내 재전송하면 1회만 처리(중복 출력·도배 방지) */
@@ -945,6 +958,7 @@ public class TRPGGameManager {
 
         // 등장 상태·대기 서술·통신 채널 초기화
         pendingTraitActivation.clear();
+        secretChannels.clear(); // 은밀 대화(밀담) 채널은 스테이지 범위 — 리셋 시 닫는다
         pendingPrayerInput.clear();
         pendingOracleInput.clear();
         pendingLuckModifier.clear();
@@ -2084,6 +2098,9 @@ public class TRPGGameManager {
         PlayerData pd = state.getPlayer(player);
         if (pd == null) return;
         if (pd.isDead) { sendDeadStatus(player, pd); return; }
+        // 은밀 대화(밀담) 채널 — '!'로 시작하고 활성 채널의 소유자/멤버면 은밀히 주고받는다(일반 행동으로 넘어가지 않음).
+        //  채널이 없으면 false → 일반 채팅으로 폴백(그냥 '!'로 시작하는 발화도 정상 처리).
+        if (message.startsWith("!") && handleSecretChannelChat(player, pd, message.substring(1).trim())) return;
         if (pd.puppetRecoveryTurns != 0) {
             if (pd.puppetRecoveryTurns < 0) { // 완전 조종(괴담팀) — 자연 회복 없음, 치유 능력으로만 복구
                 player.sendMessage("§5괴담에게 완전히 삼켜져 스스로 행동할 수 없습니다...");
@@ -4167,12 +4184,43 @@ public class TRPGGameManager {
         player.sendMessage(accepted ? "§7[" + td.name + " 발동 중...]" : "§7행동 처리 중입니다. 잠시 후 다시 시도하세요.");
     }
 
-    /** 일방 전언 — 지정 아군 1명에게 거리·연락처·통신차단 무관하게 일방 전달(답신 불가, 소리 아님, 턴 소모 없음). */
+    /** 은밀 대화(밀담) — direction별: 0=일방 전언, 1=청취 채널, 2=대화창. detect=괴담 감지, chars=글자수 상한. 턴 소모 없음. */
     private void activateOneWayCall(Player player, PlayerData pd, TraitData td) {
+        int direction = td.param("direction", 0);
+        boolean detect = td.param("detect", 0) == 1;
+        int chars = Math.max(0, td.param("chars", 0));
+        if (direction == 0) { activateOneWaySend(player, pd, td, detect, chars); return; }
+        // 청취(1)·대화창(2): 스테이지 채널 개설(이미 같은 방향으로 열려 있으면 재안내, 횟수 미소모)
+        SecretChannel cur = secretChannels.get(pd.uuid);
+        if (cur != null && cur.direction == direction) {
+            player.sendMessage("§d[" + td.name + "] 이미 열려 있습니다. §7채팅 앞에 §f!§7 를 붙여 주고받으세요.");
+            return;
+        }
+        SecretChannel ch = new SecretChannel(pd.uuid, pd.gmDisplayName(), td.name, detect, chars, direction);
+        for (PlayerData op : state.getAllPlayers())
+            if (!op.uuid.equals(pd.uuid) && !op.isDead && spawnedPlayers.contains(op.uuid)) ch.members.add(op.uuid);
+        secretChannels.put(pd.uuid, ch);
+        applyTraitUsed(pd, td.id, state.getCurrentTurn());
+        String det = detect ? " §8(괴담이 엿들을 수 있음)" : " §8(괴담이 감지 못함)";
+        String lim = chars > 0 ? " §8(한 번에 " + chars + "자까지)" : "";
+        String how = direction == 2 ? "파티끼리 서로" : "당신에게만";
+        player.sendMessage("§d[" + td.name + " 개설] §f은밀 대화창을 열었습니다 — 채팅 앞에 §e!§f 를 붙이면 " + how + " 전해집니다." + det + lim);
+        for (UUID mu : ch.members) {
+            Player mp = Bukkit.getPlayer(mu);
+            if (mp == null || !mp.isOnline()) continue;
+            mp.sendMessage(direction == 2
+                ? "§d[" + td.name + "] " + ch.ownerName + "이(가) 은밀 대화창을 열었습니다 — 채팅 앞에 §e!§d 를 붙여 파티끼리 은밀히 대화하세요." + det
+                : "§d[" + td.name + "] " + ch.ownerName + "이(가) 당신의 소식을 은밀히 듣고자 합니다 — 채팅 앞에 §e!§d 를 붙여 전하세요." + det);
+        }
+    }
+
+    /** 일방 전언(direction=0) — 지정 아군 1명 또는 '전체'에게 은밀히 일방 전달(답신 불가, 소리 아님). */
+    private void activateOneWaySend(Player player, PlayerData pd, TraitData td, boolean detect, int chars) {
+        String lim = chars > 0 ? " (최대 " + chars + "자)" : "";
         dialogMan.showTextInput(player,
             net.kyori.adventure.text.Component.text("[" + td.name + "]"),
-            net.kyori.adventure.text.Component.text("지정한 아군 1명에게 일방적으로 전합니다(거리·연락처·통신차단 무관, 답신 불가)."),
-            "받는 사람 이름 + 전할 말 (예: 김철수 지금 도망쳐)",
+            net.kyori.adventure.text.Component.text("지정한 아군에게 일방적으로 전합니다(거리·연락처·통신차단 무관, 답신 불가)." + lim),
+            "받는 사람(또는 전체) + 전할 말 (예: 김철수 지금 도망쳐)",
             net.kyori.adventure.text.Component.text("전송"),
             input -> {
                 if (input == null || input.isBlank()) return;
@@ -4180,18 +4228,81 @@ public class TRPGGameManager {
                 int sp = s.indexOf(' ');
                 if (sp < 0) { player.sendMessage("§c형식: 이름 메시지 (예: 김철수 지금 도망쳐)"); return; }
                 String name = s.substring(0, sp).trim();
-                String msg  = s.substring(sp + 1).trim();
-                PlayerData target = findAnyByName(name);
-                if (target == null || target.uuid.equals(pd.uuid)) {
-                    player.sendMessage("§c'" + name + "' — 보낼 아군을 찾을 수 없습니다.");
-                    return;
+                String msg  = clampChars(s.substring(sp + 1).trim(), chars);
+                if (msg.isBlank()) return;
+                List<PlayerData> targets = new ArrayList<>();
+                if (name.equals("전체") || name.equalsIgnoreCase("all") || name.equals("@전체")) {
+                    for (PlayerData op : state.getAllPlayers())
+                        if (!op.uuid.equals(pd.uuid) && !op.isDead && spawnedPlayers.contains(op.uuid)) targets.add(op);
+                } else {
+                    PlayerData target = findAnyByName(name);
+                    if (target == null || target.uuid.equals(pd.uuid)) { player.sendMessage("§c'" + name + "' — 보낼 아군을 찾을 수 없습니다."); return; }
+                    targets.add(target);
                 }
-                Player tp = Bukkit.getPlayer(target.uuid);
-                if (tp != null && tp.isOnline())
-                    tp.sendMessage("§d[전언 — " + pd.gmDisplayName() + "] §f" + msg);
-                player.sendMessage("§7[" + td.name + "] " + target.gmDisplayName() + "에게 전했습니다. §8(턴 소모 없음)");
+                if (targets.isEmpty()) { player.sendMessage("§c전할 아군이 없습니다."); return; }
+                deliverSecretText(pd, targets, msg, detect, td.name);
+                player.sendMessage("§7[" + td.name + "] " + (targets.size() == 1 ? targets.get(0).gmDisplayName() : targets.size() + "명") + "에게 전했습니다. §8(턴 소모 없음)");
                 applyTraitUsed(pd, td.id, state.getCurrentTurn());
             });
+    }
+
+    /** '!'로 시작하는 은밀 대화 라우팅 — 활성 채널의 소유자/멤버면 처리(true), 아니면 false(일반 채팅 폴백). */
+    private boolean handleSecretChannelChat(Player player, PlayerData pd, String body) {
+        if (pd.isDead || !spawnedPlayers.contains(pd.uuid)) return false;
+        SecretChannel own = secretChannels.get(pd.uuid);
+        SecretChannel mem = null;
+        for (SecretChannel c : secretChannels.values()) if (c.members.contains(pd.uuid)) { mem = c; break; }
+        SecretChannel ch = (own != null) ? own : mem;
+        if (ch == null) return false; // 활성 채널 없음 → 일반 채팅으로
+        if (body.isBlank()) { player.sendMessage("§7[" + ch.label + "] 전할 말을 '!' 뒤에 적으세요."); return true; }
+        boolean isOwner = ch.owner.equals(pd.uuid);
+        if (ch.direction == 1 && isOwner) { // 청취 전용: 소유자는 발신 불가
+            player.sendMessage("§7[" + ch.label + "] 이 채널은 '청취 전용'입니다 — 상대의 소식을 받기만 합니다."); return true;
+        }
+        String msg = clampChars(body, ch.chars);
+        if (msg.isBlank()) return true;
+        List<PlayerData> recips = new ArrayList<>();
+        if (ch.direction == 1) { // 청취: 소유자에게만
+            PlayerData op = state.getPlayer(ch.owner);
+            if (op != null && !op.isDead) recips.add(op);
+        } else { // 대화창(2): 소유자 + 멤버 전원(발신자 제외)
+            PlayerData op = state.getPlayer(ch.owner);
+            if (op != null && !op.isDead && !op.uuid.equals(pd.uuid)) recips.add(op);
+            for (UUID mu : ch.members) {
+                if (mu.equals(pd.uuid)) continue;
+                PlayerData mp = state.getPlayer(mu);
+                if (mp != null && !mp.isDead) recips.add(mp);
+            }
+        }
+        if (recips.isEmpty()) { player.sendMessage("§7[" + ch.label + "] 지금 들을 상대가 없습니다."); return true; }
+        deliverSecretText(pd, recips, msg, ch.detect, ch.label);
+        player.sendMessage("§d[" + ch.label + " → " + (ch.direction == 1 ? ch.ownerName : "대화창") + "] §7보냈습니다.");
+        return true;
+    }
+
+    /** 은밀 텍스트 전달 공통 — 수신자에게 직접 전송 + 로깅 + (감지형이면) 괴담 인지·GM 주입. */
+    private void deliverSecretText(PlayerData sender, List<PlayerData> recips, String msg, boolean detect, String label) {
+        String from = sender.gmDisplayName();
+        List<String> toDisp = new ArrayList<>();
+        for (PlayerData r : recips) {
+            toDisp.add(r.gmDisplayName());
+            Player rp = Bukkit.getPlayer(r.uuid);
+            if (rp != null && rp.isOnline()) rp.sendMessage("§d[" + label + " — " + from + "] §f" + msg);
+        }
+        gameLogger.logComm("whisper", from, toDisp, msg, detect ? "밀담(노출)" : "밀담");
+        if (detect) {
+            noteEntityIntel(2, from, msg, "밀담");
+            String snip = msg.length() > 40 ? msg.substring(0, 40) + "…" : msg;
+            ai.injectGmSystem("[은밀 대화 감지] " + from + "의 은밀 대화를 괴담이 엿들었다(내용: " + snip
+                + "). 괴담이 그 정보를 인지·역이용하도록 다음 전개에 은근히 반영하라(즉시 과잉 반응 금지, 1턴 대응 여지).");
+        }
+    }
+
+    /** 글자수 상한 적용(0=무제한). 초과분은 잘라 반환. */
+    private static String clampChars(String s, int limit) {
+        if (s == null) return "";
+        s = s.trim();
+        return (limit > 0 && s.length() > limit) ? s.substring(0, limit) : s;
     }
 
     /** .gdam zones[]의 모든 zone_id 목록(무작위 이동용). */
