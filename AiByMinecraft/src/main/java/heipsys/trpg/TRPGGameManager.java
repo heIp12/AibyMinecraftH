@@ -136,6 +136,8 @@ public class TRPGGameManager {
      *  예전엔 고정턴 분(minutesPerTurn 15~20)을 통째로 흘려 사소한 행동에도 20분씩 소모됐다 →
      *  DUR 누락은 '짧은 미상 행동'으로 보고 작은 값만 흘린다(minutesPerTurn가 더 작으면 그쪽을 따른다). */
     private static final int DUR_MISSING_MIN = 3;
+    /** ★최소 나이★ 캐릭터·배역 나이는 이 값 미만이 되지 않는다(8세). 배역 age_range 하한·랜덤 생성·조정 모두에 적용. */
+    private static final int MIN_AGE = 8;
 
     /** 캐릭터 생성 완료 대기 중인 플레이어 UUID 집합 */
     private final Set<UUID> pendingCreation    = ConcurrentHashMap.newKeySet();
@@ -1816,17 +1818,20 @@ public class TRPGGameManager {
      */
     private void applyRoleAge(PlayerData pd, JsonObject roleData) {
         if (roleData == null || !roleData.has("age_range")) {
-            pd.roleAge = pd.age; // 연령 정보 없으면 현재 나이를 배역 나이로 고정
+            pd.age = Math.max(MIN_AGE, pd.age);
+            pd.roleAge = pd.age; // 연령 정보 없으면 현재 나이를 배역 나이로 고정(최소 8세)
             return;
         }
         JsonArray ar = roleData.getAsJsonArray("age_range");
         if (ar.size() >= 2) {
-            int lo = ar.get(0).getAsInt(), hi = ar.get(1).getAsInt();
+            int lo = Math.max(MIN_AGE, ar.get(0).getAsInt()), hi = Math.max(MIN_AGE, ar.get(1).getAsInt());
             if (hi < lo) { int t = lo; lo = hi; hi = t; }
-            if (pd.age < lo || pd.age > hi) {
-                pd.age = (hi > lo) ? lo + ThreadLocalRandom.current().nextInt(hi - lo + 1) : lo;
-            }
+            // ★나이 일관성(역할이 달라져도 연령대 유지)★: 범위를 벗어나면 무작위로 다시 뽑지 말고 ★가장 가까운 경계로 클램프★한다
+            //   — 캐릭터의 '정해진 나이'와 최대한 가깝게(최소 이동). 그래서 배역이 바뀌어도 늘 비슷한 연령으로 플레이한다.
+            if (pd.age < lo) pd.age = lo;
+            else if (pd.age > hi) pd.age = hi;
         }
+        pd.age = Math.max(MIN_AGE, pd.age); // 최소 나이 8세 보장
         pd.roleAge = pd.age;
     }
 
