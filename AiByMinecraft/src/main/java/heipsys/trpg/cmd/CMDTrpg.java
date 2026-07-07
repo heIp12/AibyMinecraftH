@@ -11,7 +11,7 @@ import java.util.stream.Stream;
 
 /**
  * /trpg 커맨드 핸들러.
- * 서브커맨드: start / stop / retry / load / list / status / help
+ * 서브커맨드: start / stop / retry / next / reserve / load / list / status / help
  * 내부 커맨드 (_confirm, _reroll, _trait 등)는 TRPGGameManager.handleInternalCommand()로 위임.
  */
 public class CMDTrpg implements CommandExecutor, TabCompleter {
@@ -74,6 +74,11 @@ public class CMDTrpg implements CommandExecutor, TabCompleter {
                 if (!player.isOp()) { player.sendMessage("§c권한이 없습니다."); return true; }
                 if (args.length < 2) { player.sendMessage("§c사용법: /trpg load <씨드>"); return true; }
                 trpg.loadSession(player, args[1]);
+            }
+            case "reserve", "예약" -> { // ★#228★ 다음 스테이지에 특정 괴담 예약(1회성) — /trpg next에서 소비
+                if (!player.isOp()) { player.sendMessage("§c권한이 없습니다."); return true; }
+                if (args.length < 2) { player.sendMessage("§c사용법: /trpg reserve <씨드>  §7(해제: off)"); return true; }
+                trpg.reserveNextScenario(player, args[1]);
             }
             case "read"   -> {
                 if (!player.isOp()) { player.sendMessage("§c권한이 없습니다."); return true; }
@@ -190,6 +195,7 @@ public class CMDTrpg implements CommandExecutor, TabCompleter {
         player.sendMessage("§f/trpg stop  §7— 세션 종료 (OP)");
         player.sendMessage("§f/trpg retry §7— 재도전 (OP)");
         player.sendMessage("§f/trpg next  §7— 다음 스테이지로 이동 (OP) — 클리어 후 새 시나리오 시작");
+        player.sendMessage("§f/trpg reserve <씨드> §7— 다음 스테이지에 특정 괴담 예약(1회성 · 해제 off) (OP)");
         player.sendMessage("§f/trpg resume §7— 예기치 못하게 끊긴 게임을 자동 저장에서 이어하기 (OP)");
         player.sendMessage("§f/trpg jobrefresh §7— 직업 풀을 AI로 강제 재생성(캐시·재시작 불필요) (OP)");
         player.sendMessage("§f/trpg status §7— 현재 상태 확인");

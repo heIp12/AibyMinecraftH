@@ -838,6 +838,8 @@ public class AiManager {
             .replaceAll("<TIME_VISIBLE [^/]*/?>", "")
             .replaceAll("<THREAT [^/]*/?>", "")
             .replaceAll("<ANGER [^/]*/?>", "")
+            .replaceAll("<SUMMON[^>]*>", "")
+            .replaceAll("<PACE [^/]*/?>", "")
             // ★[지난 자율 행동] 마커 누적 방지★: 미니 모델이 이전 턴의 이 내부 마커를 에코해 매턴 하나씩
             //   불어나던 버그(1→57, 오타 '자울'까지 전파). 어디에 있든 전부 제거 — 저장 시 정확히 1개만
             //   다시 붙인다(callNpcAi). 출력 누출(플레이어/GM 로그)도 함께 차단.
@@ -1428,6 +1430,21 @@ public class AiManager {
     /** <NO_HOPE/> — GM이 '도주·해결·생존 가망 완전 소멸'을 선언(#2 자동 배드엔딩 신호). 있으면 true. */
     public boolean parseNoHope(String response) {
         return response != null && response.contains("<NO_HOPE");
+    }
+
+    /** <SUMMON reason="…"/> — 즉시 소집(#151 §2.2-5): 임박 사건·전투·피격에 비동기(busy) 인원을 전원 자유화.
+     *  reason 목록(속성 없는 <SUMMON/> 형태도 1회 소집으로 인정). 없으면 빈 리스트. */
+    public java.util.List<String> parseSummonTags(String response) {
+        if (response == null || !response.contains("<SUMMON")) return java.util.Collections.emptyList();
+        java.util.List<String> reasons = parseSelfClosingAttr(response, "<SUMMON ", "reason");
+        return reasons.isEmpty() ? java.util.List.of("") : reasons; // <SUMMON/>(속성 없음)도 소집으로
+    }
+
+    /** <PACE mode="slow|normal|fast"/> — 완급(#151 §2.2-4). 마지막 지정 모드(소문자) 반환, 없으면 null.
+     *  slow=중요 순간 시간이 천천히(같은 행동이 더 적은 분 소모 → 상대적으로 여러 행동). */
+    public String parsePace(String response) {
+        java.util.List<String> ms = parseSelfClosingAttr(response, "<PACE ", "mode");
+        return ms.isEmpty() ? null : ms.get(ms.size() - 1).trim().toLowerCase();
     }
 
     /** <EVENT_BLOCK id="X"/> 모두 파싱 → [id, ...] */

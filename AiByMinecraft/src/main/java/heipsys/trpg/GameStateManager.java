@@ -213,6 +213,8 @@ public class GameStateManager {
         o.add("foundItems", SNAP_GSON.toJsonTree(foundItems));
         o.add("discoveredFacts", SNAP_GSON.toJsonTree(discoveredFacts));
         o.add("unlockedZones", SNAP_GSON.toJsonTree(unlockedZones));
+        o.add("sealedZones", SNAP_GSON.toJsonTree(sealedZones));    // ★#180 §6-4★ 런타임 구역 봉쇄 영속(이어하기 유지)
+        o.add("blockedMedia", SNAP_GSON.toJsonTree(blockedMedia));  // ★#180 §6-4★ 매체별 통신 차단 영속(이어하기 유지)
         o.add("activeNpcs", SNAP_GSON.toJsonTree(activeNpcs));
         o.add("corruption", SNAP_GSON.toJsonTree(corruption));
         JsonObject ps = new JsonObject();
@@ -256,6 +258,8 @@ public class GameStateManager {
         snapStrInto(foundItems, o, "foundItems");
         snapStrInto(discoveredFacts, o, "discoveredFacts");
         snapStrInto(unlockedZones, o, "unlockedZones");
+        snapStrInto(sealedZones, o, "sealedZones");   // ★#180 §6-4★ 런타임 봉쇄 복원
+        snapStrInto(blockedMedia, o, "blockedMedia"); // ★#180 §6-4★ 매체 차단 복원
         snapStrInto(activeNpcs, o, "activeNpcs");
         if (o.has("corruption")) {
             CorruptionData c = SNAP_GSON.fromJson(o.get("corruption"), CorruptionData.class);
@@ -509,6 +513,30 @@ public class GameStateManager {
         clockMinutes += minutesPerTurn;
         fireDueEvents();
         syncStageToClock(); // 정상 턴에서도 시계 진행에 맞춰 추상 단계를 최소 보장(idleAdvance와 동일 정렬)
+    }
+
+    /** ★#151 §8.1★ afterMin(현재분) '이후' 아직 발화 안 한 가장 이른 main_event의 절대 분. 없으면 -1.
+     *  비동기 busy 시계 점프가 다음 사건을 건너뛰지 않고 그 '직전'에서 멈춰 반응 턴을 주게 하는 데 쓴다. */
+    public int nextDueEventMinute(int afterMin) {
+        if (gdamData == null || !gdamData.has("timeline")) return -1;
+        JsonObject tl = gdamData.getAsJsonObject("timeline");
+        if (!tl.has("main_events") || !tl.get("main_events").isJsonArray()) return -1;
+        int best = Integer.MAX_VALUE;
+        for (JsonElement el : tl.getAsJsonArray("main_events")) {
+            if (!el.isJsonObject()) continue;
+            JsonObject ev = el.getAsJsonObject();
+            String id = ev.has("id") ? ev.get("id").getAsString() : "";
+            if (id.isEmpty() || firedEvents.contains(id) || blockedEvents.contains(id)) continue;
+            if (!ev.has("time")) continue;
+            int when = parseHhmm(ev.get("time").getAsString());
+            if (when < 0) continue;
+            if (clockStart >= 0 && when < clockStart) when += 1440; // 자정 넘김
+            if (when > afterMin) best = Math.min(best, when);
+        }
+        // ★코드리뷰★ fireDueEvents는 clockEnd(제한 시각) 도달도 '종료 사건'으로 발화한다 — 점프 캡이 그 직전에도
+        //   멈춰 '마지막 반응 턴'을 주도록 clockEnd도 후보에 포함(아니면 마감을 훌쩍 넘겨 점프).
+        if (clockEnd >= 0 && !endEventFired && clockEnd > afterMin) best = Math.min(best, clockEnd);
+        return best == Integer.MAX_VALUE ? -1 : best;
     }
 
     /** 현재 시각에 도달한 main_events를 1회씩 발화하여 justFiredEvents에 누적 */

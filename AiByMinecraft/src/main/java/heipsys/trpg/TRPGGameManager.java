@@ -126,6 +126,12 @@ public class TRPGGameManager {
     private boolean familiarMode = false;
     /** 친숙 모드 괴담 범위 필터: common/heard/minor/urban/scp/korean/rule/random */
     private String familiarFilter = "random";
+    /** ★#228★ 다음 스테이지에 '생성' 대신 불러올 특정 괴담(.gdam 씨드) 예약. 빈 값=예약 없음. /trpg next에서 1회 소비. */
+    private String reservedNextSeed = "";
+    /** ★#151 §2.2-4 완급★ 현재 행동 페이스. slow=중요 순간 시간이 천천히(행동 소요 분↓ → 상대적으로 여러 행동). GM <PACE>로 설정. */
+    private String actionPace = "normal";
+    /** 완급 배수: slow=0.5(행동이 절반의 시간만 소모) / fast=1.6 / normal=1.0. durEff에 곱해 시계·busy 진행에 반영. */
+    private double paceMult() { return "slow".equals(actionPace) ? 0.5 : "fast".equals(actionPace) ? 1.6 : 1.0; }
 
     /** 캐릭터 생성 완료 대기 중인 플레이어 UUID 집합 */
     private final Set<UUID> pendingCreation    = ConcurrentHashMap.newKeySet();
@@ -274,6 +280,13 @@ public class TRPGGameManager {
     private final Map<UUID, Integer> preSpawnLastBeat = new ConcurrentHashMap<>();
     /** critical NPC가 마지막으로 행동한 괴담 턴 — 무행동 워치독용 (오래 안 나오면 강제 등장) */
     private int lastNpcBeatTurn = 0;
+    /** ★#163 무행동 자동 스킵(옵트인·기본 off)★: 행동 가능한 ★전원★이 이번 라운드에 행동을 마치면, 3분 무행동
+     *  워치독을 기다리지 않고 즉시 한 걸음(턴·시계) 진행시킨다. turnMode 2(비동기 busy)엔 미적용(그쪽은
+     *  busyClockJumpIfAllBusy가 담당). 컴파일·실플레이 검증이 어려운 턴 로직이라 기본 off로 두고 테스트 때 켠다.
+     *  /trpg setting autoskip on|off. off면 관련 코드가 전부 no-op(기존 동작 100% 보존). */
+    private boolean autoSkipAllActed = false;
+    /** 이번 라운드(마지막 진행 이후)에 행동을 마친 '행동 가능' 플레이어 UUID 집합. 전원이 차면 진행 후 비운다. */
+    private final java.util.Set<UUID> actedSinceProgress = new java.util.HashSet<>();
     /** 마지막 플레이어 입력(행동) 시각(ms) — 무행동 가속 워치독용. 0이면 미설정. */
     private volatile long lastPlayerActionMs = 0L;
     /** 마지막 무행동 가속 발동 시각(ms) — 중복 가속 방지. */
@@ -364,6 +377,28 @@ public class TRPGGameManager {
             .collect(Collectors.toList());
     }
 
+    /** ★#163★ 지금 행동할 수 있는 상태인가(살아 등장 + 완전조종/동물/기절 아님). busyAbleSpawned의 1인 판정 기준과 동일. */
+    private boolean canActNow(PlayerData pd) {
+        return !pd.isDead && spawnedPlayers.contains(pd.uuid)
+            && pd.puppetRecoveryTurns == 0 && !animalForm.contains(pd.uuid)
+            && !("faint".equals(pd.status) && pd.faintTurnsRemaining > 0);
+    }
+
+    /**
+     * ★#163 무행동 자동 스킵★ 행동가능 전원이 이번 라운드 행동을 마쳤을 때 ★가벼운 한 걸음★ 진행.
+     *  무행동 가속(#12)의 무거운 GM TIME_SKIP과 달리, GM 호출 없이 턴·시계 카운터만 조용히 올린다.
+     *  - turnMode 0(고정): nextTurn의 tickClock이 고정 페이스로 시계를 민다(한 라운드=한 턴 진행).
+     *  - turnMode 1(가변): 행동 DUR이 이미 per-action으로 시계를 밀었으므로 ★여기선 카운터만★(이중 진행 방지 — advanceActionClock 호출 안 함).
+     *  이렇게 해야 시계가 안 흐르던 turnMode 0에서 전원 행동 후 즉시 시간·괴담이 진전하고, turnMode 1은 시간이 두 번 흐르지 않는다.
+     *  ★기절 카운터(tickFaintCounters)는 여기서 다시 돌리지 않는다★ — onGmResponse가 이번 행동에 대해 이미 한 번 진행했다
+     *  (워치독은 행동이 없어 직접 돌리지만, 이 경로는 방금 행동이 있었으므로 이중 진행이 된다).
+     */
+    private void advanceRoundAfterAllActed() {
+        state.nextTurn();
+        updateAllScoreboards();
+        gameLogger.logEvent("[자동진행] 행동가능 전원 행동 완료 → 한 걸음(턴 " + state.getCurrentTurn() + ")");
+    }
+
     /**
      * ★#151 Stage B(비동기 busy, turnMode=2 전용)★ 행동가능 인원이 ★전원 busy★면 시계를 가장 이른 busyUntil로 점프해
      * 최소 한 명을 자유화한다(자유로운 사람이 없으면 시간이 다음 '자유 시점'까지 흐른다). 그 사이 도래 사건도 발화.
@@ -381,9 +416,39 @@ public class TRPGGameManager {
             earliest = Math.min(earliest, pd.busyUntilMin);
         }
         if (earliest == Integer.MAX_VALUE || earliest <= now) return;
-        state.advanceClockTo(earliest);             // 다음 자유 시점까지 시간이 흐른다(타임라인 사건 발화 포함)
+        // ★#151 §8.1 사건 직전 정지★: 다음 미발화 사건이 '자연 자유화(earliest)'보다 먼저 오면, 그 사건을
+        //   건너뛰지 말고 ★직전까지만★ 시간을 흘린 뒤 전원을 자유화해 '임박한 사건에 반응할 마지막 턴'을 준다.
+        int nextEvt = state.nextDueEventMinute(now);
+        // ★조건 = nextEvt-1 > now★(사건 직전 분까지 ★실제로 흘릴 여지가 있을 때만★ 캡). now가 이미 nextEvt-1이면
+        //   (반응 턴을 이미 준 상태) 여기 걸리지 않고 아래 earliest로 흘러 ★사건을 넘겨 발화★한다.
+        //   'nextEvt > now'로 쓰면 시계가 nextEvt-1에 도달한 뒤에도 계속 nextEvt-1에 재캡돼 사건이 영영 발화 안 되는 락이 생긴다.
+        if (nextEvt - 1 > now && nextEvt <= earliest) {
+            state.advanceClockTo(nextEvt - 1);        // 사건 직전 분까지만 흘린다
+            int freeAt = state.getClockMinutes();
+            for (PlayerData pd : able) pd.busyUntilMin = freeAt; // 반응 턴 부여(즉시 자유화 — 사건 발화 전)
+            tickFaintCounters();
+            updateAllScoreboards();
+            return;
+        }
+        state.advanceClockTo(earliest);             // 사건이 없거나(1분 이내로 임박해 여지 없음 포함) 더 뒤면 다음 자유 시점까지(사건 넘겨 발화)
         tickFaintCounters();                         // 시간 경과분 회복·기절 카운터도 함께 진행
         updateAllScoreboards();
+    }
+
+    /** ★#151 §2.2-5 즉시 소집(<SUMMON>·피격)★ 비동기(turnMode≥2)에서 행동가능 전원을 즉시 자유화한다
+     *  (busyUntil=현재분) — 임박한 사건·전투·피격에 모두가 바로 반응하도록. turnMode<2·시계 없음이면 무동작. */
+    private void summonAllFree(String reason) {
+        if (state.getTurnMode() < 2) return;
+        int now = state.getClockMinutes();
+        if (now < 0) return;
+        boolean any = false;
+        for (PlayerData pd : busyAbleSpawned()) {
+            if (pd.isBusy(now)) { pd.busyUntilMin = now; any = true; }
+        }
+        if (any) {
+            gameLogger.logEvent("[즉시 소집] " + (reason == null || reason.isBlank() ? "사건 발생" : reason) + " — 전원 자유화");
+            updateAllScoreboards();
+        }
     }
 
     private void startIncapacitationWatchdog() {
@@ -540,6 +605,7 @@ public class TRPGGameManager {
         replayLock = false; // 정상 시작 — 재현 잠금 해제
         familiarMode = familiar;
         familiarFilter = (familiarFilterKey == null || familiarFilterKey.isBlank()) ? "random" : familiarFilterKey;
+        reservedNextSeed = ""; // ★#228★ 새 게임 시작 — 이전 게임의 미소비 예약이 남아있지 않게 초기화
         ai.setGmQuality(quality);
         String qLabel = switch (quality) {
             case HIGH -> "§b고품질 모드";
@@ -1063,6 +1129,21 @@ public class TRPGGameManager {
                 : tmSel == 1
                 ? "§a가변 §7(행동 소요시간 DUR로 시계 진행 — 시계 있는 시나리오에서만)"
                 : "§b비동기 busy §7(각자 행동 소요만큼 '행동 중' 잠금 → 시계가 다음 자유 시점으로 점프 · 시계 있는 시나리오)") + " §7— 즉시 적용");
+        } else if (key.equals("autoskip") || key.equals("자동스킵") || key.equals("무행동스킵")) {
+            // ★#163★ 무행동 자동 스킵(옵트인): 행동가능 전원이 행동을 마치면 3분 워치독 없이 즉시 한 걸음 진행.
+            //   실험적 턴 로직이라 기본 off. turnMode 0/1에서만 동작(2는 비동기 busy가 담당).
+            if (sub.length >= 2) {
+                String v = sub[1].toLowerCase();
+                if (v.equals("on") || v.equals("켜기") || v.equals("켬") || v.equals("true") || v.equals("1")) autoSkipAllActed = true;
+                else if (v.equals("off") || v.equals("끄기") || v.equals("끔") || v.equals("false") || v.equals("0")) autoSkipAllActed = false;
+                else { player.sendMessage("§c사용법: §f/trpg setting autoskip <on|off>"); return; }
+            } else {
+                autoSkipAllActed = !autoSkipAllActed; // 값 없으면 토글
+            }
+            if (!autoSkipAllActed) actedSinceProgress.clear();
+            player.sendMessage("§6[설정] 무행동 자동 스킵: " + (autoSkipAllActed
+                ? "§a켜짐 §7(행동가능 전원이 행동을 마치면 즉시 진행 — turnMode 0/1, 실험적)"
+                : "§c꺼짐 §7(기본 — 3분 무행동 워치독으로만 진행)") + " §7— 즉시 적용");
         } else {
             openStartSettings(player);
         }
@@ -1204,11 +1285,51 @@ public class TRPGGameManager {
     }
 
     /**
+     * ★#228★ 진행 중 다음 스테이지에 '생성' 대신 불러올 특정 괴담(.gdam 씨드)을 예약한다(1회성).
+     * `/trpg reserve <씨드>` (해제: `off`). /trpg next에서 consumePregenOrGenerate가 우선 소비한다.
+     * 스포일러 방지로 괴담 이름은 표시하지 않고 씨드만 확인해준다.
+     */
+    public void reserveNextScenario(Player admin, String seed) {
+        if (admin == null) return;
+        if (seed == null || seed.isBlank()) { admin.sendMessage("§c사용법: §f/trpg reserve <씨드> §7(/trpg list로 씨드 확인 · 해제는 off)"); return; }
+        String s = seed.trim();
+        if (s.equalsIgnoreCase("off") || s.equals("취소") || s.equals("해제") || s.equalsIgnoreCase("none")) {
+            reservedNextSeed = "";
+            admin.sendMessage("§7[예약] 다음 스테이지 예약을 해제했습니다(정상 생성으로 진행).");
+            return;
+        }
+        if (!isActive()) { admin.sendMessage("§c진행 중인 세션이 없습니다. §7(다음 스테이지가 있을 때 예약하세요)"); return; }
+        JsonObject g = gdamGen.load(s);
+        if (g == null || !g.has("entity")) {
+            admin.sendMessage("§c씨드 '" + s + "' 시나리오를 찾을 수 없습니다. §7(/trpg list로 저장된 씨드를 확인하세요)");
+            return;
+        }
+        reservedNextSeed = s;
+        gameLogger.logEvent("[예약] 다음 스테이지 예약 설정: 시드 " + s);
+        admin.sendMessage("§a[예약] 다음 스테이지(/trpg next)에 시드 §f" + s + " §a시나리오를 불러오도록 예약했습니다.");
+        admin.sendMessage("§7  · 1회성(넘긴 뒤 자동 해제) · 취소 §f/trpg reserve off §7· 스포일러 방지로 괴담 이름은 표시하지 않습니다.");
+    }
+
+    /**
      * /trpg next 시 다음 시나리오 future를 얻는다.
      * 사전 생성(startPregenNext)된 것이 있고 대상 스테이지가 일치하면 재사용하고,
      * 사전 생성 결과가 오류/누락이면 즉석 생성으로 자동 폴백한다.
      */
     private CompletableFuture<JsonObject> consumePregenOrGenerate(int nextRoom) {
+        // ★#228★ 예약된 특정 괴담이 있으면 '생성' 대신 그걸 불러온다(1회성 소비 · 사전생성분보다 우선).
+        if (reservedNextSeed != null && !reservedNextSeed.isBlank()) {
+            String seed = reservedNextSeed;
+            reservedNextSeed = "";      // 1회성 — 소비 즉시 예약 해제
+            clearPregen();              // 예약이 우선 — 백그라운드 사전생성분은 버린다
+            JsonObject loaded = gdamGen.load(seed);
+            if (loaded != null && loaded.has("entity")) {
+                loaded.addProperty("room", nextRoom); // 원래 회차와 무관하게 이번 스테이지 번호로 정합
+                stepLoadingBar("예약된 시나리오 불러오기", 0.92f);
+                gameLogger.logEvent("[예약] 다음 스테이지에 예약 시나리오(시드 " + seed + ") 사용");
+                return CompletableFuture.completedFuture(loaded);
+            }
+            plugin.getLogger().warning("[gdam] 예약된 시드(" + seed + ") 로드 실패 — 정상 생성으로 폴백");
+        }
         CompletableFuture<JsonObject> pre = pregenFuture;
         int preRoom = pregenRoom;
         clearPregen(); // 1회성 소비
@@ -1862,6 +1983,8 @@ public class TRPGGameManager {
         resetOverviewCache(); // 새 스테이지 = 새 괴담 → 시나리오 개요 캐시 초기화(다음 사용 시 재생성)
         loadForbiddenWord(); // 금지워드형 괴담의 금지어 로드(entity.forbidden_word)
         lastPlayerActionMs = System.currentTimeMillis(); lastIdleAccelMs = 0L; // 무행동 가속 기준점 초기화
+        actedSinceProgress.clear(); // ★#163★ 새 스테이지 — 라운드 행동 집계 초기화
+        actionPace = "normal";      // ★#151 완급★ 새 스테이지 — 페이스 기본값 복귀
         lastAutoSaveTurn = -1; // 새 스테이지 시작 — 첫 턴부터 다시 저장되도록
         autoSave();            // 스테이지 시작 시점 즉시 1회 저장(첫 행동 전 중단돼도 이어하기 가능)
     }
@@ -2409,6 +2532,7 @@ public class TRPGGameManager {
                 gameLogger.write("시간", durPd != null ? durPd.gmDisplayName() : "", "[행동 소요 " + durMin + "분]");
             }
             int durEff = durMin > 0 ? durMin : state.getMinutesPerTurn();
+            durEff = Math.max(1, (int) Math.round(durEff * paceMult())); // ★#151 완급★ slow면 같은 행동이 시간을 적게 소모(중요 순간 촘촘)
             if (state.getTurnMode() == 1) {
                 state.advanceActionClock(durEff); // 가변: 행동 소요만큼 시계 진행
             } else if (state.getTurnMode() >= 2 && !state.isDailyPhase()) { // ★#208★ 일상엔 시계가 얼어 busy가 안 풀리므로 잠금 안 검
@@ -2417,11 +2541,21 @@ public class TRPGGameManager {
                 PlayerData actorPd = player != null ? state.getPlayer(player) : null;
                 int nowMin = state.getClockMinutes();
                 if (actorPd != null && nowMin >= 0) { actorPd.actionStartMin = nowMin; actorPd.busyUntilMin = nowMin + Math.max(1, durEff); }
+                // ★#151 §2.2-5 즉시 소집은 ★점프 前★★(코드리뷰 지적): <SUMMON>이면 방금 잠긴 행동자 포함 전원 자유화 →
+                //   아래 점프가 no-op가 되어, 시계가 앞으로 튀어(사건 발화·회복 카운터 진행) 소집이 '미래 분'에서 걸리는 desync를 막는다.
+                java.util.List<String> summonReasons = ai.parseSummonTags(raw);
+                if (!summonReasons.isEmpty()) summonAllFree(summonReasons.get(0));
                 // ★행동 완료 시점에도 점프 시도★(코드리뷰 수정): onGmResponse 본문은 runTask로 ★메인 스레드★에서 돌므로
                 //   Bukkit API·스코어보드 접근이 안전하다(예전 주석의 '비동기라 금지'는 오해였다). 이 행동으로 마지막 자유
                 //   인원이 busy가 됐다면, 다음 키 입력을 기다리지 않고 즉시 시계를 다음 자유 시점으로 밀어 도래 사건을
                 //   발화한다 — 비동기 모드가 '입력 전까지 얼어붙던' 문제 해소. (자유 인원이 남아 있으면 내부에서 무동작.)
                 busyClockJumpIfAllBusy();
+            }
+            // ★#151 §2.2-4 완급★: GM이 <PACE>로 페이스 조절(slow=중요 순간 촘촘). 이후 행동들의 durEff에 반영.
+            String pc = ai.parsePace(raw);
+            if (pc != null && (pc.equals("slow") || pc.equals("normal") || pc.equals("fast"))) {
+                if (!pc.equals(actionPace)) gameLogger.logEvent("[완급] 페이스 " + actionPace + " → " + pc);
+                actionPace = pc;
             }
             ai.parseEventBlockTags(raw).forEach(state::blockEvent);
             ai.parseEventTriggerTags(raw).forEach(state::triggerEvent);
@@ -2533,7 +2667,10 @@ public class TRPGGameManager {
 
             // 12. 스테이지 기반 자동 등장 체크 (STATE_UPDATE 외부에서 stage 이미 변경된 경우 보정)
             checkAndAutoSpawn();
-            tickFaintCounters();
+            // ★코드리뷰★ turnMode 2(비동기)에선 시계가 ★점프(busyClockJumpIfAllBusy)·워치독★에서만 흐르고 그때 이미
+            //   tickFaintCounters를 돌린다 — 여기서 또 돌리면 점프 턴에 회복 카운터가 2배로 진행되는 이중 틱이 된다.
+            //   그래서 mode<2(행동=시간 진행)에서만 여기서 틱하고, mode 2는 점프/워치독에 맡긴다(시간 안 흐르면 회복도 안 함).
+            if (state.getTurnMode() < 2) tickFaintCounters();
 
             // 12c. 타임라인 정체 방지 — 3턴 이상 진행 없으면 자동 1단계 상승
             if (currentPhase == Phase.HORROR && state.tickStagnation()) {
@@ -2548,6 +2685,21 @@ public class TRPGGameManager {
                     Player sp = Bukkit.getPlayer(pd.uuid);
                     if (sp != null && sp.isOnline()) sendPreSpawnNarrative(sp, pd);
                 });
+
+            // 12d. ★#163 무행동 자동 스킵(옵트인·기본 off)★: 행동가능 전원이 이번 라운드 행동을 마쳤으면
+            //   3분 무행동 워치독(#12)을 기다리지 않고 즉시 한 걸음 진행한다. turnMode 2(비동기 busy)는
+            //   busyClockJumpIfAllBusy가 담당하므로 제외. AFK 인원이 있어 전원이 못 차면 기존 워치독이 안전망.
+            //   ★flag off면 이 블록 전체가 no-op★ — actedSinceProgress도 건드리지 않아 기존 동작이 100% 보존된다.
+            if (autoSkipAllActed && currentPhase == Phase.HORROR && state.getTurnMode() < 2 && player != null) {
+                PlayerData actedPd = state.getPlayer(player);
+                if (actedPd != null && canActNow(actedPd)) actedSinceProgress.add(player.getUniqueId());
+                java.util.List<PlayerData> able = state.getAllPlayers().stream()
+                    .filter(this::canActNow).collect(Collectors.toList());
+                if (!able.isEmpty() && able.stream().allMatch(pd -> actedSinceProgress.contains(pd.uuid))) {
+                    actedSinceProgress.clear();
+                    advanceRoundAfterAllActed();
+                }
+            }
         });
     }
 
@@ -4290,8 +4442,34 @@ public class TRPGGameManager {
             .append(" · 분노도 ").append(an).append("/100(").append(anBand).append(")");
         String tgt = state.getAngerTarget();
         if (an >= 40 && tgt != null && !tgt.isBlank()) sb.append(" 표적=").append(tgt);
+        sb.append(entityThreatAngerBehavior(th, an)); // ★#226★ 이 괴담 고유의 밴드 발현·rage_break를 얹는다(슬롯 있으면)
         sb.append("]");
         return sb.toString();
+    }
+
+    /** ★#226★ 이번 괴담의 entity.threat_anger 슬롯에서 ★현재 밴드에 해당하는★ 발현·rage_break를 뽑아 GM 문맥에 얹는다.
+     *  슬롯이 없거나(구버전 .gdam) 해당 밴드 값이 비면 "" — 그러면 GM은 기존 일반 규칙대로 처리한다. feed/provoke_triggers는
+     *  이미 GM이 보는 entity JSON에 있으므로 매턴 중복 주입하지 않고, '지금 이 밴드에서 벌어질 일'만 집중 상기시킨다. */
+    private String entityThreatAngerBehavior(int th, int an) {
+        JsonObject g = state.getGdamData();
+        if (g == null || !g.has("entity") || !g.get("entity").isJsonObject()) return "";
+        JsonObject e = g.getAsJsonObject("entity");
+        if (!e.has("threat_anger") || !e.get("threat_anger").isJsonObject()) return "";
+        JsonObject ta = e.getAsJsonObject("threat_anger");
+        StringBuilder b = new StringBuilder();
+        if (ta.has("threshold_behaviors") && ta.get("threshold_behaviors").isJsonObject()) {
+            JsonObject tb = ta.getAsJsonObject("threshold_behaviors");
+            String key = th >= 90 ? "90" : th >= 70 ? "70" : th >= 40 ? "40" : "";
+            if (!key.isEmpty() && tb.has(key) && !tb.get(key).isJsonNull()) {
+                String v = tb.get(key).getAsString();
+                if (v != null && !v.isBlank()) b.append(" · 이 괴담의 위협 발현: ").append(v.trim());
+            }
+        }
+        if (an >= 70 && ta.has("rage_break") && !ta.get("rage_break").isJsonNull()) {
+            String rb = ta.get("rage_break").getAsString();
+            if (rb != null && !rb.isBlank()) b.append(" · 격앙 절정(제 규칙 깨고 표적 살해→붕괴창): ").append(rb.trim());
+        }
+        return b.toString();
     }
 
     /** GM 응답의 <THREAT>/<ANGER> 태그를 소비해 게이지에 반영(클램프·로깅). 플레이어 비노출(stripTags가 제거). */
@@ -5499,10 +5677,54 @@ public class TRPGGameManager {
         }
 
         String fullLog = campaignWide ? state.buildCampaignEvalLog() : state.buildFullEvalLog();
+        // ★평가 기록 보강(#230)★: 전역 eventLog가 비거나 얇을 때만, 각 플레이어 개인 행동로그(narrativeLog)로
+        //   per-player 근거를 보강한다(narrativeLog는 매 행동마다 TurnManager가 쌓아 eventLog 유실과 무관).
+        //   전역 로그가 충분하면 붙이지 않는다(정상 평가의 토큰 비용 불변).
+        boolean thinLog = fullLog.isBlank() || fullLog.length() < 200;
+        StringBuilder perPlayer = new StringBuilder();
+        if (thinLog) {
+            for (PlayerData pd : allPd) {
+                java.util.List<String> nl;
+                synchronized (pd.narrativeLog) { nl = new ArrayList<>(pd.narrativeLog); }
+                if (nl.isEmpty()) continue;
+                perPlayer.append("[").append(pd.name);
+                if (!pd.charName.isEmpty()) perPlayer.append("(").append(pd.charName).append(")");
+                perPlayer.append(" 개인 행동로그]\n");
+                for (String ln : nl) perPlayer.append("  ").append(ln).append("\n");
+            }
+        }
+        boolean haveAny = !fullLog.isBlank() || perPlayer.length() > 0;
+
+        // ★평가 정합성 — 스테이지 평균으로 정규화★: 최종 총평(campaignWide)은 스테이지별 등급 누적치를
+        //   ★스테이지 수로 나눈 평균★을 권위 근거로 받는다. 그냥 누적 총점을 쓰면 5~6스테이지에선 누구나
+        //   총점이 커져(D만 받아도 6점=핵심공헌자) 전원이 영웅으로 인플레되고, 캠페인 로그 300캡으로 초반
+        //   활약이 잘려 재평가가 뒤집히던 문제(A→C)도 남는다. 평균 기준이면 둘 다 해결(잘한 사람은 유지, 평범한
+        //   사람은 스테이지가 많아도 평범).
+        String stageBasis = "";
+        if (campaignWide) {
+            int stages = Math.max(1, state.getRoomNumber());
+            StringBuilder sb2 = new StringBuilder();
+            for (PlayerData pd : allPd) {
+                if (!pd.roleAssigned && pd.contribution == 0) continue;
+                double avg = pd.contribution / (double) stages;
+                sb2.append("- ").append(pd.name);
+                if (!pd.charName.isEmpty()) sb2.append("(").append(pd.charName).append(")");
+                sb2.append(": 스테이지 평균 기여 ").append(String.format("%.1f", avg)).append("/5")
+                   .append(" (누적 ").append(pd.contribution).append("점 ÷ ").append(stages).append("스테이지)\n");
+            }
+            if (sb2.length() > 0)
+                stageBasis = "★스테이지별 기존 평가 요약 — 최종은 이 ★스테이지 평균★과 일관되게 매겨라★:\n" + sb2
+                    + "위 '스테이지 평균'은 각 스테이지 등급(S=5·A=4·B=3·C=2·D=1·F=0)을 스테이지 수로 나눈 값이다. "
+                    + "최종 total은 이 평균에 대응하는 글자로 매겨라 — 평균 4.5+→S, 3.5~4.4→A, 2.5~3.4→B, 1.5~2.4→C, 0.5~1.4→D, 0.5↓→F. "
+                    + "★스테이지가 5~6개로 많다는 이유만으로 전원을 영웅(A/S)으로 매기지 마라 — 누적 총점이 커도 평균이 평범(B~C)이면 최종도 B~C다. 평균이 높은데 로그 부족을 이유로 내리지도, 낮은데 임의로 올리지도 마라.★\n\n";
+        }
 
         String prompt = "게임 클리어 등급: " + clearGrade + "\n\n"
             + "플레이어 목록:\n" + playerInfo + "\n"
-            + "전체 행동 기록:\n" + (fullLog.isBlank() ? "기록 없음" : fullLog) + "\n\n"
+            + stageBasis
+            + "전체 행동 기록:\n" + (fullLog.isBlank() ? "(전역 기록 없음 — 아래 개인 행동로그로 평가)" : fullLog) + "\n\n"
+            + (perPlayer.length() > 0 ? "개인별 행동로그:\n" + perPlayer + "\n" : "")
+            + (haveAny ? "" : "※ 상세 행동 기록이 유실됐을 수 있다. 그럴 땐 위 '플레이어 목록'의 생존/상태·배역만으로 ★최대한★ 평가하라 — ★절대 '기록이 없어 평가 불가'라 답하지 마라★. 최소 참여=B, 무행동 추정=C로 매기고 evaluations를 반드시 채워라.\n\n")
             + "각 플레이어를 평가해줘. JSON만 출력. 다른 텍스트 절대 금지.\n\n"
             + "등급 기준(★엄격하게 — S·A는 인색하게): "
             + "S=이번 사건을 사실상 ★캐리★한 결정적·완벽한 활약(좀처럼 안 나옴), "
@@ -7741,6 +7963,17 @@ public class TRPGGameManager {
         return "???";
     }
 
+    /** 이번 스테이지 시나리오의 실제 괴담 종류(친숙 모드). '모두 무작위'면 생성 시점에 굴린 구체 종류를
+     *  gdam.familiar_kind에 심어두므로(생성기) 그걸 읽는다. 없으면(구버전 세이브·시나리오) 세션 필터로 폴백. */
+    private String scenarioKind() {
+        JsonObject g = state.getGdamData();
+        if (g != null && g.has("familiar_kind")) {
+            String k = g.get("familiar_kind").getAsString();
+            if (k != null && !k.isBlank()) return k;
+        }
+        return familiarFilter;
+    }
+
     /**
      * 친숙 모드(프로젝트 문·게임)일 때 특성 생성기(시작·역할·보상)에 테마 지침을 주입한다.
      * 일반 시나리오면 빈 문자열로 초기화. 스테이지 시작(startSession) 직후마다 호출.
@@ -7749,7 +7982,10 @@ public class TRPGGameManager {
      */
     private void applyScenarioFlavor() {
         String startFlavor = "", rewardFlavor = "", roleFlavor = "";
-        if (familiarMode && "projectmoon".equals(familiarFilter)) {
+        // ★이번 스테이지의 실제 괴담 종류★로 판정(세션 필터가 아님). '모두 무작위'는 생성 시점에 구체 종류를
+        //   굴려 gdam.familiar_kind에 심어두므로(#114·#206), 그때그때 프로젝트 문·게임 테마가 제대로 반영된다.
+        String kind = scenarioKind();
+        if (familiarMode && "projectmoon".equals(kind)) {
             String base = "## ★테마: 프로젝트 문(로보토미 코퍼레이션)\n"
                 + "특수 능력·도구는 '전투 E.G.O.(전투표상)'·'E.G.O. 기프트'(환상체에서 추출한 무기·방어구·가호) 개념으로 붙인다. 직업(로보토미 직원·수사관 등)·역할과 어울리게. "
                 + "★E.G.O. 이름은 반드시 ★실존 프로젝트 문 환상체★를 출처로 드러내라 — 형식 '[E.G.O GIFT] <원본 환상체명>' 또는 '[전투 E.G.O.] <원본 환상체명>'(예: [E.G.O GIFT] 백야, [전투 E.G.O.] 그을린 소녀). "
@@ -7761,7 +7997,7 @@ public class TRPGGameManager {
                 + "★보상 중 ★최소 1개는 이번에 출현한 환상체(위 '괴담 테마')의 E.G.O.★를 반드시 포함하라 — 모든 플레이어 공통 이름·효과, 등급만 기여도로 차등(이 E.G.O.에 한해 환상체명 직접 사용 허용).";
             roleFlavor   = base + " 배역도 ★가끔★ 자신의 전투 E.G.O.·E.G.O. 기프트를 장비로 지닐 수 있다(직원 지급품 등). "
                 + "단 위 스포일러 금지·범용성을 지켜 이번 괴담의 정체·소재는 드러내지 말고, 일반 장비처럼 범용으로 묘사하라.";
-        } else if (familiarMode && "game".equals(familiarFilter)) {
+        } else if (familiarMode && "game".equals(kind)) {
             String ent = getEntityName();
             String base = "## ★테마: 게임 괴담(" + ent + ")\n"
                 + "능력에 그 게임 특유의 메커니즘을 녹인다(예: 히로빈이면 '블록 부수기·순간이동·구조물 표식', 일반 게임이면 '리스폰·인벤토리·체크포인트'). "
@@ -11398,6 +11634,8 @@ public class TRPGGameManager {
             root.addProperty("phase", currentPhase.name());
             root.addProperty("familiarMode", familiarMode);
             root.addProperty("familiarFilter", familiarFilter);
+            root.addProperty("autoSkipAllActed", autoSkipAllActed); // ★#163★ 옵트인 자동 스킵 토글(이어하기 유지)
+            root.addProperty("reservedNextSeed", reservedNextSeed);  // ★#228★ 다음 스테이지 예약 씨드(이어하기 유지)
             root.addProperty("quality", ai.getGmQuality().name());
             root.addProperty("nextStageUnlocked", nextStageUnlocked);
             root.addProperty("forceRetryAllowed", forceRetryAllowed);
@@ -11485,6 +11723,8 @@ public class TRPGGameManager {
         // ② 세션 설정 복원
         familiarMode      = root.has("familiarMode") && root.get("familiarMode").getAsBoolean();
         familiarFilter    = root.has("familiarFilter") ? root.get("familiarFilter").getAsString() : "random";
+        autoSkipAllActed  = root.has("autoSkipAllActed") && root.get("autoSkipAllActed").getAsBoolean(); // ★#163★ (기본 off)
+        reservedNextSeed  = root.has("reservedNextSeed") ? root.get("reservedNextSeed").getAsString() : ""; // ★#228★
         nextStageUnlocked = !root.has("nextStageUnlocked") || root.get("nextStageUnlocked").getAsBoolean();
         forceRetryAllowed = root.has("forceRetryAllowed") && root.get("forceRetryAllowed").getAsBoolean();
         if (root.has("quality")) {

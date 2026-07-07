@@ -1,6 +1,6 @@
 # 위협도·분노도 시스템 설계 (괴담=규칙에 얽힌 존재의 육화)
 
-> 상태: 착수(1단계 실구현). 발단 = "기본원칙(괴담은 규칙에 얽혀있다)이 빠져서 생긴 문제"
+> 상태: 1~3단계 구현 완료(#224·#225·#226). 발단 = "기본원칙(괴담은 규칙에 얽혀있다)이 빠져서 생긴 문제"
 > — v2 측정에도 남은 운생존(평균 62.5%)·버티기·GM 과보호의 공통 뿌리는 **판 안에서 누적·집행되는
 > 괴담 세력 상태가 없다**는 것. 지금은 CorruptionManager(회차 간 메타)·disposition·흩어진 프롬프트
 > 의무만 있고, **intra-session 래칫**이 통째로 비어 있었다.
@@ -58,8 +58,11 @@ clockMinutes·puppetRecoveryTurns·pendingLuckModifier와 동일 패턴:
   `<THREAT>`·`<ANGER>` 태그 파싱 / 언제 올리는지 프롬프트 규칙 / 무행동·밤 틱 자동증분. #224
 - **2단계(임계 집행)**: 위협≥90 CLEAR잠금·탈출선회(전파게이트 보편화) / 분노≥90 규칙파괴 살해+붕괴결합 /
   힌트·피해 스케일. #225
-- **3단계(생성 스키마)**: entity에 feed/provoke_triggers·threshold_behaviors·ceiling·drain·rage_break
-  슬롯 + 생성기 자기검증(B계열). #226
+- **3단계(생성 스키마) ★완료 #226★**: entity.threat_anger 슬롯 = feed_triggers·provoke_triggers·
+  threshold_behaviors{40/70/90}·rage_break + 생성 가이드('괴담 세력 설계' 섹션). 런타임
+  threatAngerGmContext가 현재 밴드에 맞는 threshold_behavior·rage_break를 GM 문맥에 얹어 ★이 괴담답게★
+  강해지게 함(슬롯 없는 구버전 .gdam은 "" → 기존 일반 규칙으로 폴백). ceiling/drain은 별도 슬롯 대신
+  런타임 파생 유지(ceiling=scale, drain=collapse 진척). ★남음: 생성기 자기검증(B계열)은 추후.
 - **뷰어**: 위협/분노 밴드 타임라인 표시(감사·연출). (3단계 이후)
 
 ## 6. 이게 고치는 것
