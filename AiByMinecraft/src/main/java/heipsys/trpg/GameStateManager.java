@@ -533,6 +533,9 @@ public class GameStateManager {
             if (clockStart >= 0 && when < clockStart) when += 1440; // 자정 넘김
             if (when > afterMin) best = Math.min(best, when);
         }
+        // ★코드리뷰★ fireDueEvents는 clockEnd(제한 시각) 도달도 '종료 사건'으로 발화한다 — 점프 캡이 그 직전에도
+        //   멈춰 '마지막 반응 턴'을 주도록 clockEnd도 후보에 포함(아니면 마감을 훌쩍 넘겨 점프).
+        if (clockEnd >= 0 && !endEventFired && clockEnd > afterMin) best = Math.min(best, clockEnd);
         return best == Integer.MAX_VALUE ? -1 : best;
     }
 

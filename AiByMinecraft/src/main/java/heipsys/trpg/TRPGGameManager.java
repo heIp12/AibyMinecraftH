@@ -2541,6 +2541,10 @@ public class TRPGGameManager {
                 PlayerData actorPd = player != null ? state.getPlayer(player) : null;
                 int nowMin = state.getClockMinutes();
                 if (actorPd != null && nowMin >= 0) { actorPd.actionStartMin = nowMin; actorPd.busyUntilMin = nowMin + Math.max(1, durEff); }
+                // ★#151 §2.2-5 즉시 소집은 ★점프 前★★(코드리뷰 지적): <SUMMON>이면 방금 잠긴 행동자 포함 전원 자유화 →
+                //   아래 점프가 no-op가 되어, 시계가 앞으로 튀어(사건 발화·회복 카운터 진행) 소집이 '미래 분'에서 걸리는 desync를 막는다.
+                java.util.List<String> summonReasons = ai.parseSummonTags(raw);
+                if (!summonReasons.isEmpty()) summonAllFree(summonReasons.get(0));
                 // ★행동 완료 시점에도 점프 시도★(코드리뷰 수정): onGmResponse 본문은 runTask로 ★메인 스레드★에서 돌므로
                 //   Bukkit API·스코어보드 접근이 안전하다(예전 주석의 '비동기라 금지'는 오해였다). 이 행동으로 마지막 자유
                 //   인원이 busy가 됐다면, 다음 키 입력을 기다리지 않고 즉시 시계를 다음 자유 시점으로 밀어 도래 사건을
@@ -2553,9 +2557,6 @@ public class TRPGGameManager {
                 if (!pc.equals(actionPace)) gameLogger.logEvent("[완급] 페이스 " + actionPace + " → " + pc);
                 actionPace = pc;
             }
-            // ★#151 §2.2-5 즉시 소집★: GM이 <SUMMON>을 내면(임박 사건·전투·피격) 비동기 busy 인원을 전원 자유화(방금 잠긴 행동자 포함).
-            java.util.List<String> summonReasons = ai.parseSummonTags(raw);
-            if (!summonReasons.isEmpty()) summonAllFree(summonReasons.get(0));
             ai.parseEventBlockTags(raw).forEach(state::blockEvent);
             ai.parseEventTriggerTags(raw).forEach(state::triggerEvent);
 
@@ -2666,7 +2667,10 @@ public class TRPGGameManager {
 
             // 12. 스테이지 기반 자동 등장 체크 (STATE_UPDATE 외부에서 stage 이미 변경된 경우 보정)
             checkAndAutoSpawn();
-            tickFaintCounters();
+            // ★코드리뷰★ turnMode 2(비동기)에선 시계가 ★점프(busyClockJumpIfAllBusy)·워치독★에서만 흐르고 그때 이미
+            //   tickFaintCounters를 돌린다 — 여기서 또 돌리면 점프 턴에 회복 카운터가 2배로 진행되는 이중 틱이 된다.
+            //   그래서 mode<2(행동=시간 진행)에서만 여기서 틱하고, mode 2는 점프/워치독에 맡긴다(시간 안 흐르면 회복도 안 함).
+            if (state.getTurnMode() < 2) tickFaintCounters();
 
             // 12c. 타임라인 정체 방지 — 3턴 이상 진행 없으면 자동 1단계 상승
             if (currentPhase == Phase.HORROR && state.tickStagnation()) {
