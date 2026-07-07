@@ -2163,6 +2163,9 @@ public class TRPGGameManager {
         //   영감↑=미세 실마리 하나쯤 자연 안내. 평균(5)이면 빈 문자열 → 노이즈 없음. gmCtx로만(플레이어·로그 미노출).
         gmCtx.append(actorStatGmContext(pd));
 
+        // ★괴담 세력 게이지(위협도·분노도) GM 전용★ — 현재 세력을 알려 그에 맞게 서술·증분하게 한다(플레이어·로그 미노출).
+        gmCtx.append(threatAngerGmContext());
+
         // ★같은 구역 동료 목격(#7)★: 옆에 누가 있는지 GM에 결정적으로 알려 '같은 구역 목격 필수' 규칙이 실제로 발화되게 한다
         //   (인원 많으면 상호작용 대상·영감 예민 동료 우선, 나머지는 가볍게 — 요청 반영).
         gmCtx.append(sameZoneWitnessContext(pd));
@@ -2231,6 +2234,9 @@ public class TRPGGameManager {
                 JsonObject clearTag = ai.parseClearTag(raw);
                 if (clearTag != null) {
                     String grade = clearTag.has("grade") ? clearTag.get("grade").getAsString() : "C";
+                    // ★위협도 상한★ — 세력이 높으면 '깨끗한 승리' 불가(먹인 대가): 90+ 최대 B, 70~89 최대 A.
+                    String capG = capGradeByThreat(grade);
+                    if (!capG.equals(grade)) { gameLogger.logEvent("위협도 " + state.getThreat() + " → 클리어 등급 상한 " + grade + "→" + capG); grade = capG; }
                     String reason = clearTag.has("reason") ? clearTag.get("reason").getAsString() : "";
                     String by = clearTag.has("by") && !clearTag.get("by").isJsonNull() ? clearTag.get("by").getAsString().trim() : "";
                     // 해결판정 여부: 태그의 resolved 우선, 없으면 등급으로 추론(C 이상=해결, D=생존)
@@ -2256,6 +2262,9 @@ public class TRPGGameManager {
             // 2. STATE_UPDATE 파싱 및 적용
             JsonObject stateUpdate = ai.parseStateUpdate(raw);
             if (stateUpdate != null) applyStateUpdate(stateUpdate);
+
+            // 2b. ★위협도·분노도 게이지★ 태그 소비(플레이어 비노출) — 함정·도발·전파 등으로 GM이 세력을 올린다.
+            applyThreatAngerTags(raw);
 
             // 3. ITEM_GRANT 파싱 및 처리 + heldItemIds 추적
             JsonObject itemGrant = ai.parseItemGrant(raw);
@@ -2580,7 +2589,7 @@ public class TRPGGameManager {
                 final int hpBefore0 = pd.hp[0]; final int sanBefore0 = pd.san[0];
                 final String statusBefore = pd.status; final boolean deadBefore = pd.isDead;
                 if (update.has("hp_change")) {
-                    int delta = update.get("hp_change").getAsInt();
+                    int delta = amplifyEntityDamage(update.get("hp_change").getAsInt()); // ★위협도 비례 피해 증폭★
                     if (phased && delta < 0) delta = 0; // 무적: 피해 차단
                     int before = pd.hp[0];
                     pd.hp[0] = Math.max(0, Math.min(pd.hp[1], pd.hp[0] + delta));
@@ -2601,7 +2610,7 @@ public class TRPGGameManager {
                     }
                 }
                 if (update.has("san_change")) {
-                    int delta = update.get("san_change").getAsInt();
+                    int delta = amplifyEntityDamage(update.get("san_change").getAsInt()); // ★위협도 비례 피해 증폭★
                     if (phased && delta < 0) delta = 0; // 위상 이탈 중 정신 피해도 무효
                     int before = pd.san[0];
                     pd.san[0] = Math.max(0, Math.min(pd.san[1], pd.san[0] + delta));
@@ -4260,6 +4269,83 @@ public class TRPGGameManager {
         // 위상 이탈 무적 턴 감소(턴당 1회) — 0 이하면 해제
         phaseOutTurns.entrySet().removeIf(e -> { int t = e.getValue() - 1; if (t <= 0) return true; e.setValue(t); return false; });
         tickRestrictionStates(); // 변신·관조 지속 턴 감소(턴당 1회)
+        // ★분노도 자연 감쇠(턴당 1회)★ — 분노는 휘발성. 이번 턴 도발이 있으면 뒤이어 <ANGER>로 다시 오른다(순감).
+        state.decayAnger(15);
+    }
+
+    /** ★괴담 세력 게이지(위협도·분노도)★ GM 전용 컨텍스트 — 플레이어·로그 미노출. 매 행동 입력 앞단에 주입해
+     *  GM이 현재 세력을 알고 그에 맞게 서술·증분(<THREAT>/<ANGER>)하게 한다. 밴드 라벨로 임계를 인지시킨다. */
+    private String threatAngerGmContext() {
+        if (currentPhase != Phase.HORROR) return "";
+        int th = state.getThreat(), an = state.getAnger();
+        String thBand = th >= 90 ? "임계-정석 클리어 사실상 닫힘: 탈출·생존으로 선회"
+                      : th >= 70 ? "격상-국소 파훼로는 부족·대가 요구"
+                      : th >= 40 ? "경계-압박 상승"
+                      : "낮음";
+        String anBand = an >= 90 ? "폭주 임계-규칙 무시 표적 살해 임박(붕괴창 동반)"
+                      : an >= 70 ? "분격-표적 맹공"
+                      : an >= 40 ? "격앙"
+                      : "잠잠";
+        StringBuilder sb = new StringBuilder(" [괴담 세력(GM 전용): 위협도 ").append(th).append("/100(").append(thBand).append(")")
+            .append(" · 분노도 ").append(an).append("/100(").append(anBand).append(")");
+        String tgt = state.getAngerTarget();
+        if (an >= 40 && tgt != null && !tgt.isBlank()) sb.append(" 표적=").append(tgt);
+        sb.append("]");
+        return sb.toString();
+    }
+
+    /** GM 응답의 <THREAT>/<ANGER> 태그를 소비해 게이지에 반영(클램프·로깅). 플레이어 비노출(stripTags가 제거). */
+    private void applyThreatAngerTags(String raw) {
+        if (raw == null || raw.isEmpty()) return;
+        for (String[] t : ai.parseThreatTags(raw)) {
+            int d = parseGaugeDelta(t[0], 0);
+            if (d == 0) continue;
+            int after = state.adjustThreat(d);
+            gameLogger.logEvent("위협도 " + (d > 0 ? "+" : "") + d + " → " + after + "/100"
+                + (t.length > 1 && !t[1].isBlank() ? " (" + t[1] + ")" : ""));
+        }
+        for (String[] a : ai.parseAngerTags(raw)) {
+            int d = parseGaugeDelta(a[0], 0);
+            String tgt = a.length > 1 ? a[1] : "";
+            if (d == 0 && tgt.isBlank()) continue;
+            int after = state.adjustAnger(d, tgt);
+            gameLogger.logEvent("분노도 " + (d > 0 ? "+" : "") + d + " → " + after + "/100"
+                + (!tgt.isBlank() ? " 표적=" + tgt : "")
+                + (a.length > 2 && !a[2].isBlank() ? " (" + a[2] + ")" : ""));
+        }
+    }
+
+    /** 부호 정수 파싱("+15"/"15"/"-10"). 실패 시 def. */
+    private static int parseGaugeDelta(String s, int def) {
+        if (s == null) return def;
+        s = s.trim();
+        if (s.startsWith("+")) s = s.substring(1);
+        try { return Integer.parseInt(s.trim()); } catch (Exception e) { return def; }
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  ★위협도 비례 세력 집행(2단계)★ — 위협이 오를수록 괴담이 유의미하게 강해진다(기계적).
+    // ──────────────────────────────────────────────────────────────
+    /** ★위협도 비례 피해 증폭★ — 괴담이 입히는 피해(음수 delta)가 세력에 비례해 커진다.
+     *  HORROR·음수·threat≥40에서만(40~69 ×1.15 / 70~89 ×1.3 / 90+ ×1.5). 능력 대가(sacrifice)는 이 경로를 안 타 불변. */
+    private int amplifyEntityDamage(int delta) {
+        if (delta >= 0 || currentPhase != Phase.HORROR) return delta;
+        int th = state.getThreat();
+        double mult = th >= 90 ? 1.5 : th >= 70 ? 1.3 : th >= 40 ? 1.15 : 1.0;
+        return mult == 1.0 ? delta : (int) Math.round(delta * mult);
+    }
+
+    /** ★위협도 비례 클리어 상한★ — 괴담 세력이 높을수록 '깨끗한 승리'는 불가(먹인 대가). 90+ 최대 B(부분·탈출) / 70~89 최대 A(S 봉쇄). */
+    private String capGradeByThreat(String grade) {
+        int th = state.getThreat();
+        int cap = th >= 90 ? gradeIdx("B") : th >= 70 ? gradeIdx("A") : gradeIdx("S");
+        return gradeIdx(grade) > cap ? GRADE_ORDER[cap] : grade;
+    }
+
+    /** ★위협도 비례 판정 난이도 가산★ — 세력에 비례해 판정 DC가 오른다(성공은 항상 가능하도록 호출부에서 max-1 클램프). */
+    private int threatDcBump(int max) {
+        int th = state.getThreat();
+        return th <= 0 ? 0 : (int) Math.round(th / 100.0 * max * 0.18);
     }
 
     /** 턴당 1회: 괴담 변신(morph) 종료 처리 + 관조자의 눈(observer) 지속 발동·감소. maybeCaptureRewind에서만 호출. */
@@ -4696,11 +4782,18 @@ public class TRPGGameManager {
             : "- ★유무만★: 이 범위에 '살펴볼 만한 단서가 있다/없다' 정도만 알려준다(구체 내용은 아직 모른다).\n";
         String traitName = td != null ? td.name : "환경 탐색";
         gameLogger.logAbilityResult(pd.gmDisplayName(), traitName, "탐색 대상 → " + target); // 뷰어: 능력 입력(탐색 대상) 기록
+        // ★#227 이미 아는 단서 되풀이 금지 + '여기선 못 찾음'을 정직한 신호로★
+        java.util.List<String> knownClues = state.getDiscoveredClues();
+        String knownCtx = knownClues.isEmpty() ? ""
+            : "- ★이미 밝혀진 단서(되풀이 금지)★: " + String.join(" / ",
+                  knownClues.size() > 12 ? knownClues.subList(knownClues.size() - 12, knownClues.size()) : knownClues)
+              + " — 이건 다시 '발견'으로 보고하지 마라. ★처음 드러나는 새 조각★만 알린다.\n";
         String scanCtx = "\n## " + traitName + " 탐색 처리 (범위: " + scopeStr + ", 등급: " + (td != null ? td.grade : "?") + ")\n"
             + "플레이어가 체계적 탐색으로 단서를 찾고 있다. 규칙:\n"
             + "- 탐색 범위(" + scopeStr + ") 안에서 찾을 수 있는 것만 서술한다.\n"
             + findRule
-            + "- ★정말 아무것도 없으면 억지로 지어내지 말고 눈에 보이는 광경을 담담히 서술한다(정직한 빈손).★\n"
+            + knownCtx
+            + "- ★이 범위에 '새로' 찾을 단서가 없으면★ 억지로 지어내거나 이미 아는 걸 되풀이하지 말고, ★'여기선 (더는) 나올 게 없다'를 분명한 신호로 알려라★ — 그 자체가 탐색 범위를 좁히는 큰 단서다(딴 데·다른 방식을 보라는 뜻). 눈에 보이는 광경은 담담히 곁들이되 '없음'을 흐리지 마라.\n"
             + "- 탐색 행동 자체도 타임라인에 적절히 반영한다.\n"
             + INFO_OBSERVE_PRINCIPLE;
         String charDisplay = pd.gmDisplayName();
@@ -10544,6 +10637,7 @@ public class TRPGGameManager {
                 sb.append("- 탐색·대기·장면 전환 등 평온 구간에서는 적극적으로 <TIME_SKIP>으로 수십 분~수 시간을 건너뛰어라. 추격·대치 등 급박 구간에서는 1턴을 수 분 이내로 좁혀라. 매 턴 동일 간격으로 흐르게 두지 마라.\n");
                 sb.append("- 장기 TIME_SKIP(일·주·월·년 단위) 도약 시, 그 기간 동안 괴담 규칙·환경에 따른 누적 변화(반복 피해·SAN 손실·오염도 확산·자원 소모·NPC 상황 악화)가 '실제로 진행됐음'을 전제하고, 도약 직후 상태를 seed 규칙 기반으로 수치와 함께 명시 반영하라. 도약 기간을 무피해·무변화로 리셋 처리하지 마라(단, seed에 명시된 안전지대 휴식은 예외).\n");
                 sb.append("- 장기 도약의 착지 시점은 seed의 고정 마감·주기(결산일·만월·기일 등)와 대조해, 남은 시간/주기를 서술에 명시하라(착지 시점이 고정 마감을 넘기거나 정합되지 않게 두지 마라).\n");
+                sb.append("- ★무대 시간창 = 한 판의 배경★: 이 시나리오의 무대는 시작~제한 시각(보통 하룻밤 한 세션)이다. ★마감(제한 시각)이 가까워지면 사건을 절정으로 몰아 결말로 향하게★ 하고, 늘어지는 안전 탐색을 계속 보상해 무대를 며칠씩 끌지 마라. ★DUR을 인색하게 매겨 사소한 행동마다 15~20분씩 흘려보내면 하룻밤 무대가 순식간에 다음 날로 넘어간다 — 급박·짧은 행동은 1~3분으로 좁혀라.★ 그럼에도 시계가 마감을 넘겨 새벽·아침·다음 날로 들어가면 ★반드시 그 전환을 서술로 명시★하고('동이 터 온다'·'날이 밝았다'), 그 시간대에 맞게 환경·사람 기척·조도·긴장을 바꿔라 — 밤 배경의 공포 분위기를 대낮에도 그대로 유지하지 마라.\n");
                 sb.append("- 플레이어가 시간을 알게/모르게 되는 상황(시계 입수·파손 등)엔 <TIME_VISIBLE player=\"이름\" known=\"true\" 또는 \"false\"/>.\n");
             }
             if (tl.has("main_events") && tl.get("main_events").isJsonArray()
@@ -11075,6 +11169,9 @@ public class TRPGGameManager {
         int effDc = dc > 0 ? Math.max(2, Math.min(max, dc)) : (int) Math.ceil(max * 0.62); // dc 미지정 시 중앙보다 높게(난도↑)
         int diffBump = Math.max(0, diffStage - 2) + diffCorr;
         if (diffBump > 0) effDc = Math.min(max - 1, effDc + Math.min(diffBump, Math.max(2, max / 6)));
+        // ★위협도(괴담 세력) 비례 난이도★ — 위협이 오를수록 괴담이 유의미하게 강해져 판정이 어려워진다(성공은 max-1로 항상 가능).
+        int thBump = threatDcBump(max);
+        if (thBump > 0) effDc = Math.min(max - 1, effDc + thBump);
         // ★영감: 아는 정보가 많을수록 진실에 가까워진다★ — 통찰(영감) 판정은 수집 단서·밝혀낸 사실이 많을수록 쉬워진다.
         //   (단서 없이도 통찰 자체는 가능하되, 아는 게 많을수록 성공 확률↑ = '정보가 곧 무기'.)
         if ("spr".equals(statKey) && dpd != null) {

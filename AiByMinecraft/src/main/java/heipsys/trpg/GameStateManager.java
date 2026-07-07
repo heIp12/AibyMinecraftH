@@ -80,6 +80,17 @@ public class GameStateManager {
     private String                  lastFiredEventLabel = ""; // 가장 최근 발화한 핵심 사건 이름(상태창 '최근' 패널용, 소비 안 됨)
     private final Map<UUID,Boolean> timeKnownOverride = new HashMap<>();
 
+    // ──────────────────────────────────────────────────────────────
+    //  ★괴담 세력 게이지 (위협도·분노도)★ — 판 안 누적 상태. 세이브 포함.
+    //  threat(위협도): 느린 래칫 — 구조적 먹이(금기위반·함정·전파·사망·정체)로 상승, 파훼 진척으로만 배수.
+    //    90+ = 정석 클리어 잠금(탈출·생존으로 선회).
+    //  anger(분노도): 빠른 휘발 — 직접 도발(공격·조롱·성역침범)로 상승, 턴당 감쇠. 90+ = 규칙 무시 표적 살해(붕괴 결합).
+    //  ★플레이어 비노출(GM 전용·뷰어 감사용)★.
+    // ──────────────────────────────────────────────────────────────
+    private int    threat      = 0;   // 0~100
+    private int    anger       = 0;   // 0~100
+    private String angerTarget = "";  // 분노 표적(캐릭터/계정명) — 규칙파괴 살해 대상
+
     private JsonObject gdamData = null;
 
     private final CorruptionData                 corruption = new CorruptionData();
@@ -119,6 +130,7 @@ public class GameStateManager {
         unlockedZones.clear();
         eventLog.clear();
         campaignLog.clear(); // 새 게임 시작 — 캠페인(전 스테이지) 로그도 초기화
+        threat = 0; anger = 0; angerTarget = ""; // 괴담 세력 게이지 초기화
         loadTimelineConfig(gdam);
     }
 
@@ -142,6 +154,7 @@ public class GameStateManager {
         unlockedZones.clear();
         archiveStageLog();   // 스테이지 전환 — 이번 스테이지 로그를 캠페인 로그에 보관 후 비움
         eventLog.clear();
+        threat = 0; anger = 0; angerTarget = ""; // 새 스테이지 — 세력 게이지 초기화
         loadTimelineConfig(gdam);
     }
 
@@ -158,6 +171,8 @@ public class GameStateManager {
         unlockedZones.clear();
         archiveStageLog();   // 재도전 — 이번 시도 로그도 캠페인 로그에 보관
         eventLog.clear();
+        // 괴담이 지난 시도를 기억해 더 사납게 시작 — 위협도 시작 바닥을 오염도에서 시드(분노는 초기화).
+        threat = retryThreatFloor(); anger = 0; angerTarget = "";
         loadTimelineConfig(gdamData);
         // 재도전 시에도 영구(비배역) 특성의 스탯 보정을 복원한다 — clearRoleData(다음 스테이지)와 동일한 불변식.
         // (resetToBase만 하면 클리어 보상 특성의 str/hp 등이 재도전마다 사라진다.)
@@ -188,6 +203,9 @@ public class GameStateManager {
         o.addProperty("timeVisibleDefault", timeVisibleDefault);
         o.addProperty("endEventFired", endEventFired);
         o.addProperty("lastFiredEventLabel", lastFiredEventLabel);
+        o.addProperty("threat", threat);
+        o.addProperty("anger", anger);
+        o.addProperty("angerTarget", angerTarget);
         if (gdamData != null) o.add("gdam", gdamData);
         o.add("firedEvents", SNAP_GSON.toJsonTree(firedEvents));
         o.add("blockedEvents", SNAP_GSON.toJsonTree(blockedEvents));
@@ -228,6 +246,9 @@ public class GameStateManager {
         timeVisibleDefault = snapB(o, "timeVisibleDefault", true);
         endEventFired     = snapB(o, "endEventFired", false);
         lastFiredEventLabel = snapS(o, "lastFiredEventLabel", "");
+        threat            = snapI(o, "threat", 0);
+        anger             = snapI(o, "anger", 0);
+        angerTarget       = snapS(o, "angerTarget", "");
         if (o.has("gdam") && o.get("gdam").isJsonObject()) gdamData = o.getAsJsonObject("gdam");
         snapStrInto(firedEvents, o, "firedEvents");
         snapStrInto(blockedEvents, o, "blockedEvents");
@@ -275,6 +296,28 @@ public class GameStateManager {
             }
         }
     }
+
+    // ──────────────────────────────────────────────────────────────
+    //  괴담 세력 게이지 접근/조정 (위협도·분노도)
+    // ──────────────────────────────────────────────────────────────
+    public int    getThreat()      { return threat; }
+    public int    getAnger()       { return anger; }
+    public String getAngerTarget() { return angerTarget; }
+    /** 위협도 가감(0~100 클램프). 반환=적용 후 값. */
+    public int adjustThreat(int delta) { threat = Math.max(0, Math.min(100, threat + delta)); return threat; }
+    /** 분노도 가감(0~100 클램프). target이 비어있지 않으면 표적 갱신, 0으로 떨어지면 표적 해제. */
+    public int adjustAnger(int delta, String target) {
+        anger = Math.max(0, Math.min(100, anger + delta));
+        if (target != null && !target.isBlank()) angerTarget = target;
+        if (anger <= 0) angerTarget = "";
+        return anger;
+    }
+    public void setThreat(int v) { threat = Math.max(0, Math.min(100, v)); }
+    public void setAnger(int v)  { anger  = Math.max(0, Math.min(100, v)); if (anger <= 0) angerTarget = ""; }
+    /** 턴당 분노 자연 감쇠(직접 도발이 없을 때 호출). 반환=적용 후 값. */
+    public int decayAnger(int amount) { anger = Math.max(0, anger - Math.max(0, amount)); if (anger == 0) angerTarget = ""; return anger; }
+    /** 재도전 시 위협도 시작 바닥 — 괴담이 지난 시도를 기억해 더 사납게 시작(오염도 비례, 상한 40). */
+    private int retryThreatFloor() { return Math.min(40, corruption.level * 8); }
 
     private static boolean snapB(JsonObject o, String k, boolean d) { return o.has(k) && !o.get(k).isJsonNull() ? o.get(k).getAsBoolean() : d; }
     private static int     snapI(JsonObject o, String k, int d)     { return o.has(k) && !o.get(k).isJsonNull() ? o.get(k).getAsInt() : d; }
@@ -930,7 +973,6 @@ public class GameStateManager {
     /** 제한 시각까지 남은 인게임 분. 시계·종료시각 없으면 -1, 이미 지났으면 0. (무행동 가속이 마감을 넘지 못하게 캡할 때 사용) */
     public int         getMinutesUntilEnd()  { return (clockMinutes < 0 || clockEnd < 0) ? -1 : Math.max(0, clockEnd - clockMinutes); }
     public int         getDailyTurnsLeft()  { return dailyTurnsLeft; }
-    public boolean     isDailyPhase()       { return dailyPhase; }
     public String      getCurrentSeed()     { return currentSeed; }
     public JsonObject  getGdamData()        { return gdamData; }
     public CorruptionData getCorruption()   { return corruption; }
