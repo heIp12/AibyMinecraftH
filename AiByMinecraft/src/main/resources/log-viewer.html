@@ -1400,7 +1400,7 @@ function zoneMapSvg(zones, know){
             if(h<bh){bh=h;pts=cp;lab=null;} } }
       }
     }
-    EG.push({pts,lab,dist:e.dist});
+    EG.push({pts,lab,dist:e.dist,a:e.a,b:e.b});
   }
   // ── 2) ★평행 복도 분리★: 같은 세로/가로 트랙에 겹치는 '중간 꺾임 구간'을 레인으로 조금씩 벌린다.
   //    ★문(경로 양 끝점)은 방 벽에 붙어 있어야 하므로 절대 움직이지 않고, 내부 꺾임점만 이동★ → 축 정렬·연결 유지.
@@ -1419,6 +1419,24 @@ function zoneMapSvg(zones, know){
         const P=EG[s.gi].pts; if(vert){P[s.i][0]=chosen;P[s.i+1][0]=chosen;} else {P[s.i][1]=chosen;P[s.i+1][1]=chosen;} }
     };
     pass(true); pass(false);
+  })();
+  // ── 2.5) ★포트(문) 분산★: 한 방의 같은 변에 복도가 여럿 닿으면 전부 변 중앙 한 점으로 모여
+  //    어디로 잇는지 모호해진다(예: 작은침실→옆집부엌이 진흙마당→옆집부엌과 같은 문에 포개짐).
+  //    같은 변의 문들을 변을 따라 나눠 배치하고, 직전 꺾임점을 같이 옮겨 직각·연결을 유지한다. ──
+  (function distributePorts(){ const PSEP=20;
+    const sideOf=(b,p)=>{ const iX=p[0]>b.x-3&&p[0]<b.x+b.w+3, iY=p[1]>b.y-3&&p[1]<b.y+b.h+3;  // ★수직축도 방 범위 안이어야★(같은 행 다른 방의 밑변 y가 같아 오판 방지)
+      return iY&&Math.abs(p[0]-(b.x+2))<3?'L':iY&&Math.abs(p[0]-(b.x+b.w-2))<3?'R':iX&&Math.abs(p[1]-(b.y+2))<3?'T':iX&&Math.abs(p[1]-(b.y+b.h-2))<3?'B':null; };
+    const groups={};
+    EG.forEach((g,gi)=>{ const P=g.pts,last=P.length-1;
+      [0,last].forEach(function(ei){                       // ★경로 점 순서는 좌→우(a/b 순서 아님) → 끝점이 실제 닿은 방을 기하로 판정★
+        for(const bid of [g.a,g.b]){ const b=box[bid]; if(!b)continue; const s=sideOf(b,P[ei]); if(!s)continue;
+          const far=P[ei===0?last:0]; (groups[bid+'|'+s]=groups[bid+'|'+s]||[]).push({gi,ei,side:s,bid,far}); break; } }); });
+    for(const k in groups){ const grp=groups[k]; if(grp.length<2)continue;
+      const b=box[grp[0].bid], vert=(grp[0].side==='L'||grp[0].side==='R'), n=grp.length;
+      grp.sort((u,v)=>vert?u.far[1]-v.far[1]:u.far[0]-v.far[0]);   // 상대편 위치 순 → 선 교차 최소화
+      grp.forEach((u,idx)=>{ const off=(idx-(n-1)/2)*PSEP, P=EG[u.gi].pts, ei=u.ei, bend=ei===0?1:P.length-2;
+        if(vert){ const ny=Math.max(b.y+7,Math.min(b.y+b.h-7,b.cy+off)); P[ei][1]=ny; P[bend][1]=ny; }   // 좌/우 변: 문·직전꺾임 Y 함께
+        else    { const nx=Math.max(b.x+7,Math.min(b.x+b.w-7,b.cx+off)); P[ei][0]=nx; P[bend][0]=nx; } }); } // 상/하 변: X 함께
   })();
   // ── 3) 복도 렌더 + ★거리 라벨 충돌 회피★(겹치면 위/아래로 살짝 밀어 '4분/5분' 겹침 방지) ──
   const placedLab=[]; const lolap=(a,b)=>a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;
