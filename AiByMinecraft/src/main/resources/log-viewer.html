@@ -130,6 +130,11 @@
   #info .st{display:inline-block;min-width:58px;color:var(--dim)} #info .tr{color:#ffd27a}
   #info .sub{color:var(--dim);font-size:11px;margin:5px 0 2px;text-transform:uppercase;letter-spacing:.04em}
   #info .dim2{color:var(--dim);font-size:11px}
+  /* 이름 칩 토글: 플레이어·NPC·배역·핵심아이템을 칩으로 골라 하나씩 상세 보기 */
+  #info .chiprow{display:flex;flex-wrap:wrap;gap:4px;margin:1px 0 6px}
+  #info .chip{cursor:pointer;font-size:12px;padding:2px 10px;border-radius:12px;background:var(--panel2);border:1px solid var(--line);color:var(--dim);user-select:none;white-space:nowrap}
+  #info .chip:hover{border-color:#6a5a9a;color:#cbd3e6}
+  #info .chip.on{background:#2a2450;border-color:#7a68b0;color:#eae4ff;font-weight:600}
   #info .trait{border-top:1px solid var(--line);padding:4px 0 3px}
   #info .trait:first-of-type{border-top:0}
   #info .grd{color:#ffd27a;font-weight:600}
@@ -1025,6 +1030,22 @@ function applyCollapsed(){
   }
 }
 function toggleSec(h){ const id=h.dataset.sid; if(COLLAPSED.has(id))COLLAPSED.delete(id); else COLLAPSED.add(id); applyCollapsed(); }
+// ★이름 칩 토글★: 항목이 여럿인 목록(플레이어·NPC·배역·핵심아이템)을 칩으로 골라 하나씩만 상세 표시.
+//  entries=[{name, html}]. 칩줄 + 본문(선택 항목만 보임)을 반환 — 섹션 헤더 뒤 형제로 붙어 접힘도 그대로 동작.
+function chipList(gid, entries){
+  if(!entries||!entries.length) return "";
+  if(entries.length===1) return entries[0].html;   // 하나뿐이면 칩 없이 그대로
+  let chips=`<div class="chiprow" data-cg="${gid}">`;
+  entries.forEach((e,i)=>{ chips+=`<span class="chip${i?"":" on"}" onclick="pickChip('${gid}',${i},this)">${esc(e.name||"?")}</span>`; });
+  chips+=`</div><div class="chipbody" data-cg="${gid}">`;
+  entries.forEach((e,i)=>{ chips+=`<div class="chipitem" data-ci="${i}"${i?' style="display:none"':""}>${e.html}</div>`; });
+  return chips+`</div>`;
+}
+function pickChip(gid, idx, el){
+  const row=el&&el.parentNode; if(row)for(let i=0;i<row.children.length;i++)row.children[i].classList.toggle("on",i===idx);
+  const body=document.querySelector('.chipbody[data-cg="'+gid+'"]');
+  if(body)for(const it of body.querySelectorAll(".chipitem"))it.style.display=(+it.dataset.ci===idx)?"":"none";
+}
 // role_id/npc_id → 표시 이름 (배역 char_name → NPC 이름 → replay → 원본 id)
 function scNameOf(rid){
   if(!rid) return rid;
@@ -1076,45 +1097,49 @@ function scenarioExtraHtml(){
         +`</div>`;}
   }
   if(Array.isArray(SCENARIO.npcs)&&SCENARIO.npcs.length){
-    h+=sh('npc','NPC 상세');
+    const ent=[];
     for(const n of SCENARIO.npcs){
-      h+=`<div class="card"><b>${esc(n.name||n.id||"?")}</b> <span class="dim2">${esc(S(n.role_type))}${n.zone?" · "+esc(n.zone):""}${n.critical?" · ★핵심":""}${n.communicable===false?" · 대화불가":""}</span>`;
-      if(S(n.motivation))  h+=`<br><span class="st">동기</span>${esc(n.motivation)}`;
-      if(S(n.personality)) h+=`<br><span class="st">성격</span>${esc(n.personality)}`;
+      let c=`<div class="card"><b>${esc(n.name||n.id||"?")}</b> <span class="dim2">${esc(S(n.role_type))}${n.zone?" · "+esc(n.zone):""}${n.critical?" · ★핵심":""}${n.communicable===false?" · 대화불가":""}</span>`;
+      if(S(n.motivation))  c+=`<br><span class="st">동기</span>${esc(n.motivation)}`;
+      if(S(n.personality)) c+=`<br><span class="st">성격</span>${esc(n.personality)}`;
       const sched=n.schedule;
       if(Array.isArray(sched)&&sched.length){
-        h+=`<div class="sub">할 일 · 일정</div>`;
+        c+=`<div class="sub">할 일 · 일정</div>`;
         for(const s of sched){
-          if(typeof s==="string"){h+=`<div class="tdesc">· ${esc(s)}</div>`;continue;}
+          if(typeof s==="string"){c+=`<div class="tdesc">· ${esc(s)}</div>`;continue;}
           // ★한눈에 보이게 [조건]/[행동]/[목적] 라벨 줄로 정리★ (있는 것만).
           const when=S(s.time||s.when||s.turn), goal=S(s.goal||s.intent), act=S(s.action||s.what||s.plan),
                 cond=S(s.condition), will=S(s.will), dur=S(s.duration_turns);
-          const lab=(k,v,c)=>v?`<div><span style="color:${c};font-weight:600">[${k}]</span> ${esc(v)}</div>`:"";
+          const lab=(k,v,cc)=>v?`<div><span style="color:${cc};font-weight:600">[${k}]</span> ${esc(v)}</div>`:"";
           let blk=`<div style="margin:3px 0 6px;padding-left:7px;border-left:2px solid #3a4252">`;
           if(when||dur) blk+=`<div class="dim2">⏱ ${esc(when||"")}${dur?(when?" · ":"")+esc(dur)+"턴":""}</div>`;
           blk+=lab("조건",cond,"#e0b060")+lab("행동",act,"#7fc7ff")+lab("목적",goal,"#8fd98f");
           if(will) blk+=`<div class="dim2">[의지] ${esc(will)}</div>`;
           if(!cond&&!act&&!goal&&!when&&!will) blk+=`<div>· ${esc(JSON.stringify(s))}</div>`; // 알수없는 형식 폴백
           blk+=`</div>`;
-          h+=blk;
+          c+=blk;
         }
       }
       const sp=[];
       if(S(n.true_role)) sp.push(`<span class="st">진짜역할</span>${esc(n.true_role)}`);
       if(Array.isArray(n.knowledge)&&n.knowledge.length) sp.push(`<span class="st">아는것</span>${J(n.knowledge)}`);
-      if(sp.length)h+=`<div class="spoiler" style="margin-top:5px"><div class="teff" style="color:#ff9a8f">GM 전용</div>${sp.join("<br>")}</div>`;
-      h+=`</div>`;
+      if(sp.length)c+=`<div class="spoiler" style="margin-top:5px"><div class="teff" style="color:#ff9a8f">GM 전용</div>${sp.join("<br>")}</div>`;
+      c+=`</div>`;
+      ent.push({name:n.name||n.id||"?",html:c});
     }
+    h+=sh('npc','NPC 상세')+chipList('npc',ent);
   }
   if(Array.isArray(SCENARIO.roles)&&SCENARIO.roles.length){
-    h+=sh('roles','배역');
+    const ent=[];
     for(const r of SCENARIO.roles){
-      h+=`<div class="card"><b>${esc(r.char_name||r.name||r.role_id||"?")}</b> <span class="dim2">${esc(S(r.name))}${r.zone?" · "+esc(r.zone):""}${r.is_core?" · ★핵심":""}</span>`;
-      if(S(r.spawn_location)) h+=`<br><span class="st">등장</span>${esc(r.spawn_location)}`;
-      if(Array.isArray(r.initial_info)&&r.initial_info.length) h+=`<br><span class="st">초기정보</span>${J(r.initial_info)}`;
-      if(Array.isArray(r.hidden_info)&&r.hidden_info.length) h+=`<div class="spoiler" style="margin-top:5px"><span class="st" style="color:#ff9a8f">숨은정보</span>${J(r.hidden_info)}</div>`;
-      h+=`</div>`;
+      let c=`<div class="card"><b>${esc(r.char_name||r.name||r.role_id||"?")}</b> <span class="dim2">${esc(S(r.name))}${r.zone?" · "+esc(r.zone):""}${r.is_core?" · ★핵심":""}</span>`;
+      if(S(r.spawn_location)) c+=`<br><span class="st">등장</span>${esc(r.spawn_location)}`;
+      if(Array.isArray(r.initial_info)&&r.initial_info.length) c+=`<br><span class="st">초기정보</span>${J(r.initial_info)}`;
+      if(Array.isArray(r.hidden_info)&&r.hidden_info.length) c+=`<div class="spoiler" style="margin-top:5px"><span class="st" style="color:#ff9a8f">숨은정보</span>${J(r.hidden_info)}</div>`;
+      c+=`</div>`;
+      ent.push({name:r.char_name||r.name||r.role_id||"?",html:c});
     }
+    h+=sh('roles','배역')+chipList('roles',ent);
   }
   const tl=SCENARIO.timeline;
   if(tl&&typeof tl==="object"){
@@ -1150,18 +1175,20 @@ function scenarioExtraHtml(){
     h+=`</div>`;
   }
   if(Array.isArray(SCENARIO.key_items)&&SCENARIO.key_items.length){
-    h+=sh('items','핵심 아이템');
+    const ent=[];
     for(const it of SCENARIO.key_items){
-      h+=`<div class="card"><b>${esc(it.name||it.id||"?")}</b> <span class="dim2">${esc(S(it.item_type||it.type))}</span>`
+      let c=`<div class="card"><b>${esc(it.name||it.id||"?")}</b> <span class="dim2">${esc(S(it.item_type||it.type))}</span>`
         +(S(it.description)?`<br>${esc(it.description)}`:"")
         +(S(it.location)?`<br><span class="st">위치</span>${esc(it.location)}`:"");
       const sp=[];
       if(S(it.clue_value)) sp.push(`<span class="st">단서가치</span>${esc(it.clue_value)}`);
       if(S(it.lore_info))  sp.push(`<span class="st">내막</span>${esc(it.lore_info)}`);
       if(Array.isArray(it.content)&&it.content.length) sp.push(`<span class="st">내용</span>${J(it.content)}`);
-      if(sp.length)h+=`<div class="spoiler" style="margin-top:5px">${sp.join("<br>")}</div>`;
-      h+=`</div>`;
+      if(sp.length)c+=`<div class="spoiler" style="margin-top:5px">${sp.join("<br>")}</div>`;
+      c+=`</div>`;
+      ent.push({name:it.name||it.id||"?",html:c});
     }
+    h+=sh('items','핵심 아이템')+chipList('items',ent);
   }
   const cons=SCENARIO.constraints;
   if(cons&&typeof cons==="object"){
@@ -1192,29 +1219,31 @@ function renderInfo(){
   }
   const row=(label,val)=>{const s=S(val);return s?`<br><span class="st">${esc(label)}</span>${esc(s)}`:"";};
   const rowArr=(label,val)=>{if(!Array.isArray(val))return "";const it=val.map(S).filter(Boolean);return it.length?`<br><span class="st">${esc(label)}</span>${it.map(esc).join(" · ")}`:"";};
-  if(REPLAY){h+=sh('players',`플레이어 ${REPLAY.stage!=null?"(스테이지 "+REPLAY.stage+")":""}`);
+  if(REPLAY){const ent=[];
     for(const p of (REPLAY.players||[])){const hp=Array.isArray(p.hp)?p.hp.join("/"):p.hp,san=Array.isArray(p.san)?p.san.join("/"):p.san;
       const stat=(cur,base)=>base!=null&&base!==cur?`${cur??"?"}<span class="dim2">(${base})</span>`:`${cur??"?"}`;
-      h+=`<div class="card"><b style="color:${colorFor(p.charName||p.name)}">${esc(p.charName||p.name||"?")}</b> <span style="color:var(--dim)">${esc(p.job||"")} · ${p.age??"?"}세 · ${esc(p.zone||"")}</span><br>
+      let c=`<div class="card"><b style="color:${colorFor(p.charName||p.name)}">${esc(p.charName||p.name||"?")}</b> <span style="color:var(--dim)">${esc(p.job||"")} · ${p.age??"?"}세 · ${esc(p.zone||"")}</span><br>
         <span class="st">체력</span>${esc(hp)} <span class="st">정신</span>${esc(san)}<br>
         <span class="st">근력</span>${stat(p.str,p.baseStr)} <span class="st">매력</span>${stat(p.cha,p.baseCha)} <span class="st">행운</span>${stat(p.luk,p.baseLuk)} <span class="st">영감</span>${stat(p.spr,p.baseSpr)}
         <div class="dim2">스탯 5=평균 · 범위 1~20 · 괄호=기본값</div>`;
-      if(Array.isArray(p.traits)&&p.traits.length){h+=`<div class="sub">능력 · 특성</div>`;
+      if(Array.isArray(p.traits)&&p.traits.length){c+=`<div class="sub">능력 · 특성</div>`;
         for(const t of p.traits){
           const boosts=[["근",t.str_add],["매",t.cha_add],["행",t.luk_add],["영",t.spr_add],["체력",t.hp_max_add],["정신",t.san_max_add]].filter(x=>x[1]).map(x=>x[0]+(x[1]>0?"+":"")+x[1]).join(" ");
-          h+=`<div class="trait"><span class="tr">✦ ${esc(t.name||"?")}</span>${t.grade?` <span class="grd">${esc(t.grade)}</span>`:""}${t.active?` <span class="act">발동</span>`:""}${t.level>1?` <span class="dim2">Lv.${t.level}</span>`:""}`;
-          if(S(t.description))h+=`<div class="tdesc">${esc(t.description)}</div>`;
-          if(boosts)h+=`<div class="tboost">스탯 ${esc(boosts)}</div>`;
-          if(S(t.effect))h+=`<div class="teff">⚙ ${esc(t.effect)}</div>`;
-          h+=`</div>`;}}
+          c+=`<div class="trait"><span class="tr">✦ ${esc(t.name||"?")}</span>${t.grade?` <span class="grd">${esc(t.grade)}</span>`:""}${t.active?` <span class="act">발동</span>`:""}${t.level>1?` <span class="dim2">Lv.${t.level}</span>`:""}`;
+          if(S(t.description))c+=`<div class="tdesc">${esc(t.description)}</div>`;
+          if(boosts)c+=`<div class="tboost">스탯 ${esc(boosts)}</div>`;
+          if(S(t.effect))c+=`<div class="teff">⚙ ${esc(t.effect)}</div>`;
+          c+=`</div>`;}}
       // 시작 소지품 + 시작 정보(아는 것) — 시나리오 역할(role) 조인, 없으면 replay heldItemIds(코드 id 중복 제거)
       {const role=(SCENARIO&&Array.isArray(SCENARIO.roles))?SCENARIO.roles.find(r=>r&&(r.role_id===p.roleId||r.char_name===p.charName)):null;
         let si=(role&&Array.isArray(role.start_item))?role.start_item.slice():null;
         if(!si&&Array.isArray(p.heldItemIds)){const seen=new Set();si=[];for(const it of p.heldItemIds){const s=S(it);if(!s||/^[A-Za-z0-9_]+$/.test(s)||seen.has(s))continue;seen.add(s);si.push(s);}}
-        if(si&&si.length)h+=`<div class="sub">시작 소지품</div><div class="dim2">${si.map(esc).join(" · ")}</div>`;
+        if(si&&si.length)c+=`<div class="sub">시작 소지품</div><div class="dim2">${si.map(esc).join(" · ")}</div>`;
         const ii=(role&&Array.isArray(role.initial_info))?role.initial_info:[];
-        if(ii.length){h+=`<div class="sub">시작 정보 (아는 것)</div>`;for(const inf of ii){const s=S(inf);if(s)h+=`<div style="font-size:12px;color:#b9c2cf;margin:1px 0">· ${esc(s)}</div>`;}}}
-      h+=`</div>`;}}
+        if(ii.length){c+=`<div class="sub">시작 정보 (아는 것)</div>`;for(const inf of ii){const s=S(inf);if(s)c+=`<div style="font-size:12px;color:#b9c2cf;margin:1px 0">· ${esc(s)}</div>`;}}}
+      c+=`</div>`;
+      ent.push({name:p.charName||p.name||"?",html:c});}
+    h+=sh('players',`플레이어 ${REPLAY.stage!=null?"(스테이지 "+REPLAY.stage+")":""}`)+chipList('players',ent);}
   if(SCENARIO){const e=SCENARIO.entity||{},ai=e.ai_context||{},ph=e.physical||{};
     h+=sh('entity','괴담 개요')+`<div class="card"><b>${esc(e.name||"?")}</b> <span style="color:var(--dim)">${esc(S(SCENARIO.scale))}${e.type?" · "+esc(e.type):""}</span>`;
     h+=row("성격",ai.personality||ai.disposition);
@@ -1356,6 +1385,8 @@ function zoneMapSvg(zones, know){
   }
   // ── 복도: 직선 우선(다른 방 안 지날 때만), 아니면 ㄱ자 중 덜 부딪히는 코너. 벽 15px 위에 배경 11px 덧그림=속 빈 통로 ──
   const wallC=know?'#8fd4b0':'#aeb9d4', holl='#0f1424';
+  // ★경로별 색(설계도 전용)★: 통로가 겹치거나 다른 통로 밑에 깔려도 색으로 한 경로를 끝까지 따라가게 내부를 칠한다.
+  const INK=['#e08a8a','#e0a565','#d9d071','#74a9e0','#9a8ae0','#c07fe0','#e07fb0','#6fcfd9'];  // 방(구역) 초록·올리브 계열과 안 겹치게 초록 제외
   const hitOthers=(a,b,x1,y1,x2,y2)=>{const xa=Math.min(x1,x2)-1,xb=Math.max(x1,x2)+1,ya=Math.min(y1,y2)-1,yb=Math.max(y1,y2)+1;let n=0;
     for(const id of ids){ if(id===a||id===b)continue; const r=box[id]; if(xb>r.x&&xa<r.x+r.w&&yb>r.y&&ya<r.y+r.h)n++; } return n; };
   const ep=(b,tx,ty)=>Math.abs(tx-b.cx)<0.5?{x:b.cx,y:ty<b.cy?b.y+2:b.y+b.h-2}:{x:tx<b.cx?b.x+2:b.x+b.w-2,y:b.cy}; // 방 테두리 2px 안쪽 = 문
@@ -1438,12 +1469,36 @@ function zoneMapSvg(zones, know){
         if(vert){ const ny=Math.max(b.y+7,Math.min(b.y+b.h-7,b.cy+off)); P[ei][1]=ny; P[bend][1]=ny; }   // 좌/우 변: 문·직전꺾임 Y 함께
         else    { const nx=Math.max(b.x+7,Math.min(b.x+b.w-7,b.cx+off)); P[ei][0]=nx; P[bend][0]=nx; } }); } // 상/하 변: X 함께
   })();
+  // ── 2.7) ★겹치는 통로만 색 배정★: 지도가 알록달록해지지 않게, 기본은 중립(회색). 다른 통로와
+  //    ★교차(십자로 지나감)★하거나 ★바로 옆 레인에 나란히 붙어★ 있어 구분이 어려운 통로에만 색을 준다
+  //    (겹친 상대끼리는 서로 다른 색 → 어느 게 어느 길인지 구분). 안 겹치는 통로는 색 없음(=회색). ──
+  (function colorCorridors(){
+    const seg=P=>{const s=[];for(let i=0;i+1<P.length;i++)s.push([P[i],P[i+1]]);return s;};
+    const cross=(A,B)=>{ for(const [a1,a2] of seg(A))for(const [b1,b2] of seg(B)){
+      const aH=Math.abs(a1[1]-a2[1])<1, bH=Math.abs(b1[1]-b2[1])<1; if(aH===bH)continue;
+      const H=aH?[a1,a2]:[b1,b2], V=aH?[b1,b2]:[a1,a2];
+      const hy=H[0][1], hx0=Math.min(H[0][0],H[1][0]), hx1=Math.max(H[0][0],H[1][0]);
+      const vx=V[0][0], vy0=Math.min(V[0][1],V[1][1]), vy1=Math.max(V[0][1],V[1][1]);
+      if(vx>hx0+1&&vx<hx1-1&&hy>vy0+1&&hy<vy1-1)return true; } return false; };
+    const nearPar=(A,B)=>{ for(const [a1,a2] of seg(A))for(const [b1,b2] of seg(B)){  // 같은 방향·바로 옆(≤22px)·구간 겹침
+      const aH=Math.abs(a1[1]-a2[1])<1&&Math.abs(a1[0]-a2[0])>8, aV=Math.abs(a1[0]-a2[0])<1&&Math.abs(a1[1]-a2[1])>8;
+      const bH=Math.abs(b1[1]-b2[1])<1&&Math.abs(b1[0]-b2[0])>8, bV=Math.abs(b1[0]-b2[0])<1&&Math.abs(b1[1]-b2[1])>8;
+      if(aH&&bH&&Math.abs(a1[1]-b1[1])<22&&Math.min(a1[0],a2[0])<Math.max(b1[0],b2[0])-6&&Math.max(a1[0],a2[0])>Math.min(b1[0],b2[0])+6)return true;
+      if(aV&&bV&&Math.abs(a1[0]-b1[0])<22&&Math.min(a1[1],a2[1])<Math.max(b1[1],b2[1])-6&&Math.max(a1[1],a2[1])>Math.min(b1[1],b2[1])+6)return true; } return false; };
+    const con=EG.map(()=>[]);
+    for(let i=0;i<EG.length;i++)for(let j=i+1;j<EG.length;j++)
+      if(cross(EG[i].pts,EG[j].pts)||nearPar(EG[i].pts,EG[j].pts)){con[i].push(j);con[j].push(i);}
+    EG.forEach((g,gi)=>{ if(!con[gi].length){g._ink=null;return;}   // 안 겹치면 색 없음(중립 회색)
+      const nb=new Set(); for(const hi of con[gi])if(EG[hi]._ink)nb.add(EG[hi]._ink);
+      let ci=gi%INK.length,t=0; while(t<INK.length&&nb.has(INK[ci])){ci=(ci+1)%INK.length;t++;} g._ink=INK[ci]; });
+  })();
   // ── 3) 복도 렌더 + ★거리 라벨 충돌 회피★(겹치면 위/아래로 살짝 밀어 '4분/5분' 겹침 방지) ──
   const placedLab=[]; const lolap=(a,b)=>a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;
   for(const g of EG){ const P=g.pts;
     const d=P.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join('');
+    const inner=(know||!g._ink)?holl:g._ink;   // 미니맵·안 겹치는 통로=중립(회색) / 겹치는 통로만 경로색으로 내부 채움
     corr+=`<path d="${d}" stroke="${wallC}" stroke-width="12" fill="none" stroke-linejoin="miter" stroke-linecap="butt"/>`
-        +`<path d="${d}" stroke="${holl}" stroke-width="8" fill="none" stroke-linejoin="miter" stroke-linecap="butt"/>`;
+        +`<path d="${d}" stroke="${inner}" stroke-width="8" fill="none" stroke-linejoin="miter" stroke-linecap="butt"/>`;
     const dl=distLabel(g.dist); if(!dl)continue;
     // 라벨 기준점: 가장 긴 구간의 중점(분리로 꺾임점이 이동했을 수 있어 pts에서 다시 계산)
     let bi=0,bl=-1; for(let i=0;i+1<P.length;i++){const L=Math.abs(P[i][0]-P[i+1][0])+Math.abs(P[i][1]-P[i+1][1]); if(L>bl){bl=L;bi=i;}}
@@ -1459,7 +1514,7 @@ function zoneMapSvg(zones, know){
     for(const a of areasUsed){ legendSvg+=`<rect x="${lx}" y="${ly-8}" width="9" height="9" fill="${areaTint(a)}" fill-opacity="0.8" stroke="#c6d0e6" stroke-width="0.7"/>`
       +`<text x="${lx+13}" y="${ly}" font-size="9.5" fill="#aab3cf">${esc(a)}</text>`; lx+=13+Math.round(estW(a)*0.73)+18; } }
   const title=know?'미니맵 — 아는 구역만':'구역 지도(설계도)';
-  const foot=know?'▶흰색=현재 · 밝음=주변 · 어두움=다녀온 곳 · 초록 통로=이동 가능(모르는 곳은 숨김)':'통로=연결(안의 숫자=소요 시간) · 📵=통신 불가 · 색=대분류(하단 범례)';
+  const foot=know?'▶흰색=현재 · 밝음=주변 · 어두움=다녀온 곳 · 초록 통로=이동 가능(모르는 곳은 숨김)':'통로=연결(안 숫자=소요 시간) · 겹치는 통로만 색으로 구분 · 📵=통신 불가 · 방 색=대분류(하단 범례)';
   return `<div class="zmap" style="overflow:auto;margin-bottom:6px;cursor:zoom-in" onclick="mapZoom(this)" title="클릭하면 크게 보기">`
     +`<div class="dim2" style="margin-bottom:3px">${title} <span style="background:#2a2450;border:1px solid #4a3f80;border-radius:6px;padding:0 7px;color:#cabfff">🔍 크게 보기</span></div>`
     +`<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-height:400px;min-width:${Math.min(W,320)}px">${bg}${rects}${corr}${dists}${labels}${legendSvg}</svg>`
