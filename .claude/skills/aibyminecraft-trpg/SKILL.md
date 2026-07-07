@@ -73,6 +73,18 @@ description: >-
   상시 갱신(효율 될 만한 지식은 항상 등록).
 
 ## 최근 추가된 아키텍처 사실 (회귀 방지)
+- **자동진행 = GM위임 아닌 코드 결정(전지성 차단)**: 자동진행 경로 4개 중 GM을 호출하는 건 `maybeAccelerateIdle`
+  하나뿐 — 나머지(advanceRoundAfterAllActed / busyClockJumpIfAllBusy / summonAllFree / 전원무력 워치독)는
+  ★GM콜 0★(순수 시계·카운터 연산)이라 프로즈를 안 만들어 미발견 정보 누출이 원천 불가. maybeAccelerateIdle은
+  이제 ★코드가 스킵 판정★(위협/분노 70+ 또는 endEventFired=급박→스킵안함, 아니면 nextDueEventMinute 직전까지만
+  스킵)하고 GM엔 '흐른 시간의 앰비언트'만 시킨다(미발견 단서·정체/약점·미도달 구역 언급 금지, TIME_SKIP 태그 금지).
+  ★"다음 사건으로 넘겨라"류로 되돌리지 말 것★ — 그게 전지적 자동진행의 원인이었다.
+- **GM위임→하드코딩 잔여 후보(비용 #231)**: (A2) `extractAndStoreInfo`(:6344)는 서술 있는 매 턴 보조모델 2차
+  콜 → 메인 GM `<CLUE>` 태그 흡수 or 사전필터 게이팅. (A3) 전투 사건 자동 `<SUMMON>` — summonAllFree는 GM
+  태그(:2547)에서만 호출, `combat:true` 발화 시 코드가 자동 소집 가능. (A4) 전투 자동 `<PACE slow>` — actionPace는
+  GM 태그(:2558)에서만 변경. (A5) 마감 강제결말 — isEndEventFired()가 안내문(:10934)에만 쓰이고 코드 종료 경로
+  없어 '생존형' 소프트락 가능(H-1). 이미 잘 하드코딩된 것: 주사위 판정(:11360 roll·성패 코드)·통신 파이프라인(:8343)·
+  비동기 턴진행·GM 태그검증(resolveZoneId/capGradeByThreat).
 - **꼭두각시 상태머신**(TRPGGameManager 턴루프 ~8931 + san_change ~2271): puppetRecoveryTurns(>0 관전
   /-1 완전조종 heal전용/0 중간), puppetTotalTurns(누적→상한 시 강제완전회복), puppetGraceTurns(회복 직후
   재조종 유예 — 낮은 SAN이어도 재조종 트리거 차단). 정상복귀 시 total 리셋.

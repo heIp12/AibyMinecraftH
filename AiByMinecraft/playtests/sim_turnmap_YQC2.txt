@@ -1,0 +1,280 @@
+================================================================================
+ 괴담 TRPG 시뮬레이션 플레이로그 — 시드 #YQC2-L6BE (토콜로시 / 매개형)
+ 대상: 비동기 busy 턴(turnMode=2, #151 Stage B) · 맵 이동(#190) · 최종 평가
+ 방식: 컴파일 불가 → TRPGGameManager / GameStateManager 코드 경로를 직접 트레이스한
+       "엔진이 실제로 이렇게 굴렸을 것" 재구성. 분(min) 계산은 절대시계 기준.
+ 작성: 코드 트레이스 기반(파일:라인은 하단 감사 리포트 참조).
+================================================================================
+
+[ 설정 스냅샷 ]
+  turnMode = 2 (비동기 busy)                    // GameStateManager:72 기본1, /trpg setting turnmode 2
+  start_time 20:00 → clockStart = clockMinutes = 1200   (GameStateManager.loadTimelineConfig:488-491)
+  end_time   06:00 → clockEnd = 360 <= 1200 → +1440 = 1800  (:492-496)
+  minutes_per_turn = 20  → <DUR> 누락 시 폴백 durEff (TRPGGameManager:2534)
+  paceMult = 1.0 (normal)                       (TRPGGameManager:134)
+  타임라인 절대분:
+    E1  20:00 = 1200   정전·폭우 (blockable=false, 도입부 종료 시 발화)
+    E1b 21:20 = 1280   지붕 누수 (side, 지속출혈, deadline 23:00=1380)
+    E2  23:00 = 1380   침대다리 갉기 (blockable)
+    E3  01:00 = 1500   진흙좀비 (combat=true, key_clue=주술사 편지)   [+1일]
+    E4  03:00 = 1620   물뱀 물차오름 (blockable=false)
+    E_END 06:00 = 1800 아침 (is_end=true) — clockEnd와 동일분
+  플레이어:
+    루반도(role_A, 동생)  zone_A 작은침실  str3 cha7 luk8 spr6  (겁많음)  시작템 토끼인형·단사탕
+    텐바 (role_B, 형)    zone_A 작은침실  str6 ... hidden: 벽돌로 침대 높이기 hint
+    레디 (role_C, 누나)  zone_D 진흙마당  str8 (약함:괴물 못봄)  시작템 손도끼·석유랜턴
+                         spawn_timeline = 타임라인 1단계 → 공포 진입 시 등장
+  NPC:
+    상고마(발생원+적대자) zone_H 제단방  — 뼈항아리 수호, 침입 시 진흙좀비 소환
+    노포토 할머니(메인열쇠) zone_B 옆집부엌 — 벽돌 3장 hint, 침대 3단보강 시 제단 열쇠
+    꼬마 시포(관측자)     zone_C 마을창고 — communicable=false
+  제약: phone_usable=false, written_comm=true, can_leave_scene=false
+  괴담 perception = [청각, 접촉]  → 소리/접촉으로 인지. 필담·수신호는 상대적으로 안전.
+
+  ※ 표기 규약: bU = busyUntilMin,  [JUMP]=busyClockJumpIfAllBusy,  [CAP]=§8.1 사건직전정지,
+    ▶EVENT = fireDueEvents 발화(justFiredEvents 적재), (n)=엔진분.
+
+================================================================================
+ PROLOGUE — 일상(daily) 단계, 시계 동결 (clockMinutes 활성이나 dailyPhase=true)
+================================================================================
+ opening="crisis". dailyPhase 동안 isDailyPhase()=true → busy 잠금·시계점프 전부 바이패스
+   (TRPGGameManager:2073, 2538 의 !state.isDailyPhase() 가드; #208).
+ 루반도·텐바 작은침실에서 크리시스 프롤로그 비트:
+   "천장이 깨진 듯 장대비 — 정전으로 사방이 캄캄. 침대 밑에서 축축한 것이 바닥을 긁는다."
+ consumeDailyTurn() 진행 → dailyPhase=false, timelineStage=1, onHorrorPhaseStart().
+
+ ※관찰(로그용): 시나리오 daily_prologue.turns=1 인데 timeline.daily_turns=6 →
+   loadTimelineConfig:485 는 timeline.daily_turns(=6)만 읽어 dailyTurnsLeft=6.
+   opening=crisis의 "즉시 위기"와 프롤로그 6턴이 어긋날 수 있음(하단 감사 L-4).
+   본 시뮬은 crisis 의도대로 1비트 후 공포 진입으로 근사.
+
+================================================================================
+ 공포 단계 개시 — clock=1200 (20:00), timelineStage=1
+================================================================================
+ ▶EVENT E1 (1200): fireDueEvents → justFiredEvents=["정전과 폭우의 시작 — …물이 들어옵니다"]
+   (buildTurnInput:803-807 에서 다음 행동자 GM콜에 1회 주입·소비)
+ 레디 role_C 자동 등장(checkAndAutoSpawn, spawn_timeline 타임라인1단계) → zone_D 진흙마당.
+
+──[ clock 1200 20:00 ]  자유: 루반도·텐바·레디 (전원 bU=0) ────────────────────
+ · 텐바 입력: "손전등을 켜고 침대 밑을 비춘다."
+     GM: E1 반영(정전/폭우/스며드는 물) 서술. 바닥 흙탕물에 '시커멓고 조그만 발자국'(clue_1) 노출.
+         <DUR minutes="8">.  onGmResponse:2543 → 텐바 bU = 1200+8 = 1208.
+     [JUMP] 루반도·레디 free → 즉시 반환(점프 안 함). clock 1200 유지.
+ · 루반도 입력: "무서워… 장롱 뒤에 숨어서 살펴본다."
+     GM: 장롱 구석 어린아이 낙서(clue_9) '천장에 매달려야 해' 노출. 주머니 뼛조각이 서늘.
+         <DUR minutes="8">.  루반도 bU = 1208.
+     [JUMP] 레디 free → 반환.
+ · 레디 입력(zone_D): "동생들 집으로 가야 해. 마당 물을 헤친다."
+     GM: 무릎 물바다(meeting_design natural_barrier). 마당 구석 '붉은 점토 벽돌'(item_bricks) 발견.
+         <DUR minutes="8">.  레디 bU = 1208.
+     [JUMP] able=전원 busy. earliest=1208. now=1200. nextEvt=nextDueEventMinute(1200)=1280(E1b).
+            [CAP?] (1280-1=1279 > 1200) T  AND (1280 <= 1208) **F** → 캡 미적용.
+            advanceClockTo(1208) → 사건 없음(1280>1208). tickFaintCounters. 전원 자유(bU=1208≤1208).
+     clock → 1208 (20:08)
+
+──[ clock 1208 20:08 ]  자유: 전원 ──────────────────────────────────────────
+ · 텐바: "동생아, 옆집 할머니가 그랬어 — 침대 다리 밑에 벽돌을 괴면 그게 못 올라온대."(hidden_info 공유, 같은 zone 대면)
+     GM 서술. <DUR 4>. 텐바 bU=1212.
+ · 루반도: "@레디 누나 빨리 와!! 침대 밑에 그게 있어!" (직접통신)
+     handleDirectComm: 루반도 zone_A → 레디 zone_D. written_comm/외침. 괴담 perception[청각] →
+       외침은 '엿듣기' 위험(오염↑ 가능)이나 절박한 SOS. 전달 성립.
+     <DUR 3>. 루반도 bU=1211.
+ · 레디: /trpg 이동 → 목적지 '작은침실'(zone_A) 선택.
+     openMoveSelector:10424 → passableKnownZones → shortestZonePath(zone_D, zone_A) = [zone_A] (인접, 1홉).
+     startTravel → travelTurn → advanceOneHop: zone_D→zone_A. travelPath 비워짐 → ★도착★.
+     GM 홉 서술(도착): 흙집 문을 박차고 들어와 두 동생과 합류. 손도끼·랜턴 소지.
+     <DUR> 홉 미지정 → 폴백 durEff=20. 레디 bU = 1208+20 = 1228.
+       ★1홉=1턴: 맵상 zone_D→zone_A 거리 3 이지만 엔진은 20분 균일 청구(감사 H-3 divergence).
+     [JUMP] 텐바(1212)·루반도(1211)·레디(1228) 전원 busy. earliest=1211. now=1208.
+            nextEvt=1280. [CAP?] 1279>1208 T AND 1280<=1211 F → 미적용. advanceClockTo(1211).
+     clock → 1211 (20:11), 루반도 자유.
+
+  … [압축] clock 1211~1276 구간: 전원이 짧은 관찰/대화/정리 행동을 이어감. 매번 '가장 이른 bU'로
+    시계가 야금야금 전진(JUMP earliest). 이 구간 주요 성과:
+      - 텐바·루반도: 침대 다리 밑에 벽돌 괴기 시작(레디가 가져온 4개). 균형 조정.
+      - 레디: 손도끼로 낡은 목재 의자를 쪼개 버팀목 보강(str8). 침대 1~2단 확보.
+      - 루반도: 선반에서 '흙 묻은 마을 지도'(item_village_map) 습득 → 서쪽 마른 언덕길 메모 인지.
+    시계가 1278에 도달, 전원이 20분짜리 정리행동을 걺 → earliest≈1298(>1280).
+
+──[ clock 1278 21:18 ]  전원 busy(earliest 1298 예: 벽돌 보강 20분) ───────────
+ [JUMP] now=1278, earliest=1298. nextEvt=1280(E1b).
+        [CAP?] (1279 > 1278) T  AND (1280 <= 1298) T → ★캡 적용★.
+        advanceClockTo(1279). freeAt=1279. 전원 bU=1279(반응턴 부여). tickFaint. return.
+   clock → 1279 (21:19) — ★E1b 직전 '마지막 반응 턴'★ (아직 E1b 미발화).
+
+──[ clock 1279 21:19 ]  자유: 전원 (반응턴) ─────────────────────────────────
+ · 텐바: "천장에서 물이 새기 시작하는데… 양동이를 받쳐둔다." (E1b 대비 선제)
+     <DUR 6>. 텐바 bU=1285.
+ · 루반도: "무서워, 형 옆에 붙어 있을래." <DUR 4>. 루반도 bU=1283.
+ · 레디: "천장 틈을 랜턴으로 비춘다 — 흙탕물이 배어나온다." <DUR 5>. 레디 bU=1284.
+   [JUMP] now=1279, earliest=1283. nextEvt=1280. [CAP?] (1279>1279) **F** → 미적용(반응턴 이미 줌).
+          advanceClockTo(1283). ▶EVENT E1b(1280): fireDueEvents → justFiredEvents +=
+            ["지붕 누수 발생 — 천장에서 시커먼 흙탕물… 막지 못하면 턴마다 정신력↓"]. tickFaint.
+   clock → 1283 (21:23), 루반도 자유.
+   ※ E1b는 이 시점 justFiredEvents에 적재만 됨. 서술은 ★다음 행동자 GM콜★의 buildTurnInput:803
+     에서 소비되어 나온다(점프 자체는 GM콜 없음 → 무단서 노출 위험 0, 감사 OMNI-2).
+
+──[ clock 1283~1378 ]  E1b 지속출혈 대응 + 노포토 접촉 ────────────────────────
+ · 루반도 첫 행동에서 buildTurnInput가 E1b 사건 주입 → GM: "천장이 터지듯 흙탕물이 쏟아진다.
+     막지 않으면 정신이 갉힌다." 루반도 SAN 관련 압박 서술.
+ · 텐바: 담요·판자로 누수 지점 틀어막기 시도(2회 행동에 걸쳐). deadline 1380 전 부분 차단 성공 →
+     지속출혈 완화. (완전 차단은 아니어서 SAN 소량 유지 소모.)
+ · 레디: /trpg 이동 → '옆집부엌'(zone_B) 선택. shortestZonePath(zone_A, zone_B)=[zone_B](인접,1홉).
+     advanceOneHop zone_A→zone_B. 도착. <DUR 폴백 20>. 노포토 할머니(zone_B)와 대면.
+     노포토 schedule[0] "시작 즉시" → 벽돌 hint: "토콜로시는 키가 작아. 벽돌 3장 이상 괴면 못 올라온다."
+       (clue_2 할머니 일기 취지) + 일기장 clue_2 노출.
+     handleNpcDirectComm → NPC 자율 AI 1회, npcActiveUntil 갱신.
+ · 이 구간 시계는 여전히 earliest-bU JUMP로 전진. 전원이 누수/이동/대화로 바쁠 때마다 시계 점프.
+   1378 도달, 전원 busy earliest≈1398(예: 침대 3단 보강 큰작업 20분).
+
+──[ clock 1378 22:58 ]  전원 busy(earliest 1398) ────────────────────────────
+ [JUMP] now=1378, earliest=1398. nextEvt=1380(E2). [CAP?] (1379>1378) T AND (1380<=1398) T → ★캡★.
+        advanceClockTo(1379). 전원 bU=1379(반응턴). clock → 1379 (22:59).
+──[ clock 1379 22:59 ]  자유: 전원 (E2 직전 반응턴) ─────────────────────────
+ · 텐바: "침대 다리를 마지막으로 단단히 조인다 — 벽돌 3장, 균형 확인!" <DUR 12>. 텐바 bU=1391.
+ · 루반도: "형, 뭔가 침대 밑에서 이빨 가는 소리가 나…" <DUR 4>. 루반도 bU=1383.
+ · 레디: (아직 zone_B) "할머니, 저 아이들 침대는요?" → 노포토 schedule[1] 조건 "침대 3단보강 완료 시"
+     아직 미확정 → 열쇠 보류. <DUR 6>. 레디 bU=1385.
+   [JUMP] now=1379, earliest=1383. [CAP?] (1379>1379) F → 미적용. advanceClockTo(1383).
+          ▶EVENT E2(1380): justFiredEvents += ["침대 다리 갉아먹기 — 단단히 막지 않으면 침대가 무너집니다"].
+   clock → 1383 (23:03), 루반도 자유.
+ · 루반도 행동 GM콜: E2 주입 → "토콜로시가 침대다리를 이빨로 갉는다. 그러나 벽돌 3장 보강이
+     버텨준다 — 다리가 흔들리지만 무너지지 않는다." (E2 branches.intervene '가구로 다리 보강' → E3-B 경로)
+     → 침대 붕괴 저지 성공. timelineStage 시계연동 상승(syncStageToClock).
+
+──[ clock 1383~1498 ]  3단 보강 확정 → 노포토 열쇠 → 제단 원정 준비 ───────────
+ · 텐바 큰작업 완료로 '침대 3단 이상 보강' 성립 → 노포토 schedule[1] 조건 충족 신호.
+   레디가 zone_B에서 노포토에게서 '제단방 열쇠 + 단서'(붉은 제단·뼈항아리 위치) 수령.
+     (constraints.gated_zones: zone_witchdoctor_shack requires 철제 자물쇠 열쇠 — 본 시드 zone_G/H는
+      게이트 미지정이나, 열쇠·단서 확보로 서사 정합.)
+ · 레디: /trpg 이동 → 목적지 '주술사 집'(zone_G). 아는-구역 경로:
+     shortestZonePath(zone_B, zone_G, passableKnownZones). zone_B→zone_D→zone_G (BFS 2홉).
+       거리(map): zone_B→zone_D=2, zone_D→zone_G=4 = 6 units. 엔진: 2홉 = 2×20 = 40분 균일.
+       ★맵거리 6 vs 시계 40분 divergence(감사 H-3). 원거리 zone_G가 근거리와 동요금.
+     홉1: zone_B→zone_D. <DUR 20> 레디 bU += 20. (도중 zone_D 재통과 — 조우/쪽지 판정)
+       ★멀티홉은 매 홉 재입력 필요★: busy 해제(JUMP) 후 레디가 다시 입력해야 다음 홉 진행
+        (handleGameChat:2214 travelTurn은 입력 트리거; busy 게이트 2076 이 대기시킴).
+     홉2: zone_D→zone_G. 도착. 상고마 거처 초입.
+ · 이 사이 루반도·텐바는 작은침실에서 침대 위 사수. 물이 무릎까지(타임라인 단계2 효과) 차오름 서술.
+   시계는 세 사람 중 '가장 이른 bU'로 계속 전진 → 1498 도달, 전원 busy earliest≈1518.
+
+──[ clock 1498 00:58 ]  전원 busy(earliest 1518) ────────────────────────────
+ [JUMP] now=1498, earliest=1518. nextEvt=1500(E3). [CAP?] (1499>1498) T AND (1500<=1518) T → ★캡★.
+        advanceClockTo(1499). 전원 bU=1499(반응턴). clock → 1499 (00:59).
+──[ clock 1499 00:59 ]  자유: 전원 (E3 직전 반응턴) ─────────────────────────
+ · 레디(zone_G 도착 상태): "문을 열고 제단방(zone_H)으로 들어간다 — 손도끼를 꺼내든다."
+     zone_G→zone_H 이동/진입. ★제단방 침입★ → 상고마 schedule[1] 조건 "제단 방 침입 시" 트리거:
+       "숨겨둔 칼을 꺼내 들고 진흙 좀비들을 불러낸다." (= E3 유발원)
+     <DUR 10>. 레디 bU=1509.
+ · 텐바/루반도: 침대 위에서 문 쪽 인기척에 대비. <DUR 5>. bU≈1504.
+   [JUMP] now=1499, earliest=1504. [CAP?] (1499>1499) F → 미적용. advanceClockTo(1504).
+          ▶EVENT E3(1500): justFiredEvents += ["진흙 좀비들의 침입 — 문을 부수고 들어옵니다.
+            무기·몽둥이로 때려눕혀야(combat)"].  key_clue: 주술사의 숨겨진 편지(clue_5).
+   clock → 1504 (01:04).
+
+  ★★ E3 전투 소집(SUMMON) 판정 — 엔진 핵심 트레이스 ★★
+   E3.combat=true 이지만 ★엔진은 자동 소집을 하지 않는다★. summonAllFree는 오직 GM이 <SUMMON>
+     태그를 낼 때만 호출(onGmResponse:2546-2547). E3는 JUMP 중 발화되었고(GM콜 없음), 서술은
+     다음 행동자(레디)의 GM콜 buildTurnInput에서 소비된다. 그 GM 응답이 <SUMMON reason="진흙좀비 급습"/>
+     를 내면 → summonAllFree → 텐바·루반도·레디 전원 bU=now 즉시 자유(같은 국면에서 함께 대응).
+   → 프롬프트가 협조하면 정상 작동. 그러나 GM이 <SUMMON>을 누락하면 진행 중이던 긴 행동자는
+     좀비 급습 중에도 busy로 묶여 대응 불가(감사 H-2, 설계 §10 '피격 자동소집 미구현'과 일치).
+   본 시뮬: GM이 E3 서술에 <SUMMON/> 동반 → 전원 자유화. [즉시 소집] 로그.
+
+──[ E3 전투 국면, clock ~1504→~1560 ]  진흙좀비 combat ──────────────────────
+ · 레디(zone_H): 손도끼로 좀비 2체 격파(str8). 제단 위 붉은 뼈항아리 확인.
+     서랍에서 '붉은 가죽 주머니 편지'(clue_5): "…발을 땅에 딛는 순간 토콜로시가 다리를 분질러 수중
+       제물로." + 벽 경고문(clue_6): "항아리를 깨면 괴물 소멸, 단 고인 물이 폭발하듯 덮치니 높은
+       지대 도주로 확보." 습득.
+ · 텐바(zone_A): 나무 몽둥이로 문틈 좀비 저지. 루반도는 침대 중앙 사수(발이 바닥에 닿지 않게).
+ · 상고마 자율(engaged, npcActiveUntil): "쇳소리로 킬킬 — 물이 다 차기 전에 발을 디디게 될 게다,
+     로다." (honesty=상습형, ending ~로다/느니라). fireNpcAiForTurn(cadence)로 1회 구동.
+ · 전투 중 완급: GM <PACE mode="slow"/> 가능 → paceMult 0.5, 같은 행동이 시간 절반 소모(촘촘).
+     actionPace="slow" 래치(2554-2559). 이후 durEff×0.5.
+
+──[ clock ~1560~1618 ]  E4 직전 — 항아리 파괴 결단 ──────────────────────────
+ · 레디: 제단방에서 손도끼를 치켜든다. clue_6 경고대로 zone_H→zone_I(숲속 뒷길) 마른 도주로 확인
+     (clue_8: 마른 흙길만 밟아라). 도주로 확보 후 항아리 강타 준비.
+ · 시계는 계속 earliest-bU JUMP로 전진. 1618 도달 전원 busy earliest≈1638.
+ [JUMP] now=1618, earliest=1638. nextEvt=1620(E4). [CAP?] (1619>1618) T AND (1620<=1638) T → ★캡★.
+        advanceClockTo(1619). 전원 bU=1619 반응턴. → 다음 JUMP에서
+        ▶EVENT E4(1620): justFiredEvents += ["거대 물뱀의 울음 — 물이 가슴 높이까지 갑자기 불어남"].
+   clock → 1620대 (03:00대). 타임라인 단계4 효과: 천장 밑까지 침대 높여야(hidden_rules 물뱀 딜레마).
+
+──[ clock ~1620~1790 ]  최종 국면 — 뼈항아리 파괴 ──────────────────────────
+ · 레디: "손도끼로 뼈 항아리를 내리친다!!" (collapse_condition: 물 빼내기 + 뼈항아리 파괴.
+     본 경로는 항아리 파괴 우선 → clue_10: 주술사 도주/사망 시 맘람보가 물을 거두고 우물로 회귀.)
+     GM 판정: 항아리 산산조각 → 토콜로시·맘람보 폭주. clue_6대로 저주의 물이 폭발적으로 덮침.
+       레디는 미리 확보한 zone_I 마른 뒷길로 튀어 회피(능동적 탈출). 상고마는 계약 파기로 맘람보에게
+       삼켜짐(fear 실현) → 물이 급속히 빠짐.
+ · 텐바·루반도: 침대 위에서 물폭발을 버팀. clue_9 '천장 매달리기' exploit로 순간 대피.
+     아침 해가 밝아옴(E_END 임박).
+
+──[ clock ~1799 05:59 ]  E_END 직전 캡 ─────────────────────────────────────
+ [JUMP] now~1799. nextEvt=nextDueEventMinute: E_END 1800 & clockEnd 1800 후보 → 1800.
+        [CAP?] (1799>1798) T AND (1800<=earliest) T → advanceClockTo(1799) 반응턴 → 다음 JUMP:
+        ▶EVENT E_END(1800): fireDueEvents → is_end=true → endEventFired=true, timelineStage=maxStage.
+        justFiredEvents += ["아침 해가 뜸 — 물이 빠지고 괴물이 비명을 지르며 사라짐"].
+        clockEnd(1800) 블록은 endEventFired 이미 true라 스킵(이중발화 없음, GameStateManager:567).
+
+  ★★ E_END 자동 종료 안 함 — 엔진 트레이스 ★★
+   isEndEventFired()=true 는 프롬프트 가드(10934)만 켠다. ★게임을 자동 결말짓는 코드는 없다★.
+   해결/생존 클리어는 오직 GM <CLEAR> 또는 사망/배드엔딩으로만 성립. 본 시뮬은 레디의 항아리 파괴
+   +능동 탈출로 이미 collapse_condition 충족 → GM이 다음 행동 응답에서:
+     <CLEAR grade="B" resolved="true" reason="뼈항아리 파괴로 저주 소멸·전원 마른 길로 생환"
+            by="레디(손도끼로 항아리 파괴) + 텐바/루반도(침대 사수·정보공유)"/>
+   onGmResponse:2357 parseClearTag → capGradeByThreat(위협도 보정) → onClearEnding("B", …, resolved=true).
+
+  ※만약 GM이 <CLEAR>를 내지 않았다면: E_END 후에도 clock은 1800을 넘겨 계속 JUMP만 반복(자유화)하며
+    무한 진행 → 사실상 소프트 정체. idle-accel(3분 무입력)이 TIME_SKIP으로 넘기려 해도 getMinutesUntilEnd
+    캡으로 마감 못 넘김. '새벽에 살아남았는데 결말이 안 뜨는' 미결 상태 위험(감사 H-4).
+
+================================================================================
+ ENDING — onClearEnding("B", resolved=true)  (TRPGGameManager:5543)
+================================================================================
+ currentPhase=CLEAR. turnMan.cancelAll(). nextStageUnlocked = (room<3)||resolved = true.
+ broadcast: "클리어! 등급: B" (오염 보정 getRewardGrade 반영 가능).
+ 판정유형: 해결판정 — 괴담을 해소함.  주체: 레디 + 텐바/루반도.
+ startPregenNext() (다음 스테이지 사전생성).
+ endingLabel = "해결 클리어 (등급 B)".
+ → runScenarioEvaluation(finalGrade="B", campaignWide=FALSE, onComplete)  (:5587)
+
+────────────────────────────────────────────────────────────────────────────
+ [ 시나리오 평가 — runScenarioEvaluation, campaignWide=false ]  (:5663)
+────────────────────────────────────────────────────────────────────────────
+ buildFullEvalLog()로 전체 행동로그 수집(얇으면 per-player narrativeLog 보강, :5683).
+ ★정규화 블록(campaignWide 전용, :5704-5720)은 이번엔 미적용★ — 단일 스테이지 클리어이므로
+   '스테이지 평균 기여' stageBasis 프롬프트가 붙지 않는다. (5~6스테이지 전원영웅 인플레 정규화는
+   오직 concludeWholeGame(:2977, campaignWide=true) 총평 경로에서만 주입된다. 하단 감사 EVAL-1.)
+ 평가 프롬프트(:5722-5779): 엄격 등급기준(기본값 B, S/A 인색), 정보전달 기여 반영, 사망≠상한.
+
+ GM 평가 AI 산출(JSON, 가변딜레이로 1줄씩 출력) — 재구성 예:
+   레디(누나): total=A
+     · [A] 제단방 침입·진흙좀비 격파·뼈항아리 파괴로 저주를 직접 종식(핵심 해결자)
+     · [B] 마당 벽돌 확보·침대 보강 자재 운반
+     · [C] 괴물을 못 봐(role 약점) 초반 혼란 — growth=[str, luk]
+   텐바(형): total=B
+     · [B] 벽돌 3단 보강 주도로 침대붕괴(E2) 저지 — 견실한 기여
+     · [B] 노포토 hint를 동생과 공유(정보전달), 문틈 좀비 저지
+     · growth=[str, spr]
+   루반도(동생): total=B
+     · [B] 장롱 낙서(clue_9)·지도 확보로 exploit/도주로 정보 제공(정보 수집·전달)
+     · [C] 겁먹어 소극적이나 침대 사수 이탈 없음(발 안 디딤=생존규칙 준수)
+     · growth=[spr, luk]
+   summary_label="세 남매가 정보와 완력을 나눠 저주의 근원을 부순 밤", summary_grade=B
+
+ accrueContribution(grades) (:9189, gradeToPoints S5/A4/B3/C2/D1/F0):
+   레디 += 4(A),  텐바 += 3(B),  루반도 += 3(B)   → pd.contribution 누적.
+ awardEndStats(grades, growth): A=2·B=0~1 스텟을 growth 스탯에 배분(레디 str/luk 등).
+ grantClearTraitRewards(grade="B", …): advancing=true → 보상 특성 3선택지 제시.
+ concludeWithReveal("해결 클리어 (등급 B)", fullReveal=true): 전말 공개(world_rules·해결법 해설).
+
+================================================================================
+ 결과 요약
+================================================================================
+ · 비동기 busy 모델: E1b·E2·E3·E4·E_END 모두 [CAP]이 '사건 직전(nextEvt-1)'에서 시계를 세워
+   반응턴을 부여한 뒤, 다음 JUMP에서 정확히 1회 발화 — STICK/SKIP 없음(단일 사건 기준 정상).
+ · 이동: 레디 zone_D→A→B→D→G→H 를 홉 단위로 이동. 1홉=20분 균일(맵거리 무시) → 시계·서사 괴리.
+ · E3 전투 소집은 GM <SUMMON> 의존(자동 아님). E_END는 자동 종료 아님(GM <CLEAR> 의존).
+ · 평가 정규화(스테이지 평균)는 단일 스테이지엔 미적용 — 캠페인 총평 전용.
+================================================================================
