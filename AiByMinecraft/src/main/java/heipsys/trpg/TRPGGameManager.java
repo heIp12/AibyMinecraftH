@@ -2404,6 +2404,16 @@ public class TRPGGameManager {
             // 1. 클리어 판정
             if (currentPhase == Phase.HORROR) {
                 JsonObject clearTag = ai.parseClearTag(raw);
+                // ★결정타는 반드시 먼저 굴린다★: 같은 응답에 <DICE>가 함께 오면 이 턴엔 <CLEAR>를 처리하지 않는다.
+                //   (버그: 시나리오를 끝내는 결정적 행동에 GM이 <DICE>와 <CLEAR>를 동시에 내면, CLEAR가 먼저 처리돼
+                //    return되면서 주사위(2470)가 아예 안 굴러가고 무판정 즉시 종료 — '주사위가 끝에 굴러 영향 없음'의 실체.)
+                //   → 굴림을 먼저 하고, ★성공한 다음 응답에서만★ CLEAR로 매듭짓게 유도한다.
+                if (clearTag != null && ai.parseDiceTag(raw) != null) {
+                    ai.injectGmSystem("[판정 먼저] 시나리오를 끝내는 결정적 행동은 <DICE>로 먼저 굴려 결과가 나온 뒤에만 끝낼 수 있다. "
+                        + "이번 판정이 ★성공★이면 다음 응답에서 <CLEAR>로 매듭짓고, 실패·부분성공이면 대가·전개를 주고 아직 끝내지 마라. "
+                        + "같은 응답에 <DICE>와 <CLEAR>를 함께 내지 마라(굴림이 무시된다).");
+                    clearTag = null; // 이 턴은 클리어 보류 — 아래로 흘러 <DICE> 굴림을 실제로 수행한다.
+                }
                 if (clearTag != null) {
                     String grade = clearTag.has("grade") ? clearTag.get("grade").getAsString() : "C";
                     // ★위협도 상한★ — 세력이 높으면 '깨끗한 승리' 불가(먹인 대가): 90+ 최대 B, 70~89 최대 A.
