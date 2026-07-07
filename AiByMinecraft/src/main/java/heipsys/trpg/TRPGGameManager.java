@@ -274,6 +274,13 @@ public class TRPGGameManager {
     private final Map<UUID, Integer> preSpawnLastBeat = new ConcurrentHashMap<>();
     /** critical NPC가 마지막으로 행동한 괴담 턴 — 무행동 워치독용 (오래 안 나오면 강제 등장) */
     private int lastNpcBeatTurn = 0;
+    /** ★#163 무행동 자동 스킵(옵트인·기본 off)★: 행동 가능한 ★전원★이 이번 라운드에 행동을 마치면, 3분 무행동
+     *  워치독을 기다리지 않고 즉시 한 걸음(턴·시계) 진행시킨다. turnMode 2(비동기 busy)엔 미적용(그쪽은
+     *  busyClockJumpIfAllBusy가 담당). 컴파일·실플레이 검증이 어려운 턴 로직이라 기본 off로 두고 테스트 때 켠다.
+     *  /trpg setting autoskip on|off. off면 관련 코드가 전부 no-op(기존 동작 100% 보존). */
+    private boolean autoSkipAllActed = false;
+    /** 이번 라운드(마지막 진행 이후)에 행동을 마친 '행동 가능' 플레이어 UUID 집합. 전원이 차면 진행 후 비운다. */
+    private final java.util.Set<UUID> actedSinceProgress = new java.util.HashSet<>();
     /** 마지막 플레이어 입력(행동) 시각(ms) — 무행동 가속 워치독용. 0이면 미설정. */
     private volatile long lastPlayerActionMs = 0L;
     /** 마지막 무행동 가속 발동 시각(ms) — 중복 가속 방지. */
@@ -362,6 +369,28 @@ public class TRPGGameManager {
                 && pd.puppetRecoveryTurns == 0 && !animalForm.contains(pd.uuid)
                 && !("faint".equals(pd.status) && pd.faintTurnsRemaining > 0))
             .collect(Collectors.toList());
+    }
+
+    /** ★#163★ 지금 행동할 수 있는 상태인가(살아 등장 + 완전조종/동물/기절 아님). busyAbleSpawned의 1인 판정 기준과 동일. */
+    private boolean canActNow(PlayerData pd) {
+        return !pd.isDead && spawnedPlayers.contains(pd.uuid)
+            && pd.puppetRecoveryTurns == 0 && !animalForm.contains(pd.uuid)
+            && !("faint".equals(pd.status) && pd.faintTurnsRemaining > 0);
+    }
+
+    /**
+     * ★#163 무행동 자동 스킵★ 행동가능 전원이 이번 라운드 행동을 마쳤을 때 ★가벼운 한 걸음★ 진행.
+     *  무행동 가속(#12)의 무거운 GM TIME_SKIP과 달리, GM 호출 없이 턴·시계 카운터만 조용히 올린다.
+     *  - turnMode 0(고정): nextTurn의 tickClock이 고정 페이스로 시계를 민다(한 라운드=한 턴 진행).
+     *  - turnMode 1(가변): 행동 DUR이 이미 per-action으로 시계를 밀었으므로 ★여기선 카운터만★(이중 진행 방지 — advanceActionClock 호출 안 함).
+     *  이렇게 해야 시계가 안 흐르던 turnMode 0에서 전원 행동 후 즉시 시간·괴담이 진전하고, turnMode 1은 시간이 두 번 흐르지 않는다.
+     *  ★기절 카운터(tickFaintCounters)는 여기서 다시 돌리지 않는다★ — onGmResponse가 이번 행동에 대해 이미 한 번 진행했다
+     *  (워치독은 행동이 없어 직접 돌리지만, 이 경로는 방금 행동이 있었으므로 이중 진행이 된다).
+     */
+    private void advanceRoundAfterAllActed() {
+        state.nextTurn();
+        updateAllScoreboards();
+        gameLogger.logEvent("[자동진행] 행동가능 전원 행동 완료 → 한 걸음(턴 " + state.getCurrentTurn() + ")");
     }
 
     /**
@@ -1063,6 +1092,21 @@ public class TRPGGameManager {
                 : tmSel == 1
                 ? "§a가변 §7(행동 소요시간 DUR로 시계 진행 — 시계 있는 시나리오에서만)"
                 : "§b비동기 busy §7(각자 행동 소요만큼 '행동 중' 잠금 → 시계가 다음 자유 시점으로 점프 · 시계 있는 시나리오)") + " §7— 즉시 적용");
+        } else if (key.equals("autoskip") || key.equals("자동스킵") || key.equals("무행동스킵")) {
+            // ★#163★ 무행동 자동 스킵(옵트인): 행동가능 전원이 행동을 마치면 3분 워치독 없이 즉시 한 걸음 진행.
+            //   실험적 턴 로직이라 기본 off. turnMode 0/1에서만 동작(2는 비동기 busy가 담당).
+            if (sub.length >= 2) {
+                String v = sub[1].toLowerCase();
+                if (v.equals("on") || v.equals("켜기") || v.equals("켬") || v.equals("true") || v.equals("1")) autoSkipAllActed = true;
+                else if (v.equals("off") || v.equals("끄기") || v.equals("끔") || v.equals("false") || v.equals("0")) autoSkipAllActed = false;
+                else { player.sendMessage("§c사용법: §f/trpg setting autoskip <on|off>"); return; }
+            } else {
+                autoSkipAllActed = !autoSkipAllActed; // 값 없으면 토글
+            }
+            if (!autoSkipAllActed) actedSinceProgress.clear();
+            player.sendMessage("§6[설정] 무행동 자동 스킵: " + (autoSkipAllActed
+                ? "§a켜짐 §7(행동가능 전원이 행동을 마치면 즉시 진행 — turnMode 0/1, 실험적)"
+                : "§c꺼짐 §7(기본 — 3분 무행동 워치독으로만 진행)") + " §7— 즉시 적용");
         } else {
             openStartSettings(player);
         }
@@ -1862,6 +1906,7 @@ public class TRPGGameManager {
         resetOverviewCache(); // 새 스테이지 = 새 괴담 → 시나리오 개요 캐시 초기화(다음 사용 시 재생성)
         loadForbiddenWord(); // 금지워드형 괴담의 금지어 로드(entity.forbidden_word)
         lastPlayerActionMs = System.currentTimeMillis(); lastIdleAccelMs = 0L; // 무행동 가속 기준점 초기화
+        actedSinceProgress.clear(); // ★#163★ 새 스테이지 — 라운드 행동 집계 초기화
         lastAutoSaveTurn = -1; // 새 스테이지 시작 — 첫 턴부터 다시 저장되도록
         autoSave();            // 스테이지 시작 시점 즉시 1회 저장(첫 행동 전 중단돼도 이어하기 가능)
     }
@@ -2548,6 +2593,21 @@ public class TRPGGameManager {
                     Player sp = Bukkit.getPlayer(pd.uuid);
                     if (sp != null && sp.isOnline()) sendPreSpawnNarrative(sp, pd);
                 });
+
+            // 12d. ★#163 무행동 자동 스킵(옵트인·기본 off)★: 행동가능 전원이 이번 라운드 행동을 마쳤으면
+            //   3분 무행동 워치독(#12)을 기다리지 않고 즉시 한 걸음 진행한다. turnMode 2(비동기 busy)는
+            //   busyClockJumpIfAllBusy가 담당하므로 제외. AFK 인원이 있어 전원이 못 차면 기존 워치독이 안전망.
+            //   ★flag off면 이 블록 전체가 no-op★ — actedSinceProgress도 건드리지 않아 기존 동작이 100% 보존된다.
+            if (autoSkipAllActed && currentPhase == Phase.HORROR && state.getTurnMode() < 2 && player != null) {
+                PlayerData actedPd = state.getPlayer(player);
+                if (actedPd != null && canActNow(actedPd)) actedSinceProgress.add(player.getUniqueId());
+                java.util.List<PlayerData> able = state.getAllPlayers().stream()
+                    .filter(this::canActNow).collect(Collectors.toList());
+                if (!able.isEmpty() && able.stream().allMatch(pd -> actedSinceProgress.contains(pd.uuid))) {
+                    actedSinceProgress.clear();
+                    advanceRoundAfterAllActed();
+                }
+            }
         });
     }
 
@@ -11456,6 +11516,7 @@ public class TRPGGameManager {
             root.addProperty("phase", currentPhase.name());
             root.addProperty("familiarMode", familiarMode);
             root.addProperty("familiarFilter", familiarFilter);
+            root.addProperty("autoSkipAllActed", autoSkipAllActed); // ★#163★ 옵트인 자동 스킵 토글(이어하기 유지)
             root.addProperty("quality", ai.getGmQuality().name());
             root.addProperty("nextStageUnlocked", nextStageUnlocked);
             root.addProperty("forceRetryAllowed", forceRetryAllowed);
@@ -11543,6 +11604,7 @@ public class TRPGGameManager {
         // ② 세션 설정 복원
         familiarMode      = root.has("familiarMode") && root.get("familiarMode").getAsBoolean();
         familiarFilter    = root.has("familiarFilter") ? root.get("familiarFilter").getAsString() : "random";
+        autoSkipAllActed  = root.has("autoSkipAllActed") && root.get("autoSkipAllActed").getAsBoolean(); // ★#163★ (기본 off)
         nextStageUnlocked = !root.has("nextStageUnlocked") || root.get("nextStageUnlocked").getAsBoolean();
         forceRetryAllowed = root.has("forceRetryAllowed") && root.get("forceRetryAllowed").getAsBoolean();
         if (root.has("quality")) {

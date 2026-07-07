@@ -18,7 +18,7 @@
 
 ## 1. 현행 진단
 
-- **턴 진행**: `TRPGGameManager` + `TurnManager(turnMan)`. 행동은 채팅 입력 → AI 판정 → 서술 큐(`narrativeDelivery`)로 페이스드 출력. 무행동 워치독(#12)·자동스킵(#163 미구현)·기절/조종 스킵 존재. 시계는 `GameStateManager.tickClock`이 턴당 `minutes_per_turn` 고정 진행. → **행동별 소요시간·비동기 개념 없음**(모두가 사실상 동시 1턴).
+- **턴 진행**: `TRPGGameManager` + `TurnManager(turnMan)`. 행동은 채팅 입력 → AI 판정 → 서술 큐(`narrativeDelivery`)로 페이스드 출력. 무행동 워치독(#12)·자동스킵(#163 ★옵트인 구현★: `/trpg setting autoskip on` — 행동가능 전원 행동 시 즉시 한 걸음, turnMode 0/1, 기본 off)·기절/조종 스킵 존재. 시계는 `GameStateManager.tickClock`이 턴당 `minutes_per_turn` 고정 진행. → **행동별 소요시간·비동기 개념 없음**(모두가 사실상 동시 1턴).
 - **시계**: `GameStateManager` — `start_time`~`end_time`, `minutes_per_turn`(고정), `time_visible`, `timeline.main_events`(time/deadline/branches), `advanceTimeline`, `skipTime`, `<TIME_SKIP>`. → 가변 완급 없음(항상 고정 분/턴).
 - **통신**: `deliverDirectMessage`(1:1), `deliverPlayerBroadcast`(@전체 범위 게이트=위험·국지 시 같은 area), `broadcastToKnownContacts`(아는 번호 플레이어만), `handleNpcDirectComm`, `enqueueDelivery`/`processPendingDeliveries`(편지 지연), `entityInterferes`/`commModality`/`tamperText`(변조). `MapManager.sameArea`(보수적 area 판정). → **차단은 area/위험 위주, 구역별 봉쇄·통로봉쇄·매체별 지연·수집범위·새수단 판정 없음.** @전체는 즉시 전달(다음턴 지연·선별 없음).
 - **맵**: `MapManager` — `zones/area/connections/distances`, `visitedZones`, `visibleAreas/knownAreaNames`(방문·현재만 노출=자동등록 부분구현), `sameArea`. `.gdam constraints.gated_zones`(정적), `comm_media`. → 자동등록은 area 단위로 이미 있음. 런타임 구역 봉쇄·매체 상태 없음.
@@ -125,7 +125,7 @@ int    actionStartMin    // 행동 시작 분(경과 계산)
 ## 5. 단계적 구현 순서 (저위험→고위험, 작은 PR 단위)
 1. **[저]** 시계 분 누적화(`clockMin`) + `<DUR>` 파싱(없으면 기본) — 표시/기록만, 스킵 미적용. 회귀 위험 낮음.
 2. **[저]** 전원 행동불능 자동종료(#2) — 보수적 게이트(K회 확인·회복가망 체크). 종료 경로는 기존 `concludeWithReveal` 재사용.
-3. **[중]** 무행동 자동 스킵(#163) — 워치독 재활용.
+3. **[중]** 무행동 자동 스킵(#163) — 워치독 재활용. ★구현됨(옵트인 플래그 `autoSkipAllActed`, 기본 off)★: 행동가능 전원이 라운드 행동을 마치면 `advanceRoundAfterAllActed`가 즉시 한 걸음(turnMode 0=시계 tick, 1=카운터만). AFK 스트래글러는 기존 3분 워치독이 안전망. turnMode 2는 busy 점프가 담당하므로 제외. ※개별 스트래글러 N초 자동 '관망'(§2.2-3의 세밀판)은 추후.
 4. **[중]** 통신 파이프라인 `resolveComm` 도입(차단·지연만; 수집·왜곡은 기존 재사용). 구역봉쇄 태그.
 5. **[중]** @전체 지연큐(#109) — 코드선별+애매만 GM+비용폴백.
 6. **[고]** 비동기 busy 턴 본체(입력 게이팅·시계 점프·소집·busy중단재개) — 코어 루프 재구조화. ★가장 위험.
