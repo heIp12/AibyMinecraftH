@@ -476,7 +476,7 @@ type 값 규칙: "written_book"=책/일기/문서류, "paper"=쪽지/메모, "ma
   * ★시각 일관성★: start_time은 도입부 장면이 벌어지는 시각과 ★반드시 일치★해야 한다(스코어보드가 이 값을 표시하므로, 도입 서술이 다른 시각을 말하면 괴리가 생긴다). 도입 장면에서 시계·전광판·"몇 분 뒤" 같은 시간 단서를 쓸 거라면 그 값이 start_time과 맞아떨어지게 잡아라.
 - minutes_per_turn: 1턴(행동 1회)에 흐르는 인게임 분(보통 10~30). time_visible: 플레이어가 기본적으로 시간을 알 수 있으면 true, 시간 감각을 빼앗는 괴담이면 false.
 - main_events: 개입이 없으면 반드시 일어나는 "큰 사건"만 절대 시각으로 명시한다. NPC의 세부 반응·분기 행동은 넣지 말 것(GM 재량).
-  * 각 사건 필드: id("E1","E2"…), time("HH:MM"), label(사건명), condition(발생 조건), effect(결과 1문장), blockable(플레이어가 막을 수 있으면 true), is_end(종료 트리거면 true)
+  * 각 사건 필드: id("E1","E2"…), time("HH:MM"), label(사건명), condition(발생 조건), effect(결과 1문장), blockable(플레이어가 막을 수 있으면 true), is_end(종료 트리거면 true), threat(★못 막고 터졌을 때 위협도 상승분 5~30 — 위협적인 사건일수록 크게: 잔잔한 조짐 5~10, 뚜렷한 격상·전투·정체 노출 15~25, 대범람·본격 침공 25~30, 종국은 크게. 엔진이 이 값만큼 위협도를 자동으로 올린다★)
   * 시간 순서대로 3~6개. 마지막엔 반드시 is_end:true 사건 1개(보통 end_time과 같은 시각, effect:"끝")를 둔다.
   * blockable:true 사건은 플레이어가 저지할 수 있는 사건(문 잠금 등), false는 반드시 일어나는 사건(괴담 각성 등).
   * branches(선택): 사건에 분기를 붙인다. {"auto":{"condition":"막지 못하면","next":"E3"},
@@ -631,16 +631,16 @@ critical NPC는 한자리 고정이 아니다 — 메인/사이드 사건에 참
     "minutes_per_turn": 15,
     "time_visible": true,
     "main_events": [
-      {"id":"E1","time":"14:00","label":"","condition":"일상 파트 종료","effect":"","blockable":false},
-      {"id":"E1b","time":"15:30","label":"","effect":"","side":true, "side_scale":"small", "deadline":"17:00", "event_role":"지속출혈"},
+      {"id":"E1","time":"14:00","label":"","condition":"일상 파트 종료","effect":"","blockable":false,"threat":8},
+      {"id":"E1b","time":"15:30","label":"","effect":"","side":true, "side_scale":"small", "deadline":"17:00", "event_role":"지속출혈","threat":12},
       // ↑ side:true = 본선과 별개의 중규모(곁가지) 사건(완급). 개수는 스케일별 분량 가이드 참고.
       //   side_scale=small|medium, deadline=마감 시각, event_role=결과유형 11종 중 하나
       //   (해결관문|탈출관문|힌트관문|등장관문|방치강화|즉시파국|방해유발|인명희생|지속출혈|함정강화|정보대가).
       //   관문형만으로 다 채우지 말 것(교착 금지) · effect/label에 '무엇을·언제까지·안 하면 무슨 일' 구체적으로.
-      {"id":"E2","time":"17:00","label":"","condition":"","effect":"","blockable":true,
+      {"id":"E2","time":"17:00","label":"","condition":"","effect":"","blockable":true,"threat":18,
        "branches":{"auto":{"condition":"막지 못하면","next":"E3"},"intervene":[{"condition":"탈출로 확보","next":"E3-B"}]}},
       {"id":"E3","time":"20:00","label":"","condition":"","effect":"","blockable":true,
-       "combat":true, "key_clue":""},
+       "combat":true, "key_clue":"","threat":28},
       // ↑ combat:true = 체력·근력이 통하는 물리 위기(하수인·변이체 등 '싸울 수 있는 대상' 등장). effect에 등장 대상·돌파 수단을 구체적으로.
       //   key_clue = 이 사건을 직접 겪어야만 얻는 결정적 단서(없으면 다른 단서만으로 잘못된 풀이로 감). 최소 1개 사건에 반드시.
       {"id":"E_END","time":"01:00","label":"","condition":"미해결","effect":"끝","blockable":false,"is_end":true}

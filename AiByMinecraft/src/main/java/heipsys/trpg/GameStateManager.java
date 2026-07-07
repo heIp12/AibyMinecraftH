@@ -574,7 +574,15 @@ public class GameStateManager {
             //   GM <THREAT> 태그에만 맡기면 위협이 0에 머물러 시스템이 무의미(실측: 4시간에 변동 2회). 그래서 사건이
             //   터질 때마다 코드가 위협을 올린다 — 전투 더 크게, 종국 가장 크게. 파훼 진척(-)은 GM 태그가 맡는다.
             //   ★상승분을 GM 문맥·뷰어 로그에 드러낸다(요청: 사건 발생→위협도 상승 표시).★
-            int tRise = evEnd ? 18 : evCombat ? 15 : 9;
+            // ★위협 강도 스케일★: 사건이 명시한 threat(생성기, 1~45)이 있으면 그 값을, 없으면 종국/전투/일반으로 추론.
+            //   위협적인 사건일수록 더 크게 올린다(사용자 요청). 40+ 사건 하나로도 밴드(경계·격상)를 크게 밟는다.
+            int tRise;
+            if (ev.has("threat") && !ev.get("threat").isJsonNull()) {
+                int tv; try { tv = ev.get("threat").getAsInt(); } catch (Exception ex) { tv = evEnd ? 20 : evCombat ? 15 : 10; }
+                tRise = Math.max(1, Math.min(45, tv));
+            } else {
+                tRise = evEnd ? 20 : evCombat ? 15 : 10;
+            }
             int tAfter = adjustThreat(tRise);
             justFiredEvents.add(label + (effect.isEmpty() ? "" : " — " + effect)
                 + "  [이 사건으로 위협도 +" + tRise + " → " + tAfter + "/100]");
