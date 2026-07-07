@@ -463,17 +463,27 @@ public class MapManager {
         return numberLabels(visibleZones(pd, full, view), zoneNames, cur);
     }
 
-    /** id 집합을 "[n] 이름" 목록으로(순회 순서대로 1..N 번호). 현위치는 §a▸ 강조. drawGraph 박스 번호와 순서 일치. */
+    /** id 집합을 "[n] 이름" 목록으로(순회 순서대로 1..N 번호). 현위치는 §a▸ 강조. drawGraph 박스 번호와 순서 일치.
+     *  ★짧은 이름(≤4글자)은 지도에 직접 그려지므로 범례에서 생략★ — 단, 번호 n은 그대로 소비해 지도 [n]과 어긋나지 않게 한다. */
     private List<String> numberLabels(Set<String> ids, Map<String, String> names, String cur) {
         List<String> out = new ArrayList<>();
         int n = 0;
         for (String id : ids) {
             n++;
             String nm = names.getOrDefault(id, id);
+            if (isShortMapName(nm)) continue; // 지도 박스에 이름이 직접 그려짐 → 범례 중복 생략(n은 이미 증가해 번호 일치 유지)
             if (nm.length() > 16) nm = nm.substring(0, 15) + "…";
             out.add(id.equals(cur) ? ("§a▸[" + n + "] " + nm) : ("§7[" + n + "] §f" + nm));
         }
         return out;
+    }
+
+    /** 지도 박스에 이름을 직접 그릴 만큼 짧은가(≤4글자). 짧으면 이름을, 길면 [n]을 그린다.
+     *  drawGraph·numberLabels 양쪽이 이 판정을 공유해야 지도 [n] ↔ 범례 [n] 번호가 일치한다. */
+    private static boolean isShortMapName(String nm) {
+        if (nm == null) return false;
+        String t = nm.trim();
+        return !t.isEmpty() && t.length() <= 4;
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -557,20 +567,22 @@ public class MapManager {
                 g.drawLine(pa[0], pa[1], pb[0], pb[1]);
             }
         }
-        // ★방 이름은 지도에 안 그린다(글씨가 지도를 가리던 문제)★ — 박스엔 번호 [n]만 박고, 이름은 스코어보드
-        //   범례(currentViewLabels)로 뺀다. 번호는 revealed 순회 순서 = 범례 순서와 동일 → 지도 [n] ↔ 스코어보드 [n] 일치.
+        // ★짧은 방 이름(≤4글자)은 지도에 직접 그린다★ — 긴 이름만 [n]으로 두고 스코어보드 범례(currentViewLabels)에서
+        //   매칭한다(예전엔 긴 이름 글씨가 지도를 가리던 문제로 전부 [n]만 박았음 — 사용자 요청으로 짧은 이름은 복원).
+        //   ★short 판정은 numberLabels와 반드시 동일해야★ 번호 n이 어긋나지 않는다(둘 다 revealed 순회 = 동일 순서).
         int n = 0;
         for (String id : revealed) {
             n++;
             int[] p = pos.get(id); if (p == null) continue;
-            String label = "[" + n + "]";
+            String nm = names.get(id);
+            String label = isShortMapName(nm) ? nm.trim() : ("[" + n + "]");
             int tw = fm.stringWidth(label);
-            int bw = tw + 8, bh = fm.getAscent() + 4;
+            int bw = Math.min(maxBoxW, tw + 8), bh = fm.getAscent() + 4;
             int bx = clamp(p[0] - bw / 2, rx, rx + rw - bw);
             int by = clamp(p[1] - bh / 2, ry, ry + rh - bh);
             g.setColor(id.equals(cur) ? C_BOX2 : C_BOX); g.fillRect(bx, by, bw, bh);
             g.setColor(C_BORDER);                          g.drawRect(bx, by, bw, bh);
-            g.setColor(C_TEXT);                            g.drawString(label, bx + 4, by + fm.getAscent());
+            g.setColor(C_TEXT);                            g.drawString(fit(fm, label, bw - 6), bx + 4, by + fm.getAscent());
             if (id.equals(cur)) {
                 int px = bx + 4, topY = by - 1;
                 g.setColor(C_POLE); g.drawLine(px, topY, px, topY - 11);

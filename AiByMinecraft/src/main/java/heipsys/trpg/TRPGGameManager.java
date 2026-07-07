@@ -132,6 +132,10 @@ public class TRPGGameManager {
     private String actionPace = "normal";
     /** 완급 배수: slow=0.5(행동이 절반의 시간만 소모) / fast=1.6 / normal=1.0. durEff에 곱해 시계·busy 진행에 반영. */
     private double paceMult() { return "slow".equals(actionPace) ? 0.5 : "fast".equals(actionPace) ? 1.6 : 1.0; }
+    /** ★사소한 행동 시간 과소모 방지★ 가변/비동기 모드에서 GM이 <DUR>을 누락한 행동의 기본 소요(분).
+     *  예전엔 고정턴 분(minutesPerTurn 15~20)을 통째로 흘려 사소한 행동에도 20분씩 소모됐다 →
+     *  DUR 누락은 '짧은 미상 행동'으로 보고 작은 값만 흘린다(minutesPerTurn가 더 작으면 그쪽을 따른다). */
+    private static final int DUR_MISSING_MIN = 3;
 
     /** 캐릭터 생성 완료 대기 중인 플레이어 UUID 집합 */
     private final Set<UUID> pendingCreation    = ConcurrentHashMap.newKeySet();
@@ -2355,9 +2359,9 @@ public class TRPGGameManager {
                  .append(" 같은 구역이면 그 모습을 WITNESS로 동료에게 전하고, 아니면 한 줄로만 곁들여라.]");
         }
 
-        // ★방송 설비로 건물 전체에 외치는 '대규모 발화' → 시스템이 ★모든 플레이어에게 직접★ 전달한다.
-        //   (GM 서술/WITNESS에만 의존하면 다른 플레이어에게 누락되던 문제 — 번호 공지·집결 호출 등 협업 수단 보장)
-        if (looksLikeBroadcast(message)) deliverPlayerBroadcast(player, pd, message);
+        // ★방송(PA) 판정은 GM이 한다★: 입력 즉시 키워드로 추정해 송출하던 것을 폐지(‘방송을 끄고 말한다’까지 방송되던 오판).
+        //   이제 GM이 응답에서 <BROADCAST>로 '진짜 방송'이라 판정했을 때만, onGmResponse에서 같은 건물 인원에게 결정적 전달한다.
+        //   (그 응답 턴에 재생 — 입력 즉시가 아니라 GM이 판단한 뒤.)
 
         // 특성 버튼 관련 단어 처리는 TurnManager가 GM AI로 전달 (gmCtx=소지품·보정 등 GM전용 지시는 로그 미기록)
         boolean accepted = turnMan.handleAction(player, actionMessage, gmSystemPrompt, gmCtx.toString());
@@ -2400,6 +2404,16 @@ public class TRPGGameManager {
             // 1. 클리어 판정
             if (currentPhase == Phase.HORROR) {
                 JsonObject clearTag = ai.parseClearTag(raw);
+                // ★결정타는 반드시 먼저 굴린다★: 같은 응답에 <DICE>가 함께 오면 이 턴엔 <CLEAR>를 처리하지 않는다.
+                //   (버그: 시나리오를 끝내는 결정적 행동에 GM이 <DICE>와 <CLEAR>를 동시에 내면, CLEAR가 먼저 처리돼
+                //    return되면서 주사위(2470)가 아예 안 굴러가고 무판정 즉시 종료 — '주사위가 끝에 굴러 영향 없음'의 실체.)
+                //   → 굴림을 먼저 하고, ★성공한 다음 응답에서만★ CLEAR로 매듭짓게 유도한다.
+                if (clearTag != null && ai.parseDiceTag(raw) != null) {
+                    ai.injectGmSystem("[판정 먼저] 시나리오를 끝내는 결정적 행동은 <DICE>로 먼저 굴려 결과가 나온 뒤에만 끝낼 수 있다. "
+                        + "이번 판정이 ★성공★이면 다음 응답에서 <CLEAR>로 매듭짓고, 실패·부분성공이면 대가·전개를 주고 아직 끝내지 마라. "
+                        + "같은 응답에 <DICE>와 <CLEAR>를 함께 내지 마라(굴림이 무시된다).");
+                    clearTag = null; // 이 턴은 클리어 보류 — 아래로 흘러 <DICE> 굴림을 실제로 수행한다.
+                }
                 if (clearTag != null) {
                     String grade = clearTag.has("grade") ? clearTag.get("grade").getAsString() : "C";
                     // ★위협도 상한★ — 세력이 높으면 '깨끗한 승리' 불가(먹인 대가): 90+ 최대 B, 70~89 최대 A.
@@ -2459,6 +2473,18 @@ public class TRPGGameManager {
 
             // 4. 서술 + WITNESS 전달 (당사자에게만)
             deliverNarrative(player, raw);
+
+            // 4-B. ★방송(PA) — GM이 <BROADCAST>로 '진짜 방송'이라 판정했을 때만★ 같은 건물 인원에게 결정적 전달(이 응답 턴에 재생).
+            //   판단은 GM이 한다 → '방송을 끄고 말한다'류 오판 없음. from 비면 발신자(anchor) 표시명.
+            if (player != null) {
+                JsonObject bcast = ai.parseBroadcastTag(raw);
+                if (bcast != null) {
+                    PlayerData bpd = state.getPlayer(player);
+                    String bFrom    = bcast.has("from")    && !bcast.get("from").isJsonNull()    ? bcast.get("from").getAsString()    : "";
+                    String bContent = bcast.has("content") && !bcast.get("content").isJsonNull() ? bcast.get("content").getAsString() : "";
+                    if (bpd != null && !bContent.isBlank()) deliverPlayerBroadcast(player, bpd, bFrom, bContent);
+                }
+            }
 
             // 4a. 주사위 판정 연출 — GM이 <DICE> 태그로 실제 굴린 숫자를 주면 그 숫자를 강조 연출.
             //     태그가 없고 판정 키워드만 있으면 기존 무난한 연출로 폴백. ★서술 배달 뒤로 미룬다(present).★
@@ -2576,7 +2602,9 @@ public class TRPGGameManager {
                 PlayerData durPd = player != null ? state.getPlayer(player) : null;
                 gameLogger.write("시간", durPd != null ? durPd.gmDisplayName() : "", "[행동 소요 " + durMin + "분]");
             }
-            int durEff = durMin > 0 ? durMin : state.getMinutesPerTurn();
+            // ★사소한 행동 시간 과소모 방지★: DUR 누락 행동은 고정턴 분(15~20) 통째가 아니라 '짧은 미상 행동'(DUR_MISSING_MIN)만 흘린다.
+            //   (실측: DUR 누락 3회가 20분씩 흘러 경과 시간의 절반을 잡아먹었다.) 오래 걸리는 행동은 GM이 DUR로 명시.
+            int durEff = durMin > 0 ? durMin : Math.min(state.getMinutesPerTurn(), DUR_MISSING_MIN);
             durEff = Math.max(1, (int) Math.round(durEff * paceMult())); // ★#151 완급★ slow면 같은 행동이 시간을 적게 소모(중요 순간 촘촘)
             if (state.getTurnMode() == 1) {
                 state.advanceActionClock(durEff); // 가변: 행동 소요만큼 시계 진행
@@ -5712,8 +5740,7 @@ public class TRPGGameManager {
 
         StringBuilder playerInfo = new StringBuilder();
         for (PlayerData pd : allPd) {
-            playerInfo.append("- ").append(pd.name);
-            if (!pd.charName.isEmpty()) playerInfo.append("(").append(pd.charName).append(")");
+            playerInfo.append("- ").append(pd.gmDisplayName()); // ★계정명 미전송★ 프롬프트엔 캐릭터명(gmDisplayName)만
             playerInfo.append(": ").append(pd.isDead ? "사망" : pd.status);
             playerInfo.append(", HP=").append(pd.hp[0]).append("/").append(pd.hp[1]);
             playerInfo.append(", SAN=").append(pd.san[0]).append("/").append(pd.san[1]);
@@ -5732,9 +5759,7 @@ public class TRPGGameManager {
                 java.util.List<String> nl;
                 synchronized (pd.narrativeLog) { nl = new ArrayList<>(pd.narrativeLog); }
                 if (nl.isEmpty()) continue;
-                perPlayer.append("[").append(pd.name);
-                if (!pd.charName.isEmpty()) perPlayer.append("(").append(pd.charName).append(")");
-                perPlayer.append(" 개인 행동로그]\n");
+                perPlayer.append("[").append(pd.gmDisplayName()).append(" 개인 행동로그]\n"); // 계정명 미전송
                 for (String ln : nl) perPlayer.append("  ").append(ln).append("\n");
             }
         }
@@ -5752,8 +5777,7 @@ public class TRPGGameManager {
             for (PlayerData pd : allPd) {
                 if (!pd.roleAssigned && pd.contribution == 0) continue;
                 double avg = pd.contribution / (double) stages;
-                sb2.append("- ").append(pd.name);
-                if (!pd.charName.isEmpty()) sb2.append("(").append(pd.charName).append(")");
+                sb2.append("- ").append(pd.gmDisplayName()); // 계정명 미전송
                 sb2.append(": 스테이지 평균 기여 ").append(String.format("%.1f", avg)).append("/5")
                    .append(" (누적 ").append(pd.contribution).append("점 ÷ ").append(stages).append("스테이지)\n");
             }
@@ -5796,8 +5820,8 @@ public class TRPGGameManager {
             + "role_label 예시: 핵심 해결자, 정보 수집가, 정보 전달자, 팀 지원자, 생존자, 방관자, 사고뭉치, 놀았음, 산화한 영웅\n"
             + "★ growth: 이 플레이어가 ★이번 시나리오 '행동'으로 실제 단련한 스탯★ 1~2개를 str/cha/luk/spr 중에서 고른다(종료 보상 스텟 배분용).\n"
             + "  - 전투·완력·돌파=str / 설득·교섭·연기=cha / 도박·요행·위기모면=luk / 통찰·관찰·정신버팀=spr. 반드시 실제 행동 근거로만 고른다(무행동이면 빈 배열).\n"
-            + "player 필드: 위 '플레이어 목록'의 이름(괄호 앞 부분)을 그대로 사용한다. 빠짐없이 전원 평가한다.\n"
-            + "★ 단 player 필드는 ★내부 식별자★일 뿐이다 — role_label·desc 등 사람이 읽는 텍스트에는 계정/영문 ID(예: heIp12)를 절대 쓰지 말고 행동만 서술하라(이름이 필요하면 괄호 안 캐릭터명).\n\n"
+            + "player 필드: 위 '플레이어 목록'의 이름을 그대로 사용한다(빠짐없이 전원 평가). 같은 이름이 둘이면 '배역'으로 구분하라.\n"
+            + "★ role_label·desc 등 사람이 읽는 텍스트에는 인물의 이름 그대로만 쓰고 행동을 서술하라(내부 ID·영문 식별자 금지).\n\n"
             + "★ 출력 형식(G20): 플레이어마다 '항목별 평가'를 여러 개 만든다. 각 항목(item)은\n"
             + "  desc='<그 플레이어의 구체적 행동·판단·결과 한 줄>', grade='<S~F>' 이다.\n"
             + "  잘한 행동(S/A)과 못한 행동(D/F)을 섞어서 사실대로 나열하라(보통 2~4개).\n"
@@ -5875,24 +5899,31 @@ public class TRPGGameManager {
                 String total = getStr(e, "total");
                 if (total.isBlank()) total = getStr(e, "grade");
 
+                // ★프롬프트엔 계정명을 안 보낸다(charName/직업으로 식별)★ → AI가 돌려준 player를 실제 플레이어로 매칭한다.
+                //   이름/캐릭터명/배역id/표시명 어느 것으로 와도 잡고, ★내부 grades/growth 키는 계정명(epd.name)으로 정규화★한다
+                //   (grantClearTraitRewards 등 하위 소비가 계정명 키를 그대로 쓰도록 유지 — 다운스트림 무변경).
+                PlayerData epd = state.getAllPlayers().stream()
+                    .filter(p -> p.name.equalsIgnoreCase(pName)
+                              || (p.charName != null && !p.charName.isEmpty() && p.charName.equalsIgnoreCase(pName))
+                              || (p.roleId != null && !p.roleId.isEmpty() && p.roleId.equalsIgnoreCase(pName))
+                              || p.gmDisplayName().equalsIgnoreCase(pName))
+                    .findFirst().orElse(null);
+                String key = epd != null ? epd.name : pName; // 내부 조회 키(계정명으로 정규화)
+
                 // ★ grantClearTraitRewards가 쓰는 이름→총합등급 맵은 반드시 유지한다.
-                if (!pName.isBlank() && !total.isBlank()) grades.put(pName, total);
+                if (!key.isBlank() && !total.isBlank()) grades.put(key, total);
 
                 // 행동 기반 성장 스탯 파싱(str/cha/luk/spr) — 종료 보상 스텟 배분에 사용
-                if (!pName.isBlank() && e.has("growth") && e.get("growth").isJsonArray()) {
+                if (!key.isBlank() && e.has("growth") && e.get("growth").isJsonArray()) {
                     java.util.List<String> gs = new java.util.ArrayList<>();
                     for (JsonElement ge : e.getAsJsonArray("growth")) {
                         String s = ge.getAsString().trim().toLowerCase();
                         if (s.equals("str") || s.equals("cha") || s.equals("luk") || s.equals("spr")) gs.add(s);
                     }
-                    if (!gs.isEmpty()) growth.put(pName, gs);
+                    if (!gs.isEmpty()) growth.put(key, gs);
                 }
 
-                // 헤더 줄: ★캐릭터명(직업)★ [역할] — 계정명 절대 노출 금지(gmDisplayName 사용)  예) 한소율(프리랜서) [핵심해결자]
-                // (pName=계정명은 위 grades/growth 맵의 내부 조회 키로만 쓰고, 화면 표시엔 절대 쓰지 않는다.)
-                PlayerData epd = state.getAllPlayers().stream()
-                    .filter(p -> p.name.equalsIgnoreCase(pName) || p.charName.equalsIgnoreCase(pName))
-                    .findFirst().orElse(null);
+                // 헤더 줄: ★캐릭터명(직업)★ [역할] — 계정명은 화면(메타)에만.  예) 한소율(프리랜서) [핵심해결자]
                 String who;
                 if (epd != null) {
                     who = epd.gmDisplayName(); // charName → 직업 → "이름 모를 인물"
@@ -6877,7 +6908,7 @@ public class TRPGGameManager {
 
         StringBuilder prompt = new StringBuilder();
         prompt.append("## 미등장 배역 서술 요청\n");
-        prompt.append("아직 이야기에 합류하지 않은 ").append(pd.name)
+        prompt.append("아직 이야기에 합류하지 않은 ").append(pd.gmDisplayName())
               .append("(").append(pd.age).append("세, ").append(pd.job).append(")의\n");
         prompt.append("현재 순간을 2인칭 2~3문장으로 서술한다.\n\n");
         prompt.append("### 현재 장면 가이드\n").append(beatGuide).append("\n\n");
@@ -8075,6 +8106,15 @@ public class TRPGGameManager {
                 && (msg.contains("전체") || msg.contains("전원") || msg.contains("모두") || msg.contains("다들") || msg.contains("전 직원")))
             device = true;
         if (!device) return false;
+        // ★송출 중단·부정 제외★: 방송을 ★끄거나·막거나·하지 말라는★ 맥락은 송출이 아니다 —
+        //   '방송을 끄고/멈추고/차단하고 말한다', '방송을 하면 안 된다고 말한다'의 발화는 평범한 대사(끄면서 하는 말).
+        //   방송을 언급만 해도 켜진 것으로 오판해 '끄고 말한' 대사가 방송으로 나가던 버그 수정.
+        if (containsAny(msg, "방송을 끄", "방송 끄", "방송을 꺼", "방송 꺼", "방송을 껐", "방송 끔",
+                "방송을 멈", "방송 멈", "방송을 중단", "방송 중단", "방송을 차단", "방송 차단",
+                "방송을 종료", "방송 종료", "방송을 정지", "방송 정지", "방송을 내리", "방송을 내려",
+                "방송을 끊", "마이크를 끄", "마이크 끄", "스피커를 끄",
+                "방송을 하면 안", "방송하면 안", "방송을 하지 마", "방송을 하지말"))
+            return false;
         // ★청취(수동) 제외★: '방송을 듣/들으며 · 방송이 들린다/나온다/흘러나온다 · 방송 소리' 등은 방송을 ★듣는★ 상황이지
         //   내가 ★내보내는★ 게 아니다. (예: "방송을 들으며 '가자' 이동한다" → 방송이 아니라 평범한 행동 서술)
         //   방송을 언급했다고 무조건 송출되어 평범한 채팅이 방송으로 오인되던 불만을 수정.
@@ -8131,10 +8171,12 @@ public class TRPGGameManager {
      * GM 서술/WITNESS에만 의존하던 누락을 막아, 번호 공지·집결 호출 같은 협업을 보장한다.
      * 일방향 방송이므로 연락처를 강제 교환하지 않는다(들은 사람은 공지된 번호를 직접 눌러 연락 가능).
      */
-    private void deliverPlayerBroadcast(Player sender, PlayerData senderPd, String message) {
-        String content = extractSpoken(message);
-        if (content.isBlank()) return;
-        String disp = senderPd.gmDisplayName();
+    /** GM이 &lt;BROADCAST&gt;로 '진짜 방송'이라 판정했을 때만 호출 — 내용·화자는 GM 제공. 같은 건물 인원에게 결정적 전달.
+     *  fromDisp가 비면 발신자(anchor)의 표시명을 쓴다. sender/senderPd는 도달범위·피드백의 기준(anchor). */
+    private void deliverPlayerBroadcast(Player sender, PlayerData senderPd, String fromDisp, String content) {
+        if (content == null || content.isBlank()) return;
+        content = content.trim();
+        String disp = (fromDisp != null && !fromDisp.isBlank()) ? fromDisp.trim() : senderPd.gmDisplayName();
         // ★도달 범위 게이트★: PA는 같은 대분류(건물·시설) 안에서만 결정적 전달(멀리·밖은 GM 서술로 처리).
         //   소리 위험/침묵요구 상황이면 크게 못 외치므로 같은 zone(바로 근처)으로 ★축소★한다.
         boolean risky = soundDangerous();
@@ -8155,21 +8197,21 @@ public class TRPGGameManager {
                 heard++;
             }
         }
-        sender.sendMessage(heard > 0 ? ("§7[방송 송출 — " + heard + "명에게 전달됨]" + (risky ? " §8(소리 위험 — 가까운 곳만 닿음)" : ""))
-                                     : (risky ? "§8(소리를 크게 낼 수 없는 상황 — 방송이 멀리 닿지 않았습니다.)"
-                                              : "§8(방송했지만 같은 건물에 들을 다른 인원이 없습니다.)"));
+        if (sender != null && sender.isOnline())
+            sender.sendMessage(heard > 0 ? ("§7[방송 전달 — " + heard + "명에게 닿음]" + (risky ? " §8(소리 위험 — 가까운 곳만)" : ""))
+                                         : (risky ? "§8(소리를 크게 낼 수 없어 방송이 멀리 닿지 않았습니다.)"
+                                                  : "§8(같은 건물에 들을 다른 인원이 없습니다.)"));
         state.log("comm", senderPd.name, "[방송] " + content);
         String bNet = commNetworkKey(senderPd); // 폐쇄망(무전) 방송이면 그 망 접속자만 들었을 수 있음(PA는 개방)
         gameLogger.logComm("broadcast", disp, heardNames, content, bNet); // 뷰어 통화내역: 방송 수신자 기록
         noteEntityIntel(3, disp, content, bNet != null ? bNet + "망 방송" : "방송"); // 방송=개방 채널 → 괴담 수집 강함
-        // GM·NPC 인지: 방송은 건물 전체로 퍼진 큰 행동. 내용은 시스템이 이미 전달했으니 중복 WITNESS 금지.
+        // 방송은 이미 GM이 <BROADCAST>로 판정·서술했다(이 응답 안에서). 시스템은 배달만 했으니 재서술은 요구하지 않고,
+        //   범위·괴담 개입만 다음 서술에 반영하도록 짧게 알린다(같은 문구 <WITNESS> 중복 금지).
         if (currentPhase == Phase.HORROR || currentPhase == Phase.DAILY) {
-            ai.injectGmSystem("[방송 송출] " + disp + "이(가) 방송 설비로 외쳤다: \"" + content
-                + "\". 이 문구는 시스템이 ★같은 건물(대분류) 안 인원에게만★ 전달했다(같은 문구를 다시 <WITNESS>로 중복 전달 금지). "
-                + "★범위★: 시스템이 이미 같은 건물·시설 안 사람에게만 닿게 처리했다 — 다른 건물·바깥·먼 곳의 인원은 ★못 들은 것으로★ 다음 서술에 반영하라(광역 라디오·도시 방송 설정이면 서술로 넓게 확장 가능). 방송 설비가 없거나 소리가 위험한 상황이면 육성 외침이 가까운 곳까지만 닿았음을 반영하라. "
-                + "장면(스피커·반향)과 결과를 서술하고, 같은 건물의 소통 가능한 NPC들도 들은 것으로 반영하라. "
-                + "★괴담 개입★: 통신·소리를 감지·간섭하는 괴담이면 이 방송을 ★듣고 반응하거나 능동적으로 끼어들 수 있다★(평범한 안내 방송엔 둔감한 괴담은 무시). "
-                + "★단 변조(왜곡)는 발신자에게 은폐(#216)★ — 발신자에게 '네 방송이 이렇게 바뀌어 되돌아왔다'고 드러내지 마라(발신자는 자기 말이 그대로 나간 줄 안다). 왜곡은 ★듣는 쪽(다른 인원)★에게만 다르게 닿거나, 스피커의 잡음·이상 징후·이후 결과로만 은근히 드러내라 — 발신자 본인이 자기 발화가 변조됐음을 직접 확인하게 만들지 마라.");
+            ai.injectGmSystem("[방송 전달됨] " + disp + "의 방송 \"" + content + "\"을(를) 시스템이 ★같은 건물 안 인원에게만★ 전달했다"
+                + "(같은 문구를 <WITNESS>로 중복 전달 금지 · 다른 건물·바깥·먼 곳은 못 들음 — 광역 라디오·도시 방송 설정이면 서술로 넓게 확장 가능). "
+                + "통신·소리에 반응하는 괴담이면 이 방송을 듣고 ★다음 전개에서 반응·개입★할 수 있다(평범한 안내엔 둔감한 괴담은 무시). "
+                + "★변조는 발신자에게 은폐(#216)★ — 듣는 쪽(타인)에게만 다르게 닿거나 잡음·이상 징후·결과로만 드러내고, 발신자 본인엔 자기 말이 그대로 나간 것으로 둬라.");
         }
     }
 

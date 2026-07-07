@@ -470,12 +470,17 @@ cooldown_turns: B~D급이므로 능동이면 0~2, 수동이면 반드시 0.
         int    effBonus  = oBonus + Math.max(0, powerBonus);  // 실효 파워 가산 (표시 등급엔 미반영)
         // 표시(명목) 등급은 maxGrade로 클램프해 인플레를 막되, ★실효 파워는 약체 보정분만큼 상한을 완화★한다.
         //   → 약하게 시작한 사람이 '같은 표시 등급이라도 더 강한 효과'를 받아, 강하게 시작한 사람을 따라잡고 넘어설 수 있다(역전 성장).
-        String effCap    = clampGrade(bumpGrade(maxGrade, Math.min(2, Math.max(0, powerBonus))), "S");
-        String myNominal = clampGrade(bumpGrade(bestPlayer != null ? computeUpgradeGrade(bestPlayer) : "B", gradeBoost), maxGrade); // 표시(명목)
+        // ★강화는 현재 등급 밑으로 내려가지 않는다★: 스테이지 상한(maxGrade)이 보유 특성의 현재 등급보다 낮아도(예: 1스테이지 상한 B),
+        //   그 특성의 강화 상한은 '현재 등급'까지는 보장한다 — S등급 특성으로 시작하면 상한 B에 막혀 'S→B 강화'(사실상 강등)가 뜨던 버그.
+        //   (스테이지 상한의 목적은 ★새 등급 획득/인플레 억제★이지, 이미 가진 특성을 강등시키는 게 아니다.)
+        String myCap     = (bestPlayer != null && gradeToInt(bestPlayer.grade) > gradeToInt(maxGrade)) ? bestPlayer.grade : maxGrade;
+        String mapCap    = (bestMap    != null && gradeToInt(bestMap.grade)    > gradeToInt(maxGrade)) ? bestMap.grade    : maxGrade;
+        String effCap    = clampGrade(bumpGrade(myCap, Math.min(2, Math.max(0, powerBonus))), "S");
+        String myNominal = clampGrade(bumpGrade(bestPlayer != null ? computeUpgradeGrade(bestPlayer) : "B", gradeBoost), myCap); // 표시(명목)
         String myTarget  = clampGrade(bumpGrade(myNominal, effBonus), effCap); // AI에 알릴 '실효 파워' 등급(효과·스탯 강도 기준)
         String mapOrigin = (bestMap != null)
             ? (bestMap.originGrade == null || bestMap.originGrade.isEmpty() ? bestMap.grade : bestMap.originGrade) : "";
-        String mapTarget = bestMap != null ? clampGrade(bumpGrade(computeUpgradeGrade(bestMap), gradeBoost), maxGrade) : null;
+        String mapTarget = bestMap != null ? clampGrade(bumpGrade(computeUpgradeGrade(bestMap), gradeBoost), mapCap) : null;
 
         StringBuilder sb = new StringBuilder();
         sb.append("괴담 테마(직접 언급 금지): ").append(gdamTheme).append("\n");

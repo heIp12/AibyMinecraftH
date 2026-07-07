@@ -803,6 +803,12 @@ public class AiManager {
         return parseTag(response, "<DICE>", "</DICE>");
     }
 
+    /** &lt;BROADCAST&gt;{"from":"화자","content":"방송 내용"}&lt;/BROADCAST&gt; — GM이 '진짜 방송(PA 송출)'이라 판정했을 때만 낸다.
+     *  시스템이 같은 건물 인원에게 [방송]으로 결정적 전달한다(키워드 추정 대신 GM 판단). 없으면 null. */
+    public JsonObject parseBroadcastTag(String response) {
+        return parseTag(response, "<BROADCAST>", "</BROADCAST>");
+    }
+
     /** 태그를 제거한 순수 서술 텍스트 반환 */
     public String stripTags(String response) {
         return response
@@ -815,6 +821,7 @@ public class AiManager {
             .replaceAll("<ITEM_GRANT>[\\s\\S]*?</ITEM_GRANT>", "")
             .replaceAll("<ITEM_USE>[\\s\\S]*?</ITEM_USE>", "")
             .replaceAll("<DICE>[\\s\\S]*?</DICE>", "")
+            .replaceAll("<BROADCAST>[\\s\\S]*?</BROADCAST>", "")
             .replaceAll("<CLEAR>[\\s\\S]*?</CLEAR>", "")
             .replaceAll("<WITNESS[^>]*>[\\s\\S]*?</WITNESS>", "")
             .replaceAll("<NPC_CALL[^>]*>[\\s\\S]*?</NPC_CALL>", "")
