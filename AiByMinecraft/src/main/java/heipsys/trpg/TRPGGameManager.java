@@ -2161,13 +2161,12 @@ public class TRPGGameManager {
         //   조짐이 조여오고 그동안 플레이어는 계속 행동할 수 있다 → onGmResponse의 forbiddenDoomTurns 카운트다운이 자연스럽게 매듭짓는다.
         if (containsForbidden(message)) {
             gameLogger.logEvent("금지어 발설: " + player.getName() + " (" + forbiddenWord + ")");
-            // ★금기 위반 = 위협도 즉시 급상승(최대 90)★: 금기를 범하면 괴담이 단숨에 정체를 드러내 세력이 격상된다.
-            //   (사건이 아니어도 '행동'만으로 크게 오르는 대표 사례 — 하드코딩.)
-            if (state.getThreat() < 90) {
-                int d = 90 - state.getThreat();
-                state.adjustThreat(d);
-                gameLogger.logEvent("위협도 +" + d + " → 90/100 (금기 위반 — 세력 급상승)");
-            }
+            // ★금기어 발설 = 위협도 대폭 상승(단, 상황에 따라 — 무조건 90 고정은 아니다)★: 금지워드형은 파국까지
+            //   트리거하는 중대 금기라 크게 오르되, ★가산(+35)★이라 이미 높으면 90 근처로·낮으면 그만큼만 오른다.
+            //   더 가벼운 금기(핵심 아닌 사소한 규칙 어김)는 GM이 <THREAT>로 상황에 맞게(적게) 올린다.
+            int thBefore = state.getThreat();
+            int thAfter  = state.adjustThreat(35);
+            if (thAfter != thBefore) gameLogger.logEvent("위협도 +" + (thAfter - thBefore) + " → " + thAfter + "/100 (금기어 발설 — 세력 급상승)");
             if (forbiddenDoomTurns <= 0) { // 첫 발설 — 파국 개시(즉종료 대신 유예)
                 forbiddenDoomTurns = 2;
                 broadcast("§4갑자기, 주위가 심상치 않게 뒤틀리기 시작한다...");
