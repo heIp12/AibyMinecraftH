@@ -1499,8 +1499,12 @@ function zoneMapSvg(zones, know){
         for(const bid of [g.a,g.b]){ const b=box[bid]; if(!b)continue; const s=sideOf(b,P[ei]); if(!s)continue;
           const far=P[ei===0?last:0]; (groups[bid+'|'+s]=groups[bid+'|'+s]||[]).push({gi,ei,side:s,bid,far}); break; } }); });
     for(const k in groups){ const grp=groups[k]; if(grp.length<2)continue;
-      const b=box[grp[0].bid], vert=(grp[0].side==='L'||grp[0].side==='R'), n=grp.length;
-      grp.sort((u,v)=>vert?u.far[1]-v.far[1]:u.far[0]-v.far[0]);   // 상대편 위치 순 → 선 교차 최소화
+      const b=box[grp[0].bid], vert=(grp[0].side==='L'||grp[0].side==='R'), n=grp.length, s0=grp[0].side;
+      // ★상대편 '방향(각도)' 순 정렬★ — 단순 far.y/far.x는 위/아래에서 접근하는 통로를 잘못 세워 교차시킴
+      //  (예: 하천길·광장이 둘 다 지하역 위에 있는데 좌변으로 들어오는 경우). 방 밖으로 나가는 각도로 포트 순서 결정.
+      const pk=u=>{ const dx=u.far[0]-b.cx, dy=u.far[1]-b.cy;
+        return s0==='R'?Math.atan2(dy,dx):s0==='L'?Math.atan2(dy,-dx):s0==='T'?Math.atan2(dx,-dy):Math.atan2(dx,dy); };
+      grp.sort((u,v)=>pk(u)-pk(v));
       grp.forEach((u,idx)=>{ const off=(idx-(n-1)/2)*PSEP, P=EG[u.gi].pts, ei=u.ei, bend=ei===0?1:P.length-2;
         if(vert){ const ny=Math.max(b.y+7,Math.min(b.y+b.h-7,b.cy+off)); P[ei][1]=ny; P[bend][1]=ny; }   // 좌/우 변: 문·직전꺾임 Y 함께
         else    { const nx=Math.max(b.x+7,Math.min(b.x+b.w-7,b.cx+off)); P[ei][0]=nx; P[bend][0]=nx; } }); } // 상/하 변: X 함께
@@ -1516,17 +1520,19 @@ function zoneMapSvg(zones, know){
       const hy=H[0][1], hx0=Math.min(H[0][0],H[1][0]), hx1=Math.max(H[0][0],H[1][0]);
       const vx=V[0][0], vy0=Math.min(V[0][1],V[1][1]), vy1=Math.max(V[0][1],V[1][1]);
       if(vx>hx0+1&&vx<hx1-1&&hy>vy0+1&&hy<vy1-1)return true; } return false; };   // 끝점 접합(문)은 제외, 내부 교차만
-    for(let i=0;i<EG.length;i++)for(let j=i+1;j<EG.length;j++)
-      if(cross(EG[i].pts,EG[j].pts)){ EG[i]._xover=true; EG[j]._xover=true; }
+    for(let i=0;i<EG.length;i++)for(let j=i+1;j<EG.length;j++)   // i<j → j가 나중에 그려짐=위로 지나감(over), i=아래(under)
+      if(cross(EG[i].pts,EG[j].pts)){ EG[i]._under=true; EG[j]._over=true; }
   })();
   // ── 3) 복도 렌더 + ★거리 라벨 충돌 회피★(겹치면 위/아래로 살짝 밀어 '4분/5분' 겹침 방지) ──
   const placedLab=[]; const lolap=(a,b)=>a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;
   for(const g of EG){ const P=g.pts;
     const d=P.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join('');
-    const xover=!know&&g._xover, inner=xover?'#8b95ac':holl;   // 교차 통로만 연한 회색으로 채움(그 외·미니맵=속 빈 중립)
-    // ★교차 통로 케이싱★: 배경색 테두리(16px)를 먼저 깔면, 나중에 그려지는(위) 통로가 아래 통로에 살짝
+    // ★밑에 깔리는(under) 통로만 연한 회색으로 채운다★ — 위로 지나가는(over/제일 위) 통로는 이미
+    //   또렷하니 색 없이 속 빈 중립 그대로. 색을 줄여 지도가 덜 번잡하게.
+    const inner=(!know&&g._under)?'#8b95ac':holl;
+    // ★over 통로 케이싱★: 배경색 테두리(16px)를 먼저 깔면 나중에 그려지는 이 통로가 아래 통로에 살짝
     //   틈을 내며 지나가 '누가 위로 가로지르는지'가 또렷이 보인다(지하철 노선도식 라인점프).
-    if(xover) corr+=`<path d="${d}" stroke="${holl}" stroke-width="16" fill="none" stroke-linejoin="miter" stroke-linecap="butt"/>`;
+    if(!know&&g._over) corr+=`<path d="${d}" stroke="${holl}" stroke-width="16" fill="none" stroke-linejoin="miter" stroke-linecap="butt"/>`;
     corr+=`<path d="${d}" stroke="${wallC}" stroke-width="12" fill="none" stroke-linejoin="miter" stroke-linecap="butt"/>`
         +`<path d="${d}" stroke="${inner}" stroke-width="8" fill="none" stroke-linejoin="miter" stroke-linecap="butt"/>`;
     const dl=distLabel(g.dist); if(!dl)continue;
@@ -1544,7 +1550,7 @@ function zoneMapSvg(zones, know){
     for(const a of areasUsed){ legendSvg+=`<rect x="${lx}" y="${ly-8}" width="9" height="9" fill="${areaTint(a)}" fill-opacity="0.8" stroke="#c6d0e6" stroke-width="0.7"/>`
       +`<text x="${lx+13}" y="${ly}" font-size="9.5" fill="#aab3cf">${esc(a)}</text>`; lx+=13+Math.round(estW(a)*0.73)+18; } }
   const title=know?'미니맵 — 아는 구역만':'구역 지도(설계도)';
-  const foot=know?'▶흰색=현재 · 밝음=주변 · 어두움=다녀온 곳 · 초록 통로=이동 가능(모르는 곳은 숨김)':'통로=연결(안 숫자=소요 시간) · 가로지르는 통로는 연회색으로 채워 위·아래 표시 · 📵=통신 불가 · 방 색=대분류(하단 범례)';
+  const foot=know?'▶흰색=현재 · 밝음=주변 · 어두움=다녀온 곳 · 초록 통로=이동 가능(모르는 곳은 숨김)':'통로=연결(안 숫자=소요 시간) · 교차 시 밑에 깔리는 통로만 연회색 · 📵=통신 불가 · 방 색=대분류(하단 범례)';
   return `<div class="zmap" style="overflow:auto;margin-bottom:6px;cursor:zoom-in" onclick="mapZoom(this)" title="클릭하면 크게 보기">`
     +`<div class="dim2" style="margin-bottom:3px">${title} <span style="background:#2a2450;border:1px solid #4a3f80;border-radius:6px;padding:0 7px;color:#cabfff">🔍 크게 보기</span></div>`
     +`<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-height:400px;min-width:${Math.min(W,320)}px">${bg}${rects}${corr}${dists}${labels}${legendSvg}</svg>`
