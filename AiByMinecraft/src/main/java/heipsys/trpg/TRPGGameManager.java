@@ -5499,10 +5499,29 @@ public class TRPGGameManager {
         }
 
         String fullLog = campaignWide ? state.buildCampaignEvalLog() : state.buildFullEvalLog();
+        // ★평가 기록 보강(#230)★: 전역 eventLog가 비거나 얇을 때만, 각 플레이어 개인 행동로그(narrativeLog)로
+        //   per-player 근거를 보강한다(narrativeLog는 매 행동마다 TurnManager가 쌓아 eventLog 유실과 무관).
+        //   전역 로그가 충분하면 붙이지 않는다(정상 평가의 토큰 비용 불변).
+        boolean thinLog = fullLog.isBlank() || fullLog.length() < 200;
+        StringBuilder perPlayer = new StringBuilder();
+        if (thinLog) {
+            for (PlayerData pd : allPd) {
+                java.util.List<String> nl;
+                synchronized (pd.narrativeLog) { nl = new ArrayList<>(pd.narrativeLog); }
+                if (nl.isEmpty()) continue;
+                perPlayer.append("[").append(pd.name);
+                if (!pd.charName.isEmpty()) perPlayer.append("(").append(pd.charName).append(")");
+                perPlayer.append(" 개인 행동로그]\n");
+                for (String ln : nl) perPlayer.append("  ").append(ln).append("\n");
+            }
+        }
+        boolean haveAny = !fullLog.isBlank() || perPlayer.length() > 0;
 
         String prompt = "게임 클리어 등급: " + clearGrade + "\n\n"
             + "플레이어 목록:\n" + playerInfo + "\n"
-            + "전체 행동 기록:\n" + (fullLog.isBlank() ? "기록 없음" : fullLog) + "\n\n"
+            + "전체 행동 기록:\n" + (fullLog.isBlank() ? "(전역 기록 없음 — 아래 개인 행동로그로 평가)" : fullLog) + "\n\n"
+            + (perPlayer.length() > 0 ? "개인별 행동로그:\n" + perPlayer + "\n" : "")
+            + (haveAny ? "" : "※ 상세 행동 기록이 유실됐을 수 있다. 그럴 땐 위 '플레이어 목록'의 생존/상태·배역만으로 ★최대한★ 평가하라 — ★절대 '기록이 없어 평가 불가'라 답하지 마라★. 최소 참여=B, 무행동 추정=C로 매기고 evaluations를 반드시 채워라.\n\n")
             + "각 플레이어를 평가해줘. JSON만 출력. 다른 텍스트 절대 금지.\n\n"
             + "등급 기준(★엄격하게 — S·A는 인색하게): "
             + "S=이번 사건을 사실상 ★캐리★한 결정적·완벽한 활약(좀처럼 안 나옴), "
