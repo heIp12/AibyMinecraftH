@@ -77,6 +77,7 @@ public class GameStateManager {
     private final Set<String>       sealedZones       = new HashSet<>(); // ★런타임 봉쇄(#180)★ — 괴담·사건이 막은 구역(자발 진입 차단, 강제이동은 통과).
     private final Set<String>       blockedMedia      = new HashSet<>(); // ★매체별 차단(#180)★ — 괴담·사건이 막은 통신 수단(voice/text/signal/electronic, all=전부).
     private final List<String>      justFiredEvents   = new ArrayList<>();
+    private boolean                 combatEventFired  = false; // ★A3/A4★ combat:true 사건 발화 감지(소비성 — 스냅샷 미포함)
     private String                  lastFiredEventLabel = ""; // 가장 최근 발화한 핵심 사건 이름(상태창 '최근' 패널용, 소비 안 됨)
     private final Map<UUID,Boolean> timeKnownOverride = new HashMap<>();
 
@@ -474,6 +475,7 @@ public class GameStateManager {
         lastFiredEventLabel = ""; // 새 시나리오/스테이지 — 최근 사건 초기화
         timeKnownOverride.clear();
         endEventFired      = false;
+        combatEventFired   = false; // ★A3/A4★ 소비성 플래그도 새 시나리오/스테이지에서 초기화
         clockStart         = -1;
         clockMinutes       = -1;
         clockEnd           = -1;
@@ -563,6 +565,8 @@ public class GameStateManager {
                 endEventFired = true;
                 timelineStage = getMaxStage(); // CODE-17: 종료 사건 → 최고 단계(가변)
             }
+            if (ev.has("combat") && !ev.get("combat").isJsonNull() && ev.get("combat").getAsBoolean())
+                combatEventFired = true; // ★A3/A4★ 전투 사건 발화 → 코드가 자동 소집·완급(소비성)
         }
         if (clockEnd >= 0 && clockMinutes >= clockEnd && !endEventFired) {
             endEventFired = true;
@@ -574,6 +578,8 @@ public class GameStateManager {
 
     public boolean isClockActive()   { return clockMinutes >= 0; }
     public boolean isEndEventFired() { return endEventFired; }
+    /** ★A3/A4★ combat:true 사건이 방금 발화됐는지(읽으면 리셋) — 전투 자동 소집·완급용. */
+    public boolean consumeCombatEventFired() { boolean b = combatEventFired; combatEventFired = false; return b; }
 
     /** 현재 인게임 시각. 첫날이면 "HH:MM", 여러 날(60일 미만)이면 "N일차 HH:MM",
      *  장기 도약(60일 이상)이면 "N년 M개월 D일차 HH:MM"로 압축 표시한다. 시계 없으면 "".
@@ -660,6 +666,7 @@ public class GameStateManager {
             justFiredEvents.add(label + (effect.isEmpty() ? "" : " — " + effect));
             lastFiredEventLabel = label; // 상태창 '최근' 패널용
             if (ev.has("is_end") && ev.get("is_end").getAsBoolean()) { endEventFired = true; timelineStage = getMaxStage(); }
+            if (ev.has("combat") && !ev.get("combat").isJsonNull() && ev.get("combat").getAsBoolean()) combatEventFired = true; // ★A3/A4★
             return;
         }
     }

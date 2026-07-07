@@ -301,6 +301,9 @@ public class TRPGGameManager {
     /** 전원 영구 무력화(회복 가망 0) 워치독 틱 누적 — K틱 연속이면 자동 종료(전원 동물·완전조종 무한 틱 방지). */
     private int allIncapTicks = 0;
     private static final int ALL_INCAP_TICKS_REQ = 3; // 10초 간격 × 3 ≈ 30초 연속 확인
+    private int endHangTicks = 0; // ★A5★ 마감 경과 후 무행동 지속(결말 미발) 카운터 — 소프트락(H-1) 차단
+    private static final int END_HANG_NUDGE_TICKS = 3;  // ≈30초 후 GM에 강한 종결 지시
+    private static final int END_HANG_FORCE_TICKS = 18; // 무행동 3분 뒤부터 ≈3분 더 → 코드가 강제 종결
     /** 클리어 보상 특성 성장 3선택지 — /trpg trait 재열기용 */
     private final Map<UUID, TraitManager.StageEndChoices> pendingStageEndChoices = new ConcurrentHashMap<>();
     private final Map<UUID, String[]> pendingStageEndNames = new ConcurrentHashMap<>();
@@ -432,6 +435,7 @@ public class TRPGGameManager {
         }
         state.advanceClockTo(earliest);             // 사건이 없거나(1분 이내로 임박해 여지 없음 포함) 더 뒤면 다음 자유 시점까지(사건 넘겨 발화)
         tickFaintCounters();                         // 시간 경과분 회복·기절 카운터도 함께 진행
+        reactToFiredCombat();                        // ★A3/A4★ 점프로 전투 사건이 터졌으면 전원 소집 + 완급 slow(H-2)
         updateAllScoreboards();
     }
 
@@ -451,6 +455,14 @@ public class TRPGGameManager {
         }
     }
 
+    /** ★A3/A4★ combat:true 사건이 방금 발화됐으면 코드가 ★전원 자유화(전투 반응)★ + 완급 slow로 전환한다 —
+     *  GM의 &lt;SUMMON&gt;/&lt;PACE&gt; 태그를 기다리지 않는다(사건은 GM콜 없는 시계 점프 중에도 터진다). 소비성 플래그라 1회만. */
+    private void reactToFiredCombat() {
+        if (!state.consumeCombatEventFired()) return;
+        summonAllFree("전투 발생");                        // turnMode<2·이미 자유면 내부에서 no-op
+        if (!"slow".equals(actionPace)) { actionPace = "slow"; gameLogger.logEvent("[완급] 전투 발생 → slow(자동)"); }
+    }
+
     private void startIncapacitationWatchdog() {
         plugin.getServer().getScheduler().runTaskTimer(plugin, () -> {
             if (!isActive()) return;
@@ -465,7 +477,26 @@ public class TRPGGameManager {
                 pd.puppetRecoveryTurns == 0 // ★버그수정★ -1(완전조종)은 행동 불능이다(입력 게이트도 !=0로 차단) — <=0이라 -1을 행동가능으로 오판해 전원 완전조종 시 소프트락이던 것 수정
                 && !animalForm.contains(pd.uuid) // 동물 형태는 시나리오를 풀 수 없음 → 행동 가능자로 치지 않음(동물만 남으면 워치독이 진행)
                 && !("faint".equals(pd.status) && pd.faintTurnsRemaining > 0));
-            if (anyoneCanAct) { allIncapTicks = 0; maybeAccelerateIdle(); return; } // 행동 가능 → 정상(누적 리셋). 너무 오래 무행동이면 시간·위협 가속.
+            if (anyoneCanAct) { // 행동 가능 → 정상(누적 리셋). 너무 오래 무행동이면 시간·위협 가속.
+                allIncapTicks = 0;
+                // ★A5 마감 후 결말 백스톱(H-1)★: 종국 사건 발화 + 제한 시각 경과인데도 결말이 안 나고(GM <CLEAR> 미발화)
+                //   플레이어가 오래(3분+) 무행동이면 무한 앰비언트 루프(소프트락)에 빠진다. 유예 후 GM에 강한 종결 지시,
+                //   그래도 안 나면 코드가 매듭짓는다. is_end에 결과 타입 필드가 없어 위협도로 생존/파국을 근사한다(추후 스키마화 권장).
+                if (currentPhase == Phase.HORROR && state.isEndEventFired() && state.getMinutesUntilEnd() == 0
+                        && lastPlayerActionMs > 0 && System.currentTimeMillis() - lastPlayerActionMs >= IDLE_ACCEL_MS) {
+                    endHangTicks++;
+                    if (endHangTicks == END_HANG_NUDGE_TICKS)
+                        ai.injectGmSystem("[종국 — 반드시 매듭] 제한 시각이 지났고 상황은 이미 끝을 향했다. 다음 서술에서 ★반드시★ 이 국면을 <CLEAR …> 또는 결말로 매듭지어라 — 미해결로 시간만 더 흘리지 마라.");
+                    else if (endHangTicks >= END_HANG_FORCE_TICKS && AUTO_BADEND_ENABLED && currentPhase != Phase.GAMEOVER) {
+                        endHangTicks = 0;
+                        // GM이 끝내 매듭짓지 못함 → 코드가 강제 종결(소프트락 차단). 높은 위협=파국, 아니면 살아서 마감 도달=생존.
+                        if (state.getThreat() >= 70) onBadEnding("제한 시각 경과 — 위협에 잠식");
+                        else onClearEnding("D", "제한 시각까지 버텨 생존", false);
+                        return;
+                    }
+                } else endHangTicks = 0;
+                maybeAccelerateIdle(); return;
+            }
             // ★전원 무력화★ → AI 없이 시스템이 한 턴 진행(시간·시계·회복 카운터). 누군가 회복하면 다음 틱에서 멈춘다.
             state.nextTurn();
             if (state.getTurnMode() >= 1) state.advanceActionClock(state.getMinutesPerTurn()); // #151: DUR 모드에선 nextTurn이 시계 안 미니 명시 진행
@@ -495,26 +526,40 @@ public class TRPGGameManager {
         for (UUID u : spawnedPlayers) { Player p = Bukkit.getPlayer(u); if (p != null && p.isOnline()) { viewer = p; break; } }
         if (viewer == null) { state.nextTurn(); if (state.getTurnMode() >= 1) state.advanceActionClock(state.getMinutesPerTurn()); updateAllScoreboards(); return; }
         lastIdleAccelMs = now;
-        // GM 진행 비트: 대기·정체 구간이면 인게임 시간을 건너뛰어 다음 사건으로, 급박하면 위협만 진전.
+        // ★#231/전지성★ 스킵 여부·양을 ★코드가 결정★한다 — "다음 의미 있는 사건으로 넘겨라"를 GM에 맡기면
+        //   아직 플레이어가 발견하지 않은 사건·해법을 앞질러 풀어버리는 전지적 자동진행이 된다. 그래서 여기선
+        //   코드가 위협도·다음 사건까지의 거리로 '평온/급박'과 스킵 분량을 정하고, GM에는 '흐른 시간의 감각'만 시킨다.
+        int mpt      = Math.max(1, state.getMinutesPerTurn());
+        int clockNow = state.getClockMinutes();
+        int untilEnd = state.getMinutesUntilEnd();
+        // 급박 = 세력이 높거나(위협/분노 70+) 이미 종국(마감 사건 발화). 이때는 시간을 건너뛰지 않는다.
+        boolean urgent = state.getThreat() >= 70 || state.getAnger() >= 70 || state.isEndEventFired();
+        int skipMin = 0;
+        if (!urgent && clockNow >= 0 && currentPhase == Phase.HORROR) {
+            int nextEvt = state.nextDueEventMinute(clockNow);      // 다음 미발화 사건(또는 마감 시각)
+            if (nextEvt > clockNow) {
+                int gap = nextEvt - 1 - clockNow;                 // 사건 ★직전★까지만(마지막 반응 턴 보존)
+                if (gap > mpt) skipMin = gap;                     // 한 턴 넘게 벌어질 때만 스킵(사건 코앞이면 스킵 안 함)
+            }
+        }
+        // #12/#13: 마감(제한 시각)을 무행동으로 건너뛰지 않도록 캡 — 마감은 '실제 플레이'로만 닿게 한다.
+        if (skipMin > 0 && untilEnd >= 0) skipMin = Math.min(skipMin, Math.max(0, untilEnd - mpt));
+        if (skipMin < 0) skipMin = 0;
+        final int fSkip = skipMin;
+        // GM 역할 = '지나간 시간의 앰비언트'만. ★미발견 정보·새 사건 창작 금지★(전지적 누출 차단).
         String prompt = "플레이어들이 약 " + (IDLE_ACCEL_MS / 60000) + "분간 아무 행동도 하지 않았다. "
-            + "지금이 ★대기·이동·정체 같은 평온 구간★이면 인게임 시간을 상황에 맞게 건너뛰어(<TIME_SKIP minutes=\"N\"/>, "
-            + "몇 시간~며칠: 1일=1440·1주=10080) 다음 의미 있는 사건·국면으로 시나리오를 넘겨라. "
-            + "추격·전투 등 ★급박 구간★이면 시간을 건너뛰지 말고 위협만 한 걸음 진전시켜라(즉시 전멸 강요 금지). 2~3문장으로 짧게 서술.";
+            + (fSkip > 0
+                ? "평온한 정체 구간이라 시간이 얼마간 흘렀다 — 지금 ★이 장소★의 빛·소리·공기·피로 등 감각의 변화만 2~3문장으로 담담히 서술하라."
+                : "상황이 급박하거나 사건이 임박했다 — 시간을 건너뛰지 말고 조여드는 위협의 기척만 2~3문장으로 짧게 서술하라(즉시 전멸 강요 금지).")
+            + " ★절대 금지★: 아직 플레이어가 ★발견하지 않은★ 단서·괴담의 정체나 약점·미도달 구역의 내용을 언급·암시하지 마라. "
+            + "새 사건을 지어내 해결로 끌고 가지 말고, 오직 '시간이 흘렀다'는 감각만 전하라. 시간·상태 태그(<TIME_SKIP> 등)는 쓰지 마라 — 진행은 코드가 이미 처리했다.";
         ai.callGmAiOnce(gmSystemPrompt, prompt).thenAccept(raw ->
             plugin.getServer().getScheduler().runTask(plugin, () -> {
-                int skipMin = ai.parseTimeSkip(raw);
-                // #12/#13: 무행동 가속이 ★제한 시각을 넘겨★ '타임오버 자동결말(도주판정)'로 직행하는 것을 막는다.
-                //   갈피를 못 잡아 가만히 있었다는 이유로 마감을 건너뛰어 거저 클리어/파국으로 가면 안 된다.
-                //   마감 직전 한 턴 분량의 여유를 남기고 캡 — 마감은 '실제 플레이'로만 닿게 한다.
-                int untilEnd = state.getMinutesUntilEnd();
-                if (skipMin > 0 && untilEnd >= 0) {
-                    int cap = Math.max(0, untilEnd - Math.max(1, state.getMinutesPerTurn()));
-                    if (skipMin > cap) skipMin = cap;
-                }
-                if (skipMin > 0) state.skipTime(skipMin);
+                if (fSkip > 0) state.skipTime(fSkip);
                 state.nextTurn();
-                if (state.getTurnMode() >= 1) state.advanceActionClock(state.getMinutesPerTurn()); // #151: DUR 모드 명시 진행(TIME_SKIP과 별개의 기본 한 걸음)
+                if (state.getTurnMode() >= 1) state.advanceActionClock(state.getMinutesPerTurn()); // #151: DUR 모드 명시 진행(기본 한 걸음)
                 tickFaintCounters();
+                reactToFiredCombat();                // ★A3/A4★ 유휴 스킵 중 전투 사건이 터졌으면 전원 소집 + 완급 slow
                 updateAllScoreboards();
                 String narrative = ai.stripTags(raw);
                 if (!narrative.isBlank()) {

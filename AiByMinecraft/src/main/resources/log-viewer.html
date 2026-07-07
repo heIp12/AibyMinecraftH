@@ -1357,6 +1357,44 @@ function zoneMapSvg(zones, know){
       }
     }
   }
+  // ── ★배치 후 교차 최소화(국소 탐색)★: 지도가 복잡하게 꼬이는 근본 원인은 '배치'다. 렌더 전에
+  //    방을 빈 칸으로 옮기거나 두 방을 맞바꿔, 간선(중심-중심 직선) 교차 수와 '방 관통'을 줄인다.
+  //    → 통로가 애초에 덜 얽히게. (남는 불가피한 교차만 렌더에서 회색+라인점프로 표시) ──
+  (function reduceCrossings(){
+    if(ids.length<4||ids.length>26||edges.length<3)return;   // 너무 크면(드묾) 생략
+    const occ={}; for(const id of ids)occ[key(cellOf[id][0],cellOf[id][1])]=id;   // 실제 방만(‘#corr’ 무시)
+    const ccw=(a,b,c)=>(b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);
+    const segCross=(p,q,r,s)=>{ const d1=ccw(r,s,p),d2=ccw(r,s,q),d3=ccw(p,q,r),d4=ccw(p,q,s);
+      if(d1===0||d2===0||d3===0||d4===0)return false;   // ★끝점이 상대 선 위(방 관통·T접합)는 진짜 교차 아님★ → 여기서 제외
+      return ((d1>0)!==(d2>0))&&((d3>0)!==(d4>0)); };
+    const cost=()=>{ let x=0,len=0;   // 교차 수(★최우선★) + 총 간선 길이(콤팩트 유지). '방 관통'은 벌하지 않음(우회 라우터가 처리 — 벌하면 방이 멀리 튕겨나가 되레 나빠짐)
+      for(let i=0;i<edges.length;i++){ const e=edges[i],A=cellOf[e.a],B=cellOf[e.b]; if(!A||!B)continue;
+        len+=Math.abs(A[0]-B[0])+Math.abs(A[1]-B[1]);
+        for(let j=i+1;j<edges.length;j++){ const f=edges[j];
+          if(e.a===f.a||e.a===f.b||e.b===f.a||e.b===f.b)continue;   // 끝점 공유는 교차 아님
+          const C=cellOf[f.a],D=cellOf[f.b]; if(C&&D&&segCross(A,B,C,D))x++; } }
+      return x*100+len; };   // 교차 하나 없애려 길이가 다소 늘어도 OK, 단 길이가 억제기라 과확산은 막음
+    const nCross=()=>{ let x=0;
+      for(let i=0;i<edges.length;i++){ const e=edges[i],A=cellOf[e.a],B=cellOf[e.b]; if(!A||!B)continue;
+        for(let j=i+1;j<edges.length;j++){ const f=edges[j];
+          if(e.a===f.a||e.a===f.b||e.b===f.a||e.b===f.b)continue;
+          const C=cellOf[f.a],D=cellOf[f.b]; if(C&&D&&segCross(A,B,C,D))x++; } } return x; };
+    if(nCross()===0)return;   // ★이미 안 꼬였으면 손대지 않음★ — 깔끔한 배치를 길이 최적화로 괜히 흐트러뜨리지 않게
+    const moveTo=(id,nx,ny)=>{ const p=cellOf[id]; delete occ[key(p[0],p[1])]; cellOf[id]=[nx,ny]; occ[key(nx,ny)]=id; };
+    const swap=(a,b)=>{ const p1=cellOf[a],p2=cellOf[b]; cellOf[a]=p2; cellOf[b]=p1; occ[key(p2[0],p2[1])]=a; occ[key(p1[0],p1[1])]=b; };
+    let best=cost();
+    for(let pass=0; pass<14 && best>0; pass++){ let improved=false;
+      let mnx=1e9,mny=1e9,mxx=-1e9,mxy=-1e9;
+      for(const id of ids){const p=cellOf[id]; mnx=Math.min(mnx,p[0]);mny=Math.min(mny,p[1]);mxx=Math.max(mxx,p[0]);mxy=Math.max(mxy,p[1]);}
+      for(const id of ids){ const cur=cellOf[id].slice(); let mv=null,bc=best;
+        for(let y=mny-1;y<=mxy+1;y++)for(let x=mnx-1;x<=mxx+1;x++){ if(x===cur[0]&&y===cur[1])continue;
+          const o=occ[key(x,y)];
+          if(o===undefined){ moveTo(id,x,y); const c=cost(); if(c<bc-1e-6){bc=c;mv={x,y,o:null};} moveTo(id,cur[0],cur[1]); }
+          else if(o!==id){ swap(id,o); const c=cost(); if(c<bc-1e-6){bc=c;mv={x,y,o};} swap(id,o); } }
+        if(mv){ if(mv.o===null)moveTo(id,mv.x,mv.y); else swap(id,mv.o); best=bc; improved=true; } }
+      if(!improved)break;
+    }
+  })();
   let minX=1e9,minY=1e9,maxX=-1e9,maxY=-1e9;
   for(const id of ids){const p=cellOf[id];minX=Math.min(minX,p[0]);minY=Math.min(minY,p[1]);maxX=Math.max(maxX,p[0]);maxY=Math.max(maxY,p[1]);}
   const PAD=16,TOP2=12;
@@ -1385,8 +1423,6 @@ function zoneMapSvg(zones, know){
   }
   // ── 복도: 직선 우선(다른 방 안 지날 때만), 아니면 ㄱ자 중 덜 부딪히는 코너. 벽 15px 위에 배경 11px 덧그림=속 빈 통로 ──
   const wallC=know?'#8fd4b0':'#aeb9d4', holl='#0f1424';
-  // ★경로별 색(설계도 전용)★: 통로가 겹치거나 다른 통로 밑에 깔려도 색으로 한 경로를 끝까지 따라가게 내부를 칠한다.
-  const INK=['#e08a8a','#e0a565','#d9d071','#74a9e0','#9a8ae0','#c07fe0','#e07fb0','#6fcfd9'];  // 방(구역) 초록·올리브 계열과 안 겹치게 초록 제외
   const hitOthers=(a,b,x1,y1,x2,y2)=>{const xa=Math.min(x1,x2)-1,xb=Math.max(x1,x2)+1,ya=Math.min(y1,y2)-1,yb=Math.max(y1,y2)+1;let n=0;
     for(const id of ids){ if(id===a||id===b)continue; const r=box[id]; if(xb>r.x&&xa<r.x+r.w&&yb>r.y&&ya<r.y+r.h)n++; } return n; };
   const ep=(b,tx,ty)=>Math.abs(tx-b.cx)<0.5?{x:b.cx,y:ty<b.cy?b.y+2:b.y+b.h-2}:{x:tx<b.cx?b.x+2:b.x+b.w-2,y:b.cy}; // 방 테두리 2px 안쪽 = 문
@@ -1463,40 +1499,40 @@ function zoneMapSvg(zones, know){
         for(const bid of [g.a,g.b]){ const b=box[bid]; if(!b)continue; const s=sideOf(b,P[ei]); if(!s)continue;
           const far=P[ei===0?last:0]; (groups[bid+'|'+s]=groups[bid+'|'+s]||[]).push({gi,ei,side:s,bid,far}); break; } }); });
     for(const k in groups){ const grp=groups[k]; if(grp.length<2)continue;
-      const b=box[grp[0].bid], vert=(grp[0].side==='L'||grp[0].side==='R'), n=grp.length;
-      grp.sort((u,v)=>vert?u.far[1]-v.far[1]:u.far[0]-v.far[0]);   // 상대편 위치 순 → 선 교차 최소화
+      const b=box[grp[0].bid], vert=(grp[0].side==='L'||grp[0].side==='R'), n=grp.length, s0=grp[0].side;
+      // ★상대편 '방향(각도)' 순 정렬★ — 단순 far.y/far.x는 위/아래에서 접근하는 통로를 잘못 세워 교차시킴
+      //  (예: 하천길·광장이 둘 다 지하역 위에 있는데 좌변으로 들어오는 경우). 방 밖으로 나가는 각도로 포트 순서 결정.
+      const pk=u=>{ const dx=u.far[0]-b.cx, dy=u.far[1]-b.cy;
+        return s0==='R'?Math.atan2(dy,dx):s0==='L'?Math.atan2(dy,-dx):s0==='T'?Math.atan2(dx,-dy):Math.atan2(dx,dy); };
+      grp.sort((u,v)=>pk(u)-pk(v));
       grp.forEach((u,idx)=>{ const off=(idx-(n-1)/2)*PSEP, P=EG[u.gi].pts, ei=u.ei, bend=ei===0?1:P.length-2;
         if(vert){ const ny=Math.max(b.y+7,Math.min(b.y+b.h-7,b.cy+off)); P[ei][1]=ny; P[bend][1]=ny; }   // 좌/우 변: 문·직전꺾임 Y 함께
         else    { const nx=Math.max(b.x+7,Math.min(b.x+b.w-7,b.cx+off)); P[ei][0]=nx; P[bend][0]=nx; } }); } // 상/하 변: X 함께
   })();
-  // ── 2.7) ★겹치는 통로만 색 배정★: 지도가 알록달록해지지 않게, 기본은 중립(회색). 다른 통로와
-  //    ★교차(십자로 지나감)★하거나 ★바로 옆 레인에 나란히 붙어★ 있어 구분이 어려운 통로에만 색을 준다
-  //    (겹친 상대끼리는 서로 다른 색 → 어느 게 어느 길인지 구분). 안 겹치는 통로는 색 없음(=회색). ──
-  (function colorCorridors(){
+  // ── 2.7) ★교차 통로 강조★: 통로가 다른 통로를 가로지르면(십자로 통과) 그 통로 속을 ★연한 회색★으로
+  //    채운다 → 교차점에서 위로 지나가는 통로가 아래 통로를 확실히 덮어 위/아래가 또렷이 보인다.
+  //    안 겹치는(가로지르지 않는) 통로는 속 빈(중립) 그대로 두어 지도가 알록달록해지지 않게 한다. ──
+  (function markCrossings(){
     const seg=P=>{const s=[];for(let i=0;i+1<P.length;i++)s.push([P[i],P[i+1]]);return s;};
     const cross=(A,B)=>{ for(const [a1,a2] of seg(A))for(const [b1,b2] of seg(B)){
-      const aH=Math.abs(a1[1]-a2[1])<1, bH=Math.abs(b1[1]-b2[1])<1; if(aH===bH)continue;
+      const aH=Math.abs(a1[1]-a2[1])<1, bH=Math.abs(b1[1]-b2[1])<1; if(aH===bH)continue;   // 같은 방향은 교차 아님
       const H=aH?[a1,a2]:[b1,b2], V=aH?[b1,b2]:[a1,a2];
       const hy=H[0][1], hx0=Math.min(H[0][0],H[1][0]), hx1=Math.max(H[0][0],H[1][0]);
       const vx=V[0][0], vy0=Math.min(V[0][1],V[1][1]), vy1=Math.max(V[0][1],V[1][1]);
-      if(vx>hx0+1&&vx<hx1-1&&hy>vy0+1&&hy<vy1-1)return true; } return false; };
-    const nearPar=(A,B)=>{ for(const [a1,a2] of seg(A))for(const [b1,b2] of seg(B)){  // 같은 방향·바로 옆(≤22px)·구간 겹침
-      const aH=Math.abs(a1[1]-a2[1])<1&&Math.abs(a1[0]-a2[0])>8, aV=Math.abs(a1[0]-a2[0])<1&&Math.abs(a1[1]-a2[1])>8;
-      const bH=Math.abs(b1[1]-b2[1])<1&&Math.abs(b1[0]-b2[0])>8, bV=Math.abs(b1[0]-b2[0])<1&&Math.abs(b1[1]-b2[1])>8;
-      if(aH&&bH&&Math.abs(a1[1]-b1[1])<22&&Math.min(a1[0],a2[0])<Math.max(b1[0],b2[0])-6&&Math.max(a1[0],a2[0])>Math.min(b1[0],b2[0])+6)return true;
-      if(aV&&bV&&Math.abs(a1[0]-b1[0])<22&&Math.min(a1[1],a2[1])<Math.max(b1[1],b2[1])-6&&Math.max(a1[1],a2[1])>Math.min(b1[1],b2[1])+6)return true; } return false; };
-    const con=EG.map(()=>[]);
-    for(let i=0;i<EG.length;i++)for(let j=i+1;j<EG.length;j++)
-      if(cross(EG[i].pts,EG[j].pts)||nearPar(EG[i].pts,EG[j].pts)){con[i].push(j);con[j].push(i);}
-    EG.forEach((g,gi)=>{ if(!con[gi].length){g._ink=null;return;}   // 안 겹치면 색 없음(중립 회색)
-      const nb=new Set(); for(const hi of con[gi])if(EG[hi]._ink)nb.add(EG[hi]._ink);
-      let ci=gi%INK.length,t=0; while(t<INK.length&&nb.has(INK[ci])){ci=(ci+1)%INK.length;t++;} g._ink=INK[ci]; });
+      if(vx>hx0+1&&vx<hx1-1&&hy>vy0+1&&hy<vy1-1)return true; } return false; };   // 끝점 접합(문)은 제외, 내부 교차만
+    for(let i=0;i<EG.length;i++)for(let j=i+1;j<EG.length;j++)   // i<j → j가 나중에 그려짐=위로 지나감(over), i=아래(under)
+      if(cross(EG[i].pts,EG[j].pts)){ EG[i]._under=true; EG[j]._over=true; }
   })();
   // ── 3) 복도 렌더 + ★거리 라벨 충돌 회피★(겹치면 위/아래로 살짝 밀어 '4분/5분' 겹침 방지) ──
   const placedLab=[]; const lolap=(a,b)=>a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;
   for(const g of EG){ const P=g.pts;
     const d=P.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join('');
-    const inner=(know||!g._ink)?holl:g._ink;   // 미니맵·안 겹치는 통로=중립(회색) / 겹치는 통로만 경로색으로 내부 채움
+    // ★밑에 깔리는(under) 통로만 연한 회색으로 채운다★ — 위로 지나가는(over/제일 위) 통로는 이미
+    //   또렷하니 색 없이 속 빈 중립 그대로. 색을 줄여 지도가 덜 번잡하게.
+    const inner=(!know&&g._under)?'#8b95ac':holl;
+    // ★over 통로 케이싱★: 배경색 테두리(16px)를 먼저 깔면 나중에 그려지는 이 통로가 아래 통로에 살짝
+    //   틈을 내며 지나가 '누가 위로 가로지르는지'가 또렷이 보인다(지하철 노선도식 라인점프).
+    if(!know&&g._over) corr+=`<path d="${d}" stroke="${holl}" stroke-width="16" fill="none" stroke-linejoin="miter" stroke-linecap="butt"/>`;
     corr+=`<path d="${d}" stroke="${wallC}" stroke-width="12" fill="none" stroke-linejoin="miter" stroke-linecap="butt"/>`
         +`<path d="${d}" stroke="${inner}" stroke-width="8" fill="none" stroke-linejoin="miter" stroke-linecap="butt"/>`;
     const dl=distLabel(g.dist); if(!dl)continue;
@@ -1514,7 +1550,7 @@ function zoneMapSvg(zones, know){
     for(const a of areasUsed){ legendSvg+=`<rect x="${lx}" y="${ly-8}" width="9" height="9" fill="${areaTint(a)}" fill-opacity="0.8" stroke="#c6d0e6" stroke-width="0.7"/>`
       +`<text x="${lx+13}" y="${ly}" font-size="9.5" fill="#aab3cf">${esc(a)}</text>`; lx+=13+Math.round(estW(a)*0.73)+18; } }
   const title=know?'미니맵 — 아는 구역만':'구역 지도(설계도)';
-  const foot=know?'▶흰색=현재 · 밝음=주변 · 어두움=다녀온 곳 · 초록 통로=이동 가능(모르는 곳은 숨김)':'통로=연결(안 숫자=소요 시간) · 겹치는 통로만 색으로 구분 · 📵=통신 불가 · 방 색=대분류(하단 범례)';
+  const foot=know?'▶흰색=현재 · 밝음=주변 · 어두움=다녀온 곳 · 초록 통로=이동 가능(모르는 곳은 숨김)':'통로=연결(안 숫자=소요 시간) · 교차 시 밑에 깔리는 통로만 연회색 · 📵=통신 불가 · 방 색=대분류(하단 범례)';
   return `<div class="zmap" style="overflow:auto;margin-bottom:6px;cursor:zoom-in" onclick="mapZoom(this)" title="클릭하면 크게 보기">`
     +`<div class="dim2" style="margin-bottom:3px">${title} <span style="background:#2a2450;border:1px solid #4a3f80;border-radius:6px;padding:0 7px;color:#cabfff">🔍 크게 보기</span></div>`
     +`<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-height:400px;min-width:${Math.min(W,320)}px">${bg}${rects}${corr}${dists}${labels}${legendSvg}</svg>`
