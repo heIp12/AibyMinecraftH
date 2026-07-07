@@ -432,6 +432,7 @@ public class TRPGGameManager {
         }
         state.advanceClockTo(earliest);             // 사건이 없거나(1분 이내로 임박해 여지 없음 포함) 더 뒤면 다음 자유 시점까지(사건 넘겨 발화)
         tickFaintCounters();                         // 시간 경과분 회복·기절 카운터도 함께 진행
+        reactToFiredCombat();                        // ★A3/A4★ 점프로 전투 사건이 터졌으면 전원 소집 + 완급 slow(H-2)
         updateAllScoreboards();
     }
 
@@ -449,6 +450,14 @@ public class TRPGGameManager {
             gameLogger.logEvent("[즉시 소집] " + (reason == null || reason.isBlank() ? "사건 발생" : reason) + " — 전원 자유화");
             updateAllScoreboards();
         }
+    }
+
+    /** ★A3/A4★ combat:true 사건이 방금 발화됐으면 코드가 ★전원 자유화(전투 반응)★ + 완급 slow로 전환한다 —
+     *  GM의 &lt;SUMMON&gt;/&lt;PACE&gt; 태그를 기다리지 않는다(사건은 GM콜 없는 시계 점프 중에도 터진다). 소비성 플래그라 1회만. */
+    private void reactToFiredCombat() {
+        if (!state.consumeCombatEventFired()) return;
+        summonAllFree("전투 발생");                        // turnMode<2·이미 자유면 내부에서 no-op
+        if (!"slow".equals(actionPace)) { actionPace = "slow"; gameLogger.logEvent("[완급] 전투 발생 → slow(자동)"); }
     }
 
     private void startIncapacitationWatchdog() {
@@ -528,6 +537,7 @@ public class TRPGGameManager {
                 state.nextTurn();
                 if (state.getTurnMode() >= 1) state.advanceActionClock(state.getMinutesPerTurn()); // #151: DUR 모드 명시 진행(기본 한 걸음)
                 tickFaintCounters();
+                reactToFiredCombat();                // ★A3/A4★ 유휴 스킵 중 전투 사건이 터졌으면 전원 소집 + 완급 slow
                 updateAllScoreboards();
                 String narrative = ai.stripTags(raw);
                 if (!narrative.isBlank()) {
