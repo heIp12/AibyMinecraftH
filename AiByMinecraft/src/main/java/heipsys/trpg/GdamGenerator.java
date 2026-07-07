@@ -906,6 +906,17 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
     private static final int FAMILIAR_WINDOW_LOBOTOMY = 7;    // 로보토미(ALEPH 수가 적음)
     private static final int FAMILIAR_VARIANT_WINDOW  = 7;    // 같은 베이스의 변종 재등장 금지 창
     private static final int FAMILIAR_HISTORY_MAX     = 400;  // 전체 이력 상한(태그 다수 × 창 수용)
+
+    /** '모두 무작위'(random) 모드가 ★매 스테이지★ 굴리는 구체 종류 풀. 세계 도시전설(random) 다수 +
+     *  특수 종류(프로젝트 문·게임·코즈믹·SCP·한국·일본)를 시딩한다. 이렇게 해야 UI 설명('위 전부를 섞어
+     *  무작위')대로 프로젝트 문 등 특수 시나리오가 ★그 전용 로어·테마와 함께★ 실제로 등장한다(#114·#206).
+     *  이전엔 random이 default(세계 지역 전설)로만 빠져 프로젝트 문·게임이 아예 안 나오거나 나와도 전용
+     *  설정이 미반영이었다. random 40% + 특수 6종 각 10%. */
+    private static final String[] RANDOM_KIND_POOL = {
+        "random", "random", "random", "random",
+        "projectmoon", "game", "cosmic", "scp", "korean", "japan"
+    };
+
     // 각 항목 = "태그\t이름". 구형 파일(이름만)은 로드 시 태그 "기타"로 흡수.
     private final java.util.List<String> familiarHistory =
         java.util.Collections.synchronizedList(new java.util.ArrayList<>());
@@ -1094,12 +1105,26 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
                 return SPLIT_GENERATION ? generateChunked(roomNumber, c, progress) : generate(roomNumber, 0, c, progress);
             });
         }
-        return generateFamiliarConcept(roomNumber, filter).thenCompose(concept -> {
-            logger.info("[gdam] 친숙 모드(" + filter + ") 컨셉 생성 완료"); // ★스포 방지 — 괴담 이름은 로그에 남기지 않음
+        // ★'모두 무작위'면 이번 스테이지에 쓸 구체 종류를 굴린다(프로젝트 문·게임 등 특수 시딩) — #114·#206.
+        //   굴린 종류는 downstream(태그·폴백·로어 wrap)에도 그대로 흘려보내고, 완성 gdam에 familiar_kind로 심어
+        //   게임측 테마 주입(applyScenarioFlavor)이 세션 필터가 아니라 ★이번 시나리오의 실제 종류★를 보게 한다.
+        final String kind = resolveFamiliarKind(filter);
+        return generateFamiliarConcept(roomNumber, kind).thenCompose(concept -> {
+            logger.info("[gdam] 친숙 모드(" + kind + ") 컨셉 생성 완료"); // ★스포 방지 — 괴담 이름은 로그에 남기지 않음
             if (progress != null) progress.accept("컨셉");
             String c = appendReturningCast(concept, returningCast);
             return SPLIT_GENERATION ? generateChunked(roomNumber, c, progress) : generate(roomNumber, 0, c, progress);
+        }).thenApply(gdam -> {
+            if (gdam != null && !gdam.has("error")) gdam.addProperty("familiar_kind", kind);
+            return gdam;
         });
+    }
+
+    /** '모두 무작위'(random/null)면 이번 스테이지 구체 괴담 종류를 굴린다. 구체 필터가 이미 지정돼 있으면
+     *  그대로 존중한다(테스트용 유형 선택 보존). 반환값은 gdam.familiar_kind로 심겨 게임측 테마와 정합한다. */
+    private String resolveFamiliarKind(String filter) {
+        if (filter != null && !filter.isBlank() && !"random".equals(filter)) return filter;
+        return RANDOM_KIND_POOL[java.util.concurrent.ThreadLocalRandom.current().nextInt(RANDOM_KIND_POOL.length)];
     }
 
     /** 피날레 복귀 캐스트 지시를 컨셉 뒤에 덧붙인다(없으면 그대로). roles 청크가 head(=컨셉 포함)로 이를 본다. */
