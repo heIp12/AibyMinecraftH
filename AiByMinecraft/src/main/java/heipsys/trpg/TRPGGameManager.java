@@ -4393,8 +4393,34 @@ public class TRPGGameManager {
             .append(" · 분노도 ").append(an).append("/100(").append(anBand).append(")");
         String tgt = state.getAngerTarget();
         if (an >= 40 && tgt != null && !tgt.isBlank()) sb.append(" 표적=").append(tgt);
+        sb.append(entityThreatAngerBehavior(th, an)); // ★#226★ 이 괴담 고유의 밴드 발현·rage_break를 얹는다(슬롯 있으면)
         sb.append("]");
         return sb.toString();
+    }
+
+    /** ★#226★ 이번 괴담의 entity.threat_anger 슬롯에서 ★현재 밴드에 해당하는★ 발현·rage_break를 뽑아 GM 문맥에 얹는다.
+     *  슬롯이 없거나(구버전 .gdam) 해당 밴드 값이 비면 "" — 그러면 GM은 기존 일반 규칙대로 처리한다. feed/provoke_triggers는
+     *  이미 GM이 보는 entity JSON에 있으므로 매턴 중복 주입하지 않고, '지금 이 밴드에서 벌어질 일'만 집중 상기시킨다. */
+    private String entityThreatAngerBehavior(int th, int an) {
+        JsonObject g = state.getGdamData();
+        if (g == null || !g.has("entity") || !g.get("entity").isJsonObject()) return "";
+        JsonObject e = g.getAsJsonObject("entity");
+        if (!e.has("threat_anger") || !e.get("threat_anger").isJsonObject()) return "";
+        JsonObject ta = e.getAsJsonObject("threat_anger");
+        StringBuilder b = new StringBuilder();
+        if (ta.has("threshold_behaviors") && ta.get("threshold_behaviors").isJsonObject()) {
+            JsonObject tb = ta.getAsJsonObject("threshold_behaviors");
+            String key = th >= 90 ? "90" : th >= 70 ? "70" : th >= 40 ? "40" : "";
+            if (!key.isEmpty() && tb.has(key) && !tb.get(key).isJsonNull()) {
+                String v = tb.get(key).getAsString();
+                if (v != null && !v.isBlank()) b.append(" · 이 괴담의 위협 발현: ").append(v.trim());
+            }
+        }
+        if (an >= 70 && ta.has("rage_break") && !ta.get("rage_break").isJsonNull()) {
+            String rb = ta.get("rage_break").getAsString();
+            if (rb != null && !rb.isBlank()) b.append(" · 격앙 절정(제 규칙 깨고 표적 살해→붕괴창): ").append(rb.trim());
+        }
+        return b.toString();
     }
 
     /** GM 응답의 <THREAT>/<ANGER> 태그를 소비해 게이지에 반영(클램프·로깅). 플레이어 비노출(stripTags가 제거). */
