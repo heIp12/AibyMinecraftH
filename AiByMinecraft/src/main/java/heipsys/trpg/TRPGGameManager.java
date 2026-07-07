@@ -434,12 +434,14 @@ public class TRPGGameManager {
             int freeAt = state.getClockMinutes();
             for (PlayerData pd : able) pd.busyUntilMin = freeAt; // 반응 턴 부여(즉시 자유화 — 사건 발화 전)
             tickFaintCounters();
+            flushEventGaugeLog();                     // 사건 발화 위협도 상승을 뷰어 로그에 표시
             updateAllScoreboards();
             return;
         }
         state.advanceClockTo(earliest);             // 사건이 없거나(1분 이내로 임박해 여지 없음 포함) 더 뒤면 다음 자유 시점까지(사건 넘겨 발화)
         tickFaintCounters();                         // 시간 경과분 회복·기절 카운터도 함께 진행
         reactToFiredCombat();                        // ★A3/A4★ 점프로 전투 사건이 터졌으면 전원 소집 + 완급 slow(H-2)
+        flushEventGaugeLog();                         // 사건 발화 위협도 상승을 뷰어 로그에 표시
         updateAllScoreboards();
     }
 
@@ -465,6 +467,12 @@ public class TRPGGameManager {
         if (!state.consumeCombatEventFired()) return;
         summonAllFree("전투 발생");                        // turnMode<2·이미 자유면 내부에서 no-op
         if (!"slow".equals(actionPace)) { actionPace = "slow"; gameLogger.logEvent("[완급] 전투 발생 → slow(자동)"); }
+    }
+
+    /** 사건 발화로 자동 상승한 위협도를 뷰어 이벤트 로그에 기록한다(GameStateManager는 로거가 없어 여기서 흘림).
+     *  시계가 진행돼 사건이 터진 지점마다 호출 — 버퍼가 비어 있으면 무동작(중복 호출 안전). */
+    private void flushEventGaugeLog() {
+        for (String m : state.drainEventGaugeLog()) gameLogger.logEvent(m);
     }
 
     private void startIncapacitationWatchdog() {
@@ -505,6 +513,7 @@ public class TRPGGameManager {
             state.nextTurn();
             if (state.getTurnMode() >= 1) state.advanceActionClock(state.getMinutesPerTurn()); // #151: DUR 모드에선 nextTurn이 시계 안 미니 명시 진행
             tickFaintCounters();
+            flushEventGaugeLog();                 // 사건 발화 위협도 상승을 뷰어 로그에 표시
             updateAllScoreboards();
             // #2 자동 배드엔딩(A): 회복 가망(기절 해제·조종 회복)이 있으면 계속 기다린다. 회복 가망이 전무하면(전원 동물·완전조종)
             //   K틱 연속 확인 후 종료 — 전원 무력화가 영구인데 워치독이 무한히 시간만 넘기던 것을 매듭짓는다.
@@ -564,6 +573,7 @@ public class TRPGGameManager {
                 if (state.getTurnMode() >= 1) state.advanceActionClock(state.getMinutesPerTurn()); // #151: DUR 모드 명시 진행(기본 한 걸음)
                 tickFaintCounters();
                 reactToFiredCombat();                // ★A3/A4★ 유휴 스킵 중 전투 사건이 터졌으면 전원 소집 + 완급 slow
+                flushEventGaugeLog();                // 사건 발화 위협도 상승을 뷰어 로그에 표시
                 updateAllScoreboards();
                 String narrative = ai.stripTags(raw);
                 if (!narrative.isBlank()) {
@@ -2400,6 +2410,7 @@ public class TRPGGameManager {
 
             String raw = response.rawText();
             Player player = response.player();
+            flushEventGaugeLog(); // 안전망: 고정턴 tickClock·EVENT_TRIGGER 등 per-path 미포함 경로의 위협도 상승도 여기서 표시(버퍼 무한증가 방지)
 
             // 1. 클리어 판정
             if (currentPhase == Phase.HORROR) {
@@ -2608,6 +2619,7 @@ public class TRPGGameManager {
             durEff = Math.max(1, (int) Math.round(durEff * paceMult())); // ★#151 완급★ slow면 같은 행동이 시간을 적게 소모(중요 순간 촘촘)
             if (state.getTurnMode() == 1) {
                 state.advanceActionClock(durEff); // 가변: 행동 소요만큼 시계 진행
+                flushEventGaugeLog();             // 이 행동으로 사건이 터졌으면 위협도 상승을 뷰어 로그에 표시
             } else if (state.getTurnMode() >= 2 && !state.isDailyPhase()) { // ★#208★ 일상엔 시계가 얼어 busy가 안 풀리므로 잠금 안 검
                 // ★#151 Stage B 비동기 busy★: 행동자를 그 소요만큼 '행동 중'으로 잠근다. 시계는 per-action으로 밀지 않고,
                 //   ★전원 busy가 된 순간★ 다음 자유 시점으로 점프시킨다(busyClockJumpIfAllBusy).
