@@ -132,6 +132,10 @@ public class TRPGGameManager {
     private String actionPace = "normal";
     /** 완급 배수: slow=0.5(행동이 절반의 시간만 소모) / fast=1.6 / normal=1.0. durEff에 곱해 시계·busy 진행에 반영. */
     private double paceMult() { return "slow".equals(actionPace) ? 0.5 : "fast".equals(actionPace) ? 1.6 : 1.0; }
+    /** ★사소한 행동 시간 과소모 방지★ 가변/비동기 모드에서 GM이 <DUR>을 누락한 행동의 기본 소요(분).
+     *  예전엔 고정턴 분(minutesPerTurn 15~20)을 통째로 흘려 사소한 행동에도 20분씩 소모됐다 →
+     *  DUR 누락은 '짧은 미상 행동'으로 보고 작은 값만 흘린다(minutesPerTurn가 더 작으면 그쪽을 따른다). */
+    private static final int DUR_MISSING_MIN = 3;
 
     /** 캐릭터 생성 완료 대기 중인 플레이어 UUID 집합 */
     private final Set<UUID> pendingCreation    = ConcurrentHashMap.newKeySet();
@@ -2576,7 +2580,9 @@ public class TRPGGameManager {
                 PlayerData durPd = player != null ? state.getPlayer(player) : null;
                 gameLogger.write("시간", durPd != null ? durPd.gmDisplayName() : "", "[행동 소요 " + durMin + "분]");
             }
-            int durEff = durMin > 0 ? durMin : state.getMinutesPerTurn();
+            // ★사소한 행동 시간 과소모 방지★: DUR 누락 행동은 고정턴 분(15~20) 통째가 아니라 '짧은 미상 행동'(DUR_MISSING_MIN)만 흘린다.
+            //   (실측: DUR 누락 3회가 20분씩 흘러 경과 시간의 절반을 잡아먹었다.) 오래 걸리는 행동은 GM이 DUR로 명시.
+            int durEff = durMin > 0 ? durMin : Math.min(state.getMinutesPerTurn(), DUR_MISSING_MIN);
             durEff = Math.max(1, (int) Math.round(durEff * paceMult())); // ★#151 완급★ slow면 같은 행동이 시간을 적게 소모(중요 순간 촘촘)
             if (state.getTurnMode() == 1) {
                 state.advanceActionClock(durEff); // 가변: 행동 소요만큼 시계 진행
