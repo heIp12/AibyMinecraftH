@@ -2357,6 +2357,9 @@ public class TRPGGameManager {
         //   turnCtx로 넘기면 GM은 다 보되(입력 앞단), 표시·로그는 순수 행동만 남는다.
         StringBuilder gmCtx = new StringBuilder();
 
+        // ★A: 데이터 먼저 정제★ — 이번 턴 판단 상태(국면·확정정보)를 맨 앞에 둔다(B 절차 헤더가 순서대로 읽는다).
+        gmCtx.append(turnDigestContext(pd));
+
         // 행운 보정 — ★판정(주사위)이 실제로 일어날 때까지 무장 유지★(#176). 여기서 소비하지 않고 GM 문맥에만 알린다:
         //   예전엔 이 시점에 소비/이월정리해, '판정 없이 서술만 된' 행동에서 보정이 증발했다. 실제 소비는 playDiceResult의 굴림 시점.
         Integer luckMod = pendingLuckModifier.get(player.getUniqueId());
@@ -9717,6 +9720,30 @@ public class TRPGGameManager {
              : c >= 4  ? "보통"
              : c >= 2  ? "약함(설득이 잘 먹히지 않는다)"
              :           "거의 없음(불쾌·거슬리게 느껴진다 — 친절한 이도 시큰둥·건성으로 답하고, 평범하거나 경계심 있는 이는 무뚝뚝·비협조·냉담하거나 대놓고 무시·적대할 수 있다)";
+    }
+
+    /**
+     * ★A(데이터 먼저 정제)★ — 이번 턴 판단에 필요한 상태를 ★맨 앞에★ 구조화해 GM에 준다(gmCtx 선두).
+     * GM 프롬프트의 '매 턴 절차'(B) 헤더가 이 [정제된 상황]을 순서대로 읽는다. 플레이어·로그 미노출(gmCtx 전용).
+     * 세력(위협·분노)·행동자 능력치·같은 구역 동료는 뒤따르는 전용 노트에 있으므로 여기선 국면·확정정보만(중복 회피).
+     */
+    private String turnDigestContext(PlayerData pd) {
+        StringBuilder d = new StringBuilder("\n[정제된 상황 — 아래 '매 턴 절차' 순서로 판단. 이 블록은 판단용이니 그대로 서술·노출하지 마라]");
+        String gukmyeon = (currentPhase == Phase.HORROR)
+            ? "괴담 파트 · 타임라인 " + state.getTimelineStage() + "단계"
+            : (currentPhase == Phase.DAILY ? "일상 파트" : "진행 중");
+        d.append("\n· 국면: ").append(gukmyeon);
+        if (pd != null) {
+            java.util.List<String> facts;
+            synchronized (pd.keyFacts) { facts = new java.util.ArrayList<>(pd.keyFacts); }
+            if (facts.isEmpty())
+                d.append("\n· 확정 정보: 아직 없음 — 새 확정 사실은 탐색·능력의 보상으로만(먼저 떠먹이지 마라).");
+            else
+                d.append("\n· 확정 정보(이 인물이 이미 아는 사실 — 다시 처음처럼 알리거나 모순되게 굴지 마라): ")
+                 .append(String.join("; ", facts));
+        }
+        d.append("\n· 세력(위협·분노)·행동자 능력치·같은 구역 동료는 아래 태그드 노트 참조.\n");
+        return d.toString();
     }
 
     /**
