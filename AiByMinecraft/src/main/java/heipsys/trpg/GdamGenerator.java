@@ -1221,14 +1221,10 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
     }
 
     /** 피날레 복귀 캐스트 지시를 컨셉 뒤에 덧붙인다(없으면 그대로). roles 청크가 head(=컨셉 포함)로 이를 본다. */
-    private String appendReturningCast(String concept, String returningCast) {
-        if (returningCast == null || returningCast.isBlank()) return concept;
-        return concept
-            + "\n\n## ★복귀 캐스트 (피날레) — 아래 인물들을 이번 시나리오 roles(배역)로 사용\n"
-            + returningCast
-            + "\n이 인물들이 ★다시 모여★ 최후의 사건을 맞는다. roles 배열의 char_name·성별·나이·직업을 "
-            + "위 인물과 일치시키고(각 1명씩), 관계·단서·배경을 이들이 함께 겪는 결말로 엮어라. "
-            + "새 인물을 창작하기보다 이 캐스트를 우선 배역으로 삼아라.";
+    /** 캐스트/앵커 힌트(자기완결 블록 — 피날레 복귀 캐스트 또는 나이·성별 앵커)를 컨셉 뒤에 붙인다. roles 청크가 head로 이를 본다. */
+    private String appendReturningCast(String concept, String castHint) {
+        if (castHint == null || castHint.isBlank()) return concept;
+        return concept + "\n\n" + castHint;
     }
 
     /**

@@ -1601,7 +1601,9 @@ public class TRPGGameManager {
                     pd.roleId   = asgn.roleId();
                     pd.zone     = asgn.zone();
                     pd.charName = asgn.charName();
-                    pd.gender   = asgn.gender();
+                    // ★성별 앵커 유지★: 초기 스테이터스 생성 시 굴린 성별을 배역 성별로 덮어쓰지 않는다
+                    //   (앵커 매칭으로 대개 일치하지만, 불일치해도 플레이어 고유 성별을 우선). 미설정일 때만 배역 성별 채택.
+                    if (pd.gender == null || pd.gender.isEmpty()) pd.gender = asgn.gender();
                     pd.roleAssigned = true;
                 }
             }
@@ -6203,11 +6205,50 @@ public class TRPGGameManager {
         return sb.toString();
     }
 
-    /** 해당 룸이 피날레면 복귀 캐스트 힌트를, 아니면 null을 돌려준다(생성 시드용). */
+    /** 나이·성별 앵커/피날레용 초기 정체성 확정 — 미설정이면 무작위 롤(초기 스테이터스 생성). */
+    private int rollAnchorAge() {
+        java.util.concurrent.ThreadLocalRandom r = java.util.concurrent.ThreadLocalRandom.current();
+        int roll = r.nextInt(100);
+        if (roll < 60) return 12 + r.nextInt(19);
+        if (roll < 85) return 30 + r.nextInt(21);
+        if (roll < 95) return 8 + r.nextInt(5);
+        return 51 + r.nextInt(30);
+    }
+    private void ensurePlayerIdentity(PlayerData pd) {
+        if (pd == null) return;
+        if (pd.age <= 0) pd.age = rollAnchorAge();
+        if (pd.gender == null || pd.gender.isEmpty())
+            pd.gender = java.util.concurrent.ThreadLocalRandom.current().nextBoolean() ? "남성" : "여성";
+    }
+
+    /** 비피날레: 배역을 플레이어 초기 나이·성별에 맞추는 앵커 블록(미설정 플레이어는 지금 롤). */
+    private String buildPlayerAnchorHint() {
+        StringBuilder list = new StringBuilder();
+        int n = 0;
+        for (PlayerData pd : state.getAllPlayers()) {
+            if (pd == null) continue;
+            ensurePlayerIdentity(pd);
+            list.append("- ").append(pd.age).append("세 ").append(pd.gender).append("\n");
+            n++;
+        }
+        if (n == 0) return "";
+        return "## ★플레이어 나이·성별 앵커 — roles(배역)를 아래에 맞춰 생성\n" + list
+            + "★기본★: 각 플레이어에 대응하는 배역의 age_range를 그 나이 ★±5(최소 8, 최대 80)★로 하고 gender를 ★일치★시켜라(각 1명씩, 위 " + n + "명). 기본은 이 나이에서 크게 벗어나지 마라.\n"
+            + "★예외(상황 우선)★: 시나리오 배경이 특정 연령대를 ★요구★하면(예: 학교 시험·수학여행→학생, 유치원→아동, 군부대→성인 병사, 요양원→노인) 그 설정을 ★우선★해 배역 age_range를 상황 연령대로 잡아라 — 이 경우 위 앵커 나이는 접고 상황에 맞춰 나이가 바뀐다(단 ★gender는 그대로 유지★). 이런 강제 상황이 아니면 항상 위 앵커를 따르라.\n"
+            + "그 외 배역·NPC 나이·성별은 자유. 초자연·특수 배역도 나이 예외 가능.";
+    }
+
+    /** 해당 룸이 피날레면 복귀 캐스트, 아니면 나이·성별 앵커를 ★자기완결 블록★으로 돌려준다(생성 시드용). */
     private String castHintFor(int room) {
-        if (room != FINAL_ROOM) return null;
-        String hint = buildReturningCastHint();
-        return hint.isBlank() ? null : hint;
+        if (room == FINAL_ROOM) {
+            String cast = buildReturningCastHint();
+            if (cast.isBlank()) return null;
+            return "## ★복귀 캐스트 (피날레) — 아래 인물들을 이번 시나리오 roles(배역)로 사용\n" + cast
+                + "\n이 인물들이 ★다시 모여★ 최후의 사건을 맞는다. roles 배열의 char_name·성별·나이·직업을 위 인물과 "
+                + "일치시키고(각 1명씩), 관계·단서·배경을 이들이 함께 겪는 결말로 엮어라. 새 인물 창작보다 이 캐스트를 우선 배역으로.";
+        }
+        String anchor = buildPlayerAnchorHint();
+        return anchor.isBlank() ? null : anchor;
     }
 
     /**
@@ -11585,6 +11626,16 @@ public class TRPGGameManager {
      * 캐릭터 생성 전 역할을 미리 배정하여 age_range·job_pool을 chargen에 전달.
      * pd가 없는 상태에서 호출하므로 PlayerData 수정은 하지 않는다.
      */
+    /** 배역 age_range의 중앙값(없으면 25). 나이 앵커 매칭용. */
+    private static int roleMidAge(JsonObject role) {
+        if (role.has("age_range") && role.get("age_range").isJsonArray()) {
+            JsonArray a = role.getAsJsonArray("age_range");
+            if (a.size() >= 2) return (a.get(0).getAsInt() + a.get(1).getAsInt()) / 2;
+            if (a.size() == 1) return a.get(0).getAsInt();
+        }
+        return 25;
+    }
+
     private void doPreAssign(List<Player> players, JsonObject gdam) {
         preAssignedRoleData.clear();
         preAssignments.clear();
@@ -11635,12 +11686,38 @@ public class TRPGGameManager {
                 preAssignments.put(pl.getUniqueId(), roleDataToAssignment(ordered.get(j)));
             }
         } else {
-            for (int i = 0; i < shuffled.size() && i < ordered.size(); i++) {
-                usedRoles.add(i);
-                UUID uuid = shuffled.get(i).getUniqueId();
-                JsonObject role = ordered.get(i);
-                preAssignedRoleData.put(uuid, role);
-                preAssignments.put(uuid, roleDataToAssignment(role));
+            // ★나이·성별 앵커 매칭★: 각 플레이어를 자신의 초기 나이·성별에 가장 가까운 배역에 그리디 배정한다
+            //   (배역→플레이어 역방향 폐기 — 배역이 플레이어에 맞춰짐). 코어 배역이 남아있으면 코어에서 먼저 채워
+            //   중요 인물이 반드시 배정되게 하고, 그 안에서 (나이차 + 성별 불일치 벌점)이 최소인 배역을 고른다.
+            //   앵커 정보가 아직 없으면(1스테이지: 캐릭터 생성 전이라 state에 pd 없음) 순서대로 폴백(기존 동작).
+            int coreCount = coreRoles.size();
+            for (Player pl : shuffled) {
+                PlayerData pd = state.getPlayer(pl);
+                if (pd != null) ensurePlayerIdentity(pd);
+                int pAge      = (pd != null && pd.age > 0) ? pd.age : -1;
+                String pGender = (pd != null && pd.gender != null) ? pd.gender : "";
+                boolean coreRemain = false;
+                for (int i = 0; i < coreCount; i++) if (!usedRoles.contains(i)) { coreRemain = true; break; }
+                int hi = coreRemain ? coreCount : ordered.size(); // 코어 남으면 코어에서만 선택
+                int bestIdx = -1, bestCost = Integer.MAX_VALUE;
+                for (int i = 0; i < hi; i++) {
+                    if (usedRoles.contains(i)) continue;
+                    int cost;
+                    if (pAge < 0) {
+                        cost = i; // 앵커 없음 → 순서대로(안정적 폴백)
+                    } else {
+                        JsonObject role = ordered.get(i);
+                        cost = Math.abs(pAge - roleMidAge(role));
+                        String rGender = role.has("gender") ? role.get("gender").getAsString() : "";
+                        if (!pGender.isEmpty() && !rGender.isEmpty() && !pGender.equals(rGender)) cost += 40;
+                    }
+                    if (cost < bestCost) { bestCost = cost; bestIdx = i; }
+                }
+                if (bestIdx < 0) break; // 남은 배역 없음
+                usedRoles.add(bestIdx);
+                JsonObject role = ordered.get(bestIdx);
+                preAssignedRoleData.put(pl.getUniqueId(), role);
+                preAssignments.put(pl.getUniqueId(), roleDataToAssignment(role));
             }
         }
         // 남은(미사용) 배역 → GM이 직접 조종

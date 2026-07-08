@@ -251,7 +251,8 @@ public class PlayerData {
         zone         = "";
         spot         = "";
         charName     = "";
-        gender       = "";
+        // gender는 ★유지★ — 초기 스테이터스 생성 시 굴린 나이·성별 앵커(age는 baseAge로 복구)와 짝을 이뤄
+        //   스테이지가 바뀌어도 같은 인물로 남고, 배역이 이 성별에 맞춰 생성·배정된다(배역→플레이어 역방향 폐기).
         roleAssigned = false;
         heldItemIds.clear();
         itemStates.clear();

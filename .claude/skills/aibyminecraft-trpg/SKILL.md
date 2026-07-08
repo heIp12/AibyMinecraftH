@@ -98,6 +98,16 @@ description: >-
   RANDOM_KIND_POOL에 신설 출처(western/creepypasta/backrooms/internet/real/sf) 편입 + switch 케이스 + catalogAmplifyNote(규모
   정합 증폭/축소). ★공존(같은 출처끼리만·SCP+cosmic 교차 금지·vibe로 짝·1~4 가변)은 Phase 1b 예정.★ sf 6하위결(외계·지저·
   시뮬·음모·기생·AI우주). 검증: korean major S1 45%→S6 3%(억제, 0아님)·cosmic major S1 13%(규모 억제).
+- **★나이·성별 앵커(플레이어→배역, 역방향 폐기)★**: 초기 스테이터스 생성 시 플레이어 고유 나이·성별을 굴리고(★배역이 여기
+  맞춰 생성·배정됨★, 배역→플레이어 아님). ①`CharacterGenerator.rollStats`가 나이 가중굴림(12~30빈출, [8,80] 클램프)+성별 50/50
+  을 ★항상★ 굴린다(배역 age_range로 나이 뒤집는 분기 제거 — pd.age 기본값 25 때문에 `if(pd.age>0)` 가드는 전원 25 고정 버그였음).
+  ②age는 baseAge로 스테이지 넘어 지속(clearRoleData→resetToBase), gender도 ★유지★(clearRoleData의 `gender=""` 와이프 제거 —
+  age와 짝 앵커). ③생성 힌트 `buildPlayerAnchorHint`(castHintFor→gdamGen.generate 5-arg)가 배역 age_range=플레이어나이±5·
+  gender일치 요구. ④배정 `doPreAssign`(비피날레)·`RoleManager.assignRoles`가 ★그리디 매칭★: 코어 우선 + cost=|나이차|+성별불일치40.
+  ⑤성별 가드: 배정 시 `pd.gender=asgn.gender()`는 ★미설정일 때만★(앵커 유지, 3곳: assignRolesAndStart·assignRoles·assignLateJoin).
+  ★소프트 앵커★: 상황이 특정 연령대를 요구하면(학교시험→학생·유치원→아동·군부대→성인) 힌트가 그 연령대를 우선, 배역 age_range가
+  상황대로 → `applyRoleAge` 클램프로 나이가 그 스테이지만 바뀌고(성별은 유지) 다음 스테이지엔 baseAge로 복귀. 검증: anchor_sim.py
+  (일반=앵커유지·학교=45세→18세 학생·혼합=노장→교사·폴백=순서). ★"배역이 나이·성별을 정한다"로 되돌리지 말 것.★
 - **[예약] 정보 경제 원칙(시나리오 개편 종료 후 검토)**: ①저해상도 힌트가 '사물함이 보인다'처럼 콕 찍어 과다노출 → 다른 것도
   섞어 진짜 저해상도로 ②정보는 얻기 어렵게 + 중요정보는 위험 감수 ③정확 정보=대부분 괴담 쉽게 종결(다회차·강능력 조기종결,
   질질끌기 X) ④잘못된 정보=파멸. 현재 안 지켜짐 — 이전 예약 항목 포함 시나리오 개편 종료 후 착수.
