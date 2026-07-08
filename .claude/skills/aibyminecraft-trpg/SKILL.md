@@ -121,6 +121,14 @@ description: >-
   종결/틀린 정보 확신은 파국" 불릿 신설 + GdamGenerator mislead(:768)에 실질 대가·누적 파국 강화. 이미 정합하던 곳: 런타임
   gmCtx SPR 노트(TRPGGameManager:9737 "영감=지각 해상도"·:9726 "영감↓ 인색")·GdamGenerator:777 "영감 해상도와 곱해짐" — :109
   "분명히"가 이들과 유일하게 모순이었어서 그걸 제거·정합. ★"탐색만 하면 무조건 분명한 단서"로 되돌리지 말 것(영감 무의미화).★
+- **[완료] GM 절차지향화 A·B(NPC reaction-first 이식)**: NPC(#131)처럼 GM도 ①데이터 먼저 정제 → ②절차적 유도.
+  ▸**A(데이터 정제)**: `TRPGGameManager.turnDigestContext(pd)`가 매 턴 gmCtx ★선두★에 `[정제된 상황]`(국면=일상/괴담·타임라인
+  단계, 확정정보=keyFacts)을 구조화 주입(세력·능력치·목격은 뒤 전용 노트라 여기선 국면·확정정보만=중복 회피). ▸**B(절차 헤더)**:
+  `PromptBuilder.GM_TURN_PROCEDURE`(별도 상수)를 GM_SYSTEM_BASE 맨 앞에 String.join — 매 턴 1파악→2판정(주사위2단계)→3반응
+  (세력)→4정보(영감=해상도·스포트라이트 금지)→5서술→6태그 '읽는 순서'. ★기존 선언 규칙은 그대로 두고 순서만 얹음(저위험).★
+  ▸**C(본문 절차화·중복제거)는 후순위 미착수**(A/B 실플레이 검증 후). ★★회귀 방지(빌드): GM_SYSTEM_BASE_1이 64769B(한계
+  65535, 여유 766B)라 GM 프롬프트에 새 텍스트를 _1(또는 _2A/_2B 만수위)에 붙이면 컴파일 폭발(5942bd3 전례). ★반드시 별도 상수로
+  만들어 String.join에 추가★('+'는 상수폴딩돼 다시 단일 64KB라 금지). 편집 전 `.encode('utf-8')` 바이트 측정 습관화.★★
 - **자동진행 = GM위임 아닌 코드 결정(전지성 차단)**: 자동진행 경로 4개 중 GM을 호출하는 건 `maybeAccelerateIdle`
   하나뿐 — 나머지(advanceRoundAfterAllActed / busyClockJumpIfAllBusy / summonAllFree / 전원무력 워치독)는
   ★GM콜 0★(순수 시계·카운터 연산)이라 프로즈를 안 만들어 미발견 정보 누출이 원천 불가. maybeAccelerateIdle은
