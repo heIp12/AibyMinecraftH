@@ -1096,8 +1096,10 @@ public class AiManager {
 
         String body;
         // 출력이 길수록 더 오래 걸린다 → maxTokens에 비례해 타임아웃을 늘린다(.gdam 단일 생성 12000토큰은 120초로 부족).
-        // 일반 GM/보조 호출(≤2048)은 120초, 대용량 생성은 최대 300초까지.
-        long timeoutSec = Math.max(120, Math.min(300, 60 + maxTokens / 50));
+        // ★Opus+thinking(adaptive)은 토큰당 훨씬 느려 300초 캡이면 대용량 생성이 통째로 타임아웃 → 재생성/폴백으로
+        //   번지고, ★타임아웃난 요청은 Anthropic엔 과금됐는데 클라이언트는 usage를 못 받아 /trpg status에 미집계★된다
+        //   (0.41달러 소모인데 ₩6만 표시된 원인). 캡 600초·토큰당 여유 상향으로 정상 완주율을 높인다(생성은 백그라운드).
+        long timeoutSec = Math.max(150, Math.min(600, 90 + maxTokens / 20));
         HttpRequest.Builder builder = HttpRequest.newBuilder()
             .timeout(Duration.ofSeconds(timeoutSec)) // 응답 무한 대기 방지 (직렬화된 GM 락이 영구 점유되는 것 차단)
             .header("Content-Type", "application/json");
