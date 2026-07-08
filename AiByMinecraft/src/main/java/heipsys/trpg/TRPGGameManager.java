@@ -12065,7 +12065,8 @@ public class TRPGGameManager {
                         : "";
         ai.injectGmSystem("[판정 결과] " + (reason.isEmpty() ? "" : reason + " — ")
             + "주사위 d" + max + "=" + roll + modNote + (effDc > 0 ? (", 성공기준 " + effDc) : "") + " → ★" + outcome + "★." + critHint   // ★실제 판정 기준(effDc)으로 주입 — dc와 어긋나 '11<14인데 성공' 같은 모순 서술 유발하던 문제 해소
-            + " 이 결과대로 다음 전개를 이어서 서술하라. 결과와 어긋나게(실패인데 성공한 듯, 또는 그 반대로) 쓰지 마라.");
+            + " 이 결과대로 다음 전개를 이어서 서술하라. 결과와 어긋나게(실패인데 성공한 듯, 또는 그 반대로) 쓰지 마라."
+            + " ★결과의 즉각 반응은 판정 직후 이미 짧게 서술됐다★ — 그 감각적 순간을 그대로 반복하지 말고, 이 결과의 ★여파·기계 효과(피해·상태·종결 등)와 다음 전개★를 이어서 처리하라.");
         // ★영감 통찰: '아는 정보만' 엮어 결론을 이끌게 한다★ — 성공/부분성공 시 GM이 지금 아는 것만으로 진실에 한 걸음
         //   다가간 결론을 서술로 보여주도록, 이 인물이 현재 아는 것을 함께 주입한다(모르는 비밀 누설 방지 = 공정성).
         if ("spr".equals(statKey) && dpd != null && (success || partial)) {
@@ -12147,6 +12148,24 @@ public class TRPGGameManager {
                 + (fdc > 0 ? " §8(성공 기준 " + fdc + " 이상)" : "")
                 + " §7→ " + colorCode(col) + (outcome.isEmpty() ? "판정" : outcome));
         }, lastTick + 7L);
+        // ★서술→판정→서술★: 굴림 연출이 끝난 뒤 그 결과의 즉각 여파를 GM이 짧게 이어 서술한다(판정 직후 결과 서술이 비던 문제 해소).
+        //   ★순수 서술만★(태그·기계효과 금지) — 피해·상태·종결 등 기계 효과는 [판정 결과] 주입을 소비하는 다음 진행에서 처리(이중 처리 방지).
+        final String fCritOut = critHint, fReasonOut = reason, fOutOut = outcome; final PlayerData fdpdOut = dpd;
+        final int frollOut = roll, fdcOut = effDc;
+        plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+            if (!player.isOnline()) return;
+            String who = fdpdOut != null ? fdpdOut.gmDisplayName() : player.getName();
+            String prompt = "방금 " + who + "의 행동 판정 결과가 나왔다" + (fReasonOut.isEmpty() ? "" : "(" + fReasonOut + ")") + ": "
+                + "주사위 d" + fmax + "=" + frollOut + (fdcOut > 0 ? ", 성공기준 " + fdcOut : "") + " → ★" + fOutOut + "★." + fCritOut
+                + "\n이 결과의 ★즉각적·감각적 여파만 2~3문장★으로 그 인물 장면에 이어 서술하라. "
+                + "★<DICE>·<CLEAR>·<STATE_UPDATE> 등 어떤 태그도 내지 마라 — 순수 서술만★(피해·상태·종결 같은 기계 효과는 다음 진행에서 처리된다).";
+            ai.callGmAiOnce(gmSystemPrompt, prompt).thenAccept(raw ->
+                plugin.getServer().getScheduler().runTask(plugin, () -> {
+                    if (!player.isOnline()) return;
+                    String narr = ai.stripTags(raw);
+                    if (!narr.isBlank()) narrativeDelivery.deliver(player, narr);
+                }));
+        }, lastTick + 72L); // 최종 결과 타이틀(3초 유지) 다 뜬 뒤에 결과 서술 배달
     }
 
     /** NamedTextColor → §코드 (채팅 기록 강조용) */
