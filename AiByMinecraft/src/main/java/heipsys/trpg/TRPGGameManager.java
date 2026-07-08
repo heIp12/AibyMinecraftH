@@ -668,6 +668,12 @@ public class TRPGGameManager {
             case "scp"    -> "SCP만";
             case "korean" -> "한국 괴담만";
             case "japan"  -> "일본 괴담만";
+            case "western"     -> "서양 괴담만";
+            case "creepypasta" -> "크리피파스타만";
+            case "backrooms"   -> "백룸·이계만";
+            case "internet"    -> "인터넷 괴담만";
+            case "real"        -> "실화·미제사건만";
+            case "sf"          -> "SF 공포만";
             case "rule"   -> "규칙 괴담만";
             case "projectmoon" -> "환상체(프로젝트 문)";
             case "game"        -> "게임 괴담";
