@@ -23,6 +23,7 @@
   .vp:hover{background:var(--panel2)} .vp.active{background:var(--accent);color:#0d1018;font-weight:600}
   .vp .dot{width:9px;height:9px;border-radius:50%;flex:none}
   .vp .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+  .vp .acct{font-size:10px;color:var(--dim);flex:none;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;opacity:.85;max-width:44%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .vp.active .acct{color:#0d1018;opacity:.75}
   .vp .cnt{font-size:11px;color:var(--dim);flex:none} .vp.active .cnt{color:#0d1018}
   .filelist .fl{padding:5px 9px;border-radius:6px;cursor:pointer;font-size:12px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .filelist .fl:hover{background:var(--panel2);color:var(--txt)} .filelist .fl.on{background:var(--panel2);color:var(--accent)}
@@ -106,6 +107,7 @@
   .ev.k-vital .badge{background:var(--vital);color:#2a0f14}
   .ev.k-item{border-left-color:#e0c56a;background:#241f14} .ev.k-item .badge{background:#e0c56a;color:#2a230f}
   .ev.k-clue{border-left-color:#66c8b0;background:#14231f} .ev.k-clue .badge{background:#66c8b0;color:#0f2a23}
+  .ev.k-timeline{border-left-color:#e0a24a;background:#241d12} .ev.k-timeline .badge{background:#e0a24a;color:#2a1f0f} /* 타임라인 사건 — GM 전용(전체뷰만) */
   .ev.k-shout,.ev.k-letter,.ev.k-whisper{border-left-color:var(--broadcast)}
   .ln.tamper-orig{color:var(--dim);text-decoration:line-through;opacity:.72}
   .ln.tamper-new{color:#ff9a6b;font-weight:600}
@@ -178,7 +180,7 @@
 <script>
 "use strict";
 let EVENTS=[], VIEWPOINTS=[], curVP="__all__";
-let ALIAS={}, REPLAY=null, SCENARIO=null, RAWCACHE=[], KNOWN=new Set(), CONTACTS={};
+let ALIAS={}, REPLAY=null, SCENARIO=null, RAWCACHE=[], KNOWN=new Set(), CONTACTS={}, ACCT={};
 let HAS_NATIVE_COMM=false; // 로그에 통신(통신/call…) 이벤트가 이미 있으면 @입력을 통화로 재분류 안 함(통화 이중표시 방지)
 let FILES={logs:[],replays:[],scenarios:[],gdams:[]};
 let playing=false, speed=1, queue=[], qi=0, qtimer=null, curBodyEl=null;
@@ -310,7 +312,7 @@ function visibleTo(e,vp){
   if(e.kind==="nearby"){ const az=zoneAtSeq(e.actor,e.seq||0), vz=zoneAtSeq(vp,e.seq||0); return az!=null&&vz!=null&&az===vz; } // 근처(면전)는 같은 구역만
   return false; }
 function buildViewpoints(){ const m=new Map();
-  for(const e of EVENTS){ if(e.kind==="alias")continue; for(const c of [e.actor,...e.to])if(isPerson(c))m.set(c,(m.get(c)||0)+1); }
+  for(const e of EVENTS){ if(e.kind==="alias"||e.kind==="timeline")continue; for(const c of [e.actor,...e.to])if(isPerson(c))m.set(c,(m.get(c)||0)+1); }
   // 플레이어 판별: replay 표시명 + input(입력) 이벤트 발화자(=플레이어만 입력함). 나머지는 NPC·괴담.
   const players=new Set();
   const uni=(nm,jb)=>{nm=(nm||"").trim();jb=(jb||"").trim();return (nm&&jb)?nm+"("+jb+")":(nm||jb);};
@@ -583,8 +585,8 @@ function evHtmlSplit(e){
 
 function renderSide(){
   const side=document.getElementById("side"); side.innerHTML="";
-  const mk=(name,label,count,color)=>{const d=document.createElement("div");d.className="vp"+(curVP===name?" active":"");
-    d.innerHTML=(color?`<span class="dot" style="background:${color}"></span>`:"")+`<span class="nm">${label}</span><span class="cnt">${count}</span>`;
+  const mk=(name,label,count,color,acct)=>{const d=document.createElement("div");d.className="vp"+(curVP===name?" active":"");
+    d.innerHTML=(color?`<span class="dot" style="background:${color}"></span>`:"")+`<span class="nm">${label}</span>`+(acct?`<span class="acct" title="플레이어 계정: ${escAttr(acct)}">${esc(acct)}</span>`:"")+`<span class="cnt">${count}</span>`;
     d.onclick=()=>{curVP=name;stopPlay();renderSide();renderMain();renderInfo();
       if(name!=="__all__"){const info=document.getElementById("info");if(info)info.classList.add("open");const tb=document.getElementById("toggleInfo");if(tb)tb.style.display="";} };return d;}; // 시점 선택 시 그 인물의 아는 것(아이템·단서) 패널 갱신·표시
   side.appendChild(Object.assign(document.createElement("h2"),{textContent:"전체"}));
@@ -592,7 +594,7 @@ function renderSide(){
   const playersV=VIEWPOINTS.filter(v=>v.isPlayer), othersV=VIEWPOINTS.filter(v=>!v.isPlayer);
   if(!VIEWPOINTS.length){const e=document.createElement("div");e.className="empty";e.style.padding="10px";e.textContent="(.jsonl 권장 · .replay/배역 별칭이면 이름 통합)";side.appendChild(e);}
   if(playersV.length){ side.appendChild(Object.assign(document.createElement("h2"),{textContent:"🙂 플레이어"}));
-    for(const v of playersV) side.appendChild(mk(v.name,v.name,v.count,colorFor(v.name))); }
+    for(const v of playersV) side.appendChild(mk(v.name,v.name,v.count,colorFor(v.name),ACCT[v.name]||"")); }
   if(othersV.length){ side.appendChild(Object.assign(document.createElement("h2"),{textContent:"👤 NPC · 괴담"}));
     for(const v of othersV) side.appendChild(mk(v.name,v.name,v.count,colorFor(v.name))); }
   if(FILES.logs.length){ side.appendChild(Object.assign(document.createElement("h2"),{textContent:"폴더 로그"}));
@@ -608,6 +610,7 @@ function badgeFor(e){ return e.kind==="ability"?(e.phase==="result"?"✨ "+(e.ab
   :e.kind==="signal"?("🚩 "+(e.via||"수신호")):e.kind==="psychic"?("🧠 "+(e.via||"정신감응"))
   :e.kind==="gm"?"GM 서술":e.kind==="broadcast"?"📢 방송":e.kind==="npc"?"☎ NPC"
   :e.kind==="thought"?"💭 생각"
+  :e.kind==="timeline"?"⏳ 타임라인 사건"
   :e.kind==="assign"?"🎭 배역":e.kind==="system"?"시스템":e.kind==="private"?"개인":e.kind==="gm_input"?"GM입력(상세)":(e.cat||"이벤트"); }
 const COMM_KINDS=new Set(["call","nearby","broadcast","shout","letter","whisper","signal","psychic"]);
 
@@ -931,6 +934,14 @@ function buildAlias(){
         const n=(acctText[acct].match(re)||[]).length; if(n>bestN){bestN=n;best=ch;} }
       if(best&&bestN>0) setAll(canon(best),acct); } // 계정→캐릭터 표시명으로 통합
   })();
+  // ★시점 표시명 → 플레이어 계정(마크 닉네임)★: 왼쪽 시점바 '플레이어' 항목에 계정명을 병기해
+  //  어느 실제 플레이어인지 알 수 있게 한다. 계정은 배역 별칭([배역] LiNez_ = 오다인)에서만 확정적으로 온다.
+  ACCT={};
+  for(const ev of RAWCACHE){ let acct="";
+    if(ev.kind==="alias"&&ev.account)acct=String(ev.account).trim();
+    else if(ev.cat==="배역"&&ev.who)acct=String(ev.who).trim();
+    if(!acct)continue; const disp=canon(acct); // 최종 표시명(이름(직업))으로 접힌 뒤 역인덱싱
+    if(disp&&disp!==acct&&!ACCT[disp])ACCT[disp]=acct; }
 }
 function rebuild(raw){
   // 로그에 네이티브 통신 이벤트가 있으면(신형) @입력을 통화로 재분류하지 않는다 — '통화 두번' 방지. (구형 txt엔 없어 그대로 변환)

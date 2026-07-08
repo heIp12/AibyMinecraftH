@@ -217,6 +217,18 @@ public class GameLogger {
         record("생각", npcName, thought, extra);
     }
 
+    /** ★타임라인 사건 발생 로그 — GM 전용(뷰어 '전체(전지적)' 뷰에만, 플레이어·NPC 시점 비노출)★.
+     *  중간중간 예정 사건이 터질 때 그 이름과 결과(effect=사전설계 데이터라 추가 AI 호출 없음)를 감사용으로 남긴다.
+     *  actor="타임라인"이라 어떤 인물 시점과도 안 맞아 __all__에서만 보인다(visibleTo 폴백). */
+    public void logTimelineEvent(String label, String effect) {
+        if (label == null || label.isBlank()) return;
+        JsonObject extra = new JsonObject();
+        extra.addProperty("kind", "timeline");
+        extra.addProperty("actor", "타임라인");
+        String body = label + (effect == null || effect.isBlank() ? "" : " — " + effect);
+        record("타임라인", "타임라인", body, extra);
+    }
+
     /** 개인 전용 시스템 메시지(배역 배정·등장 등) — 로그 뷰어에서 ★그 플레이어 시점에만★ 보이게(NPC·타인 시점 제외). */
     public void logPrivate(String player, String content) {
         if (player == null || player.isEmpty()) { logEvent(content); return; }
