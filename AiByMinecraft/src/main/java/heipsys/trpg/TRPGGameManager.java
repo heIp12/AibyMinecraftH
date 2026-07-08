@@ -2816,6 +2816,7 @@ public class TRPGGameManager {
             tamperDroppedNotes();
             // ★지연 전달★: 전서구·인편으로 부친 편지가 도착 턴이 됐으면 전달(전달 중 변조 가능).
             processPendingDeliveries();
+            decayCommFatigue(); // #249: 매턴 통신수단 신뢰도 회복(변조·감청 뜸하면) — 남용 자기제한의 회복 축
 
             // 12. 스테이지 기반 자동 등장 체크 (STATE_UPDATE 외부에서 stage 이미 변경된 경우 보정)
             checkAndAutoSpawn();
@@ -8344,7 +8345,9 @@ public class TRPGGameManager {
         boolean remote = viaCall || written;
         String media = remote ? commMediumName(target, written) : ""; // 구체 매체 이름(전서구·통신구·서찰·필담…)
         // ★통신 변조★: @이름과 동일 — 매체 모달리티가 맞는 괴담이 원격 선연락을 가로채 바꿔 전달(30%). 대면은 변조 안 함.
-        boolean tampered = remote && entityInterferes(commModality(media, written)) && new java.util.Random().nextInt(100) < 30;
+        String tmodC = commModality(media, written);
+        boolean tampered = remote && entityInterferes(tmodC) && new java.util.Random().nextInt(100) < tamperChance(tmodC);
+        if (tampered) bumpCommFatigue(tmodC); // 자주 변조하면 이 매체 신뢰도↓ → 다음 변조 확률↓
         String heard = tampered ? tamperText(callMsg, new java.util.Random()) : callMsg;
         String tag = sameZone ? "§a[근처] §f" : written ? ("§b[✉ " + media + "] §f") : ("§b[📞 " + media + "] §f");
         tp.sendMessage(tag + npcName + ": " + heard);
@@ -8720,11 +8723,13 @@ public class TRPGGameManager {
         // ★통신 변조(#215) — @이름과 동일★: 전자 채널이 괴담 간섭권이면 수신자별 30% 변조(원문처럼 은닉 전달).
         boolean chanInterfered = entityInterferes("electronic");
         java.util.Random tamperRng = new java.util.Random();
+        int elecTamperChance = tamperChance("electronic"); boolean elecTamperedAny = false; // #249: 방송 전 확률 한 번 고정, 남용도는 이 발신 1회로 집계
         java.util.List<String> cleanNames = new ArrayList<>();
         for (PlayerData op : targets) {
             Player op2 = Bukkit.getPlayer(op.uuid);
             if (op2 == null || !op2.isOnline() || !(bypass || hasCommDevice(op))) continue; // 개방 시 수신자 기기 부재도 관통
-            boolean tampered = chanInterfered && tamperRng.nextInt(100) < 30; // @이름과 동일 30%
+            boolean tampered = chanInterfered && tamperRng.nextInt(100) < elecTamperChance; // @이름과 동일(신뢰도 반영)
+            if (tampered) elecTamperedAny = true;
             String heard = tampered ? tamperText(message, tamperRng) : message;
             msgToWatchers(op2, "§b[📞 " + disp + " → " + (senderNet != null ? senderNet + "망" : "전체") + "] §f" + heard); // 변조돼도 원문처럼(은닉)
             if (tampered)
@@ -8732,6 +8737,7 @@ public class TRPGGameManager {
             else
                 cleanNames.add(op.gmDisplayName());
         }
+        if (elecTamperedAny) bumpCommFatigue("electronic"); // 방송 변조 1회 = 남용도 1회(수신자 수와 무관)
         if (chanInterfered)
             ai.injectGmSystem("[통신 잡음] 전자통신이 괴담의 간섭권 안이다 — 일부 수신자에게 이미 잡음·왜곡이 적용됐다. 내용을 더 망가뜨리지 말고 불안정한 정황(잡음·끊김)만 은근히 곁들여라.");
         state.log("comm", senderPd.name, "[" + (senderNet != null ? senderNet + "망발신" : "전체발신") + "] " + message);
@@ -9385,7 +9391,9 @@ public class TRPGGameManager {
             String endStyle = endingRenderSpec(npcObj); // ending_style 우선, 없으면 '어미'를 규정한 speech_style(#207)
             if (!endStyle.isBlank()) visible = ai.restyleDialogue(visible, endStyle);
             // ★통신 변조★: 매체 모달리티가 맞는 괴담이 원격 답신을 가로채 바꿔 전달(30%). 대면(sameZone)은 변조 안 함.
-            final boolean tamperedR = remote && entityInterferes(commModality(media, writtenF)) && new java.util.Random().nextInt(100) < 30;
+            final String tmodR = commModality(media, writtenF);
+            final boolean tamperedR = remote && entityInterferes(tmodR) && new java.util.Random().nextInt(100) < tamperChance(tmodR);
+            if (tamperedR) bumpCommFatigue(tmodR); // 남용 시 신뢰도↓
             final String heardR = tamperedR ? tamperText(visible, new java.util.Random()) : visible;
 
             plugin.getServer().getScheduler().runTask(plugin, () -> {
@@ -10212,13 +10220,34 @@ public class TRPGGameManager {
         // ★감청 축(변조·지연과 독립)★: 원거리·기기 채널(전화·무전·방송·전자·은밀)은 그 채널을 엿들을 수 있는 괴담만 수집.
         //   근거리 육성(근처 발화·대면)은 물리형 괴담도 '가까이서 낸 소리'로 들을 수 있어 범위=근처로 통과 —
         //   실제로 반응할지는 GM이 '괴담이 근처에 있고 소리·인기척에 반응하는 성질'인지로 최종 판단한다(주입 문구도 조건부).
-        if (remoteChannel && !entityTapsRemoteComms()) return;
+        if (remoteChannel) {
+            if (!entityTapsRemoteComms()) return;
+            // ★자기제한(#249)★: 원거리 감청을 자주 쓰면 그 통신수단 신뢰도가 떨어져 얻는 정보 효과가 줄어든다.
+            strength = (int) Math.round(strength * commTrustFactor("_감청_"));
+            if (strength <= 0) return; // 신뢰도 바닥 → 이 채널 감청은 이제 소득이 없다(플레이어가 안 믿고 안 씀)
+            bumpCommFatigue("_감청_");
+        }
         String lvl = strength >= 3 ? "또렷이(즉시·정확히 역이용)" : strength == 2 ? "어느 정도(약간 지연·부분적으로)" : "희미하게(단편만 어렴풋이)";
         String c = content.length() > 100 ? content.substring(0, 100) + "…" : content;
         ai.injectGmSystem("[괴담 정보수집·" + via + "/강도" + strength + "] " + who + "의 소통을 괴담이 " + lvl + " 파악했다: \"" + c + "\". "
             + "★약점·해결책을 말했다면 괴담이 그 부분을 숨기거나 무력화하고, 위치·계획·다음 행동을 말했다면 그 지점을 선제 공격·차단하라.★ "
             + "수집이 누적될수록 괴담은 더 강해지고 대응이 정교해진다. 강도가 약하면 어렴풋한 반응만.");
     }
+
+    // ─── ★통신수단 신뢰도(자기제한, #249)★ ───────────────────────────────
+    //  변조·감청을 자주 쓰면 그 매체 신뢰도가 떨어져(남용도↑) 효과가 감소한다 — 변조 성사 확률·감청 강도가 깎인다.
+    //  간섭이 뜸하면 매턴 회복. 감청('_감청_' 버킷)·변조(모달리티별)는 별개 축이되 이 자기제한 로직만 공유한다.
+    private final Map<String,Integer> commChannelFatigue = new java.util.concurrent.ConcurrentHashMap<>();
+    /** 그 채널에 변조·감청이 한 번 걸림 → 남용도 +2(빠르게 닳고, 매턴 -1 회복이라 자주 쓰면 순증). */
+    private void bumpCommFatigue(String key){ commChannelFatigue.merge((key==null||key.isBlank())?"voice":key, 2, Integer::sum); }
+    /** 남용도 → 효과 배수(1.0 신선 … 0.30 바닥). 대략 3~4회 쓰면 절반, 그 이상은 바닥. */
+    private double commTrustFactor(String key){ int f = commChannelFatigue.getOrDefault((key==null||key.isBlank())?"voice":key, 0); return Math.max(0.30, 1.0 - f*0.10); }
+    /** 변조 성사 확률(%) — 기본 30에 통신수단 신뢰도(남용 시 감소) 반영. */
+    private int tamperChance(String modality){ return (int) Math.round(30 * commTrustFactor(modality)); }
+    /** 지연 전달 변조 확률(%) — ★지연이 길수록↑★(가로챌 시간이 김) + 신뢰도 반영(#248+#249). */
+    private int tamperChanceDelayed(String modality, int delay){ int base = Math.min(70, 22 + Math.max(1, delay) * 12); return (int) Math.round(base * commTrustFactor(modality)); }
+    /** 매턴 남용도 1 회복(간섭 뜸하면 매체 신뢰도 복구) — processPendingDeliveries 옆에서 매턴 호출. */
+    private void decayCommFatigue(){ if (commChannelFatigue.isEmpty()) return; commChannelFatigue.replaceAll((k,v) -> v - 1); commChannelFatigue.values().removeIf(v -> v <= 0); }
 
     /** 아이템 id → 표시 이름(없으면 id 그대로). 매체 이름 유추·로그용. */
     private String itemDisplayName(String id) {
@@ -10562,7 +10591,9 @@ public class TRPGGameManager {
             PlayerData tp = state.getPlayer(d.targetUuid);
             if (tp == null || tp.isDead) continue; // 받을 사람이 없으면 유실
             String modality = commModality(d.via, "letter".equals(d.kind));
-            boolean tampered = entityInterferes(modality) && new java.util.Random().nextInt(100) < 30; // 전달 중 변조
+            int delay = Math.max(1, d.deliverTurn - d.sentTurn); // 지연이 길수록 가로챌 시간이 길다
+            boolean tampered = entityInterferes(modality) && new java.util.Random().nextInt(100) < tamperChanceDelayed(modality, delay); // 전달 중 변조(지연 길수록↑, #248)
+            if (tampered) bumpCommFatigue(modality);
             String heard = tampered ? tamperText(d.content, new java.util.Random()) : d.content;
             String tdisp = commDisplayName(tp);
             String viaName = d.via == null || d.via.isBlank() ? "편지" : d.via;
@@ -10592,7 +10623,8 @@ public class TRPGGameManager {
         // ★통신 변조★: 매체 모달리티(음성/문서/신호/전자/정신)가 맞는 괴담이 원격 전달을 가로채 수신 내용을 바꾼다(30%).
         String modality = commModality(media, written);
         boolean interfered = viaDevice && entityInterferes(modality); // 이 채널이 괴담의 간섭권인가(채널 건강)
-        boolean tampered = interfered && new java.util.Random().nextInt(100) < 30;
+        boolean tampered = interfered && new java.util.Random().nextInt(100) < tamperChance(modality);
+        if (tampered) bumpCommFatigue(modality); // 자주 변조하면 이 매체 신뢰도↓ → 효과 감소(#249)
         String heard = tampered ? tamperText(message, new java.util.Random()) : message;
         String inLine = tag + " §f" + commDisplayName(senderPd) + ": " + heard;
         if (target != null && target.isOnline()) msgToWatchers(target, inLine); // 수신자+그 관전자에게(관전 중계)
