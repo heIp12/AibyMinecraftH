@@ -7890,13 +7890,26 @@ public class TRPGGameManager {
         String ss = getStr(npcObj, "speech_style");
         return (!ss.isBlank() && mentionsEnding(ss)) ? ss : "";
     }
-    /** speech_style 서술이 '문장 끝 말투(어미)'를 규정하는지 — 메타 단서(어미·말끝·맺는다 류)로만 판정(특정 어미 나열 X).
-     *  어조·리듬·필러만 담은 speech_style엔 어미 렌더를 강제하지 않으려는 안전 게이트. */
+    /** speech_style 서술이 '문장 끝 말투(어미)'를 규정하는지 — 메타 단서(어미·말꼬리·맺는다 류)로만 판정(특정 어미 나열 X).
+     *  어조·리듬·필러만 담은 speech_style엔 어미 렌더를 강제하지 않으려는 안전 게이트.
+     *  ★버그수정★: '말끝을 삼키다/흐리다' 류는 ★어조(끝을 흐림)★일 뿐 '고정 어미'가 아닌데도 '말끝'이 들어갔다는
+     *   이유로 pass2 어미 렌더로 오라우팅돼, 그 speech_style에 박힌 ★필러('그게 말이지')가 매 문장 어미처럼 찍히던★
+     *   문제가 있었다(장 노인 사례). 그래서 '말끝'은 ★흐림·삼킴 표현이면 어미 규정으로 치지 않는다★. */
     private static boolean mentionsEnding(String s) {
         if (s == null) return false;
         String t = s.replace(" ", "");
-        return t.contains("어미") || t.contains("말끝") || t.contains("말꼬리")
-            || t.contains("문장끝") || t.contains("문장을맺") || t.contains("맺는") || t.contains("맺고") || t.contains("체로맺");
+        // 확실한 '고정 어미 규정' 신호 — 어조와 무관하게 항상 어미 렌더 대상.
+        boolean fixed = t.contains("어미") || t.contains("말꼬리") || t.contains("문장끝")
+            || t.contains("문장을맺") || t.contains("맺는") || t.contains("맺고") || t.contains("체로맺") || t.contains("체로");
+        if (fixed) return true;
+        // '말끝'은 애매 — '말끝마다 ~붙인다'(진짜 어미)와 '말끝을 삼키다/흐리다'(어조 흐림)를 가른다.
+        if (t.contains("말끝")) {
+            boolean trailingTone = t.contains("말끝을삼키") || t.contains("말끝삼키") || t.contains("말끝을흐리")
+                || t.contains("말끝흐리") || t.contains("말끝을죽이") || t.contains("말끝을감추")
+                || t.contains("말끝을내리") || t.contains("말끝을삼킨") || t.contains("말끝을흐린");
+            return !trailingTone; // 흐림·삼킴이면 어미 렌더 안 함(어조는 pass1이 처리)
+        }
+        return false;
     }
 
     /** 자율 행동용 시스템 프롬프트 = CORE + 캐릭터 데이터 + 예정표 + 자율 출력 규칙. */
