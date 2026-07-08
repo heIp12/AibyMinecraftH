@@ -68,7 +68,7 @@ public class NarrativeDelivery {
         // 문단(\n) → 문장 경계로 세그먼트(≤SEGMENT_TARGET자, 가로는 MAX_CHAT_CHARS자까지 채움)로 묶는다. ★문장 도중에는 절대 끊지 않는다.★
         // 각 세그먼트(블록)는 한 줄(들)로 출력하고 ★뒤에 빈 줄 한 줄★을 둬 세로로 띄운다 → 벽처럼 뭉쳐 보이지 않게.
         for (String para : format(raw).split("\n")) {
-            if (para.isBlank()) continue;
+            if (para.replaceAll("§.", "").isBlank()) continue; // 색코드만 남은 줄(독백 문단경계 재삽입 §7 등)도 빈 줄로 취급
             List<String> segments = new ArrayList<>();
             StringBuilder seg = new StringBuilder();
             int vis = 0;
@@ -184,7 +184,10 @@ public class NarrativeDelivery {
         s = s.replaceAll("(?m)^\\s*#{1,6}\\s*", ""); // 마크다운 헤더(#, ##…) 제거
         // 독백·내면의 소리 <-..-> → 회색 (연출 규칙보다 먼저 적용)
         // 닫는 부분은 AI가 종종 -->/—>(엠대시) 등으로 흘리므로 대시류(-, –, —)가 1개 이상이면 모두 허용해 정규화한다.
-        s = s.replaceAll("<-([^<>\n]+?)[-–—]+>", "§7<-$1->" + BASE_COLOR);
+        // ★내용에 줄바꿈(\n)을 허용★한다(?s DOTALL): AI가 독백을 문단으로 나눠 쓰면(<-...\n\n...->) 예전
+        //  [^<>\n] 규칙은 매칭 자체가 실패해 회색이 전혀 안 입혀졌다 → 여러 줄 독백도 통째로 §7 처리.
+        //  ([^<>]는 <>만 배제 = \n 포함. 줄 넘김 색 유지는 아래 applyStickyColor가 담당.)
+        s = s.replaceAll("(?s)<-([^<>]+?)[-–—]+>", "§7<-$1->" + BASE_COLOR);
         // 연출·시스템 효과 <...> → 노란색 (독백 <-..-> 와 구분: - 로 시작하지 않는 것만 매칭)
         s = s.replaceAll("<(?!-)([^<>\n]+)>", "§e<$1>" + BASE_COLOR);
         // 화자 태그 [이름] → 주황색 (괄호 포함)
@@ -196,7 +199,33 @@ public class NarrativeDelivery {
         s = s.replaceAll("(?m)^\\s*[-•]\\s+", "");
         // 인물 대사("...") → 청록색
         s = s.replaceAll("\"([^\"]+)\"", "§b\"$1\"" + BASE_COLOR);
+        s = applyStickyColor(s); // 여러 줄에 걸친 색 구간(독백·대사)이 줄바꿈에서 끊기지 않게 색을 이어붙임
         return s;
+    }
+
+    /**
+     * 여러 줄(문단)에 걸친 색 구간(§7 독백·§b 대사 등)이 ★줄바꿈에서 색을 잃지 않게★, 각 줄바꿈(\n) 직후에
+     * 현재 활성 색코드를 다시 심는다. deliver가 format 결과를 \n로 쪼개 문단별로 따로 sendMessage 하므로
+     * (MC는 메시지마다 색을 리셋한다), 이 재삽입이 없으면 독백 둘째 문단이 흰색으로 흘렀다(=이 버그).
+     * 기본색(§f)은 어차피 sendLine이 매 줄 앞에 붙이므로 생략 → 불필요한 코드 누적 방지.
+     */
+    private static String applyStickyColor(String s) {
+        StringBuilder out = new StringBuilder(s.length() + 16);
+        String active = BASE_COLOR;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '§' && i + 1 < s.length()) {
+                active = "§" + s.charAt(i + 1);
+                out.append(c).append(s.charAt(i + 1));
+                i++;
+            } else if (c == '\n') {
+                out.append('\n');
+                if (!active.equals(BASE_COLOR)) out.append(active); // 색 구간이 줄을 넘으면 이어서 유지
+            } else {
+                out.append(c);
+            }
+        }
+        return out.toString();
     }
 
     /** Shift 감지 시 다음 줄을 즉시 출력하고 그 이후 줄 예약 */
