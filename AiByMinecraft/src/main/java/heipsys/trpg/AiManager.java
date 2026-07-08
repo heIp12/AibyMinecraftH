@@ -34,6 +34,9 @@ public class AiManager {
     // 멀티플레이에서 여러 플레이어가 동시에 행동하면 callGmAi 등이 동시 실행되므로
     // 각 컨텍스트는 전용 락으로 직렬화하여 동시 변경(자료구조 손상)을 막는다.
     private final List<JsonObject>              gmContext     = new ArrayList<>();
+    /** 이번 턴 GM에 붙일 시스템 주입 노트 — ★영구 히스토리(gmContext)엔 남기지 않고★ 다음 callGmAi 스냅샷에만 후행으로 붙인다.
+     *  (예전엔 injectGmSystem이 gmContext에 직접 append → 스테이지 내내 누적·stale 노트가 쌓여 토큰↑·혼선. gmLock으로 보호.) */
+    private final List<String>                  pendingSystemNotes = new ArrayList<>();
     private final List<JsonObject>              entityContext = new ArrayList<>();
     private final Map<String, List<JsonObject>> npcContexts   = new ConcurrentHashMap<>();
     private final Map<String, Object>           npcCallLocks  = new ConcurrentHashMap<>(); // NPC별 호출 직렬화 락
@@ -489,8 +492,15 @@ public class AiManager {
             synchronized (gmCallLock) {
                 List<JsonObject> snapshot;
                 synchronized (gmLock) {                       // 빠른 변경만 (락 보유 시간 최소화)
-                    gmContext.add(msg("user", userMessage));
+                    gmContext.add(msg("user", userMessage));   // 영구 히스토리엔 ★순수 행동만★
                     snapshot = new ArrayList<>(gmContext);     // 네트워크엔 스냅샷 전달(전송 중 동시 변경 안전)
+                    if (!pendingSystemNotes.isEmpty()) {
+                        // 이번 턴 시스템 노트를 ★전송 스냅샷에만★ 후행 메시지로 붙인다(gmContext엔 안 남김 → 누적·stale 방지).
+                        //  캐시: 안정 프리픽스=gmContext 그대로 → 히스토리 캐싱 유지되고, 이 후행 노트만 매 턴 새로 전송된다.
+                        //  각 줄 '[시스템 주입]' 접두 유지 — 누출 스크럽(stripTags의 [시스템 주입] 제거 규칙)이 GM 에코를 잡게 한다.
+                        snapshot.add(msg("user", "[시스템 주입] " + String.join("\n[시스템 주입] ", pendingSystemNotes)));
+                        pendingSystemNotes.clear();
+                    }
                 }
                 try {
                     // cacheHistory=true: 마지막 메시지 프리픽스 캐싱 → 매 턴 커지는 히스토리를 다음 턴에 0.1× 읽기(핵심 절감).
@@ -693,13 +703,24 @@ public class AiManager {
     // ======================================================
 
     public void injectGmSystem(String content) {
+        if (content == null || content.isBlank()) return;
         synchronized (gmLock) {
-            gmContext.add(msg("user", "[시스템 주입] " + content));
+            // 같은 태그 노트는 새 것으로 교체(상반·중복 노트 누적 방지 — 예: '[통신 잡음]' 두 번이면 최신만).
+            String tag = leadingTag(content);
+            if (!tag.isEmpty()) pendingSystemNotes.removeIf(n -> n.startsWith(tag));
+            pendingSystemNotes.add(content);
         }
+    }
+    /** content 앞머리의 "[...]" 태그를 추출(없으면 ""). */
+    private static String leadingTag(String s) {
+        String t = s.stripLeading();
+        if (!t.startsWith("[")) return "";
+        int end = t.indexOf(']');
+        return end > 0 ? t.substring(0, end + 1) : "";
     }
 
     public void clearAll() {
-        synchronized (gmLock)     { gmContext.clear(); }
+        synchronized (gmLock)     { gmContext.clear(); pendingSystemNotes.clear(); }
         synchronized (entityLock) { entityContext.clear(); }
         npcContexts.clear(); // ConcurrentHashMap — 자체 thread-safe
         npcCallLocks.clear();
@@ -713,6 +734,7 @@ public class AiManager {
     /** GM 컨텍스트(대화 기록)를 mark 길이로 되돌린다(시간 회귀용). LLM은 무상태라 이 리스트가 곧 GM의 기억이다. */
     public void truncateGmContext(int mark) {
         synchronized (gmLock) {
+            pendingSystemNotes.clear(); // 되돌린 시점 이후에 쌓인 미전송 노트는 폐기(과거 회귀 정합)
             if (mark < 0 || mark >= gmContext.size()) return;
             gmContext.subList(mark, gmContext.size()).clear();
         }
@@ -728,7 +750,7 @@ public class AiManager {
     /** 저장된 GM 컨텍스트를 복원한다(이어하기). */
     public void importGmContext(com.google.gson.JsonArray a) {
         synchronized (gmLock) {
-            gmContext.clear();
+            gmContext.clear(); pendingSystemNotes.clear(); // 복원 시 미전송 노트는 폐기(이어하기 정합)
             if (a != null) for (com.google.gson.JsonElement e : a) if (e.isJsonObject()) gmContext.add(e.getAsJsonObject());
         }
     }
