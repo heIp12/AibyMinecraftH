@@ -8153,9 +8153,18 @@ public class TRPGGameManager {
                 // GM이 다음 턴 서술에서 NPC 행동을 자연스럽게 녹여 낸다.
                 //  ★행동 요지임을 명시★: 여기 섞인 대사를 GM이 따옴표로 그대로 베끼면 그 NPC 자신의 목소리(@대화·선연락)와
                 //  갈라져 '두 목소리' 버그가 난다 → 3인칭 서술·간접화만 요청(B1 이중 말투 방지).
+                // ★#247 자율 이동 반영★: 자율 서술이 '이동'을 담고 있으면 GM이 <NPC_AT>로 실제 위치를 옮기도록 지시한다.
+                //   (엔진 zone은 GM의 <NPC_AT>로만 갱신 → 이 신호가 없으면 서술은 복도를 걸어도 엔진상 원구역에 갇혀 타 구역 위협 불가.)
+                boolean movedCue = trimmed.contains("이동") || trimmed.contains("향해") || trimmed.contains("향한다") || trimmed.contains("향하")
+                    || trimmed.contains("나아가") || trimmed.contains("나선") || trimmed.contains("걸어") || trimmed.contains("다가")
+                    || trimmed.contains("쫓") || trimmed.contains("따라") || trimmed.contains("복도") || trimmed.contains("계단")
+                    || trimmed.contains("올라가") || trimmed.contains("내려가") || trimmed.contains("넘어가") || trimmed.contains("건너") || trimmed.contains("쪽으로");
                 ai.injectGmSystem("[NPC 자율 행동 — GM만 인지] " + npcName + " (위치: "
                     + (npcZone.isEmpty() ? "?" : npcZone) + "): " + trimmed
-                    + "  ※행동 요지다 — 3인칭으로 녹이고, 이 NPC의 대사를 ★따옴표로 그대로 옮기지 마라★(그의 말은 본인 채널에서 나온다).");
+                    + "  ※행동 요지다 — 3인칭으로 녹이고, 이 NPC의 대사를 ★따옴표로 그대로 옮기지 마라★(그의 말은 본인 채널에서 나온다)."
+                    + (movedCue ? "  ★이동 감지 — 이 인물이 지금 위치('" + (npcZone.isEmpty() ? "?" : npcZone)
+                        + "')에서 다른 구역으로 움직였다면, 네 서술에 <NPC_AT npc=\"" + npcName + "\" zone=\"목적지 존ID\"/>를 ★반드시 함께★ 내 실제 위치를 옮겨라"
+                        + "(안 내면 엔진상 원래 구역에 갇혀, 다가가던 플레이어를 실제로 위협·접촉하지 못한다). 이동 안 했으면 낼 필요 없다." : ""));
                 gameLogger.logGmOutput("NPC(" + npcName + ")", trimmed);
             });
             anyFired = true;
@@ -11551,6 +11560,7 @@ public class TRPGGameManager {
                 + "옮겨야 하면 ★짧은 간접·전언체★로만(\"…라고 다급히 말했다\"), 따옴표 스타일 대사·개성 어미 재현은 금지.\n");
             sb.append("★ 같은 NPC를 매 턴 주인공처럼 내세우지 마라 — 장면에 필요할 때만, 여러 NPC·플레이어에게 고루 분배.\n");
             sb.append("★ NPC를 다른 구역으로 옮기거나 플레이어 앞에 데려오면 <NPC_AT npc=\"이름\" zone=\"존ID\"/>도 함께 내라(안 그러면 @대화가 전화로 오처리된다).\n");
+            sb.append("★ 자율 NPC·괴담이 '[NPC 자율 행동]'에서 ★다른 구역으로 이동★한다고 했으면(복도를 지나·~쪽으로 향한다·쫓아간다 등), 네 서술에 그 이동을 녹이고 ★반드시 <NPC_AT>로 목적지 구역을 지정★하라 — 안 하면 그 인물은 엔진상 원래 구역에 갇혀, 접근하던 플레이어를 실제로 위협·접촉하지 못한다(격리실에 갇힌 괴담 버그).\n");
             for (JsonObject npc : autoNpcs) {
                 String nname = npc.has("name") ? npc.get("name").getAsString() : "?";
                 String nid   = getStr(npc, "id");
