@@ -143,6 +143,8 @@ public class TRPGGameManager {
     private final Set<UUID> pendingCreation    = ConcurrentHashMap.newKeySet();
     /** 특성 선택 대기 중인 플레이어 */
     private final Set<UUID> pendingTraitSelect = ConcurrentHashMap.newKeySet();
+    /** ★클리어 엔딩 해설 보류★ — 보상 특성 선택이 끝난 뒤 열도록 미뤄 둔 실행(선택 중 엔딩이 튀어나오는 것 방지). */
+    private volatile Runnable pendingClearReveal = null;
     /** 스토리에 이미 등장한(spawn된) 플레이어 */
     private final Set<UUID> spawnedPlayers      = ConcurrentHashMap.newKeySet();
     /** 특성 발동 대기 중인 플레이어 UUID → 트레이트 ID (행동 입력 전까지 유지) */
@@ -837,7 +839,7 @@ public class TRPGGameManager {
         ai.saveUsage();   // 세션 종료 시점 영구 사용량 체크포인트 저장
         ai.clearAll();
         pendingCreation.clear();
-        pendingTraitSelect.clear();
+        pendingTraitSelect.clear(); pendingClearReveal = null;
         pendingTraitActivation.clear();
         pendingPrayerInput.clear();
         pendingOracleInput.clear();
@@ -1049,7 +1051,7 @@ public class TRPGGameManager {
         turnMan.cancelAll();
         narrativeDelivery.clearAll();
         pendingCreation.clear();
-        pendingTraitSelect.clear();
+        pendingTraitSelect.clear(); pendingClearReveal = null;
         pendingTraitActivation.clear();
         pendingPrayerInput.clear();
         pendingOracleInput.clear();
@@ -3269,6 +3271,7 @@ public class TRPGGameManager {
         }
         dialogMan.clearDialog(player);
         pendingTraitSelect.remove(player.getUniqueId());
+        maybeFireClearReveal();
 
         if (pd != null) {
             if (selected.replacesId != null) {
@@ -3289,6 +3292,7 @@ public class TRPGGameManager {
         traitMan.removeTrait(pd, removed.id);
         dialogMan.clearDialog(player);
         pendingTraitSelect.remove(player.getUniqueId());
+        maybeFireClearReveal();
         player.sendMessage("§c특성 '§f" + removed.name + "§c'을(를) 제거했습니다.");
         scoreMan.update(player, pd, state.getRoomNumber());
     }
@@ -3335,6 +3339,7 @@ public class TRPGGameManager {
         pendingTraitSelect.remove(player.getUniqueId());
         pendingStageEndChoices.remove(player.getUniqueId());
         pendingStageEndNames.remove(player.getUniqueId());
+        maybeFireClearReveal(); // 마지막 선택자가 고르면 보류된 엔딩 해설을 연다
         switch (idx) {
             case 1 -> {
                 TraitData upg = choices.myUpgrade();
@@ -5809,25 +5814,53 @@ public class TRPGGameManager {
         //   보상 특성 선택과 전모 공개(핵심 규칙·해결법)를 막는다 — 재플레이 스포일러·미완성 보상 방지.
         boolean advancing = nextStageUnlocked; // 해결했거나(또는 1~2스테이지) 진출 가능 → 전체 공개·보상
         runScenarioEvaluation(finalGrade, playerGrades -> {
+            Runnable reveal = () -> concludeWithReveal(endingLabel, advancing, null);
             if (advancing) {
-                grantClearTraitRewards(grade, gdamTheme, playerGrades);
+                // ★엔딩 해설은 보상 특성 선택이 끝난 뒤 열리게 한다(선택 중 튀어나오는 것 방지)★.
+                //   선택창은 비동기로 뜨므로(generateStageEndChoices), 전부 표시된 뒤에 대기 여부를 판단한다.
+                grantClearTraitRewards(grade, gdamTheme, playerGrades).thenRun(() ->
+                    plugin.getServer().getScheduler().runTask(plugin, () -> {
+                        if (anyOnlinePendingTrait()) { pendingClearReveal = reveal; armClearRevealTimeout(reveal); }
+                        else reveal.run();
+                    }));
             } else {
                 broadcast("§7(생존 재도전 — 괴담을 완전히 해결하면 보상 특성과 사건의 전모가 공개됩니다.)");
+                reveal.run();
             }
-            concludeWithReveal(endingLabel, advancing, null);
         });
+    }
+
+    /** pendingTraitSelect에 아직 온라인 상태로 남은 선택 대기자가 있는가(이탈자는 무시). */
+    private boolean anyOnlinePendingTrait() {
+        for (UUID u : pendingTraitSelect) {
+            Player p = Bukkit.getPlayer(u);
+            if (p != null && p.isOnline()) return true;
+        }
+        return false;
+    }
+    /** 특성 선택 완료 등으로 대기자가 모두 빠지면, 보류해 둔 클리어 엔딩 해설을 그때 연다. */
+    private void maybeFireClearReveal() {
+        Runnable r = pendingClearReveal;
+        if (r != null && !anyOnlinePendingTrait()) { pendingClearReveal = null; r.run(); }
+    }
+    /** 이탈·장기 미선택으로 대기자가 끝내 안 빠질 때의 소프트락 방지 — 일정 시간 뒤 보류된 엔딩을 강제로 연다. */
+    private void armClearRevealTimeout(Runnable reveal) {
+        plugin.getServer().getScheduler().runTaskLater(plugin,
+            () -> { if (pendingClearReveal == reveal) { pendingClearReveal = null; reveal.run(); } },
+            20L * 180); // 3분
     }
 
     /**
      * 클리어 보상 특성 3선택지를 플레이어별로 생성·표시한다.
      * 표시 등급 상향치(totalBoost) = 오염도 + (시나리오 평가 + 플레이어 평가)의 평균. → '성과'만 표시 등급을 올린다.
      * 시작 약세(weaknessBonus)는 표시 등급이 아니라 '실효 파워'로만 보강한다(보상 등급 인플레 방지).
+     * 반환: 모든 플레이어의 선택창이 '표시(또는 스킵)'된 시점에 완료되는 future — 엔딩 해설을 그 뒤로 미루는 데 쓴다.
      */
-    private void grantClearTraitRewards(String clearGrade, String gdamTheme, Map<String, String> playerGrades) {
+    private CompletableFuture<Void> grantClearTraitRewards(String clearGrade, String gdamTheme, Map<String, String> playerGrades) {
         int scenarioBoost = gradeToBoost(clearGrade);
+        java.util.List<CompletableFuture<Void>> shownFutures = new java.util.ArrayList<>();
         // CODE-3: 클리어 시 사망 여부 무관 전원 보상 지급(다음 스테이지=전원 부활). isDead 필터 제거.
-        state.getAllPlayers().stream()
-            .forEach(playerData -> {
+        for (PlayerData playerData : new java.util.ArrayList<>(state.getAllPlayers())) {
                 int weaknessBonus = computeWeaknessBonus(playerData);                 // 시작 약세 (0~5) → 실효 파워에만 반영
                 String pGrade     = playerGrades.getOrDefault(playerData.name,
                                     playerGrades.getOrDefault(playerData.charName, "C")); // 이름 우선, 캐릭터명 폴백
@@ -5838,11 +5871,13 @@ public class TRPGGameManager {
                 //   약체 보정은 표시 등급이 아닌 '실효 파워'(weaknessBonus)로 따로 들어가므로 진행은 막히지 않는다.
                 int totalBoost    = Math.min(2, corruptMan.getLevel() + perfBoost);
                 String maxGrade   = maxRewardGrade(state.getRoomNumber(), clearGrade); // 스테이지별 보상 상한
+                CompletableFuture<Void> shown = new CompletableFuture<>();             // 이 플레이어 선택창이 표시(또는 스킵)된 시점에 완료
+                shownFutures.add(shown);
                 traitMan.generateStageEndChoices(playerData, gdamTheme, totalBoost, weaknessBonus, maxGrade).thenAccept(choices -> {
-                    if (choices == null) return;
                     Player p = Bukkit.getPlayer(playerData.uuid);
-                    if (p == null || !p.isOnline()) return;
+                    if (choices == null || p == null || !p.isOnline()) { shown.complete(null); return; }
                     plugin.getServer().getScheduler().runTask(plugin, () -> {
+                      try {
                         p.sendMessage("§6§l[클리어 보상] 특성 성장을 선택하세요!");
                         if (perfBoost > 0)
                             p.sendMessage("§7(시나리오·기여 성과 보정 +" + perfBoost + "단계)");
@@ -5860,15 +5895,17 @@ public class TRPGGameManager {
                         pendingStageEndChoices.put(p.getUniqueId(), choices);
                         pendingStageEndNames.put(p.getUniqueId(), new String[]{srcMyName, srcMapName});
                         p.sendMessage("§8(/trpg trait 으로 선택창을 다시 열 수 있습니다)");
+                      } finally { shown.complete(null); }
                     });
-                });
-            });
+                }).exceptionally(ex -> { shown.complete(null); return null; });
+        }
 
         if (nextStageUnlocked) {
             broadcast("§6특성을 선택한 뒤 §a/trpg next§6(다음 스테이지) 또는 §f/trpg stop§6(종료)을 진행하세요.");
         } else {
             broadcast("§6특성을 선택한 뒤 §e/trpg retry§6(재도전) 또는 §f/trpg stop§6(종료)을 진행하세요.");
         }
+        return CompletableFuture.allOf(shownFutures.toArray(new CompletableFuture[0]));
     }
 
     // ──────────────────────────────────────────────────────────────
