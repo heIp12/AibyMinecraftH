@@ -398,7 +398,7 @@ public class CharacterGenerator {
             }
         } else {
             // 가중치 랜덤: 70% 평범 / 20% 강한 직업 / 10% 희귀 직업
-            int roll = RNG.nextInt(100);
+            roll = RNG.nextInt(100);
             List<String> pool;
             if (roll < 70) {
                 tier = JobTier.COMMON;
