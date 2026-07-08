@@ -32,7 +32,7 @@ public final class JsonSalvage {
                     current = current.substring(0, current.length() - 1);
                 } else break;
             }
-            String candidate = balanceBrackets(escapeRawControlCharsInStrings(current));
+            String candidate = balanceBrackets(stripTrailingCommas(escapeRawControlCharsInStrings(current)));
             try {
                 GSON.fromJson(candidate, JsonElement.class);
                 return candidate;
@@ -46,6 +46,32 @@ public final class JsonSalvage {
             current = current.substring(0, cutoff);
         }
         return null;
+    }
+
+    /**
+     * ★경미한 문법 오류 교정 — 트레일링 콤마 제거★ (파싱 전 저렴한 보정, 절단과 무관하게 항상 적용 가능).
+     * 소형·대형 모델이 객체·배열 끝에 콤마를 흘리면( {"a":1,} · [1,2,] ) Gson이 "Expected name/value"로
+     * 파싱을 통째로 실패시킨다(예: $.timeline.main_events[].branches). 문자열 리터럴 내부의 콤마는 절대
+     * 건드리지 않게 문자열-인지 스캔으로, ',' 다음 첫 비공백이 '}' 또는 ']' 이면 그 콤마만 버린다.
+     * ★유효한 JSON에는 트레일링 콤마가 없으므로 무해(멱등)★ — 깨진 응답만 살린다.
+     */
+    public static String stripTrailingCommas(String s) {
+        if (s == null || s.isEmpty()) return s;
+        StringBuilder sb = new StringBuilder(s.length());
+        boolean inStr = false, escape = false;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (escape) { sb.append(c); escape = false; continue; }
+            if (c == '\\') { sb.append(c); escape = true; continue; }
+            if (c == '"') { inStr = !inStr; sb.append(c); continue; }
+            if (!inStr && c == ',') {
+                int j = i + 1;
+                while (j < s.length() && Character.isWhitespace(s.charAt(j))) j++;
+                if (j < s.length() && (s.charAt(j) == '}' || s.charAt(j) == ']')) continue; // 트레일링 콤마 스킵
+            }
+            sb.append(c);
+        }
+        return sb.toString();
     }
 
     /**

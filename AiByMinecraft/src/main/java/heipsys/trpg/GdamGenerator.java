@@ -1597,7 +1597,7 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
 
     private JsonObject tryParseObject(String raw) {
         if (raw == null || raw.startsWith("§c")) return null;
-        String stripped = stripMarkdown(raw);
+        String stripped = JsonSalvage.stripTrailingCommas(stripMarkdown(raw)); // 트레일링 콤마 선제 교정(분할 파싱 성공률↑ → 폴백·지연 감소)
         try {
             JsonElement el = gson.fromJson(stripped, JsonElement.class);
             return (el != null && el.isJsonObject()) ? el.getAsJsonObject() : null;
@@ -1620,7 +1620,7 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
     /** 응답에서 지정 key의 배열을 추출. {"key":[...]} 와 바로 [...] 둘 다 허용. 실패 시 null. */
     private JsonArray tryParseArray(String raw, String key) {
         if (raw == null || raw.startsWith("§c")) return null;
-        String stripped = stripMarkdown(raw);
+        String stripped = JsonSalvage.stripTrailingCommas(stripMarkdown(raw)); // 트레일링 콤마 선제 교정(분할 파싱 성공률↑ → 폴백·지연 감소)
         JsonElement el = null;
         try {
             el = gson.fromJson(stripped, JsonElement.class);
@@ -1736,7 +1736,7 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
                     if (raw != null && raw.startsWith("§c")) {
                         throw new RuntimeException("AI 호출 오류: " + raw);
                     }
-                    String cleaned = stripMarkdown(raw);
+                    String cleaned = JsonSalvage.stripTrailingCommas(stripMarkdown(raw)); // 트레일링 콤마(,} ,]) 선제 교정 — branches 등 "Expected name" 파싱실패 주원인
                     JsonElement el = gson.fromJson(cleaned, JsonElement.class);
                     if (el == null || !el.isJsonObject()) {
                         throw new RuntimeException("AI가 JSON 객체를 반환하지 않음 (미리보기: "
