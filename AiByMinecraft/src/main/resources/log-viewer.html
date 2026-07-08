@@ -121,6 +121,7 @@
   .empty{color:var(--dim);text-align:center;padding:30px}
   button.file{background:var(--accent);color:#0d1018;border:0;padding:7px 13px;border-radius:7px;font-weight:600;cursor:pointer}
   button.file.alt{background:var(--panel2);color:var(--txt);border:1px solid var(--line)}
+  button.file.liveon{background:#1f7a4d;color:#eafff2;border-color:#2fae6e}
   #info{position:fixed;right:0;top:53px;bottom:0;width:340px;background:var(--panel);border-left:1px solid var(--line);overflow-y:auto;padding:12px 14px;transform:translateX(100%);transition:transform .2s;z-index:6;font-size:calc(13px * var(--ifs,1))}
   #infoResize{position:absolute;left:0;top:0;bottom:0;width:8px;cursor:ew-resize;z-index:7;background:linear-gradient(90deg,rgba(255,255,255,.10),transparent)}
   #infoResize:hover{background:linear-gradient(90deg,var(--accent),transparent)}
@@ -157,6 +158,8 @@
   <button class="file alt" id="pick">파일 열기</button>
   <button class="file alt" id="pickDir">📁 폴더 열기</button>
   <button class="file alt" id="toggleInfo" style="display:none">📊 스탯·시나리오</button>
+  <button class="file alt" id="scrollBtm" title="맨 아래로 내리기">⬇ 맨아래</button>
+  <button class="file alt" id="live" title="파일이 갱신되면 새로고침 없이 자동으로 다시 읽어 맨 아래로 (크롬 계열 + '자동 탐색·결합'으로 폴더 열기 필요)">🔴 실시간</button>
   <input type="file" id="file" accept=".jsonl,.json,.txt,.replay,.gdam" multiple style="display:none">
   <input type="file" id="dir" webkitdirectory directory multiple style="display:none">
 </header>
@@ -1702,6 +1705,35 @@ document.getElementById("pick").onclick=()=>fileEl.click();
 document.getElementById("pickDir").onclick=()=>dirEl.click();
 document.getElementById("pickAuto").onclick=autoDiscover;
 document.getElementById("toggleInfo").onclick=()=>{renderInfo();document.getElementById("info").classList.toggle("open");};
+// ── ⬇ 맨 아래로 내리기 ──
+function scrollBottom(){ const m=document.getElementById("main"); if(m) m.scrollTop=m.scrollHeight; }
+document.getElementById("scrollBtm").onclick=scrollBottom;
+// ── 🔴 실시간(파일 감시) — 열려 있는 로그를 디렉터리 핸들로 주기적으로 다시 읽어, 바뀌면 재로드+맨아래로(페이지 새로고침 아님). ──
+let LIVE=null, LIVE_LEN=-1;
+async function findFileInDir(dir,name,depth){ depth=depth||0; if(depth>5) return null;
+  try{ for await(const e of dir.values()){
+    if(e.kind==="file"&&e.name===name){ try{return await e.getFile();}catch(_){return null;} }
+    else if(e.kind==="directory"){ const f=await findFileInDir(e,name,depth+1); if(f) return f; }
+  } }catch(_){}
+  return null; }
+async function liveTick(){ try{
+  const cur=(typeof FILES!=="undefined"&&FILES.logs||[]).find(x=>x.__on); if(!cur) return; // 현재 열려 있는 로그
+  const h=await idbGet(); if(!h) return;
+  const file=await findFileInDir(h,cur.name); if(!file) return;
+  const t=await file.text(); if(t.length===LIVE_LEN) return;      // 변화 없으면 스킵
+  LIVE_LEN=t.length;
+  const vp=curVP;                                                 // 시점 유지(rebuild가 curVP를 __all__로 리셋하므로 저장·복원)
+  loadLogText(cur.name,t);
+  if(vp&&vp!=="__all__"&&VIEWPOINTS.some(v=>(v.name||v)===vp)){ curVP=vp; renderSide(); renderMain(); }
+  renderInfo(); scrollBottom();
+}catch(_){}}
+document.getElementById("live").onclick=function(){
+  const btn=this;
+  if(LIVE){ clearInterval(LIVE); LIVE=null; btn.textContent="🔴 실시간"; btn.classList.remove("liveon"); return; }
+  if(!window.showDirectoryPicker){ alert("이 브라우저는 실시간 감시 미지원 — 크롬 계열에서 '🔍 자동 탐색·결합'으로 폴더를 여세요."); return; }
+  idbGet().then(h=>{ if(!h){ alert("먼저 '🔍 자동 탐색·결합'으로 폴더를 열면 실시간 감시가 됩니다(파일 갱신을 자동 감지)."); return; }
+    LIVE_LEN=-1; LIVE=setInterval(liveTick,2000); btn.textContent="🟢 실시간 ON"; btn.classList.add("liveon"); liveTick(); });
+};
 // 시나리오/정보창 좌우 드래그로 너비 조절 — 글씨 크기(--ifs)도 폭에 비례해 커진다(기준 340px=1.0).
 (function(){ const info=document.getElementById("info"), rz=document.getElementById("infoResize"); if(!info||!rz)return; let drag=false;
   const applyW=w=>{ w=Math.max(300,Math.min(960,w)); info.style.width=w+"px"; info.style.setProperty("--ifs",(w/340).toFixed(3)); };
