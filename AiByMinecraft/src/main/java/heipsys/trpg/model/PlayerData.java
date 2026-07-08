@@ -48,8 +48,9 @@ public class PlayerData {
     public int puppetGraceTurns = 0;
 
     public String    status       = "normal";  // normal / puppet / dead
-    /** 소통수단 선언(#177): GM 승인된 소통 모달리티(""=자동). voice/text/signal/electronic. 대면 시 엔진 자동선택(예: 소리위험→필담)을 이 선언이 우선한다. */
-    public String    declaredCommMethod = "";
+    /** 소통수단 선언(#177/#243): 플레이어가 직접 고른 소통 모달리티. voice(대화·말하기)/text(필담)/signal(수신호)/electronic(전화·전자통신).
+     *  ★'자동'(빈값) 제거(#243)★ — 기본은 대화(voice), 플레이어가 우클릭·다이얼로그로 직접 바꾼다(엔진 자동선택 없음). */
+    public String    declaredCommMethod = "voice";
     /** 우클릭 순환·다이얼로그로 고른, GM 승인 대기 중인 후보(승인되면 declaredCommMethod로 확정). */
     public String    pendingCommMethod  = "";
     public String    zone         = "";

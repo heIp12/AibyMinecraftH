@@ -9070,16 +9070,16 @@ public class TRPGGameManager {
     // ── 소통수단 선언(#177) ──────────────────────────────────────────
     /** 소통수단 우클릭 순환 디바운스 태스크(연속 우클릭 시 마지막 후보만 적용). */
     private final Map<UUID, org.bukkit.scheduler.BukkitTask> commDeclTasks = new ConcurrentHashMap<>();
-    private static final String[] COMM_METHOD_CYCLE = {"", "voice", "text", "signal", "electronic"};
+    private static final String[] COMM_METHOD_CYCLE = {"voice", "text", "signal", "electronic"}; // ★'자동'(빈값) 제거(#243)★ — 플레이어가 직접 매체(대화=음성/전화=전자통신/필담/수신호)를 고른다
 
     /** 소통수단 키 → 한국어 라벨. */
     private String commMethodLabel(String key) {
         switch (key == null ? "" : key) {
-            case "voice":      return "말하기(음성)";
+            case "voice":      return "대화(말하기)";
             case "text":       return "필담·글";
             case "signal":     return "수신호·몸짓";
-            case "electronic": return "전자통신";
-            default:           return "자동";
+            case "electronic": return "전화·전자통신";
+            default:           return "대화(말하기)"; // ★'자동' 제거(#243)★ — 빈값 폴백도 대화로(자동 상태 없음)
         }
     }
 
@@ -9156,13 +9156,7 @@ public class TRPGGameManager {
      *    판단해 필드에 제한/추가를 거는 경로가 필요하다 — 이는 맵·통신 런타임 게이팅(#180)에서 다룬다
      *    (아직 자유입력 UI가 없어 지금은 기본 4종만 로컬 확정). */
     private void applyCommMethodLocal(Player player, PlayerData pd, String method) {
-        if (method == null) method = "";
-        // '자동'은 선언 해제 — 엔진/GM 자동 선택으로 복귀
-        if (method.isEmpty()) {
-            pd.declaredCommMethod = "";
-            player.sendMessage("§a[소통수단] 자동(상황에 맡김)으로 되돌렸습니다.");
-            return;
-        }
+        if (method == null || method.isEmpty()) method = "voice"; // ★'자동' 제거(#243)★ — 빈값이 오면 대화(말하기)로. 플레이어가 직접 골라야 한다.
         // 물리 가능성 — 수단 자체가 없으면 로컬 차단(이미 필드에 정해져 있음)
         String unavailable = null;
         switch (method) {

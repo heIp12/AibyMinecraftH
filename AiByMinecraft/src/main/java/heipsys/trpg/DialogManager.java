@@ -1089,12 +1089,12 @@ public class DialogManager {
      * @param onPick 선택한 방식 키(""=자동, voice/text/signal/electronic)를 전달
      */
     public void showCommMethodPicker(Player player, String currentLabel, java.util.function.Consumer<String> onPick) {
+        // ★'자동' 제거(#243)★ — 플레이어가 직접 고른다(대화=음성/전화=전자통신/필담/수신호). 엔진 자동선택 없음.
         String[][] opts = {
-            {"",           "🔄 자동(상황에 맡김)", "장면에 맞게 엔진·GM이 알아서 정합니다."},
-            {"voice",      "🗣 말하기(음성)",      "소리 내어 말합니다. 소리가 위험한 곳이면 위험을 감수하는 선언입니다."},
-            {"text",       "✍ 필담·글",           "종이·바닥 등에 글로 조용히 전합니다."},
+            {"voice",      "🗣 대화(말하기)",       "소리 내어 말합니다(대면). 소리가 위험한 곳이면 위험을 감수하는 선언입니다."},
+            {"electronic", "📱 전화·전자통신",      "전화·무전·메신저 등 기기로 전합니다(기기·신호 필요)."},
+            {"text",       "✍ 필담·글",           "종이·바닥 등에 글로 조용히 전합니다(소리 안 냄)."},
             {"signal",     "✋ 수신호·몸짓",        "손짓·몸짓으로 소리 없이 전합니다(상대가 볼 수 있어야 함)."},
-            {"electronic", "📱 전자통신",           "전화·무전·메신저 등 기기로 전합니다(기기·신호 필요)."},
         };
         List<ActionButton> buttons = new ArrayList<>();
         for (String[] o : opts) {
