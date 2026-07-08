@@ -4201,15 +4201,70 @@ public class TRPGGameManager {
             ally = npc; break;
         }
         applyTraitUsed(pd, td.id, state.getCurrentTurn());
+        if (ally == null) {
+            // ★기존 우호 NPC가 없으면 '가짜 서술'이 아니라 ★실제 조력 NPC★를 만들어 등록·등장시킨다.
+            //   (버그: 예전엔 gm_directive/조력자 폴백으로 대화·연락 안 되는 가짜 NPC만 서술됐다.)
+            summonNewAllyNpc(player, pd, td);
+            return;
+        }
         String who = pd.gmDisplayName();
-        String allyName = (ally != null) ? getStr(ally, "name") : "조력자";
-        if (ally != null && pd.zone != null && !pd.zone.isEmpty())
+        String allyName = getStr(ally, "name");
+        if (pd.zone != null && !pd.zone.isEmpty())
             npcZones.put(getStr(ally, "id"), pd.zone); // 확정: 실제로 같은 구역에 배치
         String gmMsg = "[시스템 특성: " + td.name + " 발동] " + who + "이(가) 인연을 끌어당겨, "
-            + allyName + "이(가) 마침 " + who + "가 있는 곳에 나타난다(조우). 괴담 본체는 해당 없음. "
+            + allyName + "이(가) 마침 " + who + "가 있는 곳에 나타난다(조우). 이 인물은 ★실제 대화·연락 가능한 조력 NPC★다. 괴담 본체는 해당 없음. "
             + "이 조우를 다음 서술에 자연스럽게 반영하고, 작은 도움이나 정보를 주게 하라.";
         boolean accepted = turnMan.handleAction(player, gmMsg, gmSystemPrompt);
         player.sendMessage(accepted ? "§7[" + td.name + " 발동 중...]" : "§7행동 처리 중입니다. 잠시 후 다시 시도하세요.");
+    }
+
+    /** ★실제 조력 NPC 생성·등록★ — 우호 NPC가 없을 때 새 NPC를 AI로 짧게 만들어 gdam.npcs에 넣는다(대화·연락 가능한 진짜 NPC).
+     *  예전엔 gm_directive로 '가짜 NPC'만 서술돼 @대화·연락이 안 됐다(버그 수정). 능력은 스테이지당 1회라 호출 비용 미미. */
+    private void summonNewAllyNpc(Player player, PlayerData pd, TraitData td) {
+        final String who = pd.gmDisplayName();
+        final String zone = (pd.zone != null && !pd.zone.isEmpty()) ? pd.zone : "";
+        player.sendMessage("§7[" + td.name + " 발동 중... 조력자가 다가옵니다]");
+        ai.callAssistant(
+            "너는 괴담 호러 TRPG의 ★우호적 조력 NPC 1명★을 만든다. JSON만 응답: "
+            + "{\"name\":\"한국어 이름\",\"personality\":\"성격 한 줄\",\"motivation\":\"플레이어를 돕는 이유 한 줄\"}",
+            "이 사건('" + getEntityName() + "')에 나타나 플레이어를 돕는 조력자 1명. 평범한 인간~약간 특별한 정도, 이 배경에 어울리는 이름.",
+            300)
+        .thenAccept(raw -> plugin.getServer().getScheduler().runTask(plugin, () -> {
+            String name = "", persona = "", motive = "";
+            try {
+                String c = raw == null ? "" : raw.replaceAll("```json", "").replaceAll("```", "").trim();
+                int s = c.indexOf('{'), e = c.lastIndexOf('}');
+                if (s >= 0 && e > s) {
+                    JsonObject o = com.google.gson.JsonParser.parseString(c.substring(s, e + 1)).getAsJsonObject();
+                    name = getStr(o, "name"); persona = getStr(o, "personality"); motive = getStr(o, "motivation");
+                }
+            } catch (Exception ignore) {}
+            if (name.isBlank()) name = "낯선 조력자";
+            JsonObject gdam = state.getGdamData();
+            String id = "ally_" + java.util.UUID.randomUUID().toString().substring(0, 6);
+            if (gdam != null) {
+                com.google.gson.JsonArray npcs = (gdam.has("npcs") && gdam.get("npcs").isJsonArray())
+                    ? gdam.getAsJsonArray("npcs") : null;
+                if (npcs == null) { npcs = new com.google.gson.JsonArray(); gdam.add("npcs", npcs); }
+                JsonObject npc = new JsonObject();
+                npc.addProperty("id", id);
+                npc.addProperty("name", name);
+                npc.addProperty("zone", zone);
+                npc.addProperty("critical", true);
+                npc.addProperty("role_type", "조력");
+                npc.addProperty("disposition", "우호");
+                npc.addProperty("honesty", "솔직");
+                if (!persona.isBlank()) npc.addProperty("personality", persona);
+                if (!motive.isBlank())  npc.addProperty("motivation", motive);
+                npcs.add(npc);
+                if (!zone.isEmpty()) npcZones.put(id, zone);
+                gmSystemPrompt = buildGmPrompt(gdam); // 새 NPC를 GM 인지·roster에 반영
+            }
+            String gmMsg = "[시스템 특성: " + td.name + " 발동] " + who + "이(가) 인연을 끌어당겨, 조력자 '" + name
+                + "'이(가) 마침 " + who + "가 있는 곳에 나타난다(조우). ★이 인물은 실제로 대화·연락 가능한 조력 NPC다★ — 자연스럽게 등장시키고 작은 도움이나 정보를 주게 하라. 괴담 본체는 해당 없음.";
+            turnMan.handleAction(player, gmMsg, gmSystemPrompt);
+            player.sendMessage("§a[" + td.name + "] 조력자 '" + name + "'이(가) 나타났습니다 — @이름으로 대화·연락할 수 있습니다.");
+        }));
     }
 
     /** 미끼 전환 — 괴담/위협의 다음 표적을 다른 대상으로 돌린다. */
