@@ -499,8 +499,8 @@ public class DialogManager {
     }
 
     /** 시작 설정 다이얼로그 — 자동생성·시작 스테이지·괴담 유형을 버튼으로 고른다. 항목을 누르면 바뀌고 이 창이 다시 열린다. */
-    public void showStartSettings(Player player, boolean pregen, int startStage, String typeHint,
-                                  Runnable onTogglePregen, Runnable onPickStage, Runnable onPickType) {
+    public void showStartSettings(Player player, boolean pregen, int startStage, String typeHint, String famePool,
+                                  Runnable onTogglePregen, Runnable onPickStage, Runnable onPickType, Runnable onPickFame) {
         List<ActionButton> buttons = new ArrayList<>();
         buttons.add(ActionButton.create(
             Component.text("자동 사전생성:  " + (pregen ? "켜짐" : "꺼짐"), pregen ? NamedTextColor.GREEN : NamedTextColor.RED),
@@ -514,6 +514,10 @@ public class DialogManager {
             Component.text("괴담 유형/성격:  " + (typeHint == null || typeHint.isEmpty() ? "무작위" : typeHint), NamedTextColor.LIGHT_PURPLE),
             Component.text("다음 생성 괴담의 유형/성격 고정 (테스트용)"), 180,
             DialogAction.customClick((v, a) -> onPickType.run(), ClickCallback.Options.builder().uses(1).build())));
+        buttons.add(ActionButton.create(
+            Component.text("인지도 풀:  " + famePoolLabel(famePool), NamedTextColor.GOLD),
+            Component.text("등장 괴담 인지도 고정 (유명/덜유명/마이너만, 또는 난이도별)"), 180,
+            DialogAction.customClick((v, a) -> onPickFame.run(), ClickCallback.Options.builder().uses(1).build())));
         ActionButton close = ActionButton.create(
             Component.text("닫기", TextColor.color(0xAAAAAA)),
             Component.text("설정 완료 — 다음 /trpg start 부터 적용"), 120, null);
@@ -551,6 +555,45 @@ public class DialogManager {
                     Component.text("새 게임을 몇 스테이지부터 시작할까요? (높을수록 시작 캐릭터가 강함)", NamedTextColor.WHITE))))
                 .build())
             .type(DialogType.multiAction(buttons, cancel, 3))
+        );
+        player.showDialog(dialog);
+    }
+
+    /** 인지도 풀 설정의 표시 라벨. */
+    private static String famePoolLabel(String p) {
+        return switch (p == null ? "" : p) {
+            case "major" -> "유명한 것만";
+            case "semi"  -> "덜 유명한 것만";
+            case "minor" -> "마이너한 것만";
+            default -> "난이도별(기본)";
+        };
+    }
+
+    /** 인지도 풀 선택 다이얼로그 — 난이도별(기본)/유명/덜유명/마이너. onPick에 키("" / major / semi / minor) 전달. */
+    public void showFamePoolChoice(Player player, String cur, Consumer<String> onPick) {
+        String c = cur == null ? "" : cur;
+        String[][] opts = {
+            {"",      "난이도별 (기본)", "초반 유명 → 후반 딥컷으로 자동 이동"},
+            {"major", "유명한 것만",     "누구나 아는 대표작 위주"},
+            {"semi",  "덜 유명한 것만",  "준메이저·팬덤 위주"},
+            {"minor", "마이너한 것만",   "딥컷·전통·심리 위주"},
+        };
+        List<ActionButton> buttons = new ArrayList<>();
+        for (String[] o : opts) {
+            boolean sel = o[0].equals(c);
+            buttons.add(ActionButton.create(
+                Component.text(o[1] + (sel ? "  (현재)" : ""), sel ? NamedTextColor.YELLOW : NamedTextColor.GOLD),
+                Component.text(o[2]), 140,
+                DialogAction.customClick((v, a) -> onPick.accept(o[0]), ClickCallback.Options.builder().uses(1).build())));
+        }
+        ActionButton cancel = ActionButton.create(
+            Component.text("취소", TextColor.color(0xAAAAAA)), Component.text("바꾸지 않습니다."), 100, null);
+        Dialog dialog = Dialog.create(b -> b.empty()
+            .base(DialogBase.builder(Component.text("인지도 풀 선택"))
+                .body(List.of(DialogBody.plainMessage(
+                    Component.text("등장 괴담의 인지도를 고정할까요? (유명작도 완전 배제는 아님 — 강한 편향)", NamedTextColor.WHITE))))
+                .build())
+            .type(DialogType.multiAction(buttons, cancel, 2))
         );
         player.showDialog(dialog);
     }

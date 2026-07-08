@@ -63,8 +63,10 @@ public class SystemTraitRegistry {
             "발동 시 다가오던 파국 이벤트나 괴담의 다음 위협 행동을 몇 턴 지연시킨다(무효 아님, 미뤄짐).",
             "turns=지연 턴수(1~2), uses=스테이지당 횟수(1~2)"),
         ONE_WAY_CALL("one_way_call", true,
-            "발동 시 지정한 아군 1명에게 ★일방적으로★ 말을 전한다(거리·연락처·통신차단 무관, 답신 불가, 소리 아님). 턴을 소모하지 않는다.",
-            "uses=스테이지당 횟수(1~3)"),
+            "발동 시 괴담이 엿듣기 어려운 '은밀 대화'를 연다(거리·연락처·통신차단 무관, 소리 아님, 턴 소모 없음). "
+            + "direction으로 나만 보내기(일방)·나만 받기(청취)·서로 대화(대화창)를, detect로 괴담 감지 여부를, chars로 한 번에 보낼 글자 수를 정한다. "
+            + "대화창(direction=2)은 파티가 채팅 앞 '!'로 서로 주고받고, 청취(direction=1)는 남들이 '!'로 나에게만 보내며 나는 못 보낸다(개설되면 스테이지 동안 유지).",
+            "uses=스테이지당 횟수(1~3, 0=무제한), detect=괴담 감지여부(0=감지 불가[은밀·기본], 1=감지 가능), direction=방향(0=나만 보내기[일방 전언], 1=나만 받기[청취 채널], 2=서로 대화[대화창·양방향]), chars=한 번에 보낼 글자 수 상한(0=무제한)"),
         TELEPORT("teleport", true,
             "발동 시 무작위 구역·아군 위치·NPC 위치로 순간이동한다(아직 안 가본 곳도 갈 수 있다).",
             "uses=스테이지당 횟수(1~2)"),
@@ -234,9 +236,10 @@ public class SystemTraitRegistry {
         sb.append("등급 예산(점): S=10 A=5 B=3 C=1 D=0 E=-1 F=-2.  규칙: ★(능력 코스트 + 양의 스텟 합) ≤ 등급 예산★.\n");
         sb.append("능력 기본 코스트(제약 없을 때, 등급 예산과 같은 점수):\n");
         sb.append("  · 10점: instant_clear · revive_ally · fate · group_rewind · dominate(power2) · choice_action(choices4) · ai_query(info3·uses2+) · sacrifice(scale3) · passive_trigger(intensity3·freq3)\n");
-        sb.append("  · 5점 : gm_directive · ai_query(info3·uses1) · luck_roll(scale10+) · area_scan(scope3) · link_ally(depth3) · protect(power3) · guaranteed(scope3) · mobility(power3) · remote_sense(range3&info3) · foresight(depth3) · social(power3) · dominate(power1) · sacrifice(scale2)\n");
-        sb.append("  · 3점 : passive_gm · show_progress · scenario_insight·entity_sense·ally_sense·lore_record(depth2~3) · area_scan(scope2) · passive_trigger(intensity2) · protect(power2) · luck_roll(scale5~9) · link_ally(depth2) · choice_action(choices2~3) · guaranteed · mobility(power2) · remote_sense · foresight · social(power1~2) · ai_query(info1~2)\n");
-        sb.append("  · 1점 : ai_query(info1·uses1) · scenario_insight·entity_sense·ally_sense·lore_record(depth1) · protect(power1) · area_scan(scope1) · luck_roll(scale≤4) · link_ally(depth1) · passive_trigger(intensity1)\n");
+        sb.append("  · 10점: … · one_way_call(direction2·detect0·uses0 — 무제한 은밀 대화창)\n");
+        sb.append("  · 5점 : gm_directive · ai_query(info3·uses1) · luck_roll(scale10+) · area_scan(scope3) · link_ally(depth3) · protect(power3) · guaranteed(scope3) · mobility(power3) · remote_sense(range3&info3) · foresight(depth3) · social(power3) · dominate(power1) · sacrifice(scale2) · one_way_call(direction1·detect0 청취 / direction2·detect1 대화창)\n");
+        sb.append("  · 3점 : passive_gm · show_progress · scenario_insight·entity_sense·ally_sense·lore_record(depth2~3) · area_scan(scope2) · passive_trigger(intensity2) · protect(power2) · luck_roll(scale5~9) · link_ally(depth2) · choice_action(choices2~3) · guaranteed · mobility(power2) · remote_sense · foresight · social(power1~2) · ai_query(info1~2) · one_way_call(direction0·detect0 은밀 일방)\n");
+        sb.append("  · 1점 : ai_query(info1·uses1) · scenario_insight·entity_sense·ally_sense·lore_record(depth1) · protect(power1) · area_scan(scope1) · luck_roll(scale≤4) · link_ally(depth1) · passive_trigger(intensity1) · one_way_call(direction0·detect1 일방·감지가능)\n");
         sb.append("★ 제약을 걸수록 코스트가 싸진다(할인): 스테이지당 1회(cooldown_turns=-1) −3 · 쿨다운 5턴+ −2 · 쿨다운 2턴+ −1 · 최소 횟수(uses=1) −1. (능력은 최소 1점)\n");
         sb.append("★ 단점(음의 스텟)을 주면 그만큼 예산이 늘어난다(상쇄). 예: B(3) 특성에 매력 −2 → 예산 5로 늘어 A급 능력 1개 탑재 가능.\n");
         sb.append("→ 강한 능력을 낮은 등급에 넣고 싶으면 쿨다운·1회성·횟수제한·단점스텟으로 코스트를 예산 안에 맞춰라. ");
@@ -252,7 +255,8 @@ public class SystemTraitRegistry {
         sb.append("  · passive_trigger(intensity=3, trigger_freq=3) — 강하고 잦은 자동 발동\n");
         sb.append("  · fate (직전/다음 판정 1회 유리하게 뒤집기 — 운명)\n");
         sb.append("  · group_rewind (직전 국면으로 동반회귀 — 재도전 제약 해제)\n");
-        sb.append("  · dominate(power=2) — NPC·하위 개체 1회 명령 강제(지배)\n\n");
+        sb.append("  · dominate(power=2) — NPC·하위 개체 1회 명령 강제(지배)\n");
+        sb.append("  · one_way_call(direction=2, detect=0, uses=0) — 괴담이 못 듣는 무제한 은밀 대화창(파티 양방향)\n\n");
 
         sb.append("[A등급] 스테이지에 강한 영향을 미치는 핵심 효과. 표준 상한.\n");
         sb.append("  · ai_query(info=3, uses=1) — 핵심 근접 질문 1회\n");
@@ -268,7 +272,8 @@ public class SystemTraitRegistry {
         sb.append("  · remote_sense(range=3, info=3) — 전역 원격 감지로 핵심 근접 정보\n");
         sb.append("  · foresight(depth=3) — 여러 갈래·연쇄 결과 예지\n");
         sb.append("  · social(power=3) — 강한 설득·강제 접촉\n");
-        sb.append("  · dominate(power=1) — 유도에 가까운 약한 지배\n\n");
+        sb.append("  · dominate(power=1) — 유도에 가까운 약한 지배\n");
+        sb.append("  · one_way_call(direction=1, detect=0) 청취 채널 / (direction=2, detect=1) 감지되는 대화창\n\n");
 
         sb.append("[B등급] 유용하지만 조건·횟수 제한이 명확하다. 가장 흔한 등급.\n");
         sb.append("  · ai_query(info=1~2, uses=1~2) — 부분 정보\n");
@@ -285,7 +290,8 @@ public class SystemTraitRegistry {
         sb.append("  · mobility(power=2) — 상당한 이동·도주 보정\n");
         sb.append("  · remote_sense(range=1~2) — 인접·동층 원격 감지\n");
         sb.append("  · foresight(depth=1~2) — 직후 결과·한 단계 분기 예측\n");
-        sb.append("  · social(power=1~2) — NPC 호의·협조 유도\n\n");
+        sb.append("  · social(power=1~2) — NPC 호의·협조 유도\n");
+        sb.append("  · one_way_call(direction=0, detect=0) — 괴담이 못 듣는 은밀 일방 전언\n\n");
 
         sb.append("[C등급] 제한적 상황에서만 가치 있음, 또는 부작용 동반.\n");
         sb.append("  · ai_query(info=1, uses=1) — 모호한 암시 1회\n");
@@ -295,7 +301,8 @@ public class SystemTraitRegistry {
         sb.append("  · protect(power=1) — 소폭 경감\n");
         sb.append("  · area_scan(scope=1, uses=1) — 현재 위치 1회 탐색\n");
         sb.append("  · luck_roll(scale<=4) — 약한 운 보정\n");
-        sb.append("  · link_ally(depth=1) — 생존 여부만 확인\n\n");
+        sb.append("  · link_ally(depth=1) — 생존 여부만 확인\n");
+        sb.append("  · one_way_call(direction=0, detect=1) — 일방 전언(괴담 감지 가능)\n\n");
 
         sb.append("[D등급] 효과보다 제약·대가가 크거나 극히 상황 한정. 개성 위주.\n");
         sb.append("  · sacrifice(scale=1, cost>=15) — 높은 대가, 작은 혜택\n");
@@ -503,7 +510,11 @@ public class SystemTraitRegistry {
             }
             case ONE_WAY_CALL -> {
                 td.effectParams.putIfAbsent("uses", 1);
-                clamp(td, "uses", 1, 3);
+                td.effectParams.putIfAbsent("detect", 0);
+                td.effectParams.putIfAbsent("direction", 0);
+                td.effectParams.putIfAbsent("chars", 0);
+                clamp(td, "uses", 0, 3); clamp(td, "detect", 0, 1);
+                clamp(td, "direction", 0, 2); clamp(td, "chars", 0, 1000);
             }
             case EVADE_SENSE -> {
                 td.effectParams.putIfAbsent("turns", 2);
@@ -666,7 +677,13 @@ public class SystemTraitRegistry {
             case FORCE_ENCOUNTER  -> 3;
             case DECOY            -> 3;
             case DELAY            -> td.param("turns", 1) >= 2 ? 5 : 3;
-            case ONE_WAY_CALL     -> 1;
+            case ONE_WAY_CALL     -> { int dir = td.param("direction", 0);
+                                       int c = dir >= 2 ? 5 : dir == 1 ? 3 : 1;   // 대화창>청취>일방
+                                       if (td.param("detect", 0) == 0) c += 2;    // 괴담 감지 불가(은밀)
+                                       if (td.param("uses", 1) == 0)   c += 2;    // 무제한 발동
+                                       int ch = td.param("chars", 0);
+                                       if (ch >= 100)                  c += 1;    // 긴 글자(100자+)
+                                       yield Math.min(10, c); }
             case TELEPORT         -> 3;
             case RALLY            -> 3;
             case EVADE_SENSE      -> td.param("turns", 2) >= 3 ? 5 : 3;
@@ -702,10 +719,10 @@ public class SystemTraitRegistry {
     /** 코스트가 예산을 넘을 때 가장 강한 파라미터를 1 낮춘다. 더 낮출 게 없으면 false. */
     private static boolean reduceOneParam(TraitData td) {
         if (td.effectParams == null || td.effectParams.isEmpty()) return false;
-        String[] order = {"choices","scale","power","scope","depth","intensity","range","trigger_freq","turns","count","info","uses"};
+        String[] order = {"choices","scale","power","scope","depth","intensity","range","trigger_freq","turns","count","direction","info","uses"};
         for (String k : order) {
             Integer v = td.effectParams.get(k);
-            int min = switch (k) { case "choices", "scale" -> 2; case "info" -> 0; default -> 1; };
+            int min = switch (k) { case "choices", "scale" -> 2; case "info", "direction" -> 0; default -> 1; };
             if (v != null && v > min) { td.effectParams.put(k, v - 1); return true; }
         }
         return false;
@@ -865,6 +882,12 @@ public class SystemTraitRegistry {
         new Preset("sys_survivor_scan", "생존감지", "C", "아군 생존 확인",
             "다른 플레이어 전원의 생존 여부를 즉시 확인한다.",
             2, "link_ally", p("uses", 1, "depth", 1)),
+        new Preset("sys_secret_chat", "밀담", "S", "은밀 대화창",
+            "괴담이 엿들을 수 없는 대화창을 연다 — 파티 전원이 서로 자유롭게, 무제한으로 은밀히 소통한다.",
+            0, "one_way_call", p("uses", 0, "detect", 0, "direction", 2, "chars", 0)),
+        new Preset("sys_whisper", "전언", "B", "은밀 일방 전언",
+            "괴담이 못 듣게 지정한 아군에게 일방적으로 말을 전한다(답신 불가, 소리 아님).",
+            0, "one_way_call", p("uses", 2, "detect", 0, "direction", 0, "chars", 0)),
         // === 패시브 효과 프리셋 ===
         new Preset("sys_insight", "시나리오 이해", "B", "시나리오 파악",
             "핵심 정보를 제외한 시나리오의 전체 구조를 처음부터 파악한 상태로 시작한다.",

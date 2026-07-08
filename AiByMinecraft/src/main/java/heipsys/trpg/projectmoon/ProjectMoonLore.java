@@ -21,6 +21,11 @@ public final class ProjectMoonLore {
 
     public enum Era { LOBOTOMY, LIBRARY, LIMBUS }
 
+    /** 시나리오 '구조'(무대 사건 유형) — 환상체 관리 하나로 고정되지 않게 ★구조를 먼저 추첨★한다.
+     *  시대별 유효 구조가 다르며, 환상체 관리가 최다이되 유일하지 않다(#PM 다양성). */
+    public enum Structure { ABNO_MANAGE, ABNO_VARIANT, ORDEAL, SEPHIRAH,
+        RECEPTION_HOST, RECEPTION_GUEST, RECEPTION_OTHER, MIRROR_DUNGEON, CITY_INCIDENT }
+
     // ── 에라별 인물 (시대 고정 — 교차 등장 금지) ─────────────────────────────
     static final String[] CHARS_LOBO = {
         "관리자(아인)", "카르멘", "초기 AI 앤젤라", "창립자 벤자민(B)", "창립자 미셸(C)",
@@ -223,6 +228,75 @@ public final class ProjectMoonLore {
 
     private static final String[] GRADE = {"ZAYIN", "TETH", "HE", "WAW", "ALEPH"};
 
+    /** 시대별 유효 구조를 가중 추첨한다. 환상체 관리가 최다이되 유일하지 않게(100% 붕괴 방지). */
+    private static Structure pickStructure(Era era) {
+        Structure[] s; int[] w;
+        switch (era) {
+            case LOBOTOMY -> {
+                s = new Structure[]{Structure.ABNO_MANAGE, Structure.ABNO_VARIANT, Structure.ORDEAL, Structure.SEPHIRAH};
+                w = new int[]{60, 10, 18, 12};   // 환상체관리 최다
+            }
+            case LIBRARY -> {
+                s = new Structure[]{Structure.ABNO_MANAGE, Structure.ABNO_VARIANT, Structure.RECEPTION_GUEST,
+                    Structure.RECEPTION_HOST, Structure.RECEPTION_OTHER, Structure.CITY_INCIDENT};
+                w = new int[]{58, 10, 14, 10, 4, 4};
+            }
+            default -> { // LIMBUS
+                s = new Structure[]{Structure.ABNO_MANAGE, Structure.ABNO_VARIANT, Structure.MIRROR_DUNGEON, Structure.CITY_INCIDENT};
+                w = new int[]{58, 12, 20, 10};
+            }
+        }
+        int total = 0; for (int x : w) total += x;
+        int r = ThreadLocalRandom.current().nextInt(total);
+        for (int i = 0; i < s.length; i++) { r -= w[i]; if (r < 0) return s[i]; }
+        return Structure.ABNO_MANAGE;
+    }
+
+    /** 시대 가중 추첨 — 로보토미 > 라오루 > 림버스 (로보토미가 가장 대표적·기본). */
+    private static Era pickEra() {
+        int r = ThreadLocalRandom.current().nextInt(100);
+        if (r < 48) return Era.LOBOTOMY;   // 48%
+        if (r < 80) return Era.LIBRARY;    // 32%
+        return Era.LIMBUS;                 // 20%
+    }
+
+    /** 비(非)환상체 구조를 시나리오 '중심 사건'으로 지시하는 블록. 환상체관리/변종은 pickAbnormalityBlock가 담당. */
+    private static String structureBlock(Structure st) {
+        switch (st) {
+            case ORDEAL -> {
+                return "\n★이번 시나리오 구조(중심): ★시련(Ordeal) 대응★ — 특정 시각에 시설을 습격하는 재난.\n"
+                    + "  예: " + ordealEvent() + " / " + ordealEvent() + " 중 하나를 중심 사건으로(확실한 캐논만). ★시각=강도(여명<정오<어스름<자정), 색=적 유형.★\n"
+                    + "  환상체 격리·관리가 아니라 ★밀려드는 시련 세력을 지정 시각까지 버티며 격퇴·생존★하는 구도로 구성하라(지정 환상체는 안 써도 되고, 쓰면 배경 요소로만).\n";
+            }
+            case SEPHIRAH -> {
+                return "\n★이번 시나리오 구조(중심): ★세피라 코어 억제★ — 부서 관리 세피라가 폭주.\n"
+                    + "  해당 세피라의 성격·상처가 극단화된 형태로 폭주하며, 플레이어는 ★진압·설득·코어 안정화★를 시도한다. 환상체 관리가 아니라 세피라 폭주가 중심 사건이다.\n";
+            }
+            case RECEPTION_HOST -> {
+                return "\n★이번 시나리오 구조(중심): ★접대 — 우리가 주최★ (라오루).\n"
+                    + "  플레이어가 ★앤젤라의 도서관 측(사서·초대자)★이 되어, 초대해 들인 손님(협회·픽서·잔향악단 등)을 각 층에서 ★접대(전투)★해 책을 얻는다. 손님 집단의 정전 설정을 반영하라.\n";
+            }
+            case RECEPTION_GUEST -> {
+                return "\n★이번 시나리오 구조(중심): ★접대 — 우리가 손님★ (라오루 정전 핵심 · 관점 역전).\n"
+                    + "  플레이어가 ★도서관에 초대된 픽서/협회★가 되어, 지정사서들의 ★접대(시험·전투)★를 받아 살아남고 목적을 이룬다 — ★우리가 받아들여지는(시험당하는) 입장★이다.\n";
+            }
+            case RECEPTION_OTHER -> {
+                return "\n★이번 시나리오 구조(중심): ★접대(그 외 손님)★ (라오루).\n"
+                    + "  잔향악단 외의 다른 초대 손님(여러 협회·사무소·핑거 소속)과의 접대 국면으로 구성하라(확실한 정전 손님만).\n";
+            }
+            case MIRROR_DUNGEON -> {
+                return "\n★이번 시나리오 구조(중심): ★거울 던전·뒤틀림·특이점★ (림버스).\n"
+                    + "  L사 지부/거울 던전 탐사, 또는 도시의 ★뒤틀림(distortion)★·특이점 사건이 중심이다. 죄종(7죄악)·거울 기술·해결사 구도를 활용하라(환상체 격리가 아니라 던전 탐사·뒤틀림 대응이 중심).\n";
+            }
+            case CITY_INCIDENT -> {
+                return "\n★이번 시나리오 구조(중심): ★도시 사건★ — 협회·핑거·해결사 분쟁.\n"
+                    + "  환상체 없이도 성립하는 도시(The City)의 사건: 등급 해결사 의뢰, 조직 항쟁, 핑거 개입, 특이점 남용 등. 정전 조직·인물을 반영하라.\n"
+                    + "  ★환상체는 서브로 얽힐 수 있다(선택)★: 중심은 도시 분쟁이되, 환상체 1개가 ★부차적 요소★(거래물·사건 원인·함정·제3세력)로 개입할 수 있다 — 단 주역은 도시 사건이고 환상체는 곁가지.\n";
+            }
+            default -> { return ""; }
+        }
+    }
+
     /** 생성기 주입 결과. */
     public static final class Injection {
         public final Era era;
@@ -250,7 +324,7 @@ public final class ProjectMoonLore {
     }
 
     /** 스테이지 등급 분류대로 환상체 1개를 뽑는다. 스테이지 수준을 넘는 고등급이면 '간접 대응'으로 표시. */
-    private static String pickAbnormalityBlock(int roomNumber) {
+    private static String pickAbnormalityBlock(int roomNumber, boolean variant) {
         int central = Math.max(1, Math.min(5, roomNumber));           // ZAYIN(1)~ALEPH(5)
         int lo = Math.max(1, central - 1), hi = Math.min(5, central + 1);
         int g1 = lo + ThreadLocalRandom.current().nextInt(hi - lo + 1);
@@ -260,6 +334,11 @@ public final class ProjectMoonLore {
         String abno = pool[ThreadLocalRandom.current().nextInt(pool.length)];
         String gName = GRADE[grade - 1];
         String rec = abnormalityRecord(abno);   // 상세 레코드(있으면) — 생김새·능력·강함만, 해결책 미제공(GM 전용)
+        if (variant) {
+            return "\n★이번 소재 환상체(지정): '" + abno + "' (" + gName + "급) — ★단, 정전 원본이 아니라 '변종(뒤틀림·E.G.O. 변형 아종)'으로 재해석★한다.\n"
+                + "  ★변종 예외(실재성 완화)★: 이 구조에 한해 '원작의 뒤틀림/변형 개념'에 근거한 ★변형 명칭 생성을 허용★한다 — 원본 '" + abno + "'의 핵심 기제·상징은 유지하되, 도시·거울·왜곡의 영향으로 변질된 형태(예: 격리를 뚫고 도시로 나가 변이).\n"
+                + "  이름은 '변형명(원본 " + abno + " 아종)' 형식. 원본과 다른 새 위협 요소를 최소 1개 더하고, 규칙·약점을 탐색으로 파악해 직접 대면·대응하는 구도로 구성하라.\n" + rec;
+        }
         // ★간접★: 스테이지 수준을 넘는 고등급(WAW/ALEPH)이 뽑혔을 때만. 후반 스테이지에서 제 등급이면 직접 관리 허용.
         boolean indirect = grade >= 4 && grade > central;
         if (indirect) {
@@ -330,7 +409,7 @@ public final class ProjectMoonLore {
 
     /** 이번 회차 프로젝트 문 시나리오 큐레이터용 주입(에라 결정 + 카테고리 표본 + 등급 정합). */
     public static Injection build(int roomNumber) {
-        Era era = Era.values()[ThreadLocalRandom.current().nextInt(Era.values().length)];
+        Era era = pickEra();   // 로보토미 > 라오루 > 림버스 가중
         String surEx;
         {
             Set<String> s = new LinkedHashSet<>();
@@ -352,10 +431,6 @@ public final class ProjectMoonLore {
                 c.append("- 인물(무작위 표본): ").append(sample(CHARS_LOBO, 3)).append("\n");
                 c.append("- 장소(무작위 표본): ").append(sample(LOC_LOBO, 3)).append("\n");
                 c.append("- 핵심 개념: 엔케팔린(에너지)·코기토·환상체 위험등급·작업(본능·통찰·애착·억압)·격리와 관리·추출 E.G.O.\n");
-                c.append("- ★추가 사건 '시련(Ordeal)': '[색][시각]의 시련' — 특정 시각에 시설을 습격하는 별도 재난. ★시각=강도(여명<정오<어스름<자정), 색=적 유형(녹빛/자색/쪽빛/핏빛/호박색, 종말급은 백색=백야의 사도)★. ")
-                 .append("예: ").append(ordealEvent()).append(" / ").append(ordealEvent()).append(" (확실한 캐논만). ")
-                 .append("환상체 관리와 별개로 timeline.main_events(정해진 시각 자동 발생)에 시련을 배치해 압박을 주거나, 시나리오 자체를 '자정의 시련 대응'으로 구성할 수 있다(가능성 — 매번은 아님).\n");
-                c.append("- ★추가 사건 '세피라 코어 억제': 부서 관리 세피라가 폭주해 진압·설득해야 하는 특수 사건도 가능(자정의 시련처럼 드물게). 해당 세피라의 성격·상처가 극단화된 형태로 나타난다.\n");
                 c.append("- 배역(플레이어): 로보토미 직원(관리원·작업자·정보팀·안전팀·제압팀·연구원 등). 세피라 예소드로만 만들지 말 것.\n");
                 c.append(sephirahPersonaBlock(roomNumber, era));
             }
@@ -366,7 +441,6 @@ public final class ProjectMoonLore {
                 c.append("- 장소(무작위 표본): ").append(sample(LOC_LIBRARY, 3)).append("\n");
                 c.append("- 도시 인프라(무작위 표본): ").append(sample(ORGS, 2)).append(" · ").append(sample(FIXERS, 1)).append(" · ").append(sample(FINGERS, 1)).append(" · ").append(sample(SYNDICATES, 1)).append("\n");
                 c.append("- 핵심 개념: 초대·책(횃불)·접객·지정사서·각 층(분야)·거울 기술·뒤틀림·신(心)/망(望).\n");
-                c.append("- ★추가 사건 '잔향악단(도서관 접대)': 도서관에 유인·초대된 손님 집단이 각 층 지정사서와 맞붙는 접대(전투)로 책(이야기)을 얻는 사건 — 우는 아이·톱니교단·브레멘 음악대·늑대의 시간·인형사·핏빛 밤·어제의 약속·푸른잔향 등(확실한 캐논만, 드물게).\n");
                 c.append("- 배역(플레이어): 사서·초대된 손님(픽서·협회)·해결사·정보상 등.\n");
                 c.append(sephirahPersonaBlock(roomNumber, era));
             }
@@ -388,8 +462,11 @@ public final class ProjectMoonLore {
          .append(". 그 특이점·자원으로 개입(예: R사=복제 용병 파견, W사=운송·현상 복구, K사=회복 앰플, T사=시간 조작 지원 등). ")
          .append("협업·이해충돌·배신 같은 관계 구도로 활용 가능(확실한 캐논만, 시대 정합 유지 · 매번은 아님).\n");
 
-        // ── 환상체(등급-스테이지 정합 + 고등급 간접 처리) ──
-        c.append(pickAbnormalityBlock(roomNumber));
+        // ── 시나리오 구조 룰렛(환상체 관리 고정 붕괴 방지) → 구조별 중심 블록 ──
+        Structure st = pickStructure(era);
+        if (st == Structure.ABNO_MANAGE)        c.append(pickAbnormalityBlock(roomNumber, false));
+        else if (st == Structure.ABNO_VARIANT)  c.append(pickAbnormalityBlock(roomNumber, true));
+        else                                    c.append(structureBlock(st));
 
         c.append("★성씨 다양화 — 같은 성 쏠림 금지. 이번 예시 성씨: ").append(surEx)
          .append(" (그 외 흔한 한국 성씨 자유, 라오루/림버스 배경이면 외국식 이름·코드네임도 가능). 특정 이름 반복(예: 한도윤) 금지.\n");
@@ -409,7 +486,8 @@ public final class ProjectMoonLore {
         return "\n\n【프로젝트 문 전용 지침】 ★반드시 준수\n"
             + "0) ★시대 정합★: 무대는 골라진 컨셉·환상체가 속한 시대(로보토미 / 라이브러리 오브 루이나 / 림버스)에 맞춘다. "
             + "배경이 뒤로 갈수록 미래이므로 ★후대 인물·조직을 이전 시대에 등장시키지 마라★(예: 로보토미 무대에 단테·수감자 금지).\n"
-            + "1) ★이름 표기★: 변형이면 '변형명(원본 아종)', 정전 그대로면 정식 명칭. ★반드시 실존 명칭★(가짜 예시 지어내기 금지).\n"
+            + "0.5) ★시나리오 구조★: 컨셉에서 지정된 구조(환상체 관리 / 변종 폭주 / 시련 / 세피라 억제 / 접대-우리가 주최 / 접대-우리가 손님 / 거울던전·뒤틀림 / 도시 사건)를 ★그대로 중심★으로 삼아라 — 매번 '환상체 1개 관리'로만 만들지 마라. '접대-우리가 손님'이면 플레이어가 시험받는 관점, '변종'이면 원본 기제를 유지한 변형으로 구성한다.\n"
+            + "1) ★이름 표기★: 변형이면 '변형명(원본 아종)', 정전 그대로면 정식 명칭. ★반드시 실존 명칭★(가짜 예시 지어내기 금지 — 단 '변종' 구조는 원본 기반 변형 명칭 허용).\n"
             + "2) ★원본 식별 정보 1개 이상★: 관찰 보고서·격리 기록·도시 소문·증언 등(clues 또는 npcs.hidden_info) 최소 1개.\n"
             + "3) ★위험 등급★: 약→강 ZAYIN·TETH·HE·WAW·ALEPH 표기. " + gradeBand(roomNumber) + ".\n"
             + "   ★스테이지 수준을 크게 넘는 고등급(WAW/ALEPH)은 플레이어가 직접 상대하지 않게 하라(보조·뒷수습·특색이 막는 동안 다른 위협 대응). 후반 스테이지에서 제 등급이면 직접 관리 가능.\n"

@@ -79,6 +79,48 @@ description: >-
   상시 갱신(효율 될 만한 지식은 항상 등록).
 
 ## 최근 추가된 아키텍처 사실 (회귀 방지)
+- **★프로젝트 문 시나리오 구조 룰렛(ProjectMoonLore)★**: build()가 ★구조를 먼저 추첨★(pickStructure)한 뒤 그 구조를
+  중심으로 짜게 한다 — 예전엔 pickAbnormalityBlock가 ★무조건★ 붙어 "환상체 1개 관리"로 100% 붕괴(실측 100/100, 변종·
+  특수사건 0). 이제 시대별 가중: 환상체관리(~60% 최다)·변종(ABNO_VARIANT→pickAbnormalityBlock variant=true, 실재성 완화
+  예외로 원본기반 변형 허용)·시련(Ordeal)·세피라억제·접대(주최/★손님=관점역전★/기타)·거울던전·도시사건. 에라도 가중
+  (pickEra: 로보토미48%>라오루32%>림버스20%). 헤지 '추가 사건'(드물게/매번은아님) 문구 제거(0% 발화 원인). directive()
+  0.5)에 구조 준수 규칙. ★"환상체 관리로만"으로 되돌리지 말 것.★
+- **★구조 우선(일반 생성기, 스테이지 3+)★**: 예전 typeFirstDirective는 entity.type을 ★랜덤 고정★했으나, 이제
+  ScenarioArchetypes.worldRulesBlock가 3+에서 ★첫 후보를 world_rules 구조로 고정★(basic=1~2는 후보 제시 유지)하고,
+  typeFirstDirective(GdamGenerator)는 "entity.type을 그 구조에서 도출(먼저 정하지 마라)"로 바뀜. 사용자 지시=
+  "ScenarioArchetypes에 맞게 정해져야지 entity.type이 아니라". ★entity.type-first로 되돌리지 말 것★(typeHint 설정 시엔
+  기존대로 유형 고정 경로 유지).
+- **★괴담 카탈로그(Phase 0 완료, GdamCatalog.java)★**: 173항목 큐레이트 — 통용명·출처(11: 한국/일본/서양/creepypasta/
+  scp/cosmic/game/backrooms/internet/real/★sf 신설★)·fame(major28/semi58/minor87)·native_scale[min,max]·vibe(공존 페어링 결)·한줄.
+  "::" 구분 텍스트블록+parse(SCP-2521 이름에 '|' 있어 파이프 회피). PM은 ProjectMoonLore 전용이라 제외. all()/bySource()/sources().
+  ★Phase 1a 소비 중★: familiarConcept의 catalogCandidates()가 인지도(FAME_W 스테이지곡선)·규모(scaleWeight, 범위 벗어날수록
+  감점 최소15=0 아님) 가중 + no-repeat(recentFamiliarKeys+variantBase) 필터로 8후보 주입 → GdamCatalog.pick(비복원 가중추출).
+  RANDOM_KIND_POOL에 신설 출처(western/creepypasta/backrooms/internet/real/sf) 편입 + switch 케이스 + catalogAmplifyNote(규모
+  정합 증폭/축소). ★공존(같은 출처끼리만·SCP+cosmic 교차 금지·vibe로 짝·1~4 가변)은 Phase 1b 예정.★ sf 6하위결(외계·지저·
+  시뮬·음모·기생·AI우주). 검증: korean major S1 45%→S6 3%(억제, 0아님)·cosmic major S1 13%(규모 억제).
+- **★나이·성별 앵커(플레이어→배역, 역방향 폐기)★**: 초기 스테이터스 생성 시 플레이어 고유 나이·성별을 굴리고(★배역이 여기
+  맞춰 생성·배정됨★, 배역→플레이어 아님). ①`CharacterGenerator.rollStats`가 나이 가중굴림(12~30빈출, [8,80] 클램프)+성별 50/50
+  을 ★항상★ 굴린다(배역 age_range로 나이 뒤집는 분기 제거 — pd.age 기본값 25 때문에 `if(pd.age>0)` 가드는 전원 25 고정 버그였음).
+  ②age는 baseAge로 스테이지 넘어 지속(clearRoleData→resetToBase), gender도 ★유지★(clearRoleData의 `gender=""` 와이프 제거 —
+  age와 짝 앵커). ③생성 힌트 `buildPlayerAnchorHint`(castHintFor→gdamGen.generate 5-arg)가 배역 age_range=플레이어나이±5·
+  gender일치 요구. ④배정 `doPreAssign`(비피날레)·`RoleManager.assignRoles`가 ★그리디 매칭★: 코어 우선 + cost=|나이차|+성별불일치40.
+  ⑤성별 가드: 배정 시 `pd.gender=asgn.gender()`는 ★미설정일 때만★(앵커 유지, 3곳: assignRolesAndStart·assignRoles·assignLateJoin).
+  ★소프트 앵커★: 상황이 특정 연령대를 요구하면(학교시험→학생·유치원→아동·군부대→성인) 힌트가 그 연령대를 우선, 배역 age_range가
+  상황대로 → `applyRoleAge` 클램프로 나이가 그 스테이지만 바뀌고(성별은 유지) 다음 스테이지엔 baseAge로 복귀. 검증: anchor_sim.py
+  (일반=앵커유지·학교=45세→18세 학생·혼합=노장→교사·폴백=순서). ★"배역이 나이·성별을 정한다"로 되돌리지 말 것.★
+- **[완료] 정보 경제 원칙(2축+깊이 게이트)**: ①저해상도 힌트 과다노출 ②정보는 얻기 어렵게+중요정보는 위험
+  감수 ③정확 정보=대부분 괴담 쉽게 종결(다회차·강능력 조기종결, 질질끌기 X) ④잘못된 정보=파멸. ★사용자 확정 설계(2축+깊이)★:
+  ▸**탐색·위험=발견 성패**(스톤월링 금지 유지 — 뭔가는 찾음) ▸**영감(SPR)=해상도**(낮으면 발견해도 흐릿·핵심 안 잡힘, 높으면
+  또렷) → `PromptBuilder:109`의 "탐색하면 단서 ★분명히★"를 "발견은 보장, ★선명도는 영감 비례★"로 교체(현재 :109가 :113 '영감=
+  해상도'·:194 '영감↓ 흐림'과 ★모순★ — 영감 낮아도 분명한 보상은 영감 스탯을 무의미화). ▸**서술 깊이 게이트**: 핵심 사물을 ★오래·
+  길게 묘사해 확실한 힌트가 새게 하지 마라★ — 이름 집기+길이 몰기 둘 다 금지, 배경 사물과 같은 짧은 무게로. (이는 :5531 '길이 늘리지
+  마라'를 ★강화★ — 충돌 아님. 디코이 '나열 추가'가 아니라 '깊이 축소'가 요지.) 스코프: 깊이 게이트는 ★GM 장면 서술★에만, 간결한 SPR
+  능력 출력(:3745·:5531)엔 미적용. ②=access:hard·④=mislead(:767) ★이미 구현★(강화만), ③=:3747(발견정보 인과율 자유) 부분구현
+  이나 결론 대필·자동진행 금지(:113) 선 유지. ★구현★: PromptBuilder 힌트 절제 원칙에 (a):109 "탐색=발견 보장/영감=해상도"
+  리워드, (b)서술 깊이 게이트 불릿(핵심 사물 오래·길게·이름집기 스포트라이트 금지, GM 장면 서술 한정), (c)③④ "정보 갖추면 빠른
+  종결/틀린 정보 확신은 파국" 불릿 신설 + GdamGenerator mislead(:768)에 실질 대가·누적 파국 강화. 이미 정합하던 곳: 런타임
+  gmCtx SPR 노트(TRPGGameManager:9737 "영감=지각 해상도"·:9726 "영감↓ 인색")·GdamGenerator:777 "영감 해상도와 곱해짐" — :109
+  "분명히"가 이들과 유일하게 모순이었어서 그걸 제거·정합. ★"탐색만 하면 무조건 분명한 단서"로 되돌리지 말 것(영감 무의미화).★
 - **자동진행 = GM위임 아닌 코드 결정(전지성 차단)**: 자동진행 경로 4개 중 GM을 호출하는 건 `maybeAccelerateIdle`
   하나뿐 — 나머지(advanceRoundAfterAllActed / busyClockJumpIfAllBusy / summonAllFree / 전원무력 워치독)는
   ★GM콜 0★(순수 시계·카운터 연산)이라 프로즈를 안 만들어 미발견 정보 누출이 원천 불가. maybeAccelerateIdle은
@@ -112,6 +154,24 @@ description: >-
   (엔티티 name/type/rules/ai_context 키워드 매칭 — '소리·울림' 광의어는 오탐하니 좁게). tamperText는 핵심어·
   숫자 뒤집기 우선, 없으면 신호끊김(…). 물리형 괴담이 통신 변조하면 게이트 오탐 의심.
 - **소통수단(#177)**: 기본 4종은 GM 호출 없이 필드로 즉시 판정(applyCommMethodLocal). 새 수단 GM 판정은 #180.
+- **비용 기법 현황(참조본 zip 대조 결론)**: 우리는 이미 프롬프트 캐싱(시스템+히스토리 프리픽스 cache_control·1h TTL)·적응형 effort(output_config)·모델 티어·자동탐지·JsonSalvage(절단JSON 로컬복구, HEAD)를 갖춰 Claude 기준 참조본과 동등 이상. 참조본의 절감은 저가 제공사(MiMo/Cerebras) 전환+reasoning suffix가 실체 — Claude엔 무의미. 다중프로바이더는 열면 `AICraft.java` 한 곳(providerFor/modelName/applyReasoningEffort). ★비용 아닌 품질 갭★: 참조본은 히스토리 system-role을 Claude GM에 `[시스템 지침]`으로 전달, 우리는 Claude 경로에서 드롭(AiManager send Claude 분기) — 필요 시 REF 1766-1781 병합루프 이식.
+- **#231 비용 진단(실측 $17 vs 예측 $12, 40% 초과)**: ★구조는 정상★ — send()(AiManager 1111~)은 system 블록에 ★무조건★ cache_control(1h TTL), GM/NPC/entity 멀티턴은 cacheHistory=true로 마지막 메시지 프리픽스 캐싱. 단가(accumulateUsage 445): 캐시읽기 0.1× · ★캐시쓰기 1.25×(=읽기의 12.5배)★ · 출력 5×(입력 대비). ★중복 규칙 통합은 실효 없음★(베이스 캐시됨, 10줄/842줄≈0.1%). 유력 정체: (1)★캐시쓰기 churn★=1h TTL 만료(느린 인간 턴·세션 중단)·단발게임마다 40K 베이스 1.25× 재생성 / (2)출력 길이(5× 단가, GM 서술 과다) / (3)미캐시 단발호출. ★계측 추가(이번가동 전용, 영구저장·UsageStat 불변)★: accCacheRead/accCacheWrite/accCostOut + `usageDiagLines()` → /trpg status에 순수입력/캐시읽기/캐시쓰기/출력·비용비중·캐시히트% 표시. ★실플레이 1회 후 /trpg status로 정체 규명★(히트% 낮으면 churn / 출력비중 높으면 서술 트림 / 순수입력 크면 미캐시). luckSaves처럼 dead-code 아님 — send 경로 확인됨.
+- **injectGmSystem은 이번 턴 전용 버퍼**(AiManager, append-only 제거 완료 873e883): 주입 노트는 gmContext(영구 히스토리)에 안 쌓고 `pendingSystemNotes`(gmLock 보호)에 적재 → callGmAi 전송 스냅샷 후행에만 붙이고 즉시 clear. ★캐싱 유지★: 안정 프리픽스(gmContext)=순수 행동만 → 히스토리 캐싱 온전, 이번 턴 노트만 매 턴 새로 전송. 같은 "[태그]" 노트는 최신으로 교체(leadingTag+removeIf → 상반·중복 누적 방지). flush는 각 줄 '[시스템 주입]' 접두 유지 → 누출 스크럽(stripTags)이 GM 에코 제거(마음의 소리 #213 정합). callGmAiOnce는 단일메시지 문맥이라 flush 안 함(노트는 다음 callGmAi가 소비 — playDiceResult의 [판정 결과] 경로). clearAll/truncate/import 3곳 모두 버퍼도 정리. (예전엔 gmContext 직접 append → 스테이지 내내 stale 누적·토큰↑.) 감사 미이행(보고만·사용자 승인 대기): GM 베이스 매턴 전송(~40K토큰, 단 캐시됨)이라 DICE 2단계·SPR·NPC해결금지·교착 규칙 3~4중 중복이 #231 비용 관련 — 통합 시 절감(고위험). ★프롬프트 태그 예시는 원시 꺾쇠(`<TAG>`)로★ — HTML 이스케이프(`&lt;`)하면 GM이 escape 뱉어 파서 미스(DROP_NOTE 버그 e68c981).
+- **결정타: 자동성공 종결 + 실패 치명성**(사용자 설계, 회귀 주의): "핵심행동 완료→종결 판정 저굴림→드래그"의 근본 해법 = ★애초에 불필요한 굴림을 없애는 것★. (A) 자동성공 종결(PB:250): 결정타에도 "충분히 높으면 무판정 자동성공" 원칙이 똑같이 적용 — 관련 능력치가 난이도를 ★명백히 압도★하거나 정석 조건이 ★완전·명백 충족+저위협★이면 굴리지 말고 ★즉시 <CLEAR>★(운 저굴림으로 이긴 판 드래그 금지). '자동성공 금지'는 ★불확실한★ 결정타 굴림 스킵 금지지, 명백한 종결까지 굴리라는 뜻 아님. PB:251 2단계(DICE→다음응답 CLEAR)는 ★굴리는 결정타 한정★ — 무판정 종결이면 곧바로 <CLEAR>. PB:404 '시험'은 과정에서 치르는 것, 다 갖춘 종결을 굴림으로 재봉쇄 금지. ★엔진은 DICE 없는 CLEAR 정상 수락★(onGmResponse 2458 가드는 DICE+CLEAR 동시일 때만 CLEAR 보류) → 순수 프롬프트 정합. (B) 실패 치명성(PB:256 신규 + playDiceResult critHint): 전투·직접위협·자살강행에서 스스로 건 결정타가 ★실패(특히 대실패)★면 부상·후퇴로 무마 말고 ★체력 0=개별 사망까지★ 정당(hp_change 음수). 과보호 금지 — 사전암시 필요한 건 ★전원 몰살(배드엔딩)★뿐, 개별 사망은 즉시 정당(PB:296과 정합). ★엔진 사실★: luckSaves(2847 '위기구제 행운')는 ★정의만 되고 호출 안 됨=dead code★ → LUK 자동구제 미작동(이미 과보호 아님). checkHpCollapse(10441)=hp0 사망·hp1 기절, 클램프로 사망 막지 않음. 잔여 완화(교착방지): PB:282(진행 삭제 금지·2턴 결판)·424~427(단일행동 1회판정)·255(조건↑→dc↓)·워치독(~511-534 제한시각 강제종결).
+- **아이템 지급 = charName 정규화 필수**(회귀 주의): GM은 `<ITEM_GRANT>`·STATE_UPDATE의 player에 ★charName★을 넣지만(스키마 지시), ItemManager.processGrant는 p.getName()(계정명)·추적은 pd.name(계정명)으로 매칭 → charName≠계정명이라 게임 중 지급이 100% 실패했었다(로그 전수: 런타임 지급 0, 아이템 이벤트 전부 '시작 소지'). onGmResponse ITEM_GRANT 처리에서 findAnyByName으로 계정명 정규화 후 processGrant/noteHeldItem에 넘긴다. GM 대상명(charName)을 계정명 매칭하는 다른 곳도 같은 버그 의심.
+- **영감(SPR) = '지각 해상도'**(중의성 모델 폐기): actorStatGmContext SPR 분기는 7단계 디테일 사다리(1~2 겉모습·3~5 노후탓·6~8 흔적존재·9~11 성질·12~14 형태·15~17 내용·18+ 내용+정체). ★코드 주석은 GM에 안 감★ → 사다리·원칙을 append 문자열에 담아야 함. ★감정·평가 서술 금지★('수상·신경 쓰임·확신') — 물리 사실만, 디테일 수준 자체가 단서(사람은 추론 가능). '해법·이용법'은 어느 영감이든 플레이어 몫. PromptBuilder:226도 동일 모델로 정합.
+- **금지어 위협도 = 유사도 비례**: forbiddenSimilarity(0~1)=포함 1.0(정확)·그 미만 편집거리(levenshtein) 최근접 창. 정확→위협도 즉시 90+파국, 비슷한 말(0.6~)→유사도 비례 상승(파국 아님·조용히). 2글자 금지어는 정확만.
+- **NPC 말투 4메서드 분리**(관리): npcCorePrompt가 npcEndingHabitBlock(①ending_style)·npcPersonalSpeechBlock(②speech_style)·npcFluencyBlock(③intel 폴백) 중 하나 + npcAgeSpeechBlock(④나이별, 항상) 호출. ageRegisterHint 아래 co-locate.
+- **★프롬프트 작업 규약(사용자 상시 지시)★**: (1) 프롬프트(PB:줄 등)를 언급할 땐 ★그 실제 문구도 함께 보여줘라★(사용자가 내용을 알 수 있게). (2) 사용자가 지시한 프롬프트 수정이 ★다른 기존 프롬프트와 충돌하거나 그 프롬프트로 우회·무력화된다면, 그 기존 프롬프트가 무엇인지 원문으로 보여준 뒤★ 처리하라(예: 793만 지우려 했으나 PB:101의 절대금지가 실질 하드코딩이었음 → 101을 먼저 보여주고 완화). 담요식 절대규칙(‘어떤 X도’, ‘절대’, ‘모든 게임’)이 시나리오별 예외를 막고 있는지 항상 점검.
+- **NPC 캐리 = 기본 절제·시나리오 게이트**(하드코딩 완화): 예전 PB:101 ‘어떤 NPC도 대신 해결 안 함’ = 모든 게임 담요 금지 → 시나리오가 의도한 캐리 NPC(role_type ‘열쇠’·true_role 조력자/해결사)도 ‘힌트 늦게 주는 NPC’로 격하되던 문제. PB:101을 ‘기본은 절제, 시나리오가 설계하면 더 깊이·결정적으로 도울 수 있다(플레이어 참여 여지·비노출 유지)’로 완화, 중복 PB:793(‘NPC 해결책 통째 금지’ 재진술) 제거. PB:778(다수 NPC 조율)도 ‘해결책 통째 제공 금지’ 담요 문구 → ‘기본 절제(시나리오 지정 캐리·조력 NPC는 예외)’로 축약·완화 완료. role_type 목록=발생원·방어막·제물·열쇠·피해자(제거결과 축)+적대적공조·시스템부품·잘못된가이드(행동 축), 런타임 주입 buildGmPrompt ~11141.
+- **불가능 행동 차단 = 대안 제시 금지**(스푼피딩 제거): PB:254·312 = ‘불가능·말 안 되는 행동만 막되 한 줄 이유만, 대안(가능한 길)은 제시하지 말고 플레이어가 직접 생각’. 예전 ‘대신 가능한 길을 제시’(스푼피딩)를 양쪽에서 제거 — 힌트 절제 원칙(PB:105)과 정합.
+- **은밀 대화(밀담) 능력(#234, one_way_call 4인자화)**: effect_type=`one_way_call`에 4파라미터 —
+  `uses`(0=무제한), `detect`(0=괴담 감지불가[은밀·기본]/1=감지가능), `direction`(0=일방 전언/1=청취 채널/2=대화창 양방향),
+  `chars`(0=무제한 글자수). 코스트=방향(일방1·청취3·대화창5)+은밀(+2)+무제한(+2)+긴글자(+1), S+예시=대화창·은밀·무제한=10(S).
+  런타임(TRPGGameManager): direction0은 다이얼로그 일방 전송(activateOneWaySend, '전체' 지원), direction1/2는
+  스테이지 채널 개설(secretChannels: owner→SecretChannel) → 멤버는 채팅 앞 `!`로 은밀 송수신(handleGameChat 최상단 훅
+  handleSecretChannelChat, 채널 없으면 false→일반채팅 폴백). deliverSecretText가 logComm(kind=whisper,via=밀담) +
+  detect면 noteEntityIntel·GM주입. secretChannels는 스테이지 리셋 시 clear. reduceOneParam에 'direction' 추가(초과 시 대화창→청취→일방 강등).
 - **뷰어 재생**: buildQueue→queue/qi, step()↔renderQueueItem(instant), seekTo(구간 슬라이더), evHtmlSplit
   (전체·시점 공통 — GM서술 내 [이름]대사 분리), headHtml 'other'클래스(타인=우측정렬), mapZoom(지도 확대),
   #infoResize(정보창 폭·--ifs 글씨 스케일).

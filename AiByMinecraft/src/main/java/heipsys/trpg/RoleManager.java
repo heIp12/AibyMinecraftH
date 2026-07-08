@@ -54,24 +54,61 @@ public class RoleManager {
         List<Player> shuffled = new ArrayList<>(players);
         Collections.shuffle(shuffled);
 
-        for (int i = 0; i < shuffled.size() && i < ordered.size(); i++) {
-            Player p  = shuffled.get(i);
-            JsonObject role = ordered.get(i);
+        // ★나이·성별 앵커 매칭★(배역→플레이어 역방향 폐기): 각 플레이어를 자신의 초기 나이·성별에 가장
+        //   가까운 배역에 그리디 배정한다. 코어 배역이 남으면 코어에서 먼저 채우고, 그 안에서 (나이차 +
+        //   성별 불일치 벌점)이 최소인 배역을 고른다. 앵커 정보가 없으면 순서대로 폴백(기존 동작).
+        //   (정상 흐름은 TRPGGameManager.doPreAssign이 선점하므로 이 메서드는 재도전 등 폴백에서 쓰인다.)
+        int coreCount = coreRoles.size();
+        Set<Integer> used = new HashSet<>();
+        for (Player p : shuffled) {
+            PlayerData pd = state.getPlayer(p);
+            int pAge      = (pd != null && pd.age > 0) ? pd.age : -1;
+            String pGender = (pd != null && pd.gender != null) ? pd.gender : "";
+            boolean coreRemain = false;
+            for (int i = 0; i < coreCount; i++) if (!used.contains(i)) { coreRemain = true; break; }
+            int hi = coreRemain ? coreCount : ordered.size();
+            int bestIdx = -1, bestCost = Integer.MAX_VALUE;
+            for (int i = 0; i < hi; i++) {
+                if (used.contains(i)) continue;
+                int cost;
+                if (pAge < 0) {
+                    cost = i;
+                } else {
+                    JsonObject role = ordered.get(i);
+                    cost = Math.abs(pAge - roleMidAge(role));
+                    String rGender = role.has("gender") ? role.get("gender").getAsString() : "";
+                    if (!pGender.isEmpty() && !rGender.isEmpty() && !pGender.equals(rGender)) cost += 40;
+                }
+                if (cost < bestCost) { bestCost = cost; bestIdx = i; }
+            }
+            if (bestIdx < 0) break;
+            used.add(bestIdx);
+            JsonObject role = ordered.get(bestIdx);
             RoleAssignment asgn = toAssignment(role);
             result.put(p.getUniqueId(), asgn);
 
-            PlayerData pd = state.getPlayer(p);
             if (pd != null) {
                 pd.roleId   = asgn.roleId();
                 pd.zone     = asgn.zone();
                 pd.charName = asgn.charName();
-                pd.gender   = asgn.gender();
+                // ★성별 앵커 유지★: 초기 성별을 배역 성별로 덮어쓰지 않는다(미설정일 때만 채택).
+                if (pd.gender == null || pd.gender.isEmpty()) pd.gender = asgn.gender();
                 pd.roleAssigned = true;
             }
         }
 
         // 배정 못 받은 핵심 배역 → NPC 대체 알림만 (실제 NPC 생성은 TRPGGameManager)
         return result;
+    }
+
+    /** 배역 age_range의 중앙값(없으면 25). 나이 앵커 매칭용. */
+    private static int roleMidAge(JsonObject role) {
+        if (role.has("age_range") && role.get("age_range").isJsonArray()) {
+            JsonArray a = role.getAsJsonArray("age_range");
+            if (a.size() >= 2) return (a.get(0).getAsInt() + a.get(1).getAsInt()) / 2;
+            if (a.size() == 1) return a.get(0).getAsInt();
+        }
+        return 25;
     }
 
     /** 도중 참여: 남은 배역 배정 또는 주변인 역할 */
@@ -96,7 +133,7 @@ public class RoleManager {
                     pd.roleId   = asgn.roleId();
                     pd.zone     = asgn.zone();
                     pd.charName = asgn.charName();
-                    pd.gender   = asgn.gender();
+                    if (pd.gender == null || pd.gender.isEmpty()) pd.gender = asgn.gender(); // ★성별 앵커 유지★
                     pd.roleAssigned = true;
                 }
                 return Optional.of(asgn);

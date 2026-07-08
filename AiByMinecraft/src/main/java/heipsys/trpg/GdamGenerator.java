@@ -303,7 +303,8 @@ harm/defeat가 모두 "불가"인 순수 비물리 괴담도 가능하나 ★남
   - 예: 야간 학예사 → ["박물관 학예연구사", "유물 관리원", "큐레이터", "역사 연구원", "문화재 전문가", "골동품 감정사", "미술관 직원"]
   - 예: 잠입한 도둑 → ["절도범", "장물 중개인", "골동품 거래상", "사기꾼", "전직 경비원", "암거래상", "보험 사기범"]
 - age_range는 역할의 성격을 반영하되, 최소 10살 이상 폭을 가지도록 한다
-  - 학생 역할 예외: 5살 폭 허용 (고등학생 16~18세 등)
+  - ★하한은 8세 미만 금지★ — age_range의 첫 값은 반드시 8 이상 (7세 이하 미취학 아동 배역은 만들지 않는다)
+  - 학생 역할 예외: 좁은 폭(2~5살) 허용 (고등학생 16~18세 등, 초등 저학년도 하한 8 이상)
   - 성인 역할: [25, 50] 처럼 25살 이상 폭 권장
 - 직업 다양성이 클수록 재굴림 시 플레이어 경험이 풍부해진다
 
@@ -476,7 +477,7 @@ type 값 규칙: "written_book"=책/일기/문서류, "paper"=쪽지/메모, "ma
   * ★시각 일관성★: start_time은 도입부 장면이 벌어지는 시각과 ★반드시 일치★해야 한다(스코어보드가 이 값을 표시하므로, 도입 서술이 다른 시각을 말하면 괴리가 생긴다). 도입 장면에서 시계·전광판·"몇 분 뒤" 같은 시간 단서를 쓸 거라면 그 값이 start_time과 맞아떨어지게 잡아라.
 - minutes_per_turn: 1턴(행동 1회)에 흐르는 인게임 분(보통 10~30). time_visible: 플레이어가 기본적으로 시간을 알 수 있으면 true, 시간 감각을 빼앗는 괴담이면 false.
 - main_events: 개입이 없으면 반드시 일어나는 "큰 사건"만 절대 시각으로 명시한다. NPC의 세부 반응·분기 행동은 넣지 말 것(GM 재량).
-  * 각 사건 필드: id("E1","E2"…), time("HH:MM"), label(사건명), condition(발생 조건), effect(결과 1문장), blockable(플레이어가 막을 수 있으면 true), is_end(종료 트리거면 true)
+  * 각 사건 필드: id("E1","E2"…), time("HH:MM"), label(사건명), condition(발생 조건), effect(결과 1문장), blockable(플레이어가 막을 수 있으면 true), is_end(종료 트리거면 true), threat(★못 막고 터졌을 때 위협도 상승분 5~30 — 위협적인 사건일수록 크게: 잔잔한 조짐 5~10, 뚜렷한 격상·전투·정체 노출 15~25, 대범람·본격 침공 25~30, 종국은 크게. 엔진이 이 값만큼 위협도를 자동으로 올린다★)
   * 시간 순서대로 3~6개. 마지막엔 반드시 is_end:true 사건 1개(보통 end_time과 같은 시각, effect:"끝")를 둔다.
   * blockable:true 사건은 플레이어가 저지할 수 있는 사건(문 잠금 등), false는 반드시 일어나는 사건(괴담 각성 등).
   * branches(선택): 사건에 분기를 붙인다. {"auto":{"condition":"막지 못하면","next":"E3"},
@@ -631,16 +632,16 @@ critical NPC는 한자리 고정이 아니다 — 메인/사이드 사건에 참
     "minutes_per_turn": 15,
     "time_visible": true,
     "main_events": [
-      {"id":"E1","time":"14:00","label":"","condition":"일상 파트 종료","effect":"","blockable":false},
-      {"id":"E1b","time":"15:30","label":"","effect":"","side":true, "side_scale":"small", "deadline":"17:00", "event_role":"지속출혈"},
+      {"id":"E1","time":"14:00","label":"","condition":"일상 파트 종료","effect":"","blockable":false,"threat":8},
+      {"id":"E1b","time":"15:30","label":"","effect":"","side":true, "side_scale":"small", "deadline":"17:00", "event_role":"지속출혈","threat":12},
       // ↑ side:true = 본선과 별개의 중규모(곁가지) 사건(완급). 개수는 스케일별 분량 가이드 참고.
       //   side_scale=small|medium, deadline=마감 시각, event_role=결과유형 11종 중 하나
       //   (해결관문|탈출관문|힌트관문|등장관문|방치강화|즉시파국|방해유발|인명희생|지속출혈|함정강화|정보대가).
       //   관문형만으로 다 채우지 말 것(교착 금지) · effect/label에 '무엇을·언제까지·안 하면 무슨 일' 구체적으로.
-      {"id":"E2","time":"17:00","label":"","condition":"","effect":"","blockable":true,
+      {"id":"E2","time":"17:00","label":"","condition":"","effect":"","blockable":true,"threat":18,
        "branches":{"auto":{"condition":"막지 못하면","next":"E3"},"intervene":[{"condition":"탈출로 확보","next":"E3-B"}]}},
       {"id":"E3","time":"20:00","label":"","condition":"","effect":"","blockable":true,
-       "combat":true, "key_clue":""},
+       "combat":true, "key_clue":"","threat":28},
       // ↑ combat:true = 체력·근력이 통하는 물리 위기(하수인·변이체 등 '싸울 수 있는 대상' 등장). effect에 등장 대상·돌파 수단을 구체적으로.
       //   key_clue = 이 사건을 직접 겪어야만 얻는 결정적 단서(없으면 다른 단서만으로 잘못된 풀이로 감). 최소 1개 사건에 반드시.
       {"id":"E_END","time":"01:00","label":"","condition":"미해결","effect":"끝","blockable":false,"is_end":true}
@@ -765,6 +766,7 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
   variant_basis(친숙 모드 전용 — 생략 가능. 아래 참조).
 ★ mislead 단서: type="mislead" 단서 1~2개를 필수 포함한다. GM이 '그럴듯한 오답 방향'으로 자연스럽게 흘린다.
   - 발동 타이밍: 진짜 단서가 2개 이상 확보된 뒤 자연스럽게 오답임이 드러나게 한다(처음부터 거짓 티 내지 마라). 플레이어가 mislead를 신뢰해 실제 행동(잘못된 차단·봉쇄 등)을 한 번은 실행해보도록 유도한 뒤 오답을 드러내라.
+  - ★대가는 실질적으로(잘못된 정보=치명적)★: mislead를 믿고 확신에 차 밀어붙이면 '헛수고 한 번'으로 끝내지 말고 실제 손실(허비된 자원·시간, 위협·오염도 상승, 나쁜 분기 개방)이 남게 설계하라 — '정보가 있으면 쉽고 틀린 정보는 파국'이라는 경제를 세운다. 단 ★단발 실수는 만회 가능★(위 함정 규칙대로 즉사·완전 교착 금지)하며, 파국은 잘못된 판단을 ★거듭 고집할 때★ 누적으로 온다.
 ★ 획득 난이도(access) — 세 단계로 분포시켜라(다양성):
   - easy(쉬움): 자연스러운 관찰·간단한 대화로도 얻는다. ★방향을 살짝 가리키는 정도★(결정적 아님).
   - normal(중간): 제대로 탐색·심문·추론해야 얻는다. 진짜 단서의 대다수가 여기.
@@ -942,8 +944,9 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
      *  이전엔 random이 default(세계 지역 전설)로만 빠져 프로젝트 문·게임이 아예 안 나오거나 나와도 전용
      *  설정이 미반영이었다. random 40% + 특수 6종 각 10%. */
     private static final String[] RANDOM_KIND_POOL = {
-        "random", "random", "random", "random",
-        "projectmoon", "game", "cosmic", "scp", "korean", "japan"
+        "random", "random",
+        "projectmoon", "game", "cosmic", "scp", "korean", "japan",
+        "western", "creepypasta", "backrooms", "internet", "real", "sf"   // 카탈로그 신설 출처(sf 포함) 로테이션 편입
     };
 
     // 각 항목 = "태그\t이름". 구형 파일(이름만)은 로드 시 태그 "기타"로 흡수.
@@ -954,6 +957,11 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
     private static final int NAME_HISTORY_MAX = 50;
     private final java.util.List<String> nameHistory =
         java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+
+    /** /trpg setting 인지도풀 고정 — ""/"stage"(난이도별 기본) · "major"/"semi"/"minor"(그 티어만 강편향). */
+    private volatile String famePool = "";
+    public void setFamePool(String p) { this.famePool = p == null ? "" : p.trim(); }
+    public String getFamePool() { return famePool; }
 
     public GdamGenerator(Plugin plugin, AiManager aiManager) {
         this.aiManager = aiManager;
@@ -1181,15 +1189,43 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
         return RANDOM_KIND_POOL[java.util.concurrent.ThreadLocalRandom.current().nextInt(RANDOM_KIND_POOL.length)];
     }
 
+    /** filter가 카탈로그(GdamCatalog) 보유 출처면 그 src, 아니면 null(지역 전설 등은 카탈로그 미보유). */
+    private static String catalogSrcFor(String filter) {
+        if (filter == null) return null;
+        return switch (filter) {
+            case "korean", "japan", "scp", "cosmic", "game", "western", "creepypasta", "backrooms", "internet", "real", "sf" -> filter;
+            default -> null;
+        };
+    }
+    /** 후반 스테이지 규모 정합 안내(증폭/축소 레시피 — 작은 괴담 확장, 큰 괴담 축소). */
+    private static String catalogAmplifyNote(int stage) {
+        if (stage <= 2) return "";
+        return "★규모 정합: 고른 괴담의 native 규모가 이 스테이지보다 ★작으면★ 편재화(도처 복제)·감염(전파)·중첩(더 큰 구조의 일부)·격상(거대한 것의 파편이 드러남)으로 확장하되 ★핵심 기제·결은 유지★하라. ★크면★ 파편·전조·강림 직전으로 축소하라.\n";
+    }
+    /** 카탈로그 보유 출처면 인지도·규모 가중 + no-repeat로 후보를 뽑아 주입 블록을 만든다(없으면 ""). */
+    private String catalogCandidates(String filter, int stage, String famTag) {
+        String src = catalogSrcFor(filter);
+        if (src == null) return "";
+        java.util.Set<String> keys = recentFamiliarKeys(famTag);
+        java.util.Set<String> avoidNames = new java.util.HashSet<>();
+        for (GdamCatalog.Entry e : GdamCatalog.bySource(src)) {
+            String b = variantBase(e.name());
+            if (!b.isBlank() && keys.contains(b)) avoidNames.add(e.name());
+        }
+        java.util.List<GdamCatalog.Entry> cands = GdamCatalog.pick(src, stage, avoidNames, 8, famePool);
+        if (cands.isEmpty()) return "";
+        StringBuilder cb = new StringBuilder("★후보 (이 스테이지 인지도·규모 가중 + 최근 등장 제외) — 되도록 이 중에서 골라라:\n");
+        for (GdamCatalog.Entry e : cands) cb.append("· ").append(e.name()).append(" — ").append(e.desc()).append("\n");
+        cb.append("(목록 밖 같은 출처 괴담도 확실히 알면 가능하나 위 후보 우선. 이름은 통용명 그대로.)\n");
+        cb.append(catalogAmplifyNote(stage));
+        return cb.toString();
+    }
+
     /** 피날레 복귀 캐스트 지시를 컨셉 뒤에 덧붙인다(없으면 그대로). roles 청크가 head(=컨셉 포함)로 이를 본다. */
-    private String appendReturningCast(String concept, String returningCast) {
-        if (returningCast == null || returningCast.isBlank()) return concept;
-        return concept
-            + "\n\n## ★복귀 캐스트 (피날레) — 아래 인물들을 이번 시나리오 roles(배역)로 사용\n"
-            + returningCast
-            + "\n이 인물들이 ★다시 모여★ 최후의 사건을 맞는다. roles 배열의 char_name·성별·나이·직업을 "
-            + "위 인물과 일치시키고(각 1명씩), 관계·단서·배경을 이들이 함께 겪는 결말로 엮어라. "
-            + "새 인물을 창작하기보다 이 캐스트를 우선 배역으로 삼아라.";
+    /** 캐스트/앵커 힌트(자기완결 블록 — 피날레 복귀 캐스트 또는 나이·성별 앵커)를 컨셉 뒤에 붙인다. roles 청크가 head로 이를 본다. */
+    private String appendReturningCast(String concept, String castHint) {
+        if (castHint == null || castHint.isBlank()) return concept;
+        return concept + "\n\n" + castHint;
     }
 
     /**
@@ -1238,14 +1274,28 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
             case "cosmic" -> { scope = "코즈믹 호러(우주적 공포) — 크툴루 신화·러브크래프트 계열, 외우주·차원 너머의 존재, 인간의 이해·이성을 넘어선 공포 (실존하는 창작 신화·전승)";
                 criterion = "★크툴루 신화 등 실존하는 코즈믹 호러 원전을 택하라(예: 크툴루·니알라토텝·요그소토스·하스터·슈브니구라스·미고·심연에서 온 것들·인스머스). 새로 지어내지 마라. "
                     + "약점이 뚜렷하지 않을 수 있으니 '이름을 부르지 말 것·바라보면 미침·특정 장소 접근 금지·의식을 멈춰라' 같은 ★금기·회피 조건★을 규칙(약점)으로 삼아라. 인간이 이길 수 없어도 '봉인·지연·탈출·희생'으로 해결 경로를 반드시 남겨라."; }
+            case "western" -> { scope = "서양 전설·민담·크립티드 (유럽·미주 등 실존 전승)";
+                criterion = "실존하는 서양 전설·크립티드를 택하라(규칙·약점 뚜렷). 새로 지어내지 마라."; }
+            case "creepypasta" -> { scope = "크리피파스타 (인터넷 창작 괴담 — 실존하는 유명 창작물)";
+                criterion = "실존하는 크리피파스타를 택하라(슬렌더맨·제프 더 킬러·사이렌헤드 등). 새로 지어내지 마라."; }
+            case "backrooms" -> { scope = "백룸(Backrooms) — 노클립으로 빠지는 이세계 레벨·실체(Entity)";
+                criterion = "실존하는 백룸 레벨·엔티티를 택하라(레벨0·스마일러·아몬드워터 등). 노클립·탈출 규칙을 살려라."; }
+            case "internet" -> { scope = "인터넷 괴담·아날로그 호러 (붉은방·모모·로컬58 등 실존)";
+                criterion = "실존하는 인터넷 괴담·아날로그 호러를 택하라. 새로 지어내지 마라."; }
+            case "real" -> { scope = "실화·미제사건·심리 증후군 (춤추는 역병·댜틀로프·리플리 증후군 등 실존)";
+                criterion = "실존하는 실화·미제사건·심리 증후군을 택하라(리플리·코타르·카그라 등 심리 증후군 환영 — 잘 안 나오니 적극)."; }
+            case "sf" -> { scope = "SF·과학 공포 — 외계 접촉·납치·지저인·시뮬레이션·기관 음모·기생·폭주 AI 등";
+                criterion = "외계·시뮬레이션·기관음모·기생·AI 등 ★과학적 공포★ 소재로 구성하라(로즈웰·MKULTRA·만델라효과·그레이 외계인·통 속의 뇌 등 실존 소재). 초자연이 아닌 '과학적·물질적 설명틀'이 핵심."; }
             default -> { scope = region;
                 criterion = "마이너·모호한 것 말고, 규칙과 약점이 뚜렷한 괴담을 택하라."; } // random
         }
+        String catBlock = catalogCandidates(filter, roomNumber, famTag);  // 카탈로그 인지도·규모 가중 + no-repeat 후보 주입
         String task = "너는 전 세계 괴담·도시전설·민간전승·SCP를 꿰뚫는 큐레이터다.\n"
             + "다음 범위에서 '실제로 전해지는(실존하는)' 괴담 1개를 골라라:\n"
             + "→ " + scope + "\n"
             + avoid
             + criterion + " 거울·반사·모방 소재는 금지.\n"
+            + catBlock
             + "★실재성 원칙(최우선): 반드시 ★실제로 존재하는 원전★만 골라라 — 그럴듯한 이름을 새로 창작하지 마라. 확신이 없으면 가장 유명하고 확실한 것을 택하라.\n"
             + "★원어 명칭 보존: 비영어권 원전(한국·일본·프로젝트 문 등)은 ★원어(공식) 명칭★을 그대로 써라 — 영어를 거쳐 임의로 재번역해 원래 이름을 훼손하지 마라.";
         String data = "아래 형식의 평문으로만 출력(JSON·머리말·해설 금지):\n"
@@ -1367,12 +1417,41 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
         }
     }
 
-    /** 후반(3+) 스테이지: 행동양식(type)을 먼저 고정해 괴담을 거기에 맞추게 한다(쉬운 기본형 수렴 방지·다양성). 친숙 모드면 무시. */
+    /** 후반(3+) 스테이지: ★구조(ScenarioArchetypes world_rules)를 먼저 고정★하고 entity.type을 거기서 도출하게 한다.
+     *  (예전엔 entity.type을 랜덤 고정했으나, 구조-우선이 더 큰 다양성·정합을 준다 — worldRulesBlock가 첫 항목을 고정.)
+     *  친숙 모드면 무시. */
     private static String typeFirstDirective(int roomNumber) {
         if (roomNumber < 3) return ""; // 1~2스테이지: 괴담-first(자유 선택)
-        String[] bt = {"직접형(물리)","매개형(물체·기기)","환경동화형","인지·정신형","음향·소리형","정보·언어형","모방·거울형","기생·숙주형","세계창조형","꿈·무의식형"};
-        String t = bt[java.util.concurrent.ThreadLocalRandom.current().nextInt(bt.length)];
-        return "\n\n## ★타입 우선 설계(후반 스테이지)\n이번 괴담의 행동양식(entity.type)을 ★" + t + "★로 고정하고, 괴담의 정체·규칙을 이 기제에 맞춰 설계하라. 귀신·호러가 안 맞으면 ★크리처·괴수·외계·음모·컬트·변종 등 어떤 정체로든★ 좋다(단 세션이 특정 카테고리로 고정됐다면 그 범위 안에서). 친숙(실존) 괴담 모드면 원전 본래 기제를 따르고 이 강제는 무시하라.";
+        return "\n\n## ★구조 우선 설계(후반 스테이지)\n위 world_rules의 ★고정 구조★를 토대로 괴담을 설계하라 — ★entity.type은 그 구조에서 자연히 도출★하고 독립적으로 먼저 고정하지 마라(구조가 먼저다). 귀신·호러가 안 맞으면 ★크리처·괴수·외계·음모·컬트·변종 등 어떤 정체로든★ 좋다(단 세션이 특정 카테고리로 고정됐다면 그 범위 안에서). 친숙(실존) 괴담 모드면 원전 본래 기제를 따르고 이 강제는 무시하라.";
+    }
+
+    /** 이번 회차 공존 괴담 수(1~4 가변, 스테이지 가중). S1=1 고정, S6=2~5 정점. */
+    private static int coexistCount(int roomNumber) {
+        int s = Math.max(1, Math.min(6, roomNumber));
+        int roll = java.util.concurrent.ThreadLocalRandom.current().nextInt(100);
+        return switch (s) {
+            case 1 -> 1;
+            case 2 -> roll < 70 ? 1 : 2;
+            case 3 -> roll < 45 ? 1 : roll < 85 ? 2 : 3;
+            case 4 -> roll < 30 ? 1 : roll < 70 ? 2 : roll < 95 ? 3 : 4;
+            case 5 -> roll < 20 ? 1 : roll < 55 ? 2 : roll < 85 ? 3 : 4;
+            default -> roll < 15 ? 2 : roll < 50 ? 3 : roll < 80 ? 4 : 5; // S6 정점: 2~5
+        };
+    }
+
+    /** 공존 괴담 지시(2개 이상일 때만). 보조는 같은 출처·비슷한 결의 함정·역이용 요소로 엮되 클리어 대상은 주 괴담. */
+    private static String coexistenceDirective(int roomNumber) {
+        int n = coexistCount(roomNumber);
+        if (n <= 1) return "";
+        return "\n\n## ★공존 괴담 (이번 회차 " + n + "개)\n이 시나리오엔 괴담이 ★" + n + "개 공존★한다 — 주 괴담 1개(★해결 대상★)에 더해 "
+            + "보조 " + (n - 1) + "개는 ★방해·함정·역이용 요소★(그 자체는 클리어 대상 아님)로 world_rules·timeline.main_events에 엮어라.\n"
+            + (roomNumber <= 4
+                ? "보조는 ★같은 출처·비슷한 결(테마·장소)★로 골라 주 괴담과 자연스럽게 물리게 하라(SCP엔 SCP, 일본괴담엔 일본괴담 식). "
+                : "보조는 다른 결이어도 되나 여전히 ★함정·장애·역이용★으로 기능해야 한다. ")
+            + (roomNumber >= 6
+                ? "★스테이지 6은 정점 — 5격+4격을 동시에 상대하듯, 서로 다른 규칙 둘 이상을 병행 대응하게 하라(강화 복합).★ "
+                : "")
+            + "보조 괴담도 ★실존 원전★에서 골라라(새 창작 금지). 주 괴담의 해결 경로는 반드시 성립시켜라(보조가 막아도 대가를 치르고 만회 가능).";
     }
 
     /**
@@ -1398,6 +1477,7 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
             + "이 네 가지 최상위 필드만 출력하고 zones·npcs·roles·key_items 등 다른 필드는 절대 포함하지 마라."
             + ScenarioArchetypes.worldRulesBlock(roomNumber, conceptTypeHint) // 외부화·샘플링: 세계 규칙 후보 소수(1~2스테이지 기본만) + 운영 유형 고정 반영
             + typeFirstDirective(roomNumber)
+            + coexistenceDirective(roomNumber)   // 공존 괴담(1~4 가변): 보조는 같은 출처·결의 함정으로 엮음
             + "\n\n## ★검증 (출력 전 자기점검)\n최종 JSON을 내기 전 스스로 확인하고, 아니면 고쳐서 출력하라:\n- 고른 행동양식(entity.type)이 world_rules·timeline.main_events에 실제로 반영됐는가?\n- 성향(ai_context.disposition)이 initial_pattern·personality로 구체화됐는가?\n- 스케일이 영향 범위·시간 규모에 반영됐는가?\n- 아키타입의 ★필수산출★ 항목을 다 채웠는가?";
 
         return aiManager.callGmAiLarge(GDAM_SYSTEM_PROMPT, structPrompt).thenCompose(structRaw -> {
@@ -1517,24 +1597,49 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
 
     private JsonObject tryParseObject(String raw) {
         if (raw == null || raw.startsWith("§c")) return null;
+        String stripped = stripMarkdown(raw);
         try {
-            JsonElement el = gson.fromJson(stripMarkdown(raw), JsonElement.class);
+            JsonElement el = gson.fromJson(stripped, JsonElement.class);
             return (el != null && el.isJsonObject()) ? el.getAsJsonObject() : null;
-        } catch (Exception e) { return null; }
+        } catch (Exception e) {
+            // ★절단 복구(JsonSalvage) — max_tokens 절단·경미한 깨짐이면 균형 prefix 복구를 시도(값비싼 32K 재생성 전 저렴한 마지막 시도).
+            try {
+                String fixed = JsonSalvage.salvageTruncatedJson(stripped);
+                if (fixed != null) {
+                    JsonElement el = gson.fromJson(fixed, JsonElement.class);
+                    if (el != null && el.isJsonObject()) {
+                        logger.warning("[gdam] 절단 JSON 복구 성공 (object, " + stripped.length() + "→" + fixed.length() + "자)");
+                        return el.getAsJsonObject();
+                    }
+                }
+            } catch (Exception ignore) { }
+            return null;
+        }
     }
 
     /** 응답에서 지정 key의 배열을 추출. {"key":[...]} 와 바로 [...] 둘 다 허용. 실패 시 null. */
     private JsonArray tryParseArray(String raw, String key) {
         if (raw == null || raw.startsWith("§c")) return null;
+        String stripped = stripMarkdown(raw);
+        JsonElement el = null;
         try {
-            JsonElement el = gson.fromJson(stripMarkdown(raw), JsonElement.class);
-            if (el == null) return null;
-            if (el.isJsonArray()) return el.getAsJsonArray();          // 모델이 배열만 출력
-            if (el.isJsonObject()) {
-                JsonObject o = el.getAsJsonObject();
-                if (o.has(key) && o.get(key).isJsonArray()) return o.getAsJsonArray(key);
-            }
-        } catch (Exception ignore) { }
+            el = gson.fromJson(stripped, JsonElement.class);
+        } catch (Exception e) {
+            // ★절단 복구(JsonSalvage) — 청크 배열이 잘려도 완성된 앞쪽 항목들은 살린다(재호출 1회 절약).
+            try {
+                String fixed = JsonSalvage.salvageTruncatedJson(stripped);
+                if (fixed != null) {
+                    el = gson.fromJson(fixed, JsonElement.class);
+                    if (el != null) logger.warning("[gdam] 절단 JSON 복구 성공 (array:" + key + ", " + stripped.length() + "→" + fixed.length() + "자)");
+                }
+            } catch (Exception ignore) { }
+        }
+        if (el == null) return null;
+        if (el.isJsonArray()) return el.getAsJsonArray();          // 모델이 배열만 출력
+        if (el.isJsonObject()) {
+            JsonObject o = el.getAsJsonObject();
+            if (o.has(key) && o.get(key).isJsonArray()) return o.getAsJsonArray(key);
+        }
         return null;
     }
 

@@ -136,11 +136,15 @@ public class TRPGGameManager {
      *  예전엔 고정턴 분(minutesPerTurn 15~20)을 통째로 흘려 사소한 행동에도 20분씩 소모됐다 →
      *  DUR 누락은 '짧은 미상 행동'으로 보고 작은 값만 흘린다(minutesPerTurn가 더 작으면 그쪽을 따른다). */
     private static final int DUR_MISSING_MIN = 3;
+    /** ★최소 나이★ 캐릭터·배역 나이는 이 값 미만이 되지 않는다(8세). 배역 age_range 하한·랜덤 생성·조정 모두에 적용. */
+    private static final int MIN_AGE = 8;
 
     /** 캐릭터 생성 완료 대기 중인 플레이어 UUID 집합 */
     private final Set<UUID> pendingCreation    = ConcurrentHashMap.newKeySet();
     /** 특성 선택 대기 중인 플레이어 */
     private final Set<UUID> pendingTraitSelect = ConcurrentHashMap.newKeySet();
+    /** ★클리어 엔딩 해설 보류★ — 보상 특성 선택이 끝난 뒤 열도록 미뤄 둔 실행(선택 중 엔딩이 튀어나오는 것 방지). */
+    private volatile Runnable pendingClearReveal = null;
     /** 스토리에 이미 등장한(spawn된) 플레이어 */
     private final Set<UUID> spawnedPlayers      = ConcurrentHashMap.newKeySet();
     /** 특성 발동 대기 중인 플레이어 UUID → 트레이트 ID (행동 입력 전까지 유지) */
@@ -162,6 +166,19 @@ public class TRPGGameManager {
     private boolean forceRetryAllowed = false;
     /** GM이 개설한 기기 통신 채널: A → {B, C, ...} (양방향 저장) */
     private final Map<UUID, Set<UUID>> commChannels = new ConcurrentHashMap<>();
+    /** 은밀 대화(밀담) 채널 — one_way_call direction 1(청취)/2(대화창)로 개설, 스테이지 동안 유지.
+     *  소유자 UUID → 채널. 멤버는 채팅 앞에 '!'를 붙여 은밀히 주고받는다(괴담 감지 여부는 detect). */
+    private final Map<UUID, SecretChannel> secretChannels = new ConcurrentHashMap<>();
+    /** 밀담 채널 설정(불변) + 멤버 집합. direction: 1=청취(멤버→소유자만), 2=대화창(전원 양방향). */
+    private static final class SecretChannel {
+        final UUID owner; final String ownerName; final String label;
+        final boolean detect; final int chars; final int direction;
+        final Set<UUID> members = ConcurrentHashMap.newKeySet(); // 소유자 제외 상대들
+        SecretChannel(UUID owner, String ownerName, String label, boolean detect, int chars, int direction) {
+            this.owner = owner; this.ownerName = ownerName; this.label = label;
+            this.detect = detect; this.chars = chars; this.direction = direction;
+        }
+    }
     /** 탈락 안내 메시지 도배 방지: UUID → 마지막 안내 시각(millis) */
     private final Map<UUID, Long> lastDeadNotice = new ConcurrentHashMap<>();
     /** 중복 입력 디바운스: 같은 플레이어가 같은 메시지를 짧은 시간 내 재전송하면 1회만 처리(중복 출력·도배 방지) */
@@ -434,12 +451,14 @@ public class TRPGGameManager {
             int freeAt = state.getClockMinutes();
             for (PlayerData pd : able) pd.busyUntilMin = freeAt; // 반응 턴 부여(즉시 자유화 — 사건 발화 전)
             tickFaintCounters();
+            flushEventGaugeLog();                     // 사건 발화 위협도 상승을 뷰어 로그에 표시
             updateAllScoreboards();
             return;
         }
         state.advanceClockTo(earliest);             // 사건이 없거나(1분 이내로 임박해 여지 없음 포함) 더 뒤면 다음 자유 시점까지(사건 넘겨 발화)
         tickFaintCounters();                         // 시간 경과분 회복·기절 카운터도 함께 진행
         reactToFiredCombat();                        // ★A3/A4★ 점프로 전투 사건이 터졌으면 전원 소집 + 완급 slow(H-2)
+        flushEventGaugeLog();                         // 사건 발화 위협도 상승을 뷰어 로그에 표시
         updateAllScoreboards();
     }
 
@@ -465,6 +484,12 @@ public class TRPGGameManager {
         if (!state.consumeCombatEventFired()) return;
         summonAllFree("전투 발생");                        // turnMode<2·이미 자유면 내부에서 no-op
         if (!"slow".equals(actionPace)) { actionPace = "slow"; gameLogger.logEvent("[완급] 전투 발생 → slow(자동)"); }
+    }
+
+    /** 사건 발화로 자동 상승한 위협도를 뷰어 이벤트 로그에 기록한다(GameStateManager는 로거가 없어 여기서 흘림).
+     *  시계가 진행돼 사건이 터진 지점마다 호출 — 버퍼가 비어 있으면 무동작(중복 호출 안전). */
+    private void flushEventGaugeLog() {
+        for (String m : state.drainEventGaugeLog()) gameLogger.logEvent(m);
     }
 
     private void startIncapacitationWatchdog() {
@@ -505,6 +530,7 @@ public class TRPGGameManager {
             state.nextTurn();
             if (state.getTurnMode() >= 1) state.advanceActionClock(state.getMinutesPerTurn()); // #151: DUR 모드에선 nextTurn이 시계 안 미니 명시 진행
             tickFaintCounters();
+            flushEventGaugeLog();                 // 사건 발화 위협도 상승을 뷰어 로그에 표시
             updateAllScoreboards();
             // #2 자동 배드엔딩(A): 회복 가망(기절 해제·조종 회복)이 있으면 계속 기다린다. 회복 가망이 전무하면(전원 동물·완전조종)
             //   K틱 연속 확인 후 종료 — 전원 무력화가 영구인데 워치독이 무한히 시간만 넘기던 것을 매듭짓는다.
@@ -564,6 +590,7 @@ public class TRPGGameManager {
                 if (state.getTurnMode() >= 1) state.advanceActionClock(state.getMinutesPerTurn()); // #151: DUR 모드 명시 진행(기본 한 걸음)
                 tickFaintCounters();
                 reactToFiredCombat();                // ★A3/A4★ 유휴 스킵 중 전투 사건이 터졌으면 전원 소집 + 완급 slow
+                flushEventGaugeLog();                // 사건 발화 위협도 상승을 뷰어 로그에 표시
                 updateAllScoreboards();
                 String narrative = ai.stripTags(raw);
                 if (!narrative.isBlank()) {
@@ -812,7 +839,7 @@ public class TRPGGameManager {
         ai.saveUsage();   // 세션 종료 시점 영구 사용량 체크포인트 저장
         ai.clearAll();
         pendingCreation.clear();
-        pendingTraitSelect.clear();
+        pendingTraitSelect.clear(); pendingClearReveal = null;
         pendingTraitActivation.clear();
         pendingPrayerInput.clear();
         pendingOracleInput.clear();
@@ -933,6 +960,7 @@ public class TRPGGameManager {
 
         // 등장 상태·대기 서술·통신 채널 초기화
         pendingTraitActivation.clear();
+        secretChannels.clear(); // 은밀 대화(밀담) 채널은 스테이지 범위 — 리셋 시 닫는다
         pendingPrayerInput.clear();
         pendingOracleInput.clear();
         pendingLuckModifier.clear();
@@ -1023,7 +1051,7 @@ public class TRPGGameManager {
         turnMan.cancelAll();
         narrativeDelivery.clearAll();
         pendingCreation.clear();
-        pendingTraitSelect.clear();
+        pendingTraitSelect.clear(); pendingClearReveal = null;
         pendingTraitActivation.clear();
         pendingPrayerInput.clear();
         pendingOracleInput.clear();
@@ -1200,7 +1228,7 @@ public class TRPGGameManager {
 
     /** 현재 시작 설정 — 다이얼로그로 열어 자동생성·시작 스테이지·괴담 유형을 클릭으로 고른다(/trpg setting, /trpg s s). */
     public void openStartSettings(Player player) {
-        dialogMan.showStartSettings(player, autoPregen, startStage, conceptTypeHint,
+        dialogMan.showStartSettings(player, autoPregen, startStage, conceptTypeHint, gdamGen.getFamePool(),
             () -> { // 자동 사전생성 토글
                 autoPregen = !autoPregen;
                 player.sendMessage("§6[설정] 자동 사전생성: " + (autoPregen ? "§a켜짐" : "§c꺼짐 §7(/trpg next에서 즉석 생성)"));
@@ -1218,6 +1246,13 @@ public class TRPGGameManager {
                 gdamGen.setConceptTypeHint(conceptTypeHint);
                 player.sendMessage("§6[설정] 괴담 유형/성격: "
                     + (conceptTypeHint.isEmpty() ? "§7무작위(기본)" : "§d" + conceptTypeHint) + " §7— 다음 생성부터 적용");
+                openStartSettings(player);
+            }),
+            () -> dialogMan.showFamePoolChoice(player, gdamGen.getFamePool(), fp -> { // 인지도 풀 선택
+                gdamGen.setFamePool(fp);
+                String lbl = switch (fp == null ? "" : fp) {
+                    case "major" -> "유명한 것만"; case "semi" -> "덜 유명한 것만"; case "minor" -> "마이너한 것만"; default -> "난이도별(기본)"; };
+                player.sendMessage("§6[설정] 인지도 풀: §e" + lbl + " §7— 다음 생성부터 적용");
                 openStartSettings(player);
             }));
     }
@@ -1566,7 +1601,9 @@ public class TRPGGameManager {
                     pd.roleId   = asgn.roleId();
                     pd.zone     = asgn.zone();
                     pd.charName = asgn.charName();
-                    pd.gender   = asgn.gender();
+                    // ★성별 앵커 유지★: 초기 스테이터스 생성 시 굴린 성별을 배역 성별로 덮어쓰지 않는다
+                    //   (앵커 매칭으로 대개 일치하지만, 불일치해도 플레이어 고유 성별을 우선). 미설정일 때만 배역 성별 채택.
+                    if (pd.gender == null || pd.gender.isEmpty()) pd.gender = asgn.gender();
                     pd.roleAssigned = true;
                 }
             }
@@ -1806,17 +1843,20 @@ public class TRPGGameManager {
      */
     private void applyRoleAge(PlayerData pd, JsonObject roleData) {
         if (roleData == null || !roleData.has("age_range")) {
-            pd.roleAge = pd.age; // 연령 정보 없으면 현재 나이를 배역 나이로 고정
+            pd.age = Math.max(MIN_AGE, pd.age);
+            pd.roleAge = pd.age; // 연령 정보 없으면 현재 나이를 배역 나이로 고정(최소 8세)
             return;
         }
         JsonArray ar = roleData.getAsJsonArray("age_range");
         if (ar.size() >= 2) {
-            int lo = ar.get(0).getAsInt(), hi = ar.get(1).getAsInt();
+            int lo = Math.max(MIN_AGE, ar.get(0).getAsInt()), hi = Math.max(MIN_AGE, ar.get(1).getAsInt());
             if (hi < lo) { int t = lo; lo = hi; hi = t; }
-            if (pd.age < lo || pd.age > hi) {
-                pd.age = (hi > lo) ? lo + ThreadLocalRandom.current().nextInt(hi - lo + 1) : lo;
-            }
+            // ★나이 일관성(역할이 달라져도 연령대 유지)★: 범위를 벗어나면 무작위로 다시 뽑지 말고 ★가장 가까운 경계로 클램프★한다
+            //   — 캐릭터의 '정해진 나이'와 최대한 가깝게(최소 이동). 그래서 배역이 바뀌어도 늘 비슷한 연령으로 플레이한다.
+            if (pd.age < lo) pd.age = lo;
+            else if (pd.age > hi) pd.age = hi;
         }
+        pd.age = Math.max(MIN_AGE, pd.age); // 최소 나이 8세 보장
         pd.roleAge = pd.age;
     }
 
@@ -2069,6 +2109,9 @@ public class TRPGGameManager {
         PlayerData pd = state.getPlayer(player);
         if (pd == null) return;
         if (pd.isDead) { sendDeadStatus(player, pd); return; }
+        // 은밀 대화(밀담) 채널 — '!'로 시작하고 활성 채널의 소유자/멤버면 은밀히 주고받는다(일반 행동으로 넘어가지 않음).
+        //  채널이 없으면 false → 일반 채팅으로 폴백(그냥 '!'로 시작하는 발화도 정상 처리).
+        if (message.startsWith("!") && handleSecretChannelChat(player, pd, message.substring(1).trim())) return;
         if (pd.puppetRecoveryTurns != 0) {
             if (pd.puppetRecoveryTurns < 0) { // 완전 조종(괴담팀) — 자연 회복 없음, 치유 능력으로만 복구
                 player.sendMessage("§5괴담에게 완전히 삼켜져 스스로 행동할 수 없습니다...");
@@ -2149,8 +2192,15 @@ public class TRPGGameManager {
         // 금지워드형: 금지된 단어를 입에 올리는 순간 즉시 파국(게임오버). 재시도 시 단어가 바뀐다.
         // 금지워드형: 입에 올린 순간 파국이 시작된다. ★즉종료가 아니라(문제1: 즉사 몰입 파괴 방지)★ 1~2턴에 걸쳐
         //   조짐이 조여오고 그동안 플레이어는 계속 행동할 수 있다 → onGmResponse의 forbiddenDoomTurns 카운트다운이 자연스럽게 매듭짓는다.
-        if (containsForbidden(message)) {
+        // 금지워드형: ★정확히★ 발설하면 파국(위협도 즉시 90). ★비슷한 단어★(근접 발음·부분 일치)는 유사도에 비례해 위협도만 오른다(파국 아님).
+        double fwSim = forbiddenSimilarity(message);
+        if (fwSim >= 1.0) {
             gameLogger.logEvent("금지어 발설: " + player.getName() + " (" + forbiddenWord + ")");
+            // ★정확한 금지어 = 위협도 즉시 90★(요청): 이미 90 이상이면 유지, 아니면 90으로 끌어올린다.
+            int thBefore = state.getThreat();
+            int need = 90 - thBefore;
+            int thAfter = need > 0 ? state.adjustThreat(need) : thBefore;
+            if (thAfter != thBefore) gameLogger.logEvent("위협도 +" + (thAfter - thBefore) + " → " + thAfter + "/100 (정확한 금지어 발설 — 세력 급상승)");
             if (forbiddenDoomTurns <= 0) { // 첫 발설 — 파국 개시(즉종료 대신 유예)
                 forbiddenDoomTurns = 2;
                 broadcast("§4갑자기, 주위가 심상치 않게 뒤틀리기 시작한다...");
@@ -2162,6 +2212,13 @@ public class TRPGGameManager {
                 ai.injectGmSystem("[금지어 재발설 — 파국 가속] 금지된 단어가 또 입에 올랐다(★인과 노출 금지 — 발화·채팅이 원인이라고 알리지 마라★). 조여오던 파국이 한층 급박해진다 — 이변을 더 강하고 빠르게 서술하라.");
             }
             // ★return 하지 않는다★ — 이번 입력도 정상 행동으로 처리해, 플레이어가 파국 속에서도 행동하게 둔다.
+        } else if (fwSim >= 0.6) {
+            // ★비슷한 단어(근접 발음·부분 일치) = 유사도 비례 위협도 상승, 파국은 아님★(요청): 0.6→+6 … 0.95→+27. 유사할수록 많이 오른다.
+            int rise = Math.max(1, (int) Math.round((fwSim - 0.5) * 60));
+            int thBefore = state.getThreat();
+            int thAfter = state.adjustThreat(rise);
+            if (thAfter != thBefore) gameLogger.logEvent("위협도 +" + (thAfter - thBefore) + " → " + thAfter + "/100 (금지어와 비슷한 말 — 세력 자극)");
+            // 유사어는 조용히 위협도만 올린다 — '무슨 말이 원인'이라는 인과 노출 금지와 정합(GM 별도 주입 없음).
         }
 
         // 발동 취소: 대기 중인 스킬 발동을 물리고 사용 횟수 환원 (스킬 입력 대기 중 '취소' 입력 시)
@@ -2400,6 +2457,7 @@ public class TRPGGameManager {
 
             String raw = response.rawText();
             Player player = response.player();
+            flushEventGaugeLog(); // 안전망: 고정턴 tickClock·EVENT_TRIGGER 등 per-path 미포함 경로의 위협도 상승도 여기서 표시(버퍼 무한증가 방지)
 
             // 1. 클리어 판정
             if (currentPhase == Phase.HORROR) {
@@ -2451,11 +2509,20 @@ public class TRPGGameManager {
             // 3. ITEM_GRANT 파싱 및 처리 + heldItemIds 추적
             JsonObject itemGrant = ai.parseItemGrant(raw);
             if (itemGrant != null) {
+                // ★버그 수정★: GM은 player에 ★캐릭터명(charName)★을 넣는데(스키마 지시), processGrant/추적은
+                //   계정명(p.getName()/pd.name)으로 매칭 → 실지급·추적이 100% 실패해 '아이템을 받은 적 없음'.
+                //   charName·계정명·roleId 모두 매칭하는 findAnyByName으로 대상을 확정해 계정명으로 정규화한다.
+                String rawTo = itemGrant.has("player") && !itemGrant.get("player").isJsonNull()
+                    ? itemGrant.get("player").getAsString() : null;
+                if (rawTo != null && !"ALL".equalsIgnoreCase(rawTo.trim())) {
+                    PlayerData tgt = findAnyByName(rawTo);
+                    if (tgt != null) itemGrant.addProperty("player", tgt.name); // 계정명으로 정규화 → processGrant·추적 매칭 성공
+                }
                 itemMan.processGrant(itemGrant, new ArrayList<>(Bukkit.getOnlinePlayers()));
                 String grantedItem = itemGrant.has("item_id") ? itemGrant.get("item_id").getAsString() : null;
-                String grantedTo   = itemGrant.has("player")  ? itemGrant.get("player").getAsString()  : null;
+                String grantedTo   = itemGrant.has("player")  ? itemGrant.get("player").getAsString()  : null; // 정규화된 계정명 또는 ALL
                 if (grantedItem != null && grantedTo != null) {
-                    if ("ALL".equals(grantedTo)) {
+                    if ("ALL".equalsIgnoreCase(grantedTo.trim())) {
                         state.getAllPlayers().forEach(pd -> noteHeldItem(pd, grantedItem));
                     } else {
                         final String itemRef = grantedItem;
@@ -2608,6 +2675,7 @@ public class TRPGGameManager {
             durEff = Math.max(1, (int) Math.round(durEff * paceMult())); // ★#151 완급★ slow면 같은 행동이 시간을 적게 소모(중요 순간 촘촘)
             if (state.getTurnMode() == 1) {
                 state.advanceActionClock(durEff); // 가변: 행동 소요만큼 시계 진행
+                flushEventGaugeLog();             // 이 행동으로 사건이 터졌으면 위협도 상승을 뷰어 로그에 표시
             } else if (state.getTurnMode() >= 2 && !state.isDailyPhase()) { // ★#208★ 일상엔 시계가 얼어 busy가 안 풀리므로 잠금 안 검
                 // ★#151 Stage B 비동기 busy★: 행동자를 그 소요만큼 '행동 중'으로 잠근다. 시계는 per-action으로 밀지 않고,
                 //   ★전원 busy가 된 순간★ 다음 자유 시점으로 점프시킨다(busyClockJumpIfAllBusy).
@@ -3212,6 +3280,7 @@ public class TRPGGameManager {
         }
         dialogMan.clearDialog(player);
         pendingTraitSelect.remove(player.getUniqueId());
+        maybeFireClearReveal();
 
         if (pd != null) {
             if (selected.replacesId != null) {
@@ -3232,6 +3301,7 @@ public class TRPGGameManager {
         traitMan.removeTrait(pd, removed.id);
         dialogMan.clearDialog(player);
         pendingTraitSelect.remove(player.getUniqueId());
+        maybeFireClearReveal();
         player.sendMessage("§c특성 '§f" + removed.name + "§c'을(를) 제거했습니다.");
         scoreMan.update(player, pd, state.getRoomNumber());
     }
@@ -3278,6 +3348,7 @@ public class TRPGGameManager {
         pendingTraitSelect.remove(player.getUniqueId());
         pendingStageEndChoices.remove(player.getUniqueId());
         pendingStageEndNames.remove(player.getUniqueId());
+        maybeFireClearReveal(); // 마지막 선택자가 고르면 보류된 엔딩 해설을 연다
         switch (idx) {
             case 1 -> {
                 TraitData upg = choices.myUpgrade();
@@ -4144,12 +4215,43 @@ public class TRPGGameManager {
         player.sendMessage(accepted ? "§7[" + td.name + " 발동 중...]" : "§7행동 처리 중입니다. 잠시 후 다시 시도하세요.");
     }
 
-    /** 일방 전언 — 지정 아군 1명에게 거리·연락처·통신차단 무관하게 일방 전달(답신 불가, 소리 아님, 턴 소모 없음). */
+    /** 은밀 대화(밀담) — direction별: 0=일방 전언, 1=청취 채널, 2=대화창. detect=괴담 감지, chars=글자수 상한. 턴 소모 없음. */
     private void activateOneWayCall(Player player, PlayerData pd, TraitData td) {
+        int direction = td.param("direction", 0);
+        boolean detect = td.param("detect", 0) == 1;
+        int chars = Math.max(0, td.param("chars", 0));
+        if (direction == 0) { activateOneWaySend(player, pd, td, detect, chars); return; }
+        // 청취(1)·대화창(2): 스테이지 채널 개설(이미 같은 방향으로 열려 있으면 재안내, 횟수 미소모)
+        SecretChannel cur = secretChannels.get(pd.uuid);
+        if (cur != null && cur.direction == direction) {
+            player.sendMessage("§d[" + td.name + "] 이미 열려 있습니다. §7채팅 앞에 §f!§7 를 붙여 주고받으세요.");
+            return;
+        }
+        SecretChannel ch = new SecretChannel(pd.uuid, pd.gmDisplayName(), td.name, detect, chars, direction);
+        for (PlayerData op : state.getAllPlayers())
+            if (!op.uuid.equals(pd.uuid) && !op.isDead && spawnedPlayers.contains(op.uuid)) ch.members.add(op.uuid);
+        secretChannels.put(pd.uuid, ch);
+        applyTraitUsed(pd, td.id, state.getCurrentTurn());
+        String det = detect ? " §8(괴담이 엿들을 수 있음)" : " §8(괴담이 감지 못함)";
+        String lim = chars > 0 ? " §8(한 번에 " + chars + "자까지)" : "";
+        String how = direction == 2 ? "파티끼리 서로" : "당신에게만";
+        player.sendMessage("§d[" + td.name + " 개설] §f은밀 대화창을 열었습니다 — 채팅 앞에 §e!§f 를 붙이면 " + how + " 전해집니다." + det + lim);
+        for (UUID mu : ch.members) {
+            Player mp = Bukkit.getPlayer(mu);
+            if (mp == null || !mp.isOnline()) continue;
+            mp.sendMessage(direction == 2
+                ? "§d[" + td.name + "] " + ch.ownerName + "이(가) 은밀 대화창을 열었습니다 — 채팅 앞에 §e!§d 를 붙여 파티끼리 은밀히 대화하세요." + det
+                : "§d[" + td.name + "] " + ch.ownerName + "이(가) 당신의 소식을 은밀히 듣고자 합니다 — 채팅 앞에 §e!§d 를 붙여 전하세요." + det);
+        }
+    }
+
+    /** 일방 전언(direction=0) — 지정 아군 1명 또는 '전체'에게 은밀히 일방 전달(답신 불가, 소리 아님). */
+    private void activateOneWaySend(Player player, PlayerData pd, TraitData td, boolean detect, int chars) {
+        String lim = chars > 0 ? " (최대 " + chars + "자)" : "";
         dialogMan.showTextInput(player,
             net.kyori.adventure.text.Component.text("[" + td.name + "]"),
-            net.kyori.adventure.text.Component.text("지정한 아군 1명에게 일방적으로 전합니다(거리·연락처·통신차단 무관, 답신 불가)."),
-            "받는 사람 이름 + 전할 말 (예: 김철수 지금 도망쳐)",
+            net.kyori.adventure.text.Component.text("지정한 아군에게 일방적으로 전합니다(거리·연락처·통신차단 무관, 답신 불가)." + lim),
+            "받는 사람(또는 전체) + 전할 말 (예: 김철수 지금 도망쳐)",
             net.kyori.adventure.text.Component.text("전송"),
             input -> {
                 if (input == null || input.isBlank()) return;
@@ -4157,18 +4259,81 @@ public class TRPGGameManager {
                 int sp = s.indexOf(' ');
                 if (sp < 0) { player.sendMessage("§c형식: 이름 메시지 (예: 김철수 지금 도망쳐)"); return; }
                 String name = s.substring(0, sp).trim();
-                String msg  = s.substring(sp + 1).trim();
-                PlayerData target = findAnyByName(name);
-                if (target == null || target.uuid.equals(pd.uuid)) {
-                    player.sendMessage("§c'" + name + "' — 보낼 아군을 찾을 수 없습니다.");
-                    return;
+                String msg  = clampChars(s.substring(sp + 1).trim(), chars);
+                if (msg.isBlank()) return;
+                List<PlayerData> targets = new ArrayList<>();
+                if (name.equals("전체") || name.equalsIgnoreCase("all") || name.equals("@전체")) {
+                    for (PlayerData op : state.getAllPlayers())
+                        if (!op.uuid.equals(pd.uuid) && !op.isDead && spawnedPlayers.contains(op.uuid)) targets.add(op);
+                } else {
+                    PlayerData target = findAnyByName(name);
+                    if (target == null || target.uuid.equals(pd.uuid)) { player.sendMessage("§c'" + name + "' — 보낼 아군을 찾을 수 없습니다."); return; }
+                    targets.add(target);
                 }
-                Player tp = Bukkit.getPlayer(target.uuid);
-                if (tp != null && tp.isOnline())
-                    tp.sendMessage("§d[전언 — " + pd.gmDisplayName() + "] §f" + msg);
-                player.sendMessage("§7[" + td.name + "] " + target.gmDisplayName() + "에게 전했습니다. §8(턴 소모 없음)");
+                if (targets.isEmpty()) { player.sendMessage("§c전할 아군이 없습니다."); return; }
+                deliverSecretText(pd, targets, msg, detect, td.name);
+                player.sendMessage("§7[" + td.name + "] " + (targets.size() == 1 ? targets.get(0).gmDisplayName() : targets.size() + "명") + "에게 전했습니다. §8(턴 소모 없음)");
                 applyTraitUsed(pd, td.id, state.getCurrentTurn());
             });
+    }
+
+    /** '!'로 시작하는 은밀 대화 라우팅 — 활성 채널의 소유자/멤버면 처리(true), 아니면 false(일반 채팅 폴백). */
+    private boolean handleSecretChannelChat(Player player, PlayerData pd, String body) {
+        if (pd.isDead || !spawnedPlayers.contains(pd.uuid)) return false;
+        SecretChannel own = secretChannels.get(pd.uuid);
+        SecretChannel mem = null;
+        for (SecretChannel c : secretChannels.values()) if (c.members.contains(pd.uuid)) { mem = c; break; }
+        SecretChannel ch = (own != null) ? own : mem;
+        if (ch == null) return false; // 활성 채널 없음 → 일반 채팅으로
+        if (body.isBlank()) { player.sendMessage("§7[" + ch.label + "] 전할 말을 '!' 뒤에 적으세요."); return true; }
+        boolean isOwner = ch.owner.equals(pd.uuid);
+        if (ch.direction == 1 && isOwner) { // 청취 전용: 소유자는 발신 불가
+            player.sendMessage("§7[" + ch.label + "] 이 채널은 '청취 전용'입니다 — 상대의 소식을 받기만 합니다."); return true;
+        }
+        String msg = clampChars(body, ch.chars);
+        if (msg.isBlank()) return true;
+        List<PlayerData> recips = new ArrayList<>();
+        if (ch.direction == 1) { // 청취: 소유자에게만
+            PlayerData op = state.getPlayer(ch.owner);
+            if (op != null && !op.isDead) recips.add(op);
+        } else { // 대화창(2): 소유자 + 멤버 전원(발신자 제외)
+            PlayerData op = state.getPlayer(ch.owner);
+            if (op != null && !op.isDead && !op.uuid.equals(pd.uuid)) recips.add(op);
+            for (UUID mu : ch.members) {
+                if (mu.equals(pd.uuid)) continue;
+                PlayerData mp = state.getPlayer(mu);
+                if (mp != null && !mp.isDead) recips.add(mp);
+            }
+        }
+        if (recips.isEmpty()) { player.sendMessage("§7[" + ch.label + "] 지금 들을 상대가 없습니다."); return true; }
+        deliverSecretText(pd, recips, msg, ch.detect, ch.label);
+        player.sendMessage("§d[" + ch.label + " → " + (ch.direction == 1 ? ch.ownerName : "대화창") + "] §7보냈습니다.");
+        return true;
+    }
+
+    /** 은밀 텍스트 전달 공통 — 수신자에게 직접 전송 + 로깅 + (감지형이면) 괴담 인지·GM 주입. */
+    private void deliverSecretText(PlayerData sender, List<PlayerData> recips, String msg, boolean detect, String label) {
+        String from = sender.gmDisplayName();
+        List<String> toDisp = new ArrayList<>();
+        for (PlayerData r : recips) {
+            toDisp.add(r.gmDisplayName());
+            Player rp = Bukkit.getPlayer(r.uuid);
+            if (rp != null && rp.isOnline()) rp.sendMessage("§d[" + label + " — " + from + "] §f" + msg);
+        }
+        gameLogger.logComm("whisper", from, toDisp, msg, detect ? "밀담(노출)" : "밀담");
+        if (detect) {
+            noteEntityIntel(2, from, msg, "밀담");
+            String snip = msg.length() > 40 ? msg.substring(0, 40) + "…" : msg;
+            ai.injectGmSystem("[은밀 대화 감지] " + from + "의 은밀 대화를 괴담이 엿들었다(내용: " + snip
+                + "). 괴담이 그 정보를 인지·역이용하도록 다음 전개에 은근히 반영하라(즉시 과잉 반응 금지, 1턴 대응 여지).");
+        }
+    }
+
+    /** 글자수 상한 적용(0=무제한). 초과분은 잘라 반환. */
+    private static String clampChars(String s, int limit) {
+        if (s == null) return "";
+        s = s.trim();
+        return (limit > 0 && s.length() > limit) ? s.substring(0, limit) : s;
     }
 
     /** .gdam zones[]의 모든 zone_id 목록(무작위 이동용). */
@@ -5658,25 +5823,53 @@ public class TRPGGameManager {
         //   보상 특성 선택과 전모 공개(핵심 규칙·해결법)를 막는다 — 재플레이 스포일러·미완성 보상 방지.
         boolean advancing = nextStageUnlocked; // 해결했거나(또는 1~2스테이지) 진출 가능 → 전체 공개·보상
         runScenarioEvaluation(finalGrade, playerGrades -> {
+            Runnable reveal = () -> concludeWithReveal(endingLabel, advancing, null);
             if (advancing) {
-                grantClearTraitRewards(grade, gdamTheme, playerGrades);
+                // ★엔딩 해설은 보상 특성 선택이 끝난 뒤 열리게 한다(선택 중 튀어나오는 것 방지)★.
+                //   선택창은 비동기로 뜨므로(generateStageEndChoices), 전부 표시된 뒤에 대기 여부를 판단한다.
+                grantClearTraitRewards(grade, gdamTheme, playerGrades).thenRun(() ->
+                    plugin.getServer().getScheduler().runTask(plugin, () -> {
+                        if (anyOnlinePendingTrait()) { pendingClearReveal = reveal; armClearRevealTimeout(reveal); }
+                        else reveal.run();
+                    }));
             } else {
                 broadcast("§7(생존 재도전 — 괴담을 완전히 해결하면 보상 특성과 사건의 전모가 공개됩니다.)");
+                reveal.run();
             }
-            concludeWithReveal(endingLabel, advancing, null);
         });
+    }
+
+    /** pendingTraitSelect에 아직 온라인 상태로 남은 선택 대기자가 있는가(이탈자는 무시). */
+    private boolean anyOnlinePendingTrait() {
+        for (UUID u : pendingTraitSelect) {
+            Player p = Bukkit.getPlayer(u);
+            if (p != null && p.isOnline()) return true;
+        }
+        return false;
+    }
+    /** 특성 선택 완료 등으로 대기자가 모두 빠지면, 보류해 둔 클리어 엔딩 해설을 그때 연다. */
+    private void maybeFireClearReveal() {
+        Runnable r = pendingClearReveal;
+        if (r != null && !anyOnlinePendingTrait()) { pendingClearReveal = null; r.run(); }
+    }
+    /** 이탈·장기 미선택으로 대기자가 끝내 안 빠질 때의 소프트락 방지 — 일정 시간 뒤 보류된 엔딩을 강제로 연다. */
+    private void armClearRevealTimeout(Runnable reveal) {
+        plugin.getServer().getScheduler().runTaskLater(plugin,
+            () -> { if (pendingClearReveal == reveal) { pendingClearReveal = null; reveal.run(); } },
+            20L * 180); // 3분
     }
 
     /**
      * 클리어 보상 특성 3선택지를 플레이어별로 생성·표시한다.
      * 표시 등급 상향치(totalBoost) = 오염도 + (시나리오 평가 + 플레이어 평가)의 평균. → '성과'만 표시 등급을 올린다.
      * 시작 약세(weaknessBonus)는 표시 등급이 아니라 '실효 파워'로만 보강한다(보상 등급 인플레 방지).
+     * 반환: 모든 플레이어의 선택창이 '표시(또는 스킵)'된 시점에 완료되는 future — 엔딩 해설을 그 뒤로 미루는 데 쓴다.
      */
-    private void grantClearTraitRewards(String clearGrade, String gdamTheme, Map<String, String> playerGrades) {
+    private CompletableFuture<Void> grantClearTraitRewards(String clearGrade, String gdamTheme, Map<String, String> playerGrades) {
         int scenarioBoost = gradeToBoost(clearGrade);
+        java.util.List<CompletableFuture<Void>> shownFutures = new java.util.ArrayList<>();
         // CODE-3: 클리어 시 사망 여부 무관 전원 보상 지급(다음 스테이지=전원 부활). isDead 필터 제거.
-        state.getAllPlayers().stream()
-            .forEach(playerData -> {
+        for (PlayerData playerData : new java.util.ArrayList<>(state.getAllPlayers())) {
                 int weaknessBonus = computeWeaknessBonus(playerData);                 // 시작 약세 (0~5) → 실효 파워에만 반영
                 String pGrade     = playerGrades.getOrDefault(playerData.name,
                                     playerGrades.getOrDefault(playerData.charName, "C")); // 이름 우선, 캐릭터명 폴백
@@ -5687,11 +5880,13 @@ public class TRPGGameManager {
                 //   약체 보정은 표시 등급이 아닌 '실효 파워'(weaknessBonus)로 따로 들어가므로 진행은 막히지 않는다.
                 int totalBoost    = Math.min(2, corruptMan.getLevel() + perfBoost);
                 String maxGrade   = maxRewardGrade(state.getRoomNumber(), clearGrade); // 스테이지별 보상 상한
+                CompletableFuture<Void> shown = new CompletableFuture<>();             // 이 플레이어 선택창이 표시(또는 스킵)된 시점에 완료
+                shownFutures.add(shown);
                 traitMan.generateStageEndChoices(playerData, gdamTheme, totalBoost, weaknessBonus, maxGrade).thenAccept(choices -> {
-                    if (choices == null) return;
                     Player p = Bukkit.getPlayer(playerData.uuid);
-                    if (p == null || !p.isOnline()) return;
+                    if (choices == null || p == null || !p.isOnline()) { shown.complete(null); return; }
                     plugin.getServer().getScheduler().runTask(plugin, () -> {
+                      try {
                         p.sendMessage("§6§l[클리어 보상] 특성 성장을 선택하세요!");
                         if (perfBoost > 0)
                             p.sendMessage("§7(시나리오·기여 성과 보정 +" + perfBoost + "단계)");
@@ -5709,15 +5904,17 @@ public class TRPGGameManager {
                         pendingStageEndChoices.put(p.getUniqueId(), choices);
                         pendingStageEndNames.put(p.getUniqueId(), new String[]{srcMyName, srcMapName});
                         p.sendMessage("§8(/trpg trait 으로 선택창을 다시 열 수 있습니다)");
+                      } finally { shown.complete(null); }
                     });
-                });
-            });
+                }).exceptionally(ex -> { shown.complete(null); return null; });
+        }
 
         if (nextStageUnlocked) {
             broadcast("§6특성을 선택한 뒤 §a/trpg next§6(다음 스테이지) 또는 §f/trpg stop§6(종료)을 진행하세요.");
         } else {
             broadcast("§6특성을 선택한 뒤 §e/trpg retry§6(재도전) 또는 §f/trpg stop§6(종료)을 진행하세요.");
         }
+        return CompletableFuture.allOf(shownFutures.toArray(new CompletableFuture[0]));
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -6008,11 +6205,55 @@ public class TRPGGameManager {
         return sb.toString();
     }
 
-    /** 해당 룸이 피날레면 복귀 캐스트 힌트를, 아니면 null을 돌려준다(생성 시드용). */
+    /** 나이·성별 앵커/피날레용 초기 정체성 확정 — 미설정이면 무작위 롤(초기 스테이터스 생성). */
+    private int rollAnchorAge() {
+        java.util.concurrent.ThreadLocalRandom r = java.util.concurrent.ThreadLocalRandom.current();
+        int roll = r.nextInt(100);
+        if (roll < 60) return 12 + r.nextInt(19);
+        if (roll < 85) return 30 + r.nextInt(21);
+        if (roll < 95) return 8 + r.nextInt(5);
+        return 51 + r.nextInt(30);
+    }
+    private void ensurePlayerIdentity(PlayerData pd) {
+        if (pd == null) return;
+        if (pd.age <= 0) pd.age = rollAnchorAge();
+        if (pd.gender == null || pd.gender.isEmpty())
+            pd.gender = java.util.concurrent.ThreadLocalRandom.current().nextBoolean() ? "남성" : "여성";
+    }
+
+    /** 비피날레: 배역을 플레이어 초기 나이·성별에 맞추는 앵커 블록(미설정 플레이어는 지금 롤). */
+    private String buildPlayerAnchorHint() {
+        StringBuilder list = new StringBuilder();
+        int n = 0;
+        for (PlayerData pd : state.getAllPlayers()) {
+            if (pd == null) continue;
+            ensurePlayerIdentity(pd);
+            // ★baseAge(초기 굴림 앵커) 사용★ — 이 힌트는 사전생성(현재 스테이지 진행 중) 시점에 만들어지는데,
+            //   다음 스테이지는 clearRoleData→resetToBase로 ★baseAge로 복귀★한다. 현재 배역에 클램프된 pd.age가
+            //   아니라 baseAge로 배역을 생성해야 다음 스테이지 실제 나이와 정합한다.
+            int anchorAge = (pd.baseAge > 0) ? pd.baseAge : pd.age;
+            list.append("- ").append(anchorAge).append("세 ").append(pd.gender).append("\n");
+            n++;
+        }
+        if (n == 0) return "";
+        return "## ★플레이어 나이·성별 앵커 — roles(배역)를 아래에 맞춰 생성\n" + list
+            + "★기본★: 각 플레이어에 대응하는 배역의 age_range를 그 나이 ★±5(최소 8, 최대 80)★로 하고 gender를 ★일치★시켜라(각 1명씩, 위 " + n + "명). 기본은 이 나이에서 크게 벗어나지 마라.\n"
+            + "★이 앵커는 위 일반 원칙(‘성인 25살 폭 권장’·‘gender는 배역 이미지에 맞게’)보다 우선한다★ — 대응 배역 " + n + "개는 폭을 넓히지 말고 그 플레이어 나이를 ★반드시 포함하는★ 좁은 age_range(±5)로 잡고, gender도 배역 이미지가 아니라 ★플레이어에 맞춰라★. 어린 플레이어를 성인 폭에 넣어 올려버리지 마라.\n"
+            + "★예외(상황 우선)★: 시나리오 배경이 특정 연령대를 ★요구★하면(예: 학교 시험·수학여행→학생, 유치원→아동, 군부대→성인 병사, 요양원→노인) 그 설정을 ★우선★해 배역 age_range를 상황 연령대로 잡아라 — 이 경우 위 앵커 나이는 접고 상황에 맞춰 나이가 바뀐다(단 ★gender는 그대로 유지★). 이런 강제 상황이 아니면 항상 위 앵커를 따르라.\n"
+            + "그 외(앵커 대상이 아닌) 배역·NPC 나이·성별은 자유. 초자연·특수 배역도 나이 예외 가능.";
+    }
+
+    /** 해당 룸이 피날레면 복귀 캐스트, 아니면 나이·성별 앵커를 ★자기완결 블록★으로 돌려준다(생성 시드용). */
     private String castHintFor(int room) {
-        if (room != FINAL_ROOM) return null;
-        String hint = buildReturningCastHint();
-        return hint.isBlank() ? null : hint;
+        if (room == FINAL_ROOM) {
+            String cast = buildReturningCastHint();
+            if (cast.isBlank()) return null;
+            return "## ★복귀 캐스트 (피날레) — 아래 인물들을 이번 시나리오 roles(배역)로 사용\n" + cast
+                + "\n이 인물들이 ★다시 모여★ 최후의 사건을 맞는다. roles 배열의 char_name·성별·나이·직업을 위 인물과 "
+                + "일치시키고(각 1명씩), 관계·단서·배경을 이들이 함께 겪는 결말로 엮어라. 새 인물 창작보다 이 캐스트를 우선 배역으로.";
+        }
+        String anchor = buildPlayerAnchorHint();
+        return anchor.isBlank() ? null : anchor;
     }
 
     /**
@@ -7240,14 +7481,40 @@ public class TRPGGameManager {
     }
 
     /** 입력이 금지어를 포함하는가(공백 무시·대소문자 무시). 금지어 없으면 항상 false. */
-    private boolean containsForbidden(String message) {
-        if (forbiddenWord == null || forbiddenWord.isEmpty() || message == null) return false;
-        if (isNoneSentinel(forbiddenWord)) return false; // 방어: 비활성 표식이 남아 있어도 오발 금지
-        if (isTooCommonForbidden(forbiddenWord)) return false; // 방어: 흔한 말이 금지어로 남아 있어도 오발 금지
+    /** 발화가 금지어와 얼마나 비슷한가(0~1). 1=포함(정확 발설), 그 미만=편집거리 기반 최근접 창 유사도. 비활성/2글자 미만이면 0. */
+    private double forbiddenSimilarity(String message) {
+        if (forbiddenWord == null || forbiddenWord.isEmpty() || message == null) return 0;
+        if (isNoneSentinel(forbiddenWord)) return 0;       // 방어: 비활성 표식이 남아 있어도 오발 금지
+        if (isTooCommonForbidden(forbiddenWord)) return 0; // 방어: 흔한 말이 금지어로 남아 있어도 오발 금지
         String norm = message.toLowerCase().replaceAll("\\s+", "");
         String fw   = forbiddenWord.toLowerCase().replaceAll("\\s+", "");
-        if (fw.length() < 2) return false; // 한 글자 금지어는 오탐이 너무 커 비활성(파국 남발 방지)
-        return norm.contains(fw);
+        if (fw.length() < 2 || norm.isEmpty()) return 0;   // 한 글자 금지어는 오탐이 너무 커 비활성(파국 남발 방지)
+        if (norm.contains(fw)) return 1.0;                 // 정확(부분 포함) = 발설로 간주
+        if (fw.length() < 3) return 0;                     // 2글자 금지어는 퍼지 매칭 오탐이 커 '정확'만 인정
+        int L = fw.length();
+        double best = 0;                                   // fw 길이 ±1 창을 훑어 최근접 편집거리 유사도
+        for (int w = L - 1; w <= L + 1; w++) {
+            if (w < 2) continue;
+            for (int i = 0; i + w <= norm.length(); i++) {
+                double sim = 1.0 - (double) levenshtein(norm.substring(i, i + w), fw) / Math.max(w, L);
+                if (sim > best) best = sim;
+            }
+        }
+        return best;
+    }
+    /** 편집거리(삽입·삭제·치환 각 1). */
+    private static int levenshtein(String a, String b) {
+        int[] prev = new int[b.length() + 1], cur = new int[b.length() + 1];
+        for (int j = 0; j <= b.length(); j++) prev[j] = j;
+        for (int i = 1; i <= a.length(); i++) {
+            cur[0] = i;
+            for (int j = 1; j <= b.length(); j++) {
+                int cost = a.charAt(i - 1) == b.charAt(j - 1) ? 0 : 1;
+                cur[j] = Math.min(Math.min(cur[j - 1] + 1, prev[j] + 1), prev[j - 1] + cost);
+            }
+            int[] t = prev; prev = cur; cur = t;
+        }
+        return prev[b.length()];
     }
 
     /**
@@ -7304,6 +7571,56 @@ public class TRPGGameManager {
         }
     }
 
+    /** 나이대에 맞는 말투·어휘 힌트(세대별 결). 존댓말 수준과 별개의 '세대 어휘·톤' 베이스라인 — 개성 말씨가 그 위에 얹힌다. */
+    private static String ageRegisterHint(int age) {
+        if (age < 0) return "세대 불명 — 평범한 현대 회화.";
+        if (age <= 7)  return "미취학~저학년 어린이 — 아주 쉬운 낱말·짧은 문장, 감탄사·어리광('싫어!','우와','엄마가 그랬는데')과 즉흥적 감정. 어려운 개념어·한자어 금지, 존댓말은 '~요' 정도. 발음이 조금 서툴러도 좋다.";
+        if (age <= 12) return "초등 어린이 — 쉬운 일상어·짧고 솔직한 문장, 놀이·학교·부모 화제. 한자어·전문어는 풀어서. 존댓말은 '~요/~예요', 반말은 '~야/~했어'.";
+        if (age <= 18) return "청소년 — 또래 말씨(줄임말·유행어·감탄사)와 직설적 감정, 어른 앞에선 어색한 존댓말. 비속어는 성격 따라 절제.";
+        if (age <= 34) return "청년 — 표준 현대 회화, 자연스럽고 트렌디하되 과한 은어는 자제.";
+        if (age <= 59) return "중장년 — 차분하고 안정된 말씨, 격식·배려. 요즘 신조어보다 관용구·경험담·에두른 표현.";
+        return "노년 — 옛 세대 어휘·관용구·속담이 배어 나오고('~구먼','~라네','자네','아이고') 젊은이를 손주·자식 대하듯. 신조어엔 서툴다(사투리 설정이 있으면 살려도 좋다).";
+    }
+
+    // ══ NPC 말투 계층(관리 편의로 메서드 분리) ══════════════════════════════════
+    //  npcCorePrompt가 우선순위대로 ①/②/③ 중 하나를 호출하고, ④(나이별)는 항상 얹는다.
+    //  각 층을 여기서 독립적으로 손볼 수 있다(다른 층·CORE에 영향 없음).
+
+    /** 말투 ① 특수 어미 습관 — ending_style이 있으면 pass1(미니 모델)은 기본 말씨로만 두고, 개성 말끝(어미)은 후처리 restyleDialogue(pass2)가 렌더한다. */
+    private void npcEndingHabitBlock(StringBuilder sb) {
+        sb.append("- 말투: 지금은 ★평범한 기본 말씨★로 자연스럽게 말하라 — 문장 끝 어미를 특별히 꾸미거나 고정 어미를 지어 붙이지 마라(너 특유의 말끝은 나중에 따로 입혀지니 신경 쓰지 마라). 쉬운 일상어로 핵심 위주 간결하게, 언어 수준은 끝까지 일관되게.\n");
+        sb.append("- ★직무·전문성은 '무엇을 아는지(대답 내용)'에만 반영하라 — 문장 첫머리를 보고서처럼 시작하지 마라.★ 사적인 대화·통화에선 상대의 반응·감정·용건이 먼저다(너는 직함이 아니라 사람이다).\n");
+    }
+
+    /** 말투 ② 개인별 말투 — speech_style(몸에 밴 말씨 한 문장). 어미 버릇=거의 매 문장, 접두어·필러 버릇=아주 드물게. */
+    private void npcPersonalSpeechBlock(StringBuilder sb, String speechStyle) {
+        sb.append("- 말투: ").append(speechStyle)
+          .append(" — 몸에 밴 기본 말씨다. 존댓말/반말은 아래 나이·관계 규칙이 정하고, 이 버릇은 그 결정 위에 얹는다. 이 말씨·언어 수준을 끝까지 일관되게.\n");
+        sb.append("- 말버릇은 네가 ★하는 말★(대사·통화·<NPC_CALL> 안의 말 — 글에선 옅게)에만 쓴다. 괄호 지문·3인칭 서술과 <THOUGHT>·<NPC_LEARN> 안은 평범한 문체로.\n");
+        sb.append("- 버릇은 위 말투에 적힌 ★한 가지뿐★ — 새 버릇을 지어 보태지 마라. ★어미 버릇★(문장 끝 고정 어미)이면 거의 매 문장 일관되게(그게 이 인물의 개성이다). ★접두어·필러 버릇★('뭐랄까'·'그러니까' 류)이면 ★아주 드물게★ — 매 응답마다 넣지 마라(넣는 게 기본이 아니다). 서너 응답에 한 번쯤, 한 응답엔 많아야 한 번, 연속 두 문장 금지.\n");
+        sb.append("- 버릇이 어미 버릇이 아니면 문장 끝은 평범한 존댓말/반말 그대로 두어라 — 어미를 억지로 바꾸거나 새 어미를 만들지 마라.\n");
+        sb.append("- ★직무·전문성은 '무엇을 아는지(대답 내용)'에만 반영하라 — 문장 첫머리를 보고서처럼 시작하지 마라.★ 사적인 대화·통화에선 일 얘기보다 상대의 반응·감정·용건이 먼저다(너는 직함이 아니라 사람이다).\n");
+    }
+
+    /** 말투 ③ 유창도 폴백 — speech_style·ending_style 없는 NPC(구 .gdam·일반)용 주사위(intel 1~5) 유창도. */
+    private void npcFluencyBlock(StringBuilder sb, int intel) {
+        String speech = switch (intel) {
+            case 1  -> "말솜씨가 서툴다 — 쉽고 짧은 말, 어려운 말은 모르지만 감정·진심은 솔직히(기계처럼 토막 내지 말 것).";
+            case 2  -> "말이 소박하다 — 쉬운 일상어 위주 짧은 문장, 따뜻하고 자연스럽게.";
+            case 3  -> "평범하게 말한다 — 보통 사람의 일상 회화 수준.";
+            case 4  -> "또렷하게 말한다 — 조리 있고 어휘가 제법 풍부(현학·잘난 척 금지).";
+            default -> "매우 유창하다 — 논리적·표현 풍부(전문어 남발 금지).";
+        };
+        sb.append("- 말투·언어 수준: ").append(speech).append(" 이 수준을 처음부터 끝까지 유지하라(대화 중 언어 수준을 갑자기 올리거나 내리지 마라).\n");
+    }
+
+    /** 말투 ④ 나이별 말투 — 존댓말/반말(나이·관계) + 세대 어휘·톤(ageRegisterHint). 개성 말씨(①②)는 이 세대 결 위에 얹힌다. 항상 적용. */
+    private void npcAgeSpeechBlock(StringBuilder sb, int npcAge) {
+        sb.append("- 너의 나이: ").append(npcAge >= 0 ? npcAge + "세" : "불명")
+          .append(" — 존댓말/반말은 한국어 통념대로: 손위·초면엔 존댓말(또는 거리 둔 말투), 손아래·또래·가까운 사이엔 반말. 상대의 나이·관계가 입력 머리말에 표기돼 있으면 그에 맞추고, 없으면(자율 행동 등 상대 미지정) 장면·관계 데이터로 판단하라. 한 대사 안에서 존댓말↔반말이 오락가락하지 않게 끝까지 일관.\n");
+        if (npcAge >= 0) sb.append("- ★나이대 말투·어휘★: ").append(ageRegisterHint(npcAge)).append("\n");
+    }
+
     /** 인물형 AI(NPC·동료·적) 공유 CORE — 정체성·응답 순서(reaction-first)·사람다움·말투. 최대한 작게·재사용 가능하게. */
     private String npcCorePrompt(JsonObject npcObj) {
         String name = npcObj.has("name") ? npcObj.get("name").getAsString() : "NPC";
@@ -7330,33 +7647,15 @@ public class TRPGGameManager {
         int intel = npcId0.isEmpty() ? 3 : npcIntel.computeIfAbsent(npcId0, k -> ThreadLocalRandom.current().nextInt(1, 6));
         int npcAge = npcObj.has("age") && !npcObj.get("age").isJsonNull() ? npcObj.get("age").getAsInt() : -1;
         if (npcAge >= 0 && npcAge < 13) intel = Math.min(intel, 2); // 어린이는 쉬운 말만
-        // ★speech_style(설계 채택: Fable5 검토)★: 생성 시 확정된 서술형 말씨 한 문장이 있으면 주사위 유창도 문장을 ★대체★(병기 금지).
-        //   없으면(구 .gdam·일반 NPC) 기존 주사위 문장으로 폴백 — 하위호환·내구성.
+        // ── 말투 계층(관리 편의로 메서드 분리; 정의는 ageRegisterHint 아래) ──
+        //   ①어미습관(ending_style) / ②개인말투(speech_style) / ③유창도 폴백(intel) — 셋 중 하나(우선순위대로) + ④나이별(항상).
+        //   speech_style·ending_style 없는 구 .gdam·일반 NPC는 ③으로 폴백(하위호환).
         String endingStyle = getStr(npcObj, "ending_style");
         String speechStyle = getStr(npcObj, "speech_style");
-        if (!endingStyle.isBlank()) {
-            // ★말투 2-pass★: 이 NPC의 개성 말끝(어미)은 출력 후처리(restyleDialogue)가 따로 렌더한다 → pass1은 어미를 꾸미지 말고 자연스러운 기본 말씨로만.
-            sb.append("- 말투: 지금은 ★평범한 기본 말씨★로 자연스럽게 말하라 — 문장 끝 어미를 특별히 꾸미거나 고정 어미를 지어 붙이지 마라(너 특유의 말끝은 나중에 따로 입혀지니 신경 쓰지 마라). 쉬운 일상어로 핵심 위주 간결하게(1~3문장), 언어 수준은 끝까지 일관되게.\n");
-            sb.append("- ★직무·전문성은 '무엇을 아는지(대답 내용)'에만 반영하라 — 문장 첫머리를 보고서처럼 시작하지 마라.★ 사적인 대화·통화에선 상대의 반응·감정·용건이 먼저다(너는 직함이 아니라 사람이다).\n");
-        } else if (!speechStyle.isBlank()) {
-            sb.append("- 말투: ").append(speechStyle)
-              .append(" — 몸에 밴 기본 말씨다. 존댓말/반말은 아래 나이·관계 규칙이 정하고, 이 버릇은 그 결정 위에 얹는다. 이 말씨·언어 수준을 끝까지 일관되게.\n");
-            sb.append("- 말버릇은 네가 ★하는 말★(대사·통화·<NPC_CALL> 안의 말 — 글에선 옅게)에만 쓴다. 괄호 지문·3인칭 서술과 <THOUGHT>·<NPC_LEARN> 안은 평범한 문체로.\n");
-            sb.append("- 버릇은 위 말투에 적힌 ★한 가지뿐★ — 새 버릇을 지어 보태지 마라. ★어미 버릇★(문장 끝 고정 어미)이면 거의 매 문장 일관되게(그게 이 인물의 개성이다). ★접두어·필러 버릇★('뭐랄까'·'그러니까' 류)이면 ★아주 드물게★ — 매 응답마다 넣지 마라(넣는 게 기본이 아니다). 서너 응답에 한 번쯤, 한 응답엔 많아야 한 번, 연속 두 문장 금지.\n");
-            sb.append("- 버릇이 어미 버릇이 아니면 문장 끝은 평범한 존댓말/반말 그대로 두어라 — 어미를 억지로 바꾸거나 새 어미를 만들지 마라.\n");
-            sb.append("- ★직무·전문성은 '무엇을 아는지(대답 내용)'에만 반영하라 — 문장 첫머리를 보고서처럼 시작하지 마라.★ 사적인 대화·통화에선 일 얘기보다 상대의 반응·감정·용건이 먼저다(너는 직함이 아니라 사람이다).\n");
-        } else {
-            String speech = switch (intel) {
-                case 1  -> "말솜씨가 서툴다 — 쉽고 짧은 말, 어려운 말은 모르지만 감정·진심은 솔직히(기계처럼 토막 내지 말 것).";
-                case 2  -> "말이 소박하다 — 쉬운 일상어 위주 짧은 문장, 따뜻하고 자연스럽게.";
-                case 3  -> "평범하게 말한다 — 보통 사람의 일상 회화 수준.";
-                case 4  -> "또렷하게 말한다 — 조리 있고 어휘가 제법 풍부(현학·잘난 척 금지).";
-                default -> "매우 유창하다 — 논리적·표현 풍부(전문어 남발 금지).";
-            };
-            sb.append("- 말투·언어 수준: ").append(speech).append(" 이 수준을 처음부터 끝까지 유지하라(대화 중 언어 수준을 갑자기 올리거나 내리지 마라).\n");
-        }
-        sb.append("- 너의 나이: ").append(npcAge >= 0 ? npcAge + "세" : "불명")
-          .append(" — 존댓말/반말은 한국어 통념대로: 손위·초면엔 존댓말(또는 거리 둔 말투), 손아래·또래·가까운 사이엔 반말. 상대의 나이·관계가 입력 머리말에 표기돼 있으면 그에 맞추고, 없으면(자율 행동 등 상대 미지정) 장면·관계 데이터로 판단하라. 한 대사 안에서 존댓말↔반말이 오락가락하지 않게 끝까지 일관.\n");
+        if (!endingStyle.isBlank())      npcEndingHabitBlock(sb);                 // ① 특수 어미 습관 → pass2 렌더
+        else if (!speechStyle.isBlank()) npcPersonalSpeechBlock(sb, speechStyle); // ② 개인별 말투(speech_style)
+        else                             npcFluencyBlock(sb, intel);             // ③ 유창도(주사위) 폴백
+        npcAgeSpeechBlock(sb, npcAge);                                            // ④ 나이별 말투·어휘(항상)
         // ── 보편 규칙(양 모드 공통) ──
         sb.append("- 마크다운·메타 해설 금지(순수 대사·서술만). ★단 이 응답에서 쓰라고 따로 지시된 태그만 예외★ — 지시 없는 태그를 스스로 만들어 쓰지 마라.\n");
         sb.append("- ★일관성★: 지금까지 나눈 대화(부탁·약속·합의·경고·알려준 정보 등)를 기억하고 다음 태도에 반영하라 — 방금 한 말을 잊은 듯 모순되게 굴지 마라.\n");
@@ -8355,7 +8654,7 @@ public class TRPGGameManager {
                 cleanNames.add(op.gmDisplayName());
         }
         if (chanInterfered)
-            ai.injectGmSystem("[통신 채널 불안정] 전자통신이 괴담의 간섭권 안이다 — 전체 발신 일부가 잡음·왜곡될 수 있음(정황에 은근히 반영).");
+            ai.injectGmSystem("[통신 잡음] 전자통신이 괴담의 간섭권 안이다 — 일부 수신자에게 이미 잡음·왜곡이 적용됐다. 내용을 더 망가뜨리지 말고 불안정한 정황(잡음·끊김)만 은근히 곁들여라.");
         state.log("comm", senderPd.name, "[" + (senderNet != null ? senderNet + "망발신" : "전체발신") + "] " + message);
         // 뷰어 통화내역: 온전히 받은 수신자만 한 줄로(변조된 수신자는 위에서 개별 기록).
         if (!cleanNames.isEmpty())
@@ -9375,7 +9674,7 @@ public class TRPGGameManager {
                  + "같은 확인(\"누구세요\"·\"그게 뭐죠\"·\"왜 그래요\")을 ★두 번 이상 반복하지 마라★ — 낯선 상대라도 경계·의심은 ★처음 한두 마디★로만 표하고, 그 뒤엔 반드시 대화를 진전시켜라.\n");
         sb.append("- ★아는 것을 '내용'으로 풀어 나아가라(공허한 맴돌기 금지)★: 네가 어떤 사실·단서·기억(위 knowledge)을 알고 상대가 그 주제를 직접·거듭 물으면, "
                  + "추상적 되풀이(\"말이 어긋난다\"·\"상황이 그렇다\" 같은 뜬 이야기)로 얼버무리지 말고 ★네 역할·정직도에 맞는 구체 조각을 하나라도 내놓아라★ "
-                 + "— 정직형=사실 한 조각 / 방어·목적형=에두르되 결국 실마리 한 가닥 / 기만형=그럴듯한 거짓 한 조각. "
+                 + "— 정직형=사실 한 조각 / 방어·목적형=에두르되 결국 실마리 한 가닥 / 상습형=그럴듯한 거짓 한 조각. "
                  + "핵심 해답 전체는 아껴도 ★매 답변은 새로운 구체를 하나씩 쌓아★ 진전시켜라(같은 뜻을 표현만 바꿔 반복하는 건 '나아감'이 아니다).\n");
         // G2: 통화 vs 서면 vs 대면 — 보이는 것과 가능한 상호작용이 다르다
         if (viaCall) {
@@ -9435,21 +9734,27 @@ public class TRPGGameManager {
             n.append(" [신체 열세(근력 ").append(str).append("): 이 인물은 몹시 약하고 굼뜨다. 힘·속도·순발력이 필요한 행동(빨리 달아나기·힘껏 밀기·재빠른 회피·무거운 것 다루기)은 크게 버거워 남보다 뒤처지고 숨이 차며, 설령 판정이 성공이라도 그 '과정'을 힘겹고 아슬아슬하게 그려라. 판정이 정한 성패 자체는 지켜라.]");
         else if (str <= 3)
             n.append(" [체력 부침(근력 ").append(str).append("): 이 인물은 힘·순발력이 평균 이하다. 빠르거나 힘쓰는 행동은 다소 굼뜨고 벅차게, 남보다 한 박자 늦거나 힘에 부치는 결을 곁들여라(성패는 판정대로).]");
-        // ★영감(SPR) = 단서·힌트 '해상도'★ — ★항상 중의적으로★ 준다(플레이어가 추리해야 수수께끼; GM 진행을
-        //   따라오게 만들지 마라). 탐색으로 단서가 나오는지(힌트 절제)는 그대로 두고, 나온 단서 해석에 '얼마나
-        //   유력한 쪽에 무게가 실리나'만 영감이 좌우한다: 15+만 정답에 근접(그래도 정답 문장은 대신 말 안 함) ·
-        //   10~14 유력한 쪽에 무게 실린 애매한 힌트 · 6~9 고르게 열린 복수해석 · 5↓ 흐릿·노이즈. 높아도 탐색 없이 정답을 지어 주지 않는다.
+        // ★영감(SPR) = 지각 '해상도'★ — 같은 대상·단서라도 영감이 높을수록 진짜 디테일(자국→글씨→이름→정체)까지 또렷·완전히,
+        //   낮을수록 겉모습(낡음·긁힘)만 뭉뚱그려 서술된다. ★감정·평가 서술 금지★('수상하다·신경 쓰인다·확신이 든다·뭔가 걸린다'
+        //   류를 붙이지 마라) — 관찰된 물리 사실만 해상도대로 두면 그 디테일 수준 자체가 단서다(플레이어는 '이렇게까지 묘사한다=중요'를
+        //   스스로 읽는다). 아래 append 문자열(GM에 실제 전달)에 사다리와 이번 위치를 담는다.
         int spr = Math.max(1, Math.min(20, pd.spr));
-        if (spr >= 15)
-            n.append(" [꿰뚫는 직감(영감 ").append(spr).append("): 통찰이 예언에 가깝다. 스스로 접한 단서·징후의 ★핵심에 거의 닿는 강한 확신★으로 읽어주되, ★정답 문장을 대신 말해 주진 마라★ — 인물이 그 확신을 스스로 세우고 마지막 연결은 플레이어가 짓게(여전히 한 겹 중의적으로). 아직 탐색·노력으로 얻지 않은 정답·비밀·약점을 지어내 주지도 마라.]");
-        else if (spr >= 10)
-            n.append(" [예리한 직감(영감 ").append(spr).append("): 촉이 날카롭다. 접한 단서를 ★여러 갈래 해석 중 유력한 쪽에 무게가 실린★ 애매한 힌트로 전하라 — 남보다 결이 또렷하되 ★단정은 금지(중의성 유지)★, 어느 쪽인지는 인물이 추론해 짚게 한다. 미세한 어긋남(놓인 물건·틀어진 배치·공기의 결)도 곧잘 알아챈다. 정답·비밀은 여전히 아껴라.]");
+        // 항상: 원칙 + 해상도 사다리(예시 한 번). 문자열 하나로 '[' 열고, 아래 티어 문자열이 ']'로 닫는다.
+        n.append(" [영감 ").append(spr).append(" — 단서 지각 '해상도'다. ★감정·평가('수상·신경 쓰임·확신·걸린다') 붙이지 말고★ 관찰된 물리 사실만 해상도대로 그려라 — 그 디테일 수준 자체가 단서다(플레이어가 스스로 추론). 해상도 사다리 예(진짜 정체='사물함 뒤 손톱으로 새긴 사라진 아이들의 명단'): 1~2 \"낡고 조금 부서진 사물함이 있다\" · 3~5 \"사물함이 낡았다, 오래돼서 그런지 좀 긁혀 있다\" · 6~8 \"뒤에 뭔가 긁힌 자국이 있는 것 같다\" · 9~11 \"긁힌 글씨가 보인다\" · 12~14 \"자국이 이름처럼 줄지어 있다\" · 15~17 \"손톱으로 새긴 이름들이 있다\" · 18+ \"사라진 아이들의 명단 이름이 있다\". 이 패턴을 지금 단서에 적용하라. ");
+        if (spr >= 18)
+            n.append("지금 영감=최상(18+): 실제 내용 + 그 정체까지 또렷이. 단 '그래서 무엇을 하라(해법·이용법)'는 여전히 플레이어 몫 — 지어내 주지 마라.]");
+        else if (spr >= 15)
+            n.append("지금 영감 15~17: 실제 내용까지 서술하되 정체·의미 규정은 빼라.]");
+        else if (spr >= 12)
+            n.append("지금 영감 12~14: 내용의 형태까지만.]");
+        else if (spr >= 9)
+            n.append("지금 영감 9~11: 흔적의 성질까지만.]");
         else if (spr >= 6)
-            n.append(" [트인 촉(영감 ").append(spr).append("): 남들만큼은 알아챈다. 접한 단서를 ★여러 갈래로 해석되는 애매한 힌트★로 전하라 — '뭔가 걸리는' 인상은 주되 그 뜻은 두세 가지로 열어 두고, 인물이 직접 곱씹어 판단하게 한다(단정·정리 금지).]");
+            n.append("지금 영감 6~8: 이상 흔적의 존재만.]");
         else if (spr >= 3)
-            n.append(" [둔한 촉(영감 ").append(spr).append("): 직관이 평균 이하다. 묻지도 뒤지지도 않은 단서를 알아서 짚어주지 마라 — 스스로 살필 때만 드러내되, 그마저 ★흐릿하고 노이즈가 섞인 인상★으로만 줘라(엉뚱하게 읽어도 이상하지 않을 만큼 모호하게). 대놓고 보이는 것만 자연스레.]");
+            n.append("지금 영감 3~5: 겉모습 + 사소한 흔적을 '노후 탓'으로 뭉뚱그려라. ★스스로 자세히 살필 때만★ 그 정도라도 나온다.]");
         else
-            n.append(" [먹통 직감(영감 ").append(spr).append("): 직관이 몹시 무디다. ★스스로 자세히 살피거나 뒤지지 않은 것은 어떤 단서도 대신 짚어주지 마라★ — 불길함·위화감조차 '뭔지 모를 께름칙함' 정도로만 흐릿하게. 명시적으로 파고들 때만 발견 기회를 주고, 그마저 결정적 단서는 인색하게(핵심 의미는 스스로 못 읽는다).]");
+            n.append("지금 영감 1~2: 대상의 겉모습만, 이상 징후 없이. 스스로 파고들지 않으면 언급조차 없다.]");
         return n.toString();
     }
 
@@ -10014,6 +10319,7 @@ public class TRPGGameManager {
     private String buildImpersonationPrompt(PlayerData victim) {
         StringBuilder sb = new StringBuilder(buildEntitySystemPrompt());
         sb.append("\n## 정체 차용 모드\n");
+        sb.append("★이 모드는 예외 — 위의 '환경만 서술·1인칭 금지·주어 없는 2인칭' 등 괴담 기본 화법 규칙은 무시하고, 그 사람인 척 1인칭 대화로 아래 지시를 따른다.★\n");
         sb.append("너는 '").append(victim.gmDisplayName()).append("'(").append(victim.age).append("세, ")
           .append(victim.job).append(")의 정체를 차지했다. 그 사람인 척 대화하라.\n");
         List<String> profile = corruptMan.getPlayerProfile(victim.name); // 프로파일 키는 계정명(내부 식별용)
@@ -11325,6 +11631,16 @@ public class TRPGGameManager {
      * 캐릭터 생성 전 역할을 미리 배정하여 age_range·job_pool을 chargen에 전달.
      * pd가 없는 상태에서 호출하므로 PlayerData 수정은 하지 않는다.
      */
+    /** 배역 age_range의 중앙값(없으면 25). 나이 앵커 매칭용. */
+    private static int roleMidAge(JsonObject role) {
+        if (role.has("age_range") && role.get("age_range").isJsonArray()) {
+            JsonArray a = role.getAsJsonArray("age_range");
+            if (a.size() >= 2) return (a.get(0).getAsInt() + a.get(1).getAsInt()) / 2;
+            if (a.size() == 1) return a.get(0).getAsInt();
+        }
+        return 25;
+    }
+
     private void doPreAssign(List<Player> players, JsonObject gdam) {
         preAssignedRoleData.clear();
         preAssignments.clear();
@@ -11375,12 +11691,38 @@ public class TRPGGameManager {
                 preAssignments.put(pl.getUniqueId(), roleDataToAssignment(ordered.get(j)));
             }
         } else {
-            for (int i = 0; i < shuffled.size() && i < ordered.size(); i++) {
-                usedRoles.add(i);
-                UUID uuid = shuffled.get(i).getUniqueId();
-                JsonObject role = ordered.get(i);
-                preAssignedRoleData.put(uuid, role);
-                preAssignments.put(uuid, roleDataToAssignment(role));
+            // ★나이·성별 앵커 매칭★: 각 플레이어를 자신의 초기 나이·성별에 가장 가까운 배역에 그리디 배정한다
+            //   (배역→플레이어 역방향 폐기 — 배역이 플레이어에 맞춰짐). 코어 배역이 남아있으면 코어에서 먼저 채워
+            //   중요 인물이 반드시 배정되게 하고, 그 안에서 (나이차 + 성별 불일치 벌점)이 최소인 배역을 고른다.
+            //   앵커 정보가 아직 없으면(1스테이지: 캐릭터 생성 전이라 state에 pd 없음) 순서대로 폴백(기존 동작).
+            int coreCount = coreRoles.size();
+            for (Player pl : shuffled) {
+                PlayerData pd = state.getPlayer(pl);
+                if (pd != null) ensurePlayerIdentity(pd);
+                int pAge      = (pd != null && pd.age > 0) ? pd.age : -1;
+                String pGender = (pd != null && pd.gender != null) ? pd.gender : "";
+                boolean coreRemain = false;
+                for (int i = 0; i < coreCount; i++) if (!usedRoles.contains(i)) { coreRemain = true; break; }
+                int hi = coreRemain ? coreCount : ordered.size(); // 코어 남으면 코어에서만 선택
+                int bestIdx = -1, bestCost = Integer.MAX_VALUE;
+                for (int i = 0; i < hi; i++) {
+                    if (usedRoles.contains(i)) continue;
+                    int cost;
+                    if (pAge < 0) {
+                        cost = i; // 앵커 없음 → 순서대로(안정적 폴백)
+                    } else {
+                        JsonObject role = ordered.get(i);
+                        cost = Math.abs(pAge - roleMidAge(role));
+                        String rGender = role.has("gender") ? role.get("gender").getAsString() : "";
+                        if (!pGender.isEmpty() && !rGender.isEmpty() && !pGender.equals(rGender)) cost += 40;
+                    }
+                    if (cost < bestCost) { bestCost = cost; bestIdx = i; }
+                }
+                if (bestIdx < 0) break; // 남은 배역 없음
+                usedRoles.add(bestIdx);
+                JsonObject role = ordered.get(bestIdx);
+                preAssignedRoleData.put(pl.getUniqueId(), role);
+                preAssignments.put(pl.getUniqueId(), roleDataToAssignment(role));
             }
         }
         // 남은(미사용) 배역 → GM이 직접 조종
@@ -11548,7 +11890,8 @@ public class TRPGGameManager {
         final int fmax = max;
         // ★GM 다음 전개 일관성★: 코드가 정한 결과를 컨텍스트에 주입 — 다음 서술이 이 결과와 어긋나지 않게.
         String critHint = critSuccess ? " ★대성공★이므로 기대 이상으로 훌륭히 해내고 추가 이득(예상 밖 성과·유리한 기회)을 곁들여 서술하라."
-                        : critFail    ? " ★대실패★이므로 크게 그르쳐 추가 대가(부상·소음·새 위협 노출·자원/단서 손실 등)를 함께 서술하라."
+                        : critFail    ? " ★대실패★이므로 크게 그르쳐 추가 대가(부상·소음·새 위협 노출·자원/단서 손실)를 함께 서술하라. ★전투·직접 위협 등 치명적 국면이면 이 대실패로 체력을 0까지 깎아 사망까지 정당하다 — 기절·중상으로 봐주지 마라(hp_change 음수로 반영).★"
+                        : fail        ? " ★실패★ — 치명적 국면(전투·직접 위협·무모한 강행)이면 부상·후퇴로만 무마하지 말고 상황에 걸맞은 대가(최악의 경우 체력 0=개별 사망)까지 정당하게 매겨라(과보호 금지)."
                         : "";
         ai.injectGmSystem("[판정 결과] " + (reason.isEmpty() ? "" : reason + " — ")
             + "주사위 d" + max + "=" + roll + modNote + (effDc > 0 ? (", 성공기준 " + effDc) : "") + " → ★" + outcome + "★." + critHint   // ★실제 판정 기준(effDc)으로 주입 — dc와 어긋나 '11<14인데 성공' 같은 모순 서술 유발하던 문제 해소
@@ -12090,6 +12433,7 @@ public class TRPGGameManager {
         lines.add("§7시작이후  §f" + ai.usageLabel(ai.sessionUsage()));
         lines.add("§7이번가동  §f" + ai.usageLabel(ai.lifetimeUsage()));
         lines.add("§7전체누적  §f" + ai.usageLabel(ai.allTimeUsage()));
+        lines.addAll(ai.usageDiagLines()); // ★#231 진단★ 비용 구성 분해(순수입력/캐시읽기/쓰기/출력·비중·히트율)
         dialogMan.showStatusDialog(player, "TRPG 상태", lines);
     }
 

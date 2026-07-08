@@ -34,6 +34,9 @@ public class AiManager {
     // 멀티플레이에서 여러 플레이어가 동시에 행동하면 callGmAi 등이 동시 실행되므로
     // 각 컨텍스트는 전용 락으로 직렬화하여 동시 변경(자료구조 손상)을 막는다.
     private final List<JsonObject>              gmContext     = new ArrayList<>();
+    /** 이번 턴 GM에 붙일 시스템 주입 노트 — ★영구 히스토리(gmContext)엔 남기지 않고★ 다음 callGmAi 스냅샷에만 후행으로 붙인다.
+     *  (예전엔 injectGmSystem이 gmContext에 직접 append → 스테이지 내내 누적·stale 노트가 쌓여 토큰↑·혼선. gmLock으로 보호.) */
+    private final List<String>                  pendingSystemNotes = new ArrayList<>();
     private final List<JsonObject>              entityContext = new ArrayList<>();
     private final Map<String, List<JsonObject>> npcContexts   = new ConcurrentHashMap<>();
     private final Map<String, Object>           npcCallLocks  = new ConcurrentHashMap<>(); // NPC별 호출 직렬화 락
@@ -87,6 +90,11 @@ public class AiManager {
     private final LongAdder   accInTok   = new LongAdder();   // 입력 토큰(캐시 읽기·쓰기 포함)
     private final LongAdder   accOutTok  = new LongAdder();   // 출력 토큰
     private final DoubleAdder accCostUsd = new DoubleAdder(); // 누적 비용(USD)
+    // ★#231 진단 계측★ — accInTok(총 입력)을 3갈래로 분해(이번 가동만, 영구저장·UsageStat 불변).
+    //   40% 초과의 정체(캐시쓰기 churn=TTL만료·단발게임 / 출력 길이 / 미캐시 호출)를 실플레이 1회로 드러낸다.
+    private final LongAdder   accCacheRead  = new LongAdder(); // 캐시 읽기 입력 토큰(0.1× 단가)
+    private final LongAdder   accCacheWrite = new LongAdder(); // 캐시 생성 입력 토큰(1.25× 단가 = 읽기의 12.5배)
+    private final DoubleAdder accCostOut    = new DoubleAdder(); // 출력 토큰 비용(USD) — 입력/출력 비중 분해용
     private volatile UsageStat sessionStart = new UsageStat(0, 0, 0, 0.0);
     private volatile UsageStat stageStart   = new UsageStat(0, 0, 0, 0.0);
     // 영구 누적 기준점(파일에서 로드 = 이전 가동까지의 전체 누적). 전체누적 = persistedBase + 이번 가동(accumulators).
@@ -407,6 +415,30 @@ public class AiManager {
         return "₩" + String.format("%,d", Math.round(u.costUsd() * 1400.0));
     }
 
+    /** ★#231 진단★ 이번 가동 비용 구성 분해 — 순수입력/캐시읽기/캐시쓰기/출력 + 비용 비중 + 캐시 히트율.
+     *  캐시히트 낮음 = 캐시쓰기(1.25×) churn(TTL만료·단발게임) / 출력 비중 높음 = 서술 과다. 실플레이 1회로 40% 초과 원인 규명. */
+    public java.util.List<String> usageDiagLines() {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        if (accCalls.sum() == 0) return out;
+        long inTot = accInTok.sum(), cr = accCacheRead.sum(), cw = accCacheWrite.sum();
+        long fresh = Math.max(0, inTot - cr - cw), ot = accOutTok.sum();
+        double cTot = accCostUsd.sum(), cOut = accCostOut.sum();
+        long crcw = cr + cw;
+        int hitPct = crcw > 0 ? (int) Math.round(cr * 100.0 / crcw) : 0;
+        int outPct = cTot > 0 ? (int) Math.round(cOut * 100.0 / cTot) : 0;
+        out.add("§8 ");
+        out.add("§6§lAI 비용 구성 §7(이번가동 · " + accCalls.sum() + "호출)");
+        out.add("§7입력  §f순수 " + fmtTok(fresh) + " §8│ §a캐시읽기 " + fmtTok(cr) + "§8(0.1×) §8│ §c캐시쓰기 " + fmtTok(cw) + "§8(1.25×)");
+        out.add("§7출력  §f" + fmtTok(ot) + " §8(5× 단가)  §8│ §7비중 §f입력 " + (100 - outPct) + "% §8/ §f출력 " + outPct + "%");
+        out.add("§7캐시  §f히트 " + hitPct + "% §8(낮을수록 재생성 1.25× churn=TTL만료·단발게임)");
+        return out;
+    }
+    private static String fmtTok(long t) {
+        if (t >= 1_000_000) return String.format("%.1fM", t / 1_000_000.0);
+        if (t >= 1_000)     return String.format("%.0fK", t / 1_000.0);
+        return Long.toString(t);
+    }
+
     /** 응답의 usage(토큰 사용량)를 provider별로 읽어 영구 누적에 더한다(캐시 단가 반영). */
     private void accumulateUsage(JsonObject json, String model) {
         try {
@@ -447,6 +479,9 @@ public class AiManager {
             accInTok.add(in + cacheRead + cacheWrite);
             accOutTok.add(out);
             accCostUsd.add(cost);
+            accCacheRead.add(cacheRead);                        // #231 진단: 캐시 읽기(0.1×)
+            accCacheWrite.add(cacheWrite);                      // #231 진단: 캐시 생성(1.25×)
+            accCostOut.add(out * price[1] / 1_000_000.0);       // #231 진단: 출력 비용(입력/출력 비중용)
         } catch (Exception ignored) { /* 사용량 집계 실패는 게임 진행에 영향 주지 않음 */ }
     }
 
@@ -489,8 +524,15 @@ public class AiManager {
             synchronized (gmCallLock) {
                 List<JsonObject> snapshot;
                 synchronized (gmLock) {                       // 빠른 변경만 (락 보유 시간 최소화)
-                    gmContext.add(msg("user", userMessage));
+                    gmContext.add(msg("user", userMessage));   // 영구 히스토리엔 ★순수 행동만★
                     snapshot = new ArrayList<>(gmContext);     // 네트워크엔 스냅샷 전달(전송 중 동시 변경 안전)
+                    if (!pendingSystemNotes.isEmpty()) {
+                        // 이번 턴 시스템 노트를 ★전송 스냅샷에만★ 후행 메시지로 붙인다(gmContext엔 안 남김 → 누적·stale 방지).
+                        //  캐시: 안정 프리픽스=gmContext 그대로 → 히스토리 캐싱 유지되고, 이 후행 노트만 매 턴 새로 전송된다.
+                        //  각 줄 '[시스템 주입]' 접두 유지 — 누출 스크럽(stripTags의 [시스템 주입] 제거 규칙)이 GM 에코를 잡게 한다.
+                        snapshot.add(msg("user", "[시스템 주입] " + String.join("\n[시스템 주입] ", pendingSystemNotes)));
+                        pendingSystemNotes.clear();
+                    }
                 }
                 try {
                     // cacheHistory=true: 마지막 메시지 프리픽스 캐싱 → 매 턴 커지는 히스토리를 다음 턴에 0.1× 읽기(핵심 절감).
@@ -693,13 +735,24 @@ public class AiManager {
     // ======================================================
 
     public void injectGmSystem(String content) {
+        if (content == null || content.isBlank()) return;
         synchronized (gmLock) {
-            gmContext.add(msg("user", "[시스템 주입] " + content));
+            // 같은 태그 노트는 새 것으로 교체(상반·중복 노트 누적 방지 — 예: '[통신 잡음]' 두 번이면 최신만).
+            String tag = leadingTag(content);
+            if (!tag.isEmpty()) pendingSystemNotes.removeIf(n -> n.startsWith(tag));
+            pendingSystemNotes.add(content);
         }
+    }
+    /** content 앞머리의 "[...]" 태그를 추출(없으면 ""). */
+    private static String leadingTag(String s) {
+        String t = s.stripLeading();
+        if (!t.startsWith("[")) return "";
+        int end = t.indexOf(']');
+        return end > 0 ? t.substring(0, end + 1) : "";
     }
 
     public void clearAll() {
-        synchronized (gmLock)     { gmContext.clear(); }
+        synchronized (gmLock)     { gmContext.clear(); pendingSystemNotes.clear(); }
         synchronized (entityLock) { entityContext.clear(); }
         npcContexts.clear(); // ConcurrentHashMap — 자체 thread-safe
         npcCallLocks.clear();
@@ -713,6 +766,7 @@ public class AiManager {
     /** GM 컨텍스트(대화 기록)를 mark 길이로 되돌린다(시간 회귀용). LLM은 무상태라 이 리스트가 곧 GM의 기억이다. */
     public void truncateGmContext(int mark) {
         synchronized (gmLock) {
+            pendingSystemNotes.clear(); // 되돌린 시점 이후에 쌓인 미전송 노트는 폐기(과거 회귀 정합)
             if (mark < 0 || mark >= gmContext.size()) return;
             gmContext.subList(mark, gmContext.size()).clear();
         }
@@ -728,7 +782,7 @@ public class AiManager {
     /** 저장된 GM 컨텍스트를 복원한다(이어하기). */
     public void importGmContext(com.google.gson.JsonArray a) {
         synchronized (gmLock) {
-            gmContext.clear();
+            gmContext.clear(); pendingSystemNotes.clear(); // 복원 시 미전송 노트는 폐기(이어하기 정합)
             if (a != null) for (com.google.gson.JsonElement e : a) if (e.isJsonObject()) gmContext.add(e.getAsJsonObject());
         }
     }
