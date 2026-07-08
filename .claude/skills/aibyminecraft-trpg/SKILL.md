@@ -90,6 +90,14 @@ description: >-
   typeFirstDirective(GdamGenerator)는 "entity.type을 그 구조에서 도출(먼저 정하지 마라)"로 바뀜. 사용자 지시=
   "ScenarioArchetypes에 맞게 정해져야지 entity.type이 아니라". ★entity.type-first로 되돌리지 말 것★(typeHint 설정 시엔
   기존대로 유형 고정 경로 유지).
+- **★괴담 카탈로그(Phase 0 완료, GdamCatalog.java)★**: 173항목 큐레이트 — 통용명·출처(11: 한국/일본/서양/creepypasta/
+  scp/cosmic/game/backrooms/internet/real/★sf 신설★)·fame(major28/semi58/minor87)·native_scale[min,max]·vibe(공존 페어링 결)·한줄.
+  "::" 구분 텍스트블록+parse(SCP-2521 이름에 '|' 있어 파이프 회피). PM은 ProjectMoonLore 전용이라 제외. all()/bySource()/sources().
+  ★아직 소비처 없음 — Phase 1 선정엔진이 인지도·스케일 가중 + 공존 페어링에 쓸 예정.★ 공존은 ★같은 출처끼리만★
+  (SCP+cosmic 교차 금지 — 사용자 확정), 그 안에서 vibe로 짝. sf 6하위결(외계·지저·시뮬·음모·기생·AI우주).
+- **[예약] 정보 경제 원칙(시나리오 개편 종료 후 검토)**: ①저해상도 힌트가 '사물함이 보인다'처럼 콕 찍어 과다노출 → 다른 것도
+  섞어 진짜 저해상도로 ②정보는 얻기 어렵게 + 중요정보는 위험 감수 ③정확 정보=대부분 괴담 쉽게 종결(다회차·강능력 조기종결,
+  질질끌기 X) ④잘못된 정보=파멸. 현재 안 지켜짐 — 이전 예약 항목 포함 시나리오 개편 종료 후 착수.
 - **자동진행 = GM위임 아닌 코드 결정(전지성 차단)**: 자동진행 경로 4개 중 GM을 호출하는 건 `maybeAccelerateIdle`
   하나뿐 — 나머지(advanceRoundAfterAllActed / busyClockJumpIfAllBusy / summonAllFree / 전원무력 워치독)는
   ★GM콜 0★(순수 시계·카운터 연산)이라 프로즈를 안 만들어 미발견 정보 누출이 원천 불가. maybeAccelerateIdle은
