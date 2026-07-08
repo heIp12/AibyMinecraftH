@@ -335,16 +335,31 @@ public class AiManager {
         };
     }
 
-    /** 시간당 예상 비용(USD) — 거친 추정(턴/시간·토큰 가정). ★인원수에 비례★(행동마다 GM 호출 → 사람이 많을수록 턴↑). */
+    /**
+     * 시간당 예상 비용(USD) — ★실측 정합 추정★. ★인원수에 비례★(행동마다 GM 호출 → 사람이 많을수록 턴↑).
+     * 예전 추정(턴당 입력 8000·캐싱/생성비 무시)은 실측의 1/3~1/4로 심하게 과소했다. 이제 세 축을 모두 반영:
+     *  ① GM 시스템 프롬프트(GM_SYSTEM_BASE ~139KB ≈ ★3만 토큰★, 캐시 대상)를 매 턴 재투입 — TRPG는 턴 간격이
+     *     캐시 TTL(5분)을 자주 넘겨 ★절반가량 캐시 만료(HIT~0.45)★로 전액 재과금된다(핵심 비용).
+     *  ② 매 턴 새 입력(누적 히스토리·상태·행동)은 캐시 안 됨(정가).
+     *  ③ 시나리오 생성(.gdam): 스테이지 진입마다 대형 호출(1회 ~$0.4@Opus). 시간당 ~1.2회로 amortize.
+     */
     private double estimateHourlyUsd(Quality q, int players) {
         double[] gmP  = modelPriceUsd(nominalModel(q));
-        double[] auxP = modelPriceUsd(nominalModel(Quality.LOW)); // 괴담/NPC/보조 = 저품질 모델
-        final int TURNS = 15 * Math.max(1, players); // 시간당 GM 턴 — 1인당 ~15턴(3~4인이면 ~50, 기존 기준과 정합)
-        final int GM_IN = 8000, GM_OUT = 800;  // 턴당 GM 토큰(컨텍스트 성장·시나리오 생성 포함 평균)
-        final int AUX_CALLS = 2, AUX_IN = 2500, AUX_OUT = 400; // 괴담/NPC 등 보조 호출
-        double gm  = TURNS * (GM_IN * gmP[0] + GM_OUT * gmP[1]) / 1_000_000.0;
+        double[] auxP = modelPriceUsd(nominalModel(Quality.LOW)); // 괴담/NPC/보조 = 저품질(mini) 모델
+        final int TURNS = 15 * Math.max(1, players);   // 시간당 GM 턴 — 1인 ~15
+        // ① 시스템 프롬프트(캐시): HIT면 0.1× 읽기, MISS면 정가 재적재(캐시쓰기 1.25×를 정가 1.0×로 근사)
+        final int SYS = 30000; final double HIT = 0.45;
+        double sysInPerTurn = SYS * (HIT * 0.1 + (1 - HIT) * 1.0);
+        // ② 매 턴 새 입력(정가) + 출력
+        final int FRESH_IN = 9000, GM_OUT = 1000;
+        double gm  = TURNS * ((sysInPerTurn + FRESH_IN) * gmP[0] + GM_OUT * gmP[1]) / 1_000_000.0;
+        // 보조(NPC·괴담·정보추출) — 저품질, 턴당 ~2회
+        final int AUX_CALLS = 2, AUX_IN = 3000, AUX_OUT = 500;
         double aux = TURNS * AUX_CALLS * (AUX_IN * auxP[0] + AUX_OUT * auxP[1]) / 1_000_000.0;
-        return gm + aux;
+        // ③ 시나리오 생성 — 스테이지 페이스 ~1.2회/시간, GM 모델
+        final double GENS_PER_HR = 1.2; final int GEN_IN = 20000, GEN_OUT = 11000;
+        double gen = GENS_PER_HR * (GEN_IN * gmP[0] + GEN_OUT * gmP[1]) / 1_000_000.0;
+        return gm + aux + gen;
     }
 
     /** 품질별 시간당 예상 비용 라벨(원화 추정, ★인원수 반영★). 선택 화면·시작 로그용. */
