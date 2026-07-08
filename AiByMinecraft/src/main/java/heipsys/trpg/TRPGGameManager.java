@@ -4388,7 +4388,7 @@ public class TRPGGameManager {
         }
         gameLogger.logComm("whisper", from, toDisp, msg, detect ? "밀담(노출)" : "밀담");
         if (detect) {
-            noteEntityIntel(2, from, msg, "밀담");
+            noteEntityIntel(2, from, msg, "밀담", true); // 은밀 채널 = 원거리 감청 취급(이미 detect로도 게이트됨)
             String snip = msg.length() > 40 ? msg.substring(0, 40) + "…" : msg;
             ai.injectGmSystem("[은밀 대화 감지] " + from + "의 은밀 대화를 괴담이 엿들었다(내용: " + snip
                 + "). 괴담이 그 정보를 인지·역이용하도록 다음 전개에 은근히 반영하라(즉시 과잉 반응 금지, 1턴 대응 여지).");
@@ -8582,7 +8582,7 @@ public class TRPGGameManager {
         state.log("comm", senderPd.name, "[방송] " + content);
         String bNet = commNetworkKey(senderPd); // 폐쇄망(무전) 방송이면 그 망 접속자만 들었을 수 있음(PA는 개방)
         gameLogger.logComm("broadcast", disp, heardNames, content, bNet); // 뷰어 통화내역: 방송 수신자 기록
-        noteEntityIntel(3, disp, content, bNet != null ? bNet + "망 방송" : "방송"); // 방송=개방 채널 → 괴담 수집 강함
+        noteEntityIntel(3, disp, content, bNet != null ? bNet + "망 방송" : "방송", true); // 방송=원거리 채널 → 통신 감청 가능 괴담만(물리형 제외)
         // 방송은 이미 GM이 <BROADCAST>로 판정·서술했다(이 응답 안에서). 시스템은 배달만 했으니 재서술은 요구하지 않고,
         //   범위·괴담 개입만 다음 서술에 반영하도록 짧게 알린다(같은 문구 <WITNESS> 중복 금지).
         if (currentPhase == Phase.HORROR || currentPhase == Phase.DAILY) {
@@ -8619,7 +8619,7 @@ public class TRPGGameManager {
         java.util.List<String> nearNames = new ArrayList<>();
         for (PlayerData op : heard) nearNames.add(op.gmDisplayName());
         gameLogger.logComm("nearby", disp, nearNames, message);
-        noteEntityIntel(2, disp, message, "근처 발화"); // 근처 발화 → 수집 중간(근처에 괴담 있으면 GM이 강하게 반영)
+        noteEntityIntel(2, disp, message, "근처 발화", false); // 근처 발화=가까이서 낸 소리 → 물리형 괴담도 근처면 들음(범위=근처)
         // (입력 로그는 onChat 진입부에서 이미 1회 기록됨 — 여기서 중복 기록하지 않는다)
         // ★입으로 낸 '소리'다(기기 통신 아님 → 도청·차단·전화판정 무관). 단, 괴담이 소리·인기척을
         //   감지하는 성질이면 들을 수 있으므로, 괴담 파트에서만 GM에 알려 그 성질일 때만 반응하게 한다.
@@ -8740,7 +8740,7 @@ public class TRPGGameManager {
             gameLogger.logComm("call", disp, cleanNames, message, senderNet);
         // 폐쇄망은 전자형 괴담이 그 망에 붙어야만 수집(아니면 0=미수집). 개방 전체발신은 항상 강(3).
         noteEntityIntel(senderNet != null ? (entityInterferes("electronic") ? 3 : 0) : 3, disp, message,
-            senderNet != null ? senderNet + "망 발신" : "전체 발신");
+            senderNet != null ? senderNet + "망 발신" : "전체 발신", true); // 전체/망 발신 = 원거리 채널
         // (입력 로그는 onChat 진입부에서 이미 1회 기록됨 — 여기서 중복 기록하지 않는다)
         if (commDetectableByEntity(senderPd)) noteCommUsedIfDangerous(senderPd, "전체 발신"); // 은밀 개방이면 괴담이 감지 못함
     }
@@ -9317,7 +9317,7 @@ public class TRPGGameManager {
         gameLogger.logComm(written ? "letter" : (viaCall ? "call" : "nearby"), senderPd.gmDisplayName(),
             java.util.List.of(npcName), message, media.isEmpty() ? null : media);
         // ★괴담 정보 수집·성장★: NPC와의 소통은 수집도 '중간'. 지능·소통·고위력 괴담이면 GM에 역이용 지시 주입.
-        noteEntityIntel(2, senderPd.gmDisplayName(), message, "NPC 소통");
+        noteEntityIntel(2, senderPd.gmDisplayName(), message, "NPC 소통", !inPerson); // 대면(inPerson)=근처 소리 / 전화·서신=원거리
         // ★근처 목격★: 면전 대화·수신호·필담은 같은 구역의 다른 NPC도 보고/듣는다 → 그들도 반응(직접 대상 NPC는 제외).
         if (inPerson) {
             String act = "signal".equals(senderPd.declaredCommMethod) ? "수신호를 보냈다"
@@ -10178,13 +10178,19 @@ public class TRPGGameManager {
     /** (구형 2분류) written이면 문서형, 아니면 음성형. */
     private boolean entityInterferes(boolean written) { return entityInterferes(written ? "text" : "voice"); }
 
-    /** 괴담이 소통을 ★수집해 성장·대응★할 수 있는 타입인가 — 의사소통 가능·지능/정보형·고위력(큰 스케일). */
-    private boolean entityCollectsIntel() {
+    /** 괴담이 ★원거리·기기 통신(전화·무전·방송·전자·정신·은밀 채널)을 엿들을(감청)★ 수 있는 타입인가.
+     *  ★감청 축은 변조(entityInterferes)·지연(pendingDeliveries)과 완전히 별개다★ — 하나가 되면 나머지가 되는 게 아니다.
+     *  단일객체 물리형처럼 통신과 무관한 괴담은 false → 이런 괴담은 '가까이서 낸 소리(근처 발화·대면)'만 듣는다(범위=근처 한정).
+     *  ★스케일만으로는 절대 참이 되지 않는다★ — 대규모 물리 괴담(SCP-049 등)이 무전·전화를 엿듣던 오발을 차단하려 스케일 폴백을 제거했다.
+     *  실제로 통신을 감청하려면 자율지능·정체차용·(음성/전자/정신) 매체 간섭력·정보수집형 근거가 있어야 한다. */
+    private boolean entityTapsRemoteComms() {
         JsonObject g = state.getGdamData();
         if (g == null || !g.has("entity") || !g.get("entity").isJsonObject()) return false;
         JsonObject e = g.getAsJsonObject("entity");
-        if (e.has("independent_ai") && e.get("independent_ai").getAsBoolean()) return true; // 자율 사고 = 수집 가능
-        if (entityCanImpersonate()) return true;
+        if (e.has("independent_ai") && e.get("independent_ai").getAsBoolean()) return true; // 자율 사고 = 채널 인지·수집
+        if (entityCanImpersonate()) return true; // 정체 차용 = 통신을 흉내·수집
+        // 통신 매체를 실제로 가로채는(변조 가능한) 음성·전자·정신 계열이면 그 채널로 엿듣기도 성립(신호·시각형은 통신 감청과 별개라 제외).
+        if (entityTampersVoice() || entityTampersElectronic() || entityTampersPsychic()) return true;
         StringBuilder sb = new StringBuilder();
         if (e.has("type")) sb.append(e.get("type").getAsString()).append(' ');
         if (e.has("ai_context") && e.get("ai_context").isJsonObject()) {
@@ -10192,9 +10198,8 @@ public class TRPGGameManager {
             for (String k : new String[]{"personality","disposition","intelligence"}) if (a.has(k)) sb.append(a.get(k).getAsString()).append(' ');
         }
         String s = sb.toString();
-        for (String kw : new String[]{"지능","교활","영리","정보","학습","적응","지혜","간파","전략","엿듣","감청","수집"}) if (s.contains(kw)) return true;
-        String scale = g.has("scale") ? g.get("scale").getAsString() : "";
-        return scale.contains("내셔널") || scale.contains("글로벌") || scale.contains("행성") || scale.contains("국가") || scale.contains("세계");
+        for (String kw : new String[]{"지능","교활","영리","정보","학습","적응","지혜","간파","전략","엿듣","감청","도청","수집","전지","편재","광역"}) if (s.contains(kw)) return true;
+        return false; // ★스케일 단독 트리거 제거★ — 대규모여도 실제 통신·정보 근거 없으면 원거리 감청 불가(근처 소리는 아래 noteEntityIntel에서 별도 허용).
     }
 
     /**
@@ -10202,9 +10207,12 @@ public class TRPGGameManager {
      *  strength 1(약)·2(중)·3(강). 지능/소통/고위력 괴담만 실제로 활용(약한 괴담은 무시).
      *  약점을 말하면 그 약점을 ★숨기고★, 위치·계획을 말하면 그 지점을 ★선제 공격·방해★하게 한다. 수집이 쌓일수록 강해진다.
      */
-    private void noteEntityIntel(int strength, String who, String content, String via) {
+    private void noteEntityIntel(int strength, String who, String content, String via, boolean remoteChannel) {
         if (content == null || content.isBlank() || strength <= 0) return;
-        if (!entityCollectsIntel()) return; // 수집형(지능·소통·고위력) 괴담만
+        // ★감청 축(변조·지연과 독립)★: 원거리·기기 채널(전화·무전·방송·전자·은밀)은 그 채널을 엿들을 수 있는 괴담만 수집.
+        //   근거리 육성(근처 발화·대면)은 물리형 괴담도 '가까이서 낸 소리'로 들을 수 있어 범위=근처로 통과 —
+        //   실제로 반응할지는 GM이 '괴담이 근처에 있고 소리·인기척에 반응하는 성질'인지로 최종 판단한다(주입 문구도 조건부).
+        if (remoteChannel && !entityTapsRemoteComms()) return;
         String lvl = strength >= 3 ? "또렷이(즉시·정확히 역이용)" : strength == 2 ? "어느 정도(약간 지연·부분적으로)" : "희미하게(단편만 어렴풋이)";
         String c = content.length() > 100 ? content.substring(0, 100) + "…" : content;
         ai.injectGmSystem("[괴담 정보수집·" + via + "/강도" + strength + "] " + who + "의 소통을 괴담이 " + lvl + " 파악했다: \"" + c + "\". "
@@ -10403,7 +10411,7 @@ public class TRPGGameManager {
         sender.sendMessage("§7[" + commDisplayName(victim) + "의 응답을 기다리는 중...]");
         state.log("comm", commDisplayName(senderPd), "→ " + commDisplayName(victim) + "(?): " + message);
         // ★최강 정보 누설★: 상대가 실은 괴담(정체 차용)이다 — 발신자는 아군인 줄 알고 괴담에게 직접 다 말하는 셈. 수집도 최상.
-        noteEntityIntel(3, commDisplayName(senderPd), message, "정체 차용 상대와의 대화");
+        noteEntityIntel(3, commDisplayName(senderPd), message, "정체 차용 상대와의 대화", true); // 정체 차용 = 통신 흉내·수집(원거리)
 
         String sys   = buildImpersonationPrompt(victim);
         String input = commDisplayName(senderPd) + "이(가) '" + commDisplayName(victim) + "'에게 말한다: \"" + message + "\"\n"
@@ -10610,7 +10618,7 @@ public class TRPGGameManager {
             ai.injectGmSystem("[수신 불확실] " + commDisplayName(targetPd) + "은(는) " + media + "을(를) 받을 수단이 마땅치 않다 — 제대로 닿지 않았거나 뒤늦게 전해질 수 있음(정황에 반영).");
 
         // ★괴담 정보 수집·성장★: 원격 통신(강)·대면 직접(중). 지능/소통/고위력 괴담이면 GM에 역이용 지시.
-        noteEntityIntel(viaDevice ? 3 : 2, commDisplayName(senderPd), message, medium);
+        noteEntityIntel(viaDevice ? 3 : 2, commDisplayName(senderPd), message, medium, viaDevice); // 기기(viaDevice)=원거리 / 대면=근처 소리
     }
 
     /** 시나리오상 괴담이 플레이어 통신을 엿보는가 (constraints.comms_monitored, 기본 false). */
