@@ -134,6 +134,12 @@ public class ChatListener implements Listener {
             // 통신 기기 우클릭 → 소통수단 선언 순환(#177)
             event.setCancelled(true);
             Bukkit.getScheduler().runTask(plugin, () -> trpgManager.cycleCommMethod(player));
+        } else if (trpgManager.isTrpgItem(event.getItem())) {
+            // ★시나리오 소품(지도·사진·설계도·약품·라이터 등)은 바닐라 우클릭 동작 금지★:
+            //   빈 지도(MAP)가 우클릭 시 일반 지도로 변해 이름이 소실되거나, 물약을 마시거나,
+            //   부싯돌로 불을 붙이는 등 소품의 바닐라 기능이 발동되던 버그 방지. 소품 내용은
+            //   아이템 이름·설명(lore)으로 읽고, 실제 '사용'은 게임 행동(대사)·능력으로 처리한다.
+            event.setCancelled(true);
         }
     }
 
