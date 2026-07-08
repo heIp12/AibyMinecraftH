@@ -93,7 +93,7 @@ public class AiManager {
     // ★#231 진단 계측★ — accInTok(총 입력)을 3갈래로 분해(이번 가동만, 영구저장·UsageStat 불변).
     //   40% 초과의 정체(캐시쓰기 churn=TTL만료·단발게임 / 출력 길이 / 미캐시 호출)를 실플레이 1회로 드러낸다.
     private final LongAdder   accCacheRead  = new LongAdder(); // 캐시 읽기 입력 토큰(0.1× 단가)
-    private final LongAdder   accCacheWrite = new LongAdder(); // 캐시 생성 입력 토큰(1.25× 단가 = 읽기의 12.5배)
+    private final LongAdder   accCacheWrite = new LongAdder(); // 캐시 생성 입력 토큰(1h TTL=2× 단가 = 읽기 0.1×의 20배)
     private final DoubleAdder accCostOut    = new DoubleAdder(); // 출력 토큰 비용(USD) — 입력/출력 비중 분해용
     private volatile UsageStat sessionStart = new UsageStat(0, 0, 0, 0.0);
     private volatile UsageStat stageStart   = new UsageStat(0, 0, 0, 0.0);
@@ -431,7 +431,7 @@ public class AiManager {
     }
 
     /** ★#231 진단★ 이번 가동 비용 구성 분해 — 순수입력/캐시읽기/캐시쓰기/출력 + 비용 비중 + 캐시 히트율.
-     *  캐시히트 낮음 = 캐시쓰기(1.25×) churn(TTL만료·단발게임) / 출력 비중 높음 = 서술 과다. 실플레이 1회로 40% 초과 원인 규명. */
+     *  캐시히트 낮음 = 캐시쓰기(1h TTL=2×) churn(TTL만료·단발게임) / 출력 비중 높음 = 서술 과다. 실플레이 1회로 40% 초과 원인 규명. */
     public java.util.List<String> usageDiagLines() {
         java.util.List<String> out = new java.util.ArrayList<>();
         if (accCalls.sum() == 0) return out;
@@ -443,9 +443,9 @@ public class AiManager {
         int outPct = cTot > 0 ? (int) Math.round(cOut * 100.0 / cTot) : 0;
         out.add("§8 ");
         out.add("§6§lAI 비용 구성 §7(이번가동 · " + accCalls.sum() + "호출)");
-        out.add("§7입력  §f순수 " + fmtTok(fresh) + " §8│ §a캐시읽기 " + fmtTok(cr) + "§8(0.1×) §8│ §c캐시쓰기 " + fmtTok(cw) + "§8(1.25×)");
+        out.add("§7입력  §f순수 " + fmtTok(fresh) + " §8│ §a캐시읽기 " + fmtTok(cr) + "§8(0.1×) §8│ §c캐시쓰기 " + fmtTok(cw) + "§8(2×·1h TTL)");
         out.add("§7출력  §f" + fmtTok(ot) + " §8(5× 단가)  §8│ §7비중 §f입력 " + (100 - outPct) + "% §8/ §f출력 " + outPct + "%");
-        out.add("§7캐시  §f히트 " + hitPct + "% §8(낮을수록 재생성 1.25× churn=TTL만료·단발게임)");
+        out.add("§7캐시  §f히트 " + hitPct + "% §8(낮을수록 재생성 2× churn=TTL만료·단발게임)");
         return out;
     }
     private static String fmtTok(long t) {
@@ -485,10 +485,13 @@ public class AiManager {
                     }
                 }
             }
-            // 캐시 읽기 0.1×, 캐시 생성 1.25×(claude), 그 외 정가
+            // 캐시 읽기 0.1×(TTL 무관), 캐시 생성(쓰기) 단가: 5분 TTL=1.25× / ★1시간 TTL=2×★.
+            //   ★이 플러그인은 system·히스토리 프리픽스에 ttl="1h"를 쓴다(send() 1169·1190)★ → 모든 캐시 생성이 2×다.
+            //   예전엔 1.25×로 계산해 실비를 ~20% 과소 집계(실측 $56 vs 표시 ~$44)했다 → 2×로 정정.
+            //   (TTL을 5분으로 되돌리면 이 상수도 1.25로 되돌릴 것.)
             double cost = (in * price[0]
                          + cacheRead * price[0] * 0.1
-                         + cacheWrite * price[0] * 1.25
+                         + cacheWrite * price[0] * 2.0
                          + out * price[1]) / 1_000_000.0;
             accCalls.increment();
             accInTok.add(in + cacheRead + cacheWrite);
