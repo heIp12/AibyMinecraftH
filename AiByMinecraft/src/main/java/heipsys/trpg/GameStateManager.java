@@ -496,20 +496,47 @@ public class GameStateManager {
         }
         if (tl.has("end_time")) {
             int e = parseHhmm(tl.get("end_time").getAsString());
-            if (e >= 0 && clockStart >= 0 && e <= clockStart) e += 24 * 60; // 자정 넘김
+            if (e >= 0 && clockStart >= 0) {
+                // ★여러 날에 걸친 타임라인★: start_time·end_time에 날짜(YYYY-MM-DD)가 있으면 날짜 차이만큼 더해
+                //   clockEnd를 절대 분(자정 기준 누적)으로 잡는다. 날짜가 없고 종료가 시작보다 이르면 자정 넘김.
+                int dayOff = tl.has("start_time")
+                    ? dateDayOffset(tl.get("start_time").getAsString(), tl.get("end_time").getAsString()) : 0;
+                if (dayOff > 0)           e += dayOff * 1440;
+                else if (e <= clockStart) e += 24 * 60;
+            }
             clockEnd = e;
         }
     }
 
-    /** "HH:MM" → 자정 기준 분(0~1439). 실패 시 -1. */
+    /** 시각 문자열에서 ★HH:MM만 뽑아★ 자정 기준 분(0~1439)으로. "1947-07-04 08:00"·"08:00"·"08:00:00"·"…T14:30" 모두 허용.
+     *  (예전엔 split(":")으로 "1947-07-04 08"을 정수변환하려다 실패→ -1→ 시계 비활성→ 인게임시각 미기록·미표시 버그.) */
     private int parseHhmm(String s) {
         if (s == null) return -1;
         try {
-            String[] p = s.trim().split(":");
-            int h = Integer.parseInt(p[0].trim());
-            int m = p.length > 1 ? Integer.parseInt(p[1].trim()) : 0;
-            return ((h % 24) * 60 + m + 1440) % 1440;
-        } catch (Exception e) { return -1; }
+            java.util.regex.Matcher mt = java.util.regex.Pattern.compile("(\\d{1,2})\\s*:\\s*(\\d{2})").matcher(s);
+            if (mt.find()) {
+                int h = Integer.parseInt(mt.group(1)), m = Integer.parseInt(mt.group(2));
+                return ((h % 24) * 60 + m + 1440) % 1440;
+            }
+        } catch (Exception ignore) {}
+        return -1;
+    }
+
+    /** 두 시각 문자열의 'YYYY-MM-DD' 날짜 차이(일). 한쪽이라도 날짜가 없으면 0(같은 날 취급). */
+    private int dateDayOffset(String a, String b) {
+        try {
+            java.util.regex.Pattern p = java.util.regex.Pattern.compile("(\\d{4})-(\\d{1,2})-(\\d{1,2})");
+            java.util.regex.Matcher ma = p.matcher(a == null ? "" : a), mb = p.matcher(b == null ? "" : b);
+            if (ma.find() && mb.find()) {
+                java.time.LocalDate da = java.time.LocalDate.of(
+                    Integer.parseInt(ma.group(1)), Integer.parseInt(ma.group(2)), Integer.parseInt(ma.group(3)));
+                java.time.LocalDate db = java.time.LocalDate.of(
+                    Integer.parseInt(mb.group(1)), Integer.parseInt(mb.group(2)), Integer.parseInt(mb.group(3)));
+                long d = java.time.temporal.ChronoUnit.DAYS.between(da, db);
+                return (d > 0 && d < 3650) ? (int) d : 0;
+            }
+        } catch (Exception ignore) {}
+        return 0;
     }
 
     /** 매 턴(nextTurn) 호출: 공포 파트에서 시계 진행 + 도래 사건 발화 */
