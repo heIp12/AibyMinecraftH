@@ -899,7 +899,8 @@ public class AiManager {
             .replaceAll("<CLEAR>[\\s\\S]*?</CLEAR>", "")
             .replaceAll("<WITNESS[^>]*>[\\s\\S]*?</WITNESS>", "")
             .replaceAll("<NPC_CALL[^>]*>[\\s\\S]*?</NPC_CALL>", "")
-            .replaceAll("<NPC_LEARN[^>]*>[\\s\\S]*?</NPC_LEARN>", "")
+            .replaceAll("(?i)<NPC_LEARN[^>]*>[\\s\\S]*?</NPC_LEARN[^>]*>", "") // 여는·닫는 태그 모두 유연: <NPC_LEARNING>…</NPC_LEARNING>(-ING 변형)도 제거 — 닫는 태그가 literal </NPC_LEARN>이라 -ING이 안 잡혀 서술로 누출되던 버그
+            .replaceAll("(?i)<NPC_LEARN[^>]*>[\\s\\S]*$", "")                 // 닫는 태그 누락·잘림 대비(응답 말미 미완성 태그)
             .replaceAll("<TRUST[^>]*>[\\s\\S]*?</TRUST>", "")
             .replaceAll("<SPAWN[^/]*/?>", "")
             .replaceAll("<COMM [^/]*/?>", "")
