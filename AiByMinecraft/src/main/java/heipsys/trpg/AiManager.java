@@ -889,6 +889,8 @@ public class AiManager {
             .replaceAll("<STATE_UPDATE>[\\s\\S]*?</STATE_UPDATE>", "")
             .replaceAll("<ITEM_GRANT>[\\s\\S]*?</ITEM_GRANT>", "")
             .replaceAll("<ITEM_USE>[\\s\\S]*?</ITEM_USE>", "")
+            .replaceAll("(?i)<DROP_NOTE[^>]*>[\\s\\S]*?</DROP_NOTE>", "") // 쪽지 두고가기 태그(속성·여러 줄 내용) 서술 누출 차단 — parseDropNoteTags가 raw에서 이미 소비
+            .replaceAll("(?i)<DROP_NOTE[^>]*>[\\s\\S]*$", "")             // 닫는 태그 누락·잘림 대비
             .replaceAll("<DICE>[\\s\\S]*?</DICE>", "")
             .replaceAll("<BROADCAST>[\\s\\S]*?</BROADCAST>", "")
             .replaceAll("<CLEAR>[\\s\\S]*?</CLEAR>", "")
