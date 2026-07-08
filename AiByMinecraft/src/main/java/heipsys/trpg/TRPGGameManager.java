@@ -2490,11 +2490,20 @@ public class TRPGGameManager {
             // 3. ITEM_GRANT 파싱 및 처리 + heldItemIds 추적
             JsonObject itemGrant = ai.parseItemGrant(raw);
             if (itemGrant != null) {
+                // ★버그 수정★: GM은 player에 ★캐릭터명(charName)★을 넣는데(스키마 지시), processGrant/추적은
+                //   계정명(p.getName()/pd.name)으로 매칭 → 실지급·추적이 100% 실패해 '아이템을 받은 적 없음'.
+                //   charName·계정명·roleId 모두 매칭하는 findAnyByName으로 대상을 확정해 계정명으로 정규화한다.
+                String rawTo = itemGrant.has("player") && !itemGrant.get("player").isJsonNull()
+                    ? itemGrant.get("player").getAsString() : null;
+                if (rawTo != null && !"ALL".equalsIgnoreCase(rawTo.trim())) {
+                    PlayerData tgt = findAnyByName(rawTo);
+                    if (tgt != null) itemGrant.addProperty("player", tgt.name); // 계정명으로 정규화 → processGrant·추적 매칭 성공
+                }
                 itemMan.processGrant(itemGrant, new ArrayList<>(Bukkit.getOnlinePlayers()));
                 String grantedItem = itemGrant.has("item_id") ? itemGrant.get("item_id").getAsString() : null;
-                String grantedTo   = itemGrant.has("player")  ? itemGrant.get("player").getAsString()  : null;
+                String grantedTo   = itemGrant.has("player")  ? itemGrant.get("player").getAsString()  : null; // 정규화된 계정명 또는 ALL
                 if (grantedItem != null && grantedTo != null) {
-                    if ("ALL".equals(grantedTo)) {
+                    if ("ALL".equalsIgnoreCase(grantedTo.trim())) {
                         state.getAllPlayers().forEach(pd -> noteHeldItem(pd, grantedItem));
                     } else {
                         final String itemRef = grantedItem;
