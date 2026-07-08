@@ -7449,6 +7449,45 @@ public class TRPGGameManager {
         return "노년 — 옛 세대 어휘·관용구·속담이 배어 나오고('~구먼','~라네','자네','아이고') 젊은이를 손주·자식 대하듯. 신조어엔 서툴다(사투리 설정이 있으면 살려도 좋다).";
     }
 
+    // ══ NPC 말투 계층(관리 편의로 메서드 분리) ══════════════════════════════════
+    //  npcCorePrompt가 우선순위대로 ①/②/③ 중 하나를 호출하고, ④(나이별)는 항상 얹는다.
+    //  각 층을 여기서 독립적으로 손볼 수 있다(다른 층·CORE에 영향 없음).
+
+    /** 말투 ① 특수 어미 습관 — ending_style이 있으면 pass1(미니 모델)은 기본 말씨로만 두고, 개성 말끝(어미)은 후처리 restyleDialogue(pass2)가 렌더한다. */
+    private void npcEndingHabitBlock(StringBuilder sb) {
+        sb.append("- 말투: 지금은 ★평범한 기본 말씨★로 자연스럽게 말하라 — 문장 끝 어미를 특별히 꾸미거나 고정 어미를 지어 붙이지 마라(너 특유의 말끝은 나중에 따로 입혀지니 신경 쓰지 마라). 쉬운 일상어로 핵심 위주 간결하게, 언어 수준은 끝까지 일관되게.\n");
+        sb.append("- ★직무·전문성은 '무엇을 아는지(대답 내용)'에만 반영하라 — 문장 첫머리를 보고서처럼 시작하지 마라.★ 사적인 대화·통화에선 상대의 반응·감정·용건이 먼저다(너는 직함이 아니라 사람이다).\n");
+    }
+
+    /** 말투 ② 개인별 말투 — speech_style(몸에 밴 말씨 한 문장). 어미 버릇=거의 매 문장, 접두어·필러 버릇=아주 드물게. */
+    private void npcPersonalSpeechBlock(StringBuilder sb, String speechStyle) {
+        sb.append("- 말투: ").append(speechStyle)
+          .append(" — 몸에 밴 기본 말씨다. 존댓말/반말은 아래 나이·관계 규칙이 정하고, 이 버릇은 그 결정 위에 얹는다. 이 말씨·언어 수준을 끝까지 일관되게.\n");
+        sb.append("- 말버릇은 네가 ★하는 말★(대사·통화·<NPC_CALL> 안의 말 — 글에선 옅게)에만 쓴다. 괄호 지문·3인칭 서술과 <THOUGHT>·<NPC_LEARN> 안은 평범한 문체로.\n");
+        sb.append("- 버릇은 위 말투에 적힌 ★한 가지뿐★ — 새 버릇을 지어 보태지 마라. ★어미 버릇★(문장 끝 고정 어미)이면 거의 매 문장 일관되게(그게 이 인물의 개성이다). ★접두어·필러 버릇★('뭐랄까'·'그러니까' 류)이면 ★아주 드물게★ — 매 응답마다 넣지 마라(넣는 게 기본이 아니다). 서너 응답에 한 번쯤, 한 응답엔 많아야 한 번, 연속 두 문장 금지.\n");
+        sb.append("- 버릇이 어미 버릇이 아니면 문장 끝은 평범한 존댓말/반말 그대로 두어라 — 어미를 억지로 바꾸거나 새 어미를 만들지 마라.\n");
+        sb.append("- ★직무·전문성은 '무엇을 아는지(대답 내용)'에만 반영하라 — 문장 첫머리를 보고서처럼 시작하지 마라.★ 사적인 대화·통화에선 일 얘기보다 상대의 반응·감정·용건이 먼저다(너는 직함이 아니라 사람이다).\n");
+    }
+
+    /** 말투 ③ 유창도 폴백 — speech_style·ending_style 없는 NPC(구 .gdam·일반)용 주사위(intel 1~5) 유창도. */
+    private void npcFluencyBlock(StringBuilder sb, int intel) {
+        String speech = switch (intel) {
+            case 1  -> "말솜씨가 서툴다 — 쉽고 짧은 말, 어려운 말은 모르지만 감정·진심은 솔직히(기계처럼 토막 내지 말 것).";
+            case 2  -> "말이 소박하다 — 쉬운 일상어 위주 짧은 문장, 따뜻하고 자연스럽게.";
+            case 3  -> "평범하게 말한다 — 보통 사람의 일상 회화 수준.";
+            case 4  -> "또렷하게 말한다 — 조리 있고 어휘가 제법 풍부(현학·잘난 척 금지).";
+            default -> "매우 유창하다 — 논리적·표현 풍부(전문어 남발 금지).";
+        };
+        sb.append("- 말투·언어 수준: ").append(speech).append(" 이 수준을 처음부터 끝까지 유지하라(대화 중 언어 수준을 갑자기 올리거나 내리지 마라).\n");
+    }
+
+    /** 말투 ④ 나이별 말투 — 존댓말/반말(나이·관계) + 세대 어휘·톤(ageRegisterHint). 개성 말씨(①②)는 이 세대 결 위에 얹힌다. 항상 적용. */
+    private void npcAgeSpeechBlock(StringBuilder sb, int npcAge) {
+        sb.append("- 너의 나이: ").append(npcAge >= 0 ? npcAge + "세" : "불명")
+          .append(" — 존댓말/반말은 한국어 통념대로: 손위·초면엔 존댓말(또는 거리 둔 말투), 손아래·또래·가까운 사이엔 반말. 상대의 나이·관계가 입력 머리말에 표기돼 있으면 그에 맞추고, 없으면(자율 행동 등 상대 미지정) 장면·관계 데이터로 판단하라. 한 대사 안에서 존댓말↔반말이 오락가락하지 않게 끝까지 일관.\n");
+        if (npcAge >= 0) sb.append("- ★나이대 말투·어휘★: ").append(ageRegisterHint(npcAge)).append("\n");
+    }
+
     /** 인물형 AI(NPC·동료·적) 공유 CORE — 정체성·응답 순서(reaction-first)·사람다움·말투. 최대한 작게·재사용 가능하게. */
     private String npcCorePrompt(JsonObject npcObj) {
         String name = npcObj.has("name") ? npcObj.get("name").getAsString() : "NPC";
@@ -7475,35 +7514,15 @@ public class TRPGGameManager {
         int intel = npcId0.isEmpty() ? 3 : npcIntel.computeIfAbsent(npcId0, k -> ThreadLocalRandom.current().nextInt(1, 6));
         int npcAge = npcObj.has("age") && !npcObj.get("age").isJsonNull() ? npcObj.get("age").getAsInt() : -1;
         if (npcAge >= 0 && npcAge < 13) intel = Math.min(intel, 2); // 어린이는 쉬운 말만
-        // ★speech_style(설계 채택: Fable5 검토)★: 생성 시 확정된 서술형 말씨 한 문장이 있으면 주사위 유창도 문장을 ★대체★(병기 금지).
-        //   없으면(구 .gdam·일반 NPC) 기존 주사위 문장으로 폴백 — 하위호환·내구성.
+        // ── 말투 계층(관리 편의로 메서드 분리; 정의는 ageRegisterHint 아래) ──
+        //   ①어미습관(ending_style) / ②개인말투(speech_style) / ③유창도 폴백(intel) — 셋 중 하나(우선순위대로) + ④나이별(항상).
+        //   speech_style·ending_style 없는 구 .gdam·일반 NPC는 ③으로 폴백(하위호환).
         String endingStyle = getStr(npcObj, "ending_style");
         String speechStyle = getStr(npcObj, "speech_style");
-        if (!endingStyle.isBlank()) {
-            // ★말투 2-pass★: 이 NPC의 개성 말끝(어미)은 출력 후처리(restyleDialogue)가 따로 렌더한다 → pass1은 어미를 꾸미지 말고 자연스러운 기본 말씨로만.
-            sb.append("- 말투: 지금은 ★평범한 기본 말씨★로 자연스럽게 말하라 — 문장 끝 어미를 특별히 꾸미거나 고정 어미를 지어 붙이지 마라(너 특유의 말끝은 나중에 따로 입혀지니 신경 쓰지 마라). 쉬운 일상어로 핵심 위주 간결하게, 언어 수준은 끝까지 일관되게.\n");
-            sb.append("- ★직무·전문성은 '무엇을 아는지(대답 내용)'에만 반영하라 — 문장 첫머리를 보고서처럼 시작하지 마라.★ 사적인 대화·통화에선 상대의 반응·감정·용건이 먼저다(너는 직함이 아니라 사람이다).\n");
-        } else if (!speechStyle.isBlank()) {
-            sb.append("- 말투: ").append(speechStyle)
-              .append(" — 몸에 밴 기본 말씨다. 존댓말/반말은 아래 나이·관계 규칙이 정하고, 이 버릇은 그 결정 위에 얹는다. 이 말씨·언어 수준을 끝까지 일관되게.\n");
-            sb.append("- 말버릇은 네가 ★하는 말★(대사·통화·<NPC_CALL> 안의 말 — 글에선 옅게)에만 쓴다. 괄호 지문·3인칭 서술과 <THOUGHT>·<NPC_LEARN> 안은 평범한 문체로.\n");
-            sb.append("- 버릇은 위 말투에 적힌 ★한 가지뿐★ — 새 버릇을 지어 보태지 마라. ★어미 버릇★(문장 끝 고정 어미)이면 거의 매 문장 일관되게(그게 이 인물의 개성이다). ★접두어·필러 버릇★('뭐랄까'·'그러니까' 류)이면 ★아주 드물게★ — 매 응답마다 넣지 마라(넣는 게 기본이 아니다). 서너 응답에 한 번쯤, 한 응답엔 많아야 한 번, 연속 두 문장 금지.\n");
-            sb.append("- 버릇이 어미 버릇이 아니면 문장 끝은 평범한 존댓말/반말 그대로 두어라 — 어미를 억지로 바꾸거나 새 어미를 만들지 마라.\n");
-            sb.append("- ★직무·전문성은 '무엇을 아는지(대답 내용)'에만 반영하라 — 문장 첫머리를 보고서처럼 시작하지 마라.★ 사적인 대화·통화에선 일 얘기보다 상대의 반응·감정·용건이 먼저다(너는 직함이 아니라 사람이다).\n");
-        } else {
-            String speech = switch (intel) {
-                case 1  -> "말솜씨가 서툴다 — 쉽고 짧은 말, 어려운 말은 모르지만 감정·진심은 솔직히(기계처럼 토막 내지 말 것).";
-                case 2  -> "말이 소박하다 — 쉬운 일상어 위주 짧은 문장, 따뜻하고 자연스럽게.";
-                case 3  -> "평범하게 말한다 — 보통 사람의 일상 회화 수준.";
-                case 4  -> "또렷하게 말한다 — 조리 있고 어휘가 제법 풍부(현학·잘난 척 금지).";
-                default -> "매우 유창하다 — 논리적·표현 풍부(전문어 남발 금지).";
-            };
-            sb.append("- 말투·언어 수준: ").append(speech).append(" 이 수준을 처음부터 끝까지 유지하라(대화 중 언어 수준을 갑자기 올리거나 내리지 마라).\n");
-        }
-        sb.append("- 너의 나이: ").append(npcAge >= 0 ? npcAge + "세" : "불명")
-          .append(" — 존댓말/반말은 한국어 통념대로: 손위·초면엔 존댓말(또는 거리 둔 말투), 손아래·또래·가까운 사이엔 반말. 상대의 나이·관계가 입력 머리말에 표기돼 있으면 그에 맞추고, 없으면(자율 행동 등 상대 미지정) 장면·관계 데이터로 판단하라. 한 대사 안에서 존댓말↔반말이 오락가락하지 않게 끝까지 일관.\n");
-        // ★나이대에 맞는 말투·어휘(세대별 결)★ — 존댓말 수준(위)과 별개로, 세대에 밴 어휘·톤을 입힌다. 위 개성 말씨(speech_style)는 이 세대 결 ★위에★ 얹되 세대 어휘·톤은 유지.
-        if (npcAge >= 0) sb.append("- ★나이대 말투·어휘★: ").append(ageRegisterHint(npcAge)).append("\n");
+        if (!endingStyle.isBlank())      npcEndingHabitBlock(sb);                 // ① 특수 어미 습관 → pass2 렌더
+        else if (!speechStyle.isBlank()) npcPersonalSpeechBlock(sb, speechStyle); // ② 개인별 말투(speech_style)
+        else                             npcFluencyBlock(sb, intel);             // ③ 유창도(주사위) 폴백
+        npcAgeSpeechBlock(sb, npcAge);                                            // ④ 나이별 말투·어휘(항상)
         // ── 보편 규칙(양 모드 공통) ──
         sb.append("- 마크다운·메타 해설 금지(순수 대사·서술만). ★단 이 응답에서 쓰라고 따로 지시된 태그만 예외★ — 지시 없는 태그를 스스로 만들어 쓰지 마라.\n");
         sb.append("- ★일관성★: 지금까지 나눈 대화(부탁·약속·합의·경고·알려준 정보 등)를 기억하고 다음 태도에 반영하라 — 방금 한 말을 잊은 듯 모순되게 굴지 마라.\n");
