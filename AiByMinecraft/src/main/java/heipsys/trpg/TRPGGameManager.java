@@ -6228,14 +6228,19 @@ public class TRPGGameManager {
         for (PlayerData pd : state.getAllPlayers()) {
             if (pd == null) continue;
             ensurePlayerIdentity(pd);
-            list.append("- ").append(pd.age).append("세 ").append(pd.gender).append("\n");
+            // ★baseAge(초기 굴림 앵커) 사용★ — 이 힌트는 사전생성(현재 스테이지 진행 중) 시점에 만들어지는데,
+            //   다음 스테이지는 clearRoleData→resetToBase로 ★baseAge로 복귀★한다. 현재 배역에 클램프된 pd.age가
+            //   아니라 baseAge로 배역을 생성해야 다음 스테이지 실제 나이와 정합한다.
+            int anchorAge = (pd.baseAge > 0) ? pd.baseAge : pd.age;
+            list.append("- ").append(anchorAge).append("세 ").append(pd.gender).append("\n");
             n++;
         }
         if (n == 0) return "";
         return "## ★플레이어 나이·성별 앵커 — roles(배역)를 아래에 맞춰 생성\n" + list
             + "★기본★: 각 플레이어에 대응하는 배역의 age_range를 그 나이 ★±5(최소 8, 최대 80)★로 하고 gender를 ★일치★시켜라(각 1명씩, 위 " + n + "명). 기본은 이 나이에서 크게 벗어나지 마라.\n"
+            + "★이 앵커는 위 일반 원칙(‘성인 25살 폭 권장’·‘gender는 배역 이미지에 맞게’)보다 우선한다★ — 대응 배역 " + n + "개는 폭을 넓히지 말고 그 플레이어 나이를 ★반드시 포함하는★ 좁은 age_range(±5)로 잡고, gender도 배역 이미지가 아니라 ★플레이어에 맞춰라★. 어린 플레이어를 성인 폭에 넣어 올려버리지 마라.\n"
             + "★예외(상황 우선)★: 시나리오 배경이 특정 연령대를 ★요구★하면(예: 학교 시험·수학여행→학생, 유치원→아동, 군부대→성인 병사, 요양원→노인) 그 설정을 ★우선★해 배역 age_range를 상황 연령대로 잡아라 — 이 경우 위 앵커 나이는 접고 상황에 맞춰 나이가 바뀐다(단 ★gender는 그대로 유지★). 이런 강제 상황이 아니면 항상 위 앵커를 따르라.\n"
-            + "그 외 배역·NPC 나이·성별은 자유. 초자연·특수 배역도 나이 예외 가능.";
+            + "그 외(앵커 대상이 아닌) 배역·NPC 나이·성별은 자유. 초자연·특수 배역도 나이 예외 가능.";
     }
 
     /** 해당 룸이 피날레면 복귀 캐스트, 아니면 나이·성별 앵커를 ★자기완결 블록★으로 돌려준다(생성 시드용). */
