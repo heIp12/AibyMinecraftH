@@ -957,6 +957,11 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
     private final java.util.List<String> nameHistory =
         java.util.Collections.synchronizedList(new java.util.ArrayList<>());
 
+    /** /trpg setting 인지도풀 고정 — ""/"stage"(난이도별 기본) · "major"/"semi"/"minor"(그 티어만 강편향). */
+    private volatile String famePool = "";
+    public void setFamePool(String p) { this.famePool = p == null ? "" : p.trim(); }
+    public String getFamePool() { return famePool; }
+
     public GdamGenerator(Plugin plugin, AiManager aiManager) {
         this.aiManager = aiManager;
         this.logger    = plugin.getLogger();
@@ -1206,7 +1211,7 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
             String b = variantBase(e.name());
             if (!b.isBlank() && keys.contains(b)) avoidNames.add(e.name());
         }
-        java.util.List<GdamCatalog.Entry> cands = GdamCatalog.pick(src, stage, avoidNames, 8);
+        java.util.List<GdamCatalog.Entry> cands = GdamCatalog.pick(src, stage, avoidNames, 8, famePool);
         if (cands.isEmpty()) return "";
         StringBuilder cb = new StringBuilder("★후보 (이 스테이지 인지도·규모 가중 + 최근 등장 제외) — 되도록 이 중에서 골라라:\n");
         for (GdamCatalog.Entry e : cands) cb.append("· ").append(e.name()).append(" — ").append(e.desc()).append("\n");

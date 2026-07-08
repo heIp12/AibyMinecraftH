@@ -1228,7 +1228,7 @@ public class TRPGGameManager {
 
     /** 현재 시작 설정 — 다이얼로그로 열어 자동생성·시작 스테이지·괴담 유형을 클릭으로 고른다(/trpg setting, /trpg s s). */
     public void openStartSettings(Player player) {
-        dialogMan.showStartSettings(player, autoPregen, startStage, conceptTypeHint,
+        dialogMan.showStartSettings(player, autoPregen, startStage, conceptTypeHint, gdamGen.getFamePool(),
             () -> { // 자동 사전생성 토글
                 autoPregen = !autoPregen;
                 player.sendMessage("§6[설정] 자동 사전생성: " + (autoPregen ? "§a켜짐" : "§c꺼짐 §7(/trpg next에서 즉석 생성)"));
@@ -1246,6 +1246,13 @@ public class TRPGGameManager {
                 gdamGen.setConceptTypeHint(conceptTypeHint);
                 player.sendMessage("§6[설정] 괴담 유형/성격: "
                     + (conceptTypeHint.isEmpty() ? "§7무작위(기본)" : "§d" + conceptTypeHint) + " §7— 다음 생성부터 적용");
+                openStartSettings(player);
+            }),
+            () -> dialogMan.showFamePoolChoice(player, gdamGen.getFamePool(), fp -> { // 인지도 풀 선택
+                gdamGen.setFamePool(fp);
+                String lbl = switch (fp == null ? "" : fp) {
+                    case "major" -> "유명한 것만"; case "semi" -> "덜 유명한 것만"; case "minor" -> "마이너한 것만"; default -> "난이도별(기본)"; };
+                player.sendMessage("§6[설정] 인지도 풀: §e" + lbl + " §7— 다음 생성부터 적용");
                 openStartSettings(player);
             }));
     }
