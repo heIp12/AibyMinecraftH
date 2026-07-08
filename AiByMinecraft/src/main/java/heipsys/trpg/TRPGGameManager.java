@@ -132,6 +132,21 @@ public class TRPGGameManager {
     private String actionPace = "normal";
     /** 완급 배수: slow=0.5(행동이 절반의 시간만 소모) / fast=1.6 / normal=1.0. durEff에 곱해 시계·busy 진행에 반영. */
     private double paceMult() { return "slow".equals(actionPace) ? 0.5 : "fast".equals(actionPace) ? 1.6 : 1.0; }
+    /** ★slow 자동 해제(무한 slow·턴 드래그 방지)★: slow는 이 턴 수만 유지 후 normal 복귀. 전투 재발·GM PACE가 갱신·연장한다. */
+    private static final int PACE_SLOW_TURNS = 3;
+    private int paceSlowUntilTurn = -1; // slow가 자동 해제될 턴. -1=slow 아님/시한 없음
+    /** 완급을 slow로 두고 자동 해제 시한을 갱신(전투 지속·재발 시 연장). */
+    private void markPaceSlow(String why) {
+        if (!"slow".equals(actionPace)) { actionPace = "slow"; gameLogger.logEvent("[완급] " + why + " → slow"); }
+        paceSlowUntilTurn = state.getCurrentTurn() + PACE_SLOW_TURNS;
+    }
+    /** slow가 시한을 넘겼으면 normal로 자동 복귀 — 전투가 끝났는데도 slow가 무한 유지돼 턴이 끌리던 버그 방지. 매 턴 진행부에서 호출. */
+    private void expireStalePace() {
+        if ("slow".equals(actionPace) && paceSlowUntilTurn >= 0 && state.getCurrentTurn() >= paceSlowUntilTurn) {
+            actionPace = "normal"; paceSlowUntilTurn = -1;
+            gameLogger.logEvent("[완급] slow 지속 " + PACE_SLOW_TURNS + "턴 경과 → normal 자동 복귀");
+        }
+    }
     /** ★사소한 행동 시간 과소모 방지★ 가변/비동기 모드에서 GM이 <DUR>을 누락한 행동의 기본 소요(분).
      *  예전엔 고정턴 분(minutesPerTurn 15~20)을 통째로 흘려 사소한 행동에도 20분씩 소모됐다 →
      *  DUR 누락은 '짧은 미상 행동'으로 보고 작은 값만 흘린다(minutesPerTurn가 더 작으면 그쪽을 따른다). */
@@ -483,7 +498,7 @@ public class TRPGGameManager {
     private void reactToFiredCombat() {
         if (!state.consumeCombatEventFired()) return;
         summonAllFree("전투 발생");                        // turnMode<2·이미 자유면 내부에서 no-op
-        if (!"slow".equals(actionPace)) { actionPace = "slow"; gameLogger.logEvent("[완급] 전투 발생 → slow(자동)"); }
+        markPaceSlow("전투 발생(자동)"); // slow + 자동 해제 시한 갱신(전투 지속 시 매 발생마다 연장)
     }
 
     /** 사건 발화로 자동 상승한 위협도를 뷰어 이벤트 로그에 기록한다(GameStateManager는 로거가 없어 여기서 흘림).
@@ -592,6 +607,7 @@ public class TRPGGameManager {
                 if (state.getTurnMode() >= 1) state.advanceActionClock(state.getMinutesPerTurn()); // #151: DUR 모드 명시 진행(기본 한 걸음)
                 tickFaintCounters();
                 reactToFiredCombat();                // ★A3/A4★ 유휴 스킵 중 전투 사건이 터졌으면 전원 소집 + 완급 slow
+                expireStalePace();                   // 전투 끝났으면 slow 자동 해제(무한 slow·턴 드래그 방지)
                 flushEventGaugeLog();                // 사건 발화 위협도 상승을 뷰어 로그에 표시
                 updateAllScoreboards();
                 String narrative = ai.stripTags(raw);
@@ -2081,7 +2097,7 @@ public class TRPGGameManager {
         loadForbiddenWord(); // 금지워드형 괴담의 금지어 로드(entity.forbidden_word)
         lastPlayerActionMs = System.currentTimeMillis(); lastIdleAccelMs = 0L; // 무행동 가속 기준점 초기화
         actedSinceProgress.clear(); // ★#163★ 새 스테이지 — 라운드 행동 집계 초기화
-        actionPace = "normal";      // ★#151 완급★ 새 스테이지 — 페이스 기본값 복귀
+        actionPace = "normal"; paceSlowUntilTurn = -1; // ★#151 완급★ 새 스테이지 — 페이스 기본값 복귀
         lastAutoSaveTurn = -1; // 새 스테이지 시작 — 첫 턴부터 다시 저장되도록
         autoSave();            // 스테이지 시작 시점 즉시 1회 저장(첫 행동 전 중단돼도 이어하기 가능)
     }
@@ -2708,6 +2724,8 @@ public class TRPGGameManager {
             if (pc != null && (pc.equals("slow") || pc.equals("normal") || pc.equals("fast"))) {
                 if (!pc.equals(actionPace)) gameLogger.logEvent("[완급] 페이스 " + actionPace + " → " + pc);
                 actionPace = pc;
+                if (pc.equals("slow")) paceSlowUntilTurn = state.getCurrentTurn() + PACE_SLOW_TURNS; // GM이 slow로 둬도 시한 부여(무한 slow 방지)
+                else paceSlowUntilTurn = -1; // normal/fast로 바꾸면 시한 해제
             }
             ai.parseEventBlockTags(raw).forEach(state::blockEvent);
             ai.parseEventTriggerTags(raw).forEach(state::triggerEvent);
@@ -2817,6 +2835,7 @@ public class TRPGGameManager {
             // ★지연 전달★: 전서구·인편으로 부친 편지가 도착 턴이 됐으면 전달(전달 중 변조 가능).
             processPendingDeliveries();
             decayCommFatigue(); // #249: 매턴 통신수단 신뢰도 회복(변조·감청 뜸하면) — 남용 자기제한의 회복 축
+            expireStalePace();  // 전투 끝났으면 slow 자동 해제(무한 slow·턴 드래그 방지)
 
             // 12. 스테이지 기반 자동 등장 체크 (STATE_UPDATE 외부에서 stage 이미 변경된 경우 보정)
             checkAndAutoSpawn();
