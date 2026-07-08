@@ -1174,9 +1174,11 @@ function scenarioExtraHtml(){
         +(S(c.content)?`<br>${esc(c.content)}`:"")+`</div>`;}
     h+=`</div>`;
   }
-  if(Array.isArray(SCENARIO.key_items)&&SCENARIO.key_items.length){
-    const ent=[];
-    for(const it of SCENARIO.key_items){
+  // ★핵심 아이템을 함정 / 일반 / 게임 중 생성됨 3개로 분류(보기 쉽게 모음)★
+  {
+    const keyItems=Array.isArray(SCENARIO.key_items)?SCENARIO.key_items:[];
+    // 아이템 카드 1개(핵심 아이템 공통) — GM 스포일러 세부(단서가치·내막·내용)는 .spoiler로 감싼다.
+    const itemCard=(it)=>{
       let c=`<div class="card"><b>${esc(it.name||it.id||"?")}</b> <span class="dim2">${esc(S(it.item_type||it.type))}</span>`
         +(S(it.description)?`<br>${esc(it.description)}`:"")
         +(S(it.location)?`<br><span class="st">위치</span>${esc(it.location)}`:"");
@@ -1185,10 +1187,39 @@ function scenarioExtraHtml(){
       if(S(it.lore_info))  sp.push(`<span class="st">내막</span>${esc(it.lore_info)}`);
       if(Array.isArray(it.content)&&it.content.length) sp.push(`<span class="st">내용</span>${J(it.content)}`);
       if(sp.length)c+=`<div class="spoiler" style="margin-top:5px">${sp.join("<br>")}</div>`;
-      c+=`</div>`;
-      ent.push({name:it.name||it.id||"?",html:c});
+      return c+`</div>`;
+    };
+    // 함정 판별: 전용 스키마 필드는 없다(함정은 원래 clues·world_rules의 '행동'이라 key_items엔 드묾) →
+    //   전용 플래그가 있으면 우선, 없으면 스포일러 텍스트의 '이 아이템 자체가 해가 됨' 신호로 추정(보수적).
+    const isTrap=(it)=>{
+      if(it.trap===true||it.is_trap===true||it.role==="trap"||it.category==="trap")return true;
+      const hay=[it.name,it.description,it.lore_info,it.clue_value].map(S).join(" ");
+      if(/함정.{0,8}(위치|알려|경고|표시|피하|안전|우회)|안전.{0,4}(경로|길)/.test(hay))return false; // '함정 위치를 알려주는' 유익한 아이템은 제외
+      return /함정|부비트랩|덫|미끼|저주받|저주가\s*걸|역효과|건드리면|만지면|손대면|열면\s*안|섣불리\s*(쓰|사용|건드)|사용하면\s*(오히려|괴담|위험|폭발|강화)|치명적인?\s*(함정|장치|물건)/.test(hay);
+    };
+    const traps=[], normals=[];
+    for(const it of keyItems) (isTrap(it)?traps:normals).push(it);
+    // 게임 중 생성/획득(시나리오 사전정의 밖) — 이벤트 스트림에서 수집(시작 소지·사전정의 핵심 아이템 제외).
+    const normNm=s=>String(s||"").replace(/^→\S+\s*/,"").replace(/\s+\([^)]*\)\s*$/,"").trim();
+    const keyNameSet=new Set(keyItems.map(it=>normNm(it.name||it.id)).filter(Boolean));
+    const runtime=new Map(); // 표시명 → 부가(note: 제작 등)
+    for(const e of EVENTS){
+      if(e.kind!=="item"||e.remove)continue;
+      const nm=normNm(e.item||e.text); if(!nm)continue;
+      const nt=e.note||"";
+      if(nt==="시작 소지")continue;      // 시작 소지품은 '생성'이 아님
+      if(keyNameSet.has(nm))continue;    // 사전정의 핵심 아이템은 함정/일반에서 표시
+      if(!runtime.has(nm))runtime.set(nm,nt);
     }
-    h+=sh('items','핵심 아이템')+chipList('items',ent);
+    const bucket=(id,label,arr)=>{ if(!arr.length)return "";
+      return sh(id,`${label} (${arr.length})`)+chipList(id,arr.map(it=>({name:it.name||it.id||"?",html:itemCard(it)})));
+    };
+    h+=bucket('items-trap','⚠️ 함정 아이템',traps);
+    h+=bucket('items',(traps.length?'🗝️ 일반 아이템':'🗝️ 핵심 아이템'),normals);
+    if(runtime.size){
+      const ent=[...runtime].map(([nm,nt])=>({name:nm,html:`<div class="card"><b>${esc(nm)}</b>${nt?` <span class="dim2">${esc(nt)}</span>`:""}</div>`}));
+      h+=sh('items-live','✨ 게임 중 생성됨')+chipList('items-live',ent);
+    }
   }
   const cons=SCENARIO.constraints;
   if(cons&&typeof cons==="object"){
