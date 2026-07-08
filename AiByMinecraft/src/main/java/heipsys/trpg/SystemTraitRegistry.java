@@ -196,7 +196,7 @@ public class SystemTraitRegistry {
         sb.append("★ 대가 명시 규칙: 사용에 대가(체력·정신력 소모, 행동 제약, 통제 상실, 위험 등)가 있으면, 정확한 수치는 effect_params(cost_san/cost_hp 등)에 넣어라 — 시스템이 description 끝에 '▸대가: …'로 자동 표기한다. description 본문에는 ★숫자를 다시 적지 말고★ 대가의 '성격'만 자연스럽게 녹여라(예: 본문 '불쾌한 이미지를 밀어낸다' + cost_san:1 → 시스템이 '▸대가: 사용 시 정신력 1 소모' 자동 추가). 본문에 '(정신 소모 1)'처럼 숫자를 또 쓰면 중복 표기된다.\n");
         sb.append("★★ 소모 수치화 필수: 효과에 '정신/체력 소모'가 있으면 ★반드시★ effect_params의 cost_san(정신력)/cost_hp(체력)에 ★구체 수치★를 넣어라(말로만 쓰면 실제로 깎이지도, 정확히 표시되지도 않는다).\n");
         sb.append("  · ★sacrifice 효과는 예외★ — 자원 소모를 고유 파라미터 cost/use_san으로 표현하므로 cost_san/cost_hp를 ★중복으로 달지 마라★(이중 차감·이중 표기됨). sacrifice가 아닌 능동 효과에만 cost_san/cost_hp를 붙여라.\n");
-        sb.append("  · ★소모량 보정★: 능력치 평균은 5, 정신/체력 풀은 100이고 능력은 자주 쓰인다 — ★과하게 책정하지 마라★. 사소한 효과=1~3, 보통=4~8, 무거운 대가=10~20(고등급·강효과 한정). (예: '불쾌한 이미지를 떨쳐낸다'→cost_san:1 / '정신을 크게 깎는 의식'→cost_san:12) 같은 자원을 두 번(고유 cost와 cost_san) 적지 마라.\n");
+        sb.append("  · ★★소모량 보정(스탯 스케일 필수 준수)★★: ★체력·정신력도 1~20 스케일이고 평균은 5★(튼튼해야 ~12, 극단 20)다 — ‘풀 100’이 절대 아니다. cost_hp/cost_san이 최대치를 넘으면(예: 10) 낼 수조차 없어 능력이 무의미해진다. 사소한 효과=1, 보통=1~2, ★무거운 대가라도 3~5(고등급 한정)★. ★cost_hp·cost_san은 절대 5를 넘기지 마라★. (예: '불쾌한 이미지를 떨쳐낸다'→cost_san:1 / '피를 대가로 힘을 얻는다'→cost_hp:3 / '정신을 크게 깎는 의식'→cost_san:5) 같은 자원을 두 번(고유 cost와 cost_san) 적지 마라.\n");
         sb.append("★ 강한 발동형 능력엔 '실제로 강제되는 대가'를 effect_params로 붙일 수 있다(권장): cost_stun=사용 후 N턴 행동불능(0~3) · cost_threat=1이면 그 대가로 괴담/위협이 한 단계 진행. 시스템이 이 대가를 실제로 적용하고 GM에게 명시해 판정에 반영시킨다(예: 강력한 발동형 S/A급에 cost_stun=1 또는 cost_threat=1).\n");
         sb.append("★ 쿨다운·횟수 제약 규칙(중요): 사용 빈도 제한은 ★cooldown_turns 필드로만★ 표현하라 — description/effect 본문에 '쿨다운 N턴'·'스테이지당 N회' 같은 말을 ★다시 적지 마라★(중복·모순). 스테이지당 1회면 cooldown_turns=-1 ★하나만★ 쓰고 거기에 턴 쿨다운(3턴 등)을 겹쳐 두지 마라(무의미한 이중 제약). 의미 없는 제약을 위해 쿨다운을 남발하지 말고, 정말 강력해 빈도 제한이 필요한 발동형에만 둬라(수동·약효과는 cooldown_turns=0).\n\n");
 
@@ -251,7 +251,7 @@ public class SystemTraitRegistry {
         sb.append("  · choice_action(choices=4) — 확정 4지선다 행동 선택\n");
         sb.append("  · ai_query(info=3, uses>=2) — 핵심 정보 다수 반복 획득\n");
         sb.append("  · passive_gm (주인공급 — 불리한 상황에서 '반드시 돌파구'가 보장)\n");
-        sb.append("  · sacrifice(scale=3) — 극적 대가로 극적 혜택\n");
+        sb.append("  · sacrifice(scale=3, cost 3~5) — 극적 대가로 극적 혜택 (cost는 체력/정신 소모량, 스케일 1~20·평균 5라 최대 5)\n");
         sb.append("  · passive_trigger(intensity=3, trigger_freq=3) — 강하고 잦은 자동 발동\n");
         sb.append("  · fate (직전/다음 판정 1회 유리하게 뒤집기 — 운명)\n");
         sb.append("  · group_rewind (직전 국면으로 동반회귀 — 재도전 제약 해제)\n");
@@ -266,7 +266,7 @@ public class SystemTraitRegistry {
         sb.append("  · link_ally(depth=3) — 소통 경로 발견 포함\n");
         sb.append("  · passive_trigger(intensity=3, trigger_freq=2) — 강하고 가끔 발동\n");
         sb.append("  · protect(power=3) — 거의 무효화 방어\n");
-        sb.append("  · sacrifice(scale=2, cost<=10) — 합리적 대가로 상당한 혜택\n");
+        sb.append("  · sacrifice(scale=2, cost 2~4) — 합리적 대가로 상당한 혜택\n");
         sb.append("  · guaranteed(scope=3) — 상황 전체 국면을 확정 성공으로\n");
         sb.append("  · mobility(power=3) — 거의 확정적인 이동·도주·돌파\n");
         sb.append("  · remote_sense(range=3, info=3) — 전역 원격 감지로 핵심 근접 정보\n");
@@ -305,7 +305,7 @@ public class SystemTraitRegistry {
         sb.append("  · one_way_call(direction=0, detect=1) — 일방 전언(괴담 감지 가능)\n\n");
 
         sb.append("[D등급] 효과보다 제약·대가가 크거나 극히 상황 한정. 개성 위주.\n");
-        sb.append("  · sacrifice(scale=1, cost>=15) — 높은 대가, 작은 혜택\n");
+        sb.append("  · sacrifice(scale=1, cost 4~5) — 높은 대가(체력/정신 대부분), 작은 혜택\n");
         sb.append("  · effect_type=\"\" (일반 특성) 에 약한 버프 서술\n");
         sb.append("[E·F등급] 디버프·고제약 (순값 E≈-1, F≈-2). 단점·제약이 핵심이되 그 대가로 '쓸 만한 효과 1개'를 달 수 있다(고위험 트레이드오프).\n");
         sb.append("  · 예) F '저주받은 눈'(area_scan은 강하나 발동마다 san 크게 감소) / E '폭주'(힘 크게 + 매·영 크게 감소)\n");
@@ -487,10 +487,10 @@ public class SystemTraitRegistry {
                 }
                 td.effectParams.remove("cost_san");                 // 단일화: applyActivationCost의 추가 차감·중복 표기 차단
                 td.effectParams.remove("cost_hp");
-                td.effectParams.putIfAbsent("cost", 10);
+                td.effectParams.putIfAbsent("cost", 3);   // 기본 대가 — 스탯 스케일(체력·정신 평균 5)에 맞춰 낮게(예전 10은 최대치 초과라 무의미)
                 td.effectParams.putIfAbsent("use_san", 0);
                 td.effectParams.putIfAbsent("scale", 2);
-                clamp(td, "cost", 1, 20);
+                clamp(td, "cost", 1, 5);                  // ★체력·정신은 1~20(평균 5) — 대가 상한 5(예전 20은 낼 수 없는 값)
                 clamp(td, "use_san", 0, 1);
                 clamp(td, "scale", 1, 3);
             }
@@ -577,6 +577,10 @@ public class SystemTraitRegistry {
             }
             default -> {}
         }
+        // ★대가 스케일 준수★: cost_hp/cost_san은 체력·정신 스케일(1~20·평균 5)을 넘을 수 없다 — 있을 때만 상한 5로 클램프
+        //   (저장값을 여기서 한 번 깎아 표시(annotateCost)와 실제 차감(applyActivationCost)이 같은 값을 쓰게 한다).
+        if (td.effectParams.containsKey("cost_hp"))  clamp(td, "cost_hp", 0, 5);
+        if (td.effectParams.containsKey("cost_san")) clamp(td, "cost_san", 0, 5);
         enforcePowerBudget(td); // 파라미터 확정 후: 능력 코스트 + 스텟 합을 등급 예산에 맞춰 강제
         annotateCost(td);       // 대가/비용이 있으면 description에 명시(플레이어가 사용 전 비용 인지)
     }
@@ -596,7 +600,7 @@ public class SystemTraitRegistry {
         if (e != null) {
             String c = switch (e) {
                 case SACRIFICE     -> "사용 시 " + (td.param("use_san", 0) == 1 ? "정신력" : "체력")
-                                      + " " + td.param("cost", 10) + " 소모";
+                                      + " " + Math.min(5, td.param("cost", 3)) + " 소모";
                 case PACT          -> "거래 대가로 체력·정신력·단서 등을 잃을 수 있음 (GM 판정, 고위험)";
                 case GDAM_MORPH    -> "변신 중 직접 조작 불가·피아 식별 없음 (통제 상실)";
                 case PHASE_OUT     -> td.param("turns", 2) + "턴간 행동 불가 (턴 건너뜀)";
@@ -612,8 +616,8 @@ public class SystemTraitRegistry {
             if (!c.isEmpty()) parts.add(c);
         }
         // AI가 강한 능력에 붙이는 선언적 대가(어떤 active 특성에도 가능) — 시스템이 실제로 강제한다
-        int cs = Math.max(0, Math.min(30, td.param("cost_san", 0)));
-        int ch = Math.max(0, Math.min(30, td.param("cost_hp", 0)));
+        int cs = Math.max(0, Math.min(5, td.param("cost_san", 0)));  // ★체력·정신 1~20(평균 5) — 대가 상한 5(예전 30은 낼 수 없는 값)
+        int ch = Math.max(0, Math.min(5, td.param("cost_hp", 0)));
         if (cs > 0) parts.add("사용 시 정신력 " + cs + " 소모");
         if (ch > 0) parts.add("사용 시 체력 " + ch + " 소모");
         int stun = Math.max(0, Math.min(3, td.param("cost_stun", 0)));

@@ -49,6 +49,11 @@ description: >-
 - **trpg/resources/log-viewer.html**: 단일 파일 뷰어(파싱 normalize → EVENTS, 시점 visibleTo, 라이브 패널, 구역 지도 SVG, .gdam 복호화).
 
 ## 규칙·도메인 체크리스트 (회귀 방지)
+- **★스탯 스케일 = 1~20, 평균 5 (체력·정신력 포함, ‘풀 100’ 아님)★**: 능력 대가(cost_hp/cost_san/sacrifice cost)는
+  이 스케일을 지켜야 한다 — cost 10은 평균 체력(5)의 2배라 낼 수조차 없다. ★cost≤5★(사소=1·보통=1~2·무거운=3~5).
+  `SystemTraitRegistry`에 ‘풀 100’ 오해가 5곳(생성 프롬프트 소모량 가이드·sacrifice 등급표 254/269/308·SACRIFICE 기본
+  cost·costText 기본·annotateCost 클램프)에 퍼져 cost 10 남발했음 → 전부 1~20 스케일로 교정 + finalize에서 cost_hp/
+  cost_san·sacrifice cost를 [0,5]로 클램프(표시·실차감 동기화). ★‘풀 100’·cost 10~20으로 되돌리지 말 것.★
 - **메타 노출 금지**: 계정명·영문 아이템 id(smartphone 등)·내부 스키마 용어(role_id/zone_id)를
   플레이어 서술·로그에 노출 금지. 표시명은 charName(직업), 아이템은 한국어명.
 - **★계정명(pd.name)은 프롬프트에 절대 금지★**(서버·로그·메타화면 전용): AI로 가는 모든 문자열은
