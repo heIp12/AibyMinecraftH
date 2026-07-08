@@ -2181,14 +2181,15 @@ public class TRPGGameManager {
         // 금지워드형: 금지된 단어를 입에 올리는 순간 즉시 파국(게임오버). 재시도 시 단어가 바뀐다.
         // 금지워드형: 입에 올린 순간 파국이 시작된다. ★즉종료가 아니라(문제1: 즉사 몰입 파괴 방지)★ 1~2턴에 걸쳐
         //   조짐이 조여오고 그동안 플레이어는 계속 행동할 수 있다 → onGmResponse의 forbiddenDoomTurns 카운트다운이 자연스럽게 매듭짓는다.
-        if (containsForbidden(message)) {
+        // 금지워드형: ★정확히★ 발설하면 파국(위협도 즉시 90). ★비슷한 단어★(근접 발음·부분 일치)는 유사도에 비례해 위협도만 오른다(파국 아님).
+        double fwSim = forbiddenSimilarity(message);
+        if (fwSim >= 1.0) {
             gameLogger.logEvent("금지어 발설: " + player.getName() + " (" + forbiddenWord + ")");
-            // ★금기어 발설 = 위협도 대폭 상승(단, 상황에 따라 — 무조건 90 고정은 아니다)★: 금지워드형은 파국까지
-            //   트리거하는 중대 금기라 크게 오르되, ★가산(+35)★이라 이미 높으면 90 근처로·낮으면 그만큼만 오른다.
-            //   더 가벼운 금기(핵심 아닌 사소한 규칙 어김)는 GM이 <THREAT>로 상황에 맞게(적게) 올린다.
+            // ★정확한 금지어 = 위협도 즉시 90★(요청): 이미 90 이상이면 유지, 아니면 90으로 끌어올린다.
             int thBefore = state.getThreat();
-            int thAfter  = state.adjustThreat(35);
-            if (thAfter != thBefore) gameLogger.logEvent("위협도 +" + (thAfter - thBefore) + " → " + thAfter + "/100 (금기어 발설 — 세력 급상승)");
+            int need = 90 - thBefore;
+            int thAfter = need > 0 ? state.adjustThreat(need) : thBefore;
+            if (thAfter != thBefore) gameLogger.logEvent("위협도 +" + (thAfter - thBefore) + " → " + thAfter + "/100 (정확한 금지어 발설 — 세력 급상승)");
             if (forbiddenDoomTurns <= 0) { // 첫 발설 — 파국 개시(즉종료 대신 유예)
                 forbiddenDoomTurns = 2;
                 broadcast("§4갑자기, 주위가 심상치 않게 뒤틀리기 시작한다...");
@@ -2200,6 +2201,13 @@ public class TRPGGameManager {
                 ai.injectGmSystem("[금지어 재발설 — 파국 가속] 금지된 단어가 또 입에 올랐다(★인과 노출 금지 — 발화·채팅이 원인이라고 알리지 마라★). 조여오던 파국이 한층 급박해진다 — 이변을 더 강하고 빠르게 서술하라.");
             }
             // ★return 하지 않는다★ — 이번 입력도 정상 행동으로 처리해, 플레이어가 파국 속에서도 행동하게 둔다.
+        } else if (fwSim >= 0.6) {
+            // ★비슷한 단어(근접 발음·부분 일치) = 유사도 비례 위협도 상승, 파국은 아님★(요청): 0.6→+6 … 0.95→+27. 유사할수록 많이 오른다.
+            int rise = Math.max(1, (int) Math.round((fwSim - 0.5) * 60));
+            int thBefore = state.getThreat();
+            int thAfter = state.adjustThreat(rise);
+            if (thAfter != thBefore) gameLogger.logEvent("위협도 +" + (thAfter - thBefore) + " → " + thAfter + "/100 (금지어와 비슷한 말 — 세력 자극)");
+            // 유사어는 조용히 위협도만 올린다 — '무슨 말이 원인'이라는 인과 노출 금지와 정합(GM 별도 주입 없음).
         }
 
         // 발동 취소: 대기 중인 스킬 발동을 물리고 사용 횟수 환원 (스킬 입력 대기 중 '취소' 입력 시)
@@ -7383,14 +7391,40 @@ public class TRPGGameManager {
     }
 
     /** 입력이 금지어를 포함하는가(공백 무시·대소문자 무시). 금지어 없으면 항상 false. */
-    private boolean containsForbidden(String message) {
-        if (forbiddenWord == null || forbiddenWord.isEmpty() || message == null) return false;
-        if (isNoneSentinel(forbiddenWord)) return false; // 방어: 비활성 표식이 남아 있어도 오발 금지
-        if (isTooCommonForbidden(forbiddenWord)) return false; // 방어: 흔한 말이 금지어로 남아 있어도 오발 금지
+    /** 발화가 금지어와 얼마나 비슷한가(0~1). 1=포함(정확 발설), 그 미만=편집거리 기반 최근접 창 유사도. 비활성/2글자 미만이면 0. */
+    private double forbiddenSimilarity(String message) {
+        if (forbiddenWord == null || forbiddenWord.isEmpty() || message == null) return 0;
+        if (isNoneSentinel(forbiddenWord)) return 0;       // 방어: 비활성 표식이 남아 있어도 오발 금지
+        if (isTooCommonForbidden(forbiddenWord)) return 0; // 방어: 흔한 말이 금지어로 남아 있어도 오발 금지
         String norm = message.toLowerCase().replaceAll("\\s+", "");
         String fw   = forbiddenWord.toLowerCase().replaceAll("\\s+", "");
-        if (fw.length() < 2) return false; // 한 글자 금지어는 오탐이 너무 커 비활성(파국 남발 방지)
-        return norm.contains(fw);
+        if (fw.length() < 2 || norm.isEmpty()) return 0;   // 한 글자 금지어는 오탐이 너무 커 비활성(파국 남발 방지)
+        if (norm.contains(fw)) return 1.0;                 // 정확(부분 포함) = 발설로 간주
+        if (fw.length() < 3) return 0;                     // 2글자 금지어는 퍼지 매칭 오탐이 커 '정확'만 인정
+        int L = fw.length();
+        double best = 0;                                   // fw 길이 ±1 창을 훑어 최근접 편집거리 유사도
+        for (int w = L - 1; w <= L + 1; w++) {
+            if (w < 2) continue;
+            for (int i = 0; i + w <= norm.length(); i++) {
+                double sim = 1.0 - (double) levenshtein(norm.substring(i, i + w), fw) / Math.max(w, L);
+                if (sim > best) best = sim;
+            }
+        }
+        return best;
+    }
+    /** 편집거리(삽입·삭제·치환 각 1). */
+    private static int levenshtein(String a, String b) {
+        int[] prev = new int[b.length() + 1], cur = new int[b.length() + 1];
+        for (int j = 0; j <= b.length(); j++) prev[j] = j;
+        for (int i = 1; i <= a.length(); i++) {
+            cur[0] = i;
+            for (int j = 1; j <= b.length(); j++) {
+                int cost = a.charAt(i - 1) == b.charAt(j - 1) ? 0 : 1;
+                cur[j] = Math.min(Math.min(cur[j - 1] + 1, prev[j] + 1), prev[j - 1] + cost);
+            }
+            int[] t = prev; prev = cur; cur = t;
+        }
+        return prev[b.length()];
     }
 
     /**
