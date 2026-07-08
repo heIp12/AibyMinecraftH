@@ -106,6 +106,7 @@
   .ev.k-vital .badge{background:var(--vital);color:#2a0f14}
   .ev.k-item{border-left-color:#e0c56a;background:#241f14} .ev.k-item .badge{background:#e0c56a;color:#2a230f}
   .ev.k-clue{border-left-color:#66c8b0;background:#14231f} .ev.k-clue .badge{background:#66c8b0;color:#0f2a23}
+  .ev.k-timeline{border-left-color:#e0a24a;background:#241d12} .ev.k-timeline .badge{background:#e0a24a;color:#2a1f0f} /* 타임라인 사건 — GM 전용(전체뷰만) */
   .ev.k-shout,.ev.k-letter,.ev.k-whisper{border-left-color:var(--broadcast)}
   .ln.tamper-orig{color:var(--dim);text-decoration:line-through;opacity:.72}
   .ln.tamper-new{color:#ff9a6b;font-weight:600}
@@ -310,7 +311,7 @@ function visibleTo(e,vp){
   if(e.kind==="nearby"){ const az=zoneAtSeq(e.actor,e.seq||0), vz=zoneAtSeq(vp,e.seq||0); return az!=null&&vz!=null&&az===vz; } // 근처(면전)는 같은 구역만
   return false; }
 function buildViewpoints(){ const m=new Map();
-  for(const e of EVENTS){ if(e.kind==="alias")continue; for(const c of [e.actor,...e.to])if(isPerson(c))m.set(c,(m.get(c)||0)+1); }
+  for(const e of EVENTS){ if(e.kind==="alias"||e.kind==="timeline")continue; for(const c of [e.actor,...e.to])if(isPerson(c))m.set(c,(m.get(c)||0)+1); }
   // 플레이어 판별: replay 표시명 + input(입력) 이벤트 발화자(=플레이어만 입력함). 나머지는 NPC·괴담.
   const players=new Set();
   const uni=(nm,jb)=>{nm=(nm||"").trim();jb=(jb||"").trim();return (nm&&jb)?nm+"("+jb+")":(nm||jb);};
@@ -608,6 +609,7 @@ function badgeFor(e){ return e.kind==="ability"?(e.phase==="result"?"✨ "+(e.ab
   :e.kind==="signal"?("🚩 "+(e.via||"수신호")):e.kind==="psychic"?("🧠 "+(e.via||"정신감응"))
   :e.kind==="gm"?"GM 서술":e.kind==="broadcast"?"📢 방송":e.kind==="npc"?"☎ NPC"
   :e.kind==="thought"?"💭 생각"
+  :e.kind==="timeline"?"⏳ 타임라인 사건"
   :e.kind==="assign"?"🎭 배역":e.kind==="system"?"시스템":e.kind==="private"?"개인":e.kind==="gm_input"?"GM입력(상세)":(e.cat||"이벤트"); }
 const COMM_KINDS=new Set(["call","nearby","broadcast","shout","letter","whisper","signal","psychic"]);
 

@@ -490,6 +490,8 @@ public class TRPGGameManager {
      *  시계가 진행돼 사건이 터진 지점마다 호출 — 버퍼가 비어 있으면 무동작(중복 호출 안전). */
     private void flushEventGaugeLog() {
         for (String m : state.drainEventGaugeLog()) gameLogger.logEvent(m);
+        // ★타임라인 사건 GM전용 로그(플레이어 비노출)★ — 예정 사건이 터질 때 이름+결과(effect, 사전설계라 추가 AI 없음)를 뷰어 전체뷰에만 남긴다.
+        for (String[] ev : state.drainFiredEventAudit()) gameLogger.logTimelineEvent(ev[0], ev[1]);
     }
 
     private void startIncapacitationWatchdog() {

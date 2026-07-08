@@ -78,6 +78,7 @@ public class GameStateManager {
     private final Set<String>       blockedMedia      = new HashSet<>(); // ★매체별 차단(#180)★ — 괴담·사건이 막은 통신 수단(voice/text/signal/electronic, all=전부).
     private final List<String>      justFiredEvents   = new ArrayList<>();
     private final List<String>      eventGaugeLog     = new ArrayList<>(); // 사건 발화 자동 위협도 상승 로그(소비성) — TRPGGameManager가 gameLogger로 흘려 뷰어에 표시
+    private final List<String[]>    firedEventAudit   = new ArrayList<>(); // {label, effect} — 타임라인 사건 GM전용 로그(소비성). TRPGGameManager가 gameLogger.logTimelineEvent로 흘림
     private boolean                 combatEventFired  = false; // ★A3/A4★ combat:true 사건 발화 감지(소비성 — 스냅샷 미포함)
     private String                  lastFiredEventLabel = ""; // 가장 최근 발화한 핵심 사건 이름(상태창 '최근' 패널용, 소비 안 됨)
     private final Map<UUID,Boolean> timeKnownOverride = new HashMap<>();
@@ -296,6 +297,7 @@ public class GameStateManager {
         }
         justFiredEvents.clear(); // 소비성 버퍼(스냅샷에 없음) — 재사용 인스턴스에 이전 사건이 잔류하지 않도록 정리
         eventGaugeLog.clear();
+        firedEventAudit.clear();
         timeKnownOverride.clear();
         if (o.has("timeKnownOverride") && o.get("timeKnownOverride").isJsonObject()) {
             for (Map.Entry<String, JsonElement> e : o.getAsJsonObject("timeKnownOverride").entrySet()) {
@@ -475,6 +477,7 @@ public class GameStateManager {
         blockedMedia.clear(); // 매체별 차단(#180) — 새 시나리오/스테이지 초기화
         justFiredEvents.clear();
         eventGaugeLog.clear();
+        firedEventAudit.clear();
         lastFiredEventLabel = ""; // 새 시나리오/스테이지 — 최근 사건 초기화
         timeKnownOverride.clear();
         endEventFired      = false;
@@ -615,6 +618,7 @@ public class GameStateManager {
                 + "  [이 사건으로 위협도 +" + tRise + " → " + tAfter + "/100]");
             eventGaugeLog.add("위협도 +" + tRise + " → " + tAfter + "/100 ("
                 + (evEnd ? "종국 사건" : evCombat ? "전투 사건" : "사건") + " 발생: " + label + ")");
+            firedEventAudit.add(new String[]{label, effect}); // GM전용 타임라인 로그(뷰어 전체뷰만) — effect는 사전설계라 추가 AI 없음
         }
         if (clockEnd >= 0 && clockMinutes >= clockEnd && !endEventFired) {
             endEventFired = true;
@@ -622,6 +626,7 @@ public class GameStateManager {
             int tAfter = adjustThreat(18); // 제한 시각 도달 = 종국 격상 → 위협도 상승(표시)
             justFiredEvents.add("제한 시각 도달 — 상황이 종국으로 치닫는다  [위협도 +18 → " + tAfter + "/100]");
             eventGaugeLog.add("위협도 +18 → " + tAfter + "/100 (제한 시각 도달 — 종국)");
+            firedEventAudit.add(new String[]{"제한 시각 도달", "상황이 종국으로 치닫는다"});
             lastFiredEventLabel = "제한 시각 도달";
         }
     }
@@ -764,6 +769,14 @@ public class GameStateManager {
         if (eventGaugeLog.isEmpty()) return java.util.Collections.emptyList();
         List<String> out = new ArrayList<>(eventGaugeLog);
         eventGaugeLog.clear();
+        return out;
+    }
+
+    /** 타임라인 사건 감사 로그를 1회 배출(소비) — {label, effect} 쌍. TRPGGameManager가 gameLogger.logTimelineEvent로 GM전용 기록. */
+    public List<String[]> drainFiredEventAudit() {
+        if (firedEventAudit.isEmpty()) return java.util.Collections.emptyList();
+        List<String[]> out = new ArrayList<>(firedEventAudit);
+        firedEventAudit.clear();
         return out;
     }
 
