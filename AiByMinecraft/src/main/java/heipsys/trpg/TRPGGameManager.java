@@ -4201,15 +4201,70 @@ public class TRPGGameManager {
             ally = npc; break;
         }
         applyTraitUsed(pd, td.id, state.getCurrentTurn());
+        if (ally == null) {
+            // ★기존 우호 NPC가 없으면 '가짜 서술'이 아니라 ★실제 조력 NPC★를 만들어 등록·등장시킨다.
+            //   (버그: 예전엔 gm_directive/조력자 폴백으로 대화·연락 안 되는 가짜 NPC만 서술됐다.)
+            summonNewAllyNpc(player, pd, td);
+            return;
+        }
         String who = pd.gmDisplayName();
-        String allyName = (ally != null) ? getStr(ally, "name") : "조력자";
-        if (ally != null && pd.zone != null && !pd.zone.isEmpty())
+        String allyName = getStr(ally, "name");
+        if (pd.zone != null && !pd.zone.isEmpty())
             npcZones.put(getStr(ally, "id"), pd.zone); // 확정: 실제로 같은 구역에 배치
         String gmMsg = "[시스템 특성: " + td.name + " 발동] " + who + "이(가) 인연을 끌어당겨, "
-            + allyName + "이(가) 마침 " + who + "가 있는 곳에 나타난다(조우). 괴담 본체는 해당 없음. "
+            + allyName + "이(가) 마침 " + who + "가 있는 곳에 나타난다(조우). 이 인물은 ★실제 대화·연락 가능한 조력 NPC★다. 괴담 본체는 해당 없음. "
             + "이 조우를 다음 서술에 자연스럽게 반영하고, 작은 도움이나 정보를 주게 하라.";
         boolean accepted = turnMan.handleAction(player, gmMsg, gmSystemPrompt);
         player.sendMessage(accepted ? "§7[" + td.name + " 발동 중...]" : "§7행동 처리 중입니다. 잠시 후 다시 시도하세요.");
+    }
+
+    /** ★실제 조력 NPC 생성·등록★ — 우호 NPC가 없을 때 새 NPC를 AI로 짧게 만들어 gdam.npcs에 넣는다(대화·연락 가능한 진짜 NPC).
+     *  예전엔 gm_directive로 '가짜 NPC'만 서술돼 @대화·연락이 안 됐다(버그 수정). 능력은 스테이지당 1회라 호출 비용 미미. */
+    private void summonNewAllyNpc(Player player, PlayerData pd, TraitData td) {
+        final String who = pd.gmDisplayName();
+        final String zone = (pd.zone != null && !pd.zone.isEmpty()) ? pd.zone : "";
+        player.sendMessage("§7[" + td.name + " 발동 중... 조력자가 다가옵니다]");
+        ai.callAssistant(
+            "너는 괴담 호러 TRPG의 ★우호적 조력 NPC 1명★을 만든다. JSON만 응답: "
+            + "{\"name\":\"한국어 이름\",\"personality\":\"성격 한 줄\",\"motivation\":\"플레이어를 돕는 이유 한 줄\"}",
+            "이 사건('" + getEntityName() + "')에 나타나 플레이어를 돕는 조력자 1명. 평범한 인간~약간 특별한 정도, 이 배경에 어울리는 이름.",
+            300)
+        .thenAccept(raw -> plugin.getServer().getScheduler().runTask(plugin, () -> {
+            String name = "", persona = "", motive = "";
+            try {
+                String c = raw == null ? "" : raw.replaceAll("```json", "").replaceAll("```", "").trim();
+                int s = c.indexOf('{'), e = c.lastIndexOf('}');
+                if (s >= 0 && e > s) {
+                    JsonObject o = com.google.gson.JsonParser.parseString(c.substring(s, e + 1)).getAsJsonObject();
+                    name = getStr(o, "name"); persona = getStr(o, "personality"); motive = getStr(o, "motivation");
+                }
+            } catch (Exception ignore) {}
+            if (name.isBlank()) name = "낯선 조력자";
+            JsonObject gdam = state.getGdamData();
+            String id = "ally_" + java.util.UUID.randomUUID().toString().substring(0, 6);
+            if (gdam != null) {
+                com.google.gson.JsonArray npcs = (gdam.has("npcs") && gdam.get("npcs").isJsonArray())
+                    ? gdam.getAsJsonArray("npcs") : null;
+                if (npcs == null) { npcs = new com.google.gson.JsonArray(); gdam.add("npcs", npcs); }
+                JsonObject npc = new JsonObject();
+                npc.addProperty("id", id);
+                npc.addProperty("name", name);
+                npc.addProperty("zone", zone);
+                npc.addProperty("critical", true);
+                npc.addProperty("role_type", "조력");
+                npc.addProperty("disposition", "우호");
+                npc.addProperty("honesty", "솔직");
+                if (!persona.isBlank()) npc.addProperty("personality", persona);
+                if (!motive.isBlank())  npc.addProperty("motivation", motive);
+                npcs.add(npc);
+                if (!zone.isEmpty()) npcZones.put(id, zone);
+                gmSystemPrompt = buildGmPrompt(gdam); // 새 NPC를 GM 인지·roster에 반영
+            }
+            String gmMsg = "[시스템 특성: " + td.name + " 발동] " + who + "이(가) 인연을 끌어당겨, 조력자 '" + name
+                + "'이(가) 마침 " + who + "가 있는 곳에 나타난다(조우). ★이 인물은 실제로 대화·연락 가능한 조력 NPC다★ — 자연스럽게 등장시키고 작은 도움이나 정보를 주게 하라. 괴담 본체는 해당 없음.";
+            turnMan.handleAction(player, gmMsg, gmSystemPrompt);
+            player.sendMessage("§a[" + td.name + "] 조력자 '" + name + "'이(가) 나타났습니다 — @이름으로 대화·연락할 수 있습니다.");
+        }));
     }
 
     /** 미끼 전환 — 괴담/위협의 다음 표적을 다른 대상으로 돌린다. */
@@ -7606,7 +7661,7 @@ public class TRPGGameManager {
         sb.append("- 말투: ").append(speechStyle)
           .append(" — 몸에 밴 기본 말씨다. 존댓말/반말은 아래 나이·관계 규칙이 정하고, 이 버릇은 그 결정 위에 얹는다. 이 말씨·언어 수준을 끝까지 일관되게.\n");
         sb.append("- 말버릇은 네가 ★하는 말★(대사·통화·<NPC_CALL> 안의 말 — 글에선 옅게)에만 쓴다. 괄호 지문·3인칭 서술과 <THOUGHT>·<NPC_LEARN> 안은 평범한 문체로.\n");
-        sb.append("- 버릇은 위 말투에 적힌 ★한 가지뿐★ — 새 버릇을 지어 보태지 마라. ★어미 버릇★(문장 끝 고정 어미)이면 거의 매 문장 일관되게(그게 이 인물의 개성이다). ★접두어·필러 버릇★('뭐랄까'·'그러니까' 류)이면 ★아주 드물게★ — 매 응답마다 넣지 마라(넣는 게 기본이 아니다). 서너 응답에 한 번쯤, 한 응답엔 많아야 한 번, 연속 두 문장 금지.\n");
+        sb.append("- 버릇은 위 말투에 적힌 ★한 가지뿐★ — 새 버릇을 지어 보태지 마라. ★어미 버릇★(문장 끝 고정 어미)이면 거의 매 문장 일관되게(그게 이 인물의 개성이다). ★접두어·필러 버릇★('뭐랄까'·'그러니까' 류)이면 ★아주 드물게★ — 매 응답마다 넣지 마라(넣는 게 기본이 아니다). 서너 응답에 한 번쯤, 한 응답엔 많아야 한 번, 연속 두 문장 금지. 넣을 때도 ★자리를 매번 같은 곳에 고정하지 마라★ — 특히 문장 끝에 어미처럼 반복해 달지 마라(필러는 어미가 아니다). 말 꺼낼 때·뜸 들일 때 문장 앞이나 중간에 새어 나오듯, 유무·위치를 그때그때 흩뜨려라.\n");
         sb.append("- 버릇이 어미 버릇이 아니면 문장 끝은 평범한 존댓말/반말 그대로 두어라 — 어미를 억지로 바꾸거나 새 어미를 만들지 마라.\n");
         sb.append("- ★직무·전문성은 '무엇을 아는지(대답 내용)'에만 반영하라 — 문장 첫머리를 보고서처럼 시작하지 마라.★ 사적인 대화·통화에선 일 얘기보다 상대의 반응·감정·용건이 먼저다(너는 직함이 아니라 사람이다).\n");
     }
@@ -7835,13 +7890,26 @@ public class TRPGGameManager {
         String ss = getStr(npcObj, "speech_style");
         return (!ss.isBlank() && mentionsEnding(ss)) ? ss : "";
     }
-    /** speech_style 서술이 '문장 끝 말투(어미)'를 규정하는지 — 메타 단서(어미·말끝·맺는다 류)로만 판정(특정 어미 나열 X).
-     *  어조·리듬·필러만 담은 speech_style엔 어미 렌더를 강제하지 않으려는 안전 게이트. */
+    /** speech_style 서술이 '문장 끝 말투(어미)'를 규정하는지 — 메타 단서(어미·말꼬리·맺는다 류)로만 판정(특정 어미 나열 X).
+     *  어조·리듬·필러만 담은 speech_style엔 어미 렌더를 강제하지 않으려는 안전 게이트.
+     *  ★버그수정★: '말끝을 삼키다/흐리다' 류는 ★어조(끝을 흐림)★일 뿐 '고정 어미'가 아닌데도 '말끝'이 들어갔다는
+     *   이유로 pass2 어미 렌더로 오라우팅돼, 그 speech_style에 박힌 ★필러('그게 말이지')가 매 문장 어미처럼 찍히던★
+     *   문제가 있었다(장 노인 사례). 그래서 '말끝'은 ★흐림·삼킴 표현이면 어미 규정으로 치지 않는다★. */
     private static boolean mentionsEnding(String s) {
         if (s == null) return false;
         String t = s.replace(" ", "");
-        return t.contains("어미") || t.contains("말끝") || t.contains("말꼬리")
-            || t.contains("문장끝") || t.contains("문장을맺") || t.contains("맺는") || t.contains("맺고") || t.contains("체로맺");
+        // 확실한 '고정 어미 규정' 신호 — 어조와 무관하게 항상 어미 렌더 대상.
+        boolean fixed = t.contains("어미") || t.contains("말꼬리") || t.contains("문장끝")
+            || t.contains("문장을맺") || t.contains("맺는") || t.contains("맺고") || t.contains("체로맺") || t.contains("체로");
+        if (fixed) return true;
+        // '말끝'은 애매 — '말끝마다 ~붙인다'(진짜 어미)와 '말끝을 삼키다/흐리다'(어조 흐림)를 가른다.
+        if (t.contains("말끝")) {
+            boolean trailingTone = t.contains("말끝을삼키") || t.contains("말끝삼키") || t.contains("말끝을흐리")
+                || t.contains("말끝흐리") || t.contains("말끝을죽이") || t.contains("말끝을감추")
+                || t.contains("말끝을내리") || t.contains("말끝을삼킨") || t.contains("말끝을흐린");
+            return !trailingTone; // 흐림·삼킴이면 어미 렌더 안 함(어조는 pass1이 처리)
+        }
+        return false;
     }
 
     /** 자율 행동용 시스템 프롬프트 = CORE + 캐릭터 데이터 + 예정표 + 자율 출력 규칙. */
@@ -9310,7 +9378,7 @@ public class TRPGGameManager {
 
             String visible = ai.stripThought(ai.stripTags(npcResp)).trim();
             if (visible.isEmpty()) return;
-            // ★말투 2-pass(pass2)★: ending_style이 지정된 NPC(시나리오당 1~2명)만 완성 대사의 ★어미·말투★를 지정 스타일로 렌더한다.
+            // ★말투 2-pass(pass2)★: ending_style이 지정된 NPC(생성 시 시스템이 약 30%로 등장 조절, 최대 2명)만 완성 대사의 ★어미·말투★를 지정 스타일로 렌더한다.
             //   생성(pass1)은 내용+감정에 집중(중립 말씨) → 여기서 개성 말끝을 한 번에 얹는다(미니 모델은 '변환'이 안정적). 실패 시 원본 유지.
             String endStyle = endingRenderSpec(npcObj); // ending_style 우선, 없으면 '어미'를 규정한 speech_style(#207)
             if (!endStyle.isBlank()) visible = ai.restyleDialogue(visible, endStyle);
@@ -9662,6 +9730,7 @@ public class TRPGGameManager {
         sb.append("- 성격·목표에 충실하되 ★실제 사람이 할 법한 말투★로 답하라(소설 문어체·의미심장한 연출 금지).\n");
         sb.append("- ★치명적 비밀·진상★만 통째로 드러내지 마라(그 외엔 솔직하게 사람답게 답해도 된다). 가끔 얼버무리거나 되물을 수 있지만, 매 대답을 빙빙 돌리거나 수수께끼로 만들지 마라.\n");
         sb.append("- ★정보 공개는 '금지'가 아니라 '현실적 꺼림'으로★: 너는 해법·비밀도 말할 수 있다. 다만 사람이라 잘 안 말하는 이유가 있다 — ①본인도 그게 진실인지 확신 못 함 ②초면·낯선 사람은 못 믿어 중요한 걸 안 줌(신뢰가 쌓여야) ③위험한 정보라 아는 사이라도 망설임 ④자기 비밀·생존·이해관계가 걸림. 그래서 기본은 머뭇·일부만·조건부. 단 관계·설득·매력이 충분하거나, ⑤자기 목적을 위해 일부러 (틀리거나 위험한 정보를 섞어) 흘리기도 한다. 핵심: ★진상·해법 같은 중대한 정보★만 불확실·조건부로 흐려라 — 일부러 틀린 말을 섞는 건(⑤) ★네 '거짓말 성향'이 허락하는 선까지만★이다(정직형은 거의 안 하고, 목적형은 목적이 걸릴 때만, 상습형은 능청스레). 길·시간·안부 같은 일상 대답은 흐리지도 속이지도 마라.\n");
+        sb.append("- ★이름·평범한 신원은 비밀이 아니다★: 네 이름·직업·사는 곳 정도는 진상도 '중요한 정보'도 아니다 — 초면이라도 물으면 순순히 밝혀라('이름은 오래전에 버렸다'식 신비화 금지). 예외는 변장·위장·정체 은폐 중인 적대 인물이거나 설정상 정말 이름을 버린·잃은 인물뿐 — 그런 사유가 네 캐릭터 데이터에 없으면 그냥 이름을 대라.\n");
         sb.append("- ★질문엔 먼저 '답'부터 — 관공서식 회피 금지★: 절차·규정·목적 확인('목적부터 말해요'·'절차가 먼저예요'류)을 앞세워 답을 미루는 화법은 ★한 번★만 허용된다. 상대가 같은 것을 다시 물으면 그땐 반드시 실질적으로 답하거나(아는 만큼, 불확실 표시 가능) 명확히 거절하고 ★진짜 이유★를 말하라 — 같은 절차 요구를 반복하며 대화를 제자리에 붙잡지 마라. 특히 상대가 단순히 부르거나 확인하는 물음(안부·용건·'뭐 해요?'·'거기 누구 있어요?'류)엔 되묻기로 받아치지 말고 ★네 현재 상태·용건을 먼저 한두 마디로 답한 뒤★ 필요할 때만 되물어라.\n");
         sb.append("- 머리말의 [상대 나이·설득력·관계] 표기는 네가 피부로 느끼는 ★인상★일 뿐이다 — 표기 단어·등급을 입 밖에 내지 마라(\"설득력이 매우 강함이시네요\" 같은 말 금지). 인상은 태도와 말투로만 드러내라.\n");
         sb.append("- ★상대의 '설득력·존재감'(위 대화 머리말 표기)이 강할수록 너는 더 쉽게 마음이 흔들려 협조·양보하고, "
