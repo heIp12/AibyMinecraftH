@@ -90,6 +90,11 @@ public class AiManager {
     private final LongAdder   accInTok   = new LongAdder();   // 입력 토큰(캐시 읽기·쓰기 포함)
     private final LongAdder   accOutTok  = new LongAdder();   // 출력 토큰
     private final DoubleAdder accCostUsd = new DoubleAdder(); // 누적 비용(USD)
+    // ★#231 진단 계측★ — accInTok(총 입력)을 3갈래로 분해(이번 가동만, 영구저장·UsageStat 불변).
+    //   40% 초과의 정체(캐시쓰기 churn=TTL만료·단발게임 / 출력 길이 / 미캐시 호출)를 실플레이 1회로 드러낸다.
+    private final LongAdder   accCacheRead  = new LongAdder(); // 캐시 읽기 입력 토큰(0.1× 단가)
+    private final LongAdder   accCacheWrite = new LongAdder(); // 캐시 생성 입력 토큰(1.25× 단가 = 읽기의 12.5배)
+    private final DoubleAdder accCostOut    = new DoubleAdder(); // 출력 토큰 비용(USD) — 입력/출력 비중 분해용
     private volatile UsageStat sessionStart = new UsageStat(0, 0, 0, 0.0);
     private volatile UsageStat stageStart   = new UsageStat(0, 0, 0, 0.0);
     // 영구 누적 기준점(파일에서 로드 = 이전 가동까지의 전체 누적). 전체누적 = persistedBase + 이번 가동(accumulators).
@@ -410,6 +415,30 @@ public class AiManager {
         return "₩" + String.format("%,d", Math.round(u.costUsd() * 1400.0));
     }
 
+    /** ★#231 진단★ 이번 가동 비용 구성 분해 — 순수입력/캐시읽기/캐시쓰기/출력 + 비용 비중 + 캐시 히트율.
+     *  캐시히트 낮음 = 캐시쓰기(1.25×) churn(TTL만료·단발게임) / 출력 비중 높음 = 서술 과다. 실플레이 1회로 40% 초과 원인 규명. */
+    public java.util.List<String> usageDiagLines() {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        if (accCalls.sum() == 0) return out;
+        long inTot = accInTok.sum(), cr = accCacheRead.sum(), cw = accCacheWrite.sum();
+        long fresh = Math.max(0, inTot - cr - cw), ot = accOutTok.sum();
+        double cTot = accCostUsd.sum(), cOut = accCostOut.sum();
+        long crcw = cr + cw;
+        int hitPct = crcw > 0 ? (int) Math.round(cr * 100.0 / crcw) : 0;
+        int outPct = cTot > 0 ? (int) Math.round(cOut * 100.0 / cTot) : 0;
+        out.add("§8 ");
+        out.add("§6§lAI 비용 구성 §7(이번가동 · " + accCalls.sum() + "호출)");
+        out.add("§7입력  §f순수 " + fmtTok(fresh) + " §8│ §a캐시읽기 " + fmtTok(cr) + "§8(0.1×) §8│ §c캐시쓰기 " + fmtTok(cw) + "§8(1.25×)");
+        out.add("§7출력  §f" + fmtTok(ot) + " §8(5× 단가)  §8│ §7비중 §f입력 " + (100 - outPct) + "% §8/ §f출력 " + outPct + "%");
+        out.add("§7캐시  §f히트 " + hitPct + "% §8(낮을수록 재생성 1.25× churn=TTL만료·단발게임)");
+        return out;
+    }
+    private static String fmtTok(long t) {
+        if (t >= 1_000_000) return String.format("%.1fM", t / 1_000_000.0);
+        if (t >= 1_000)     return String.format("%.0fK", t / 1_000.0);
+        return Long.toString(t);
+    }
+
     /** 응답의 usage(토큰 사용량)를 provider별로 읽어 영구 누적에 더한다(캐시 단가 반영). */
     private void accumulateUsage(JsonObject json, String model) {
         try {
@@ -450,6 +479,9 @@ public class AiManager {
             accInTok.add(in + cacheRead + cacheWrite);
             accOutTok.add(out);
             accCostUsd.add(cost);
+            accCacheRead.add(cacheRead);                        // #231 진단: 캐시 읽기(0.1×)
+            accCacheWrite.add(cacheWrite);                      // #231 진단: 캐시 생성(1.25×)
+            accCostOut.add(out * price[1] / 1_000_000.0);       // #231 진단: 출력 비용(입력/출력 비중용)
         } catch (Exception ignored) { /* 사용량 집계 실패는 게임 진행에 영향 주지 않음 */ }
     }
 

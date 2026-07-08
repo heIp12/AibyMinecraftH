@@ -12307,6 +12307,7 @@ public class TRPGGameManager {
         lines.add("§7시작이후  §f" + ai.usageLabel(ai.sessionUsage()));
         lines.add("§7이번가동  §f" + ai.usageLabel(ai.lifetimeUsage()));
         lines.add("§7전체누적  §f" + ai.usageLabel(ai.allTimeUsage()));
+        lines.addAll(ai.usageDiagLines()); // ★#231 진단★ 비용 구성 분해(순수입력/캐시읽기/쓰기/출력·비중·히트율)
         dialogMan.showStatusDialog(player, "TRPG 상태", lines);
     }
 
