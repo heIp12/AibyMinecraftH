@@ -1423,6 +1423,35 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
         return "\n\n## ★구조 우선 설계(후반 스테이지)\n위 world_rules의 ★고정 구조★를 토대로 괴담을 설계하라 — ★entity.type은 그 구조에서 자연히 도출★하고 독립적으로 먼저 고정하지 마라(구조가 먼저다). 귀신·호러가 안 맞으면 ★크리처·괴수·외계·음모·컬트·변종 등 어떤 정체로든★ 좋다(단 세션이 특정 카테고리로 고정됐다면 그 범위 안에서). 친숙(실존) 괴담 모드면 원전 본래 기제를 따르고 이 강제는 무시하라.";
     }
 
+    /** 이번 회차 공존 괴담 수(1~4 가변, 스테이지 가중). S1=1 고정, S6=2~5 정점. */
+    private static int coexistCount(int roomNumber) {
+        int s = Math.max(1, Math.min(6, roomNumber));
+        int roll = java.util.concurrent.ThreadLocalRandom.current().nextInt(100);
+        return switch (s) {
+            case 1 -> 1;
+            case 2 -> roll < 70 ? 1 : 2;
+            case 3 -> roll < 45 ? 1 : roll < 85 ? 2 : 3;
+            case 4 -> roll < 30 ? 1 : roll < 70 ? 2 : roll < 95 ? 3 : 4;
+            case 5 -> roll < 20 ? 1 : roll < 55 ? 2 : roll < 85 ? 3 : 4;
+            default -> roll < 15 ? 2 : roll < 50 ? 3 : roll < 80 ? 4 : 5; // S6 정점: 2~5
+        };
+    }
+
+    /** 공존 괴담 지시(2개 이상일 때만). 보조는 같은 출처·비슷한 결의 함정·역이용 요소로 엮되 클리어 대상은 주 괴담. */
+    private static String coexistenceDirective(int roomNumber) {
+        int n = coexistCount(roomNumber);
+        if (n <= 1) return "";
+        return "\n\n## ★공존 괴담 (이번 회차 " + n + "개)\n이 시나리오엔 괴담이 ★" + n + "개 공존★한다 — 주 괴담 1개(★해결 대상★)에 더해 "
+            + "보조 " + (n - 1) + "개는 ★방해·함정·역이용 요소★(그 자체는 클리어 대상 아님)로 world_rules·timeline.main_events에 엮어라.\n"
+            + (roomNumber <= 4
+                ? "보조는 ★같은 출처·비슷한 결(테마·장소)★로 골라 주 괴담과 자연스럽게 물리게 하라(SCP엔 SCP, 일본괴담엔 일본괴담 식). "
+                : "보조는 다른 결이어도 되나 여전히 ★함정·장애·역이용★으로 기능해야 한다. ")
+            + (roomNumber >= 6
+                ? "★스테이지 6은 정점 — 5격+4격을 동시에 상대하듯, 서로 다른 규칙 둘 이상을 병행 대응하게 하라(강화 복합).★ "
+                : "")
+            + "보조 괴담도 ★실존 원전★에서 골라라(새 창작 금지). 주 괴담의 해결 경로는 반드시 성립시켜라(보조가 막아도 대가를 치르고 만회 가능).";
+    }
+
     /**
      * 분할 생성: 코어(roles/key_items 제외) → 배역 → 아이템 순으로 3회 호출.
      * 각 출력이 작아 잘림 위험이 크게 줄고, 실패한 단계만 적은 비용으로 재시도된다.
@@ -1446,6 +1475,7 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
             + "이 네 가지 최상위 필드만 출력하고 zones·npcs·roles·key_items 등 다른 필드는 절대 포함하지 마라."
             + ScenarioArchetypes.worldRulesBlock(roomNumber, conceptTypeHint) // 외부화·샘플링: 세계 규칙 후보 소수(1~2스테이지 기본만) + 운영 유형 고정 반영
             + typeFirstDirective(roomNumber)
+            + coexistenceDirective(roomNumber)   // 공존 괴담(1~4 가변): 보조는 같은 출처·결의 함정으로 엮음
             + "\n\n## ★검증 (출력 전 자기점검)\n최종 JSON을 내기 전 스스로 확인하고, 아니면 고쳐서 출력하라:\n- 고른 행동양식(entity.type)이 world_rules·timeline.main_events에 실제로 반영됐는가?\n- 성향(ai_context.disposition)이 initial_pattern·personality로 구체화됐는가?\n- 스케일이 영향 범위·시간 규모에 반영됐는가?\n- 아키타입의 ★필수산출★ 항목을 다 채웠는가?";
 
         return aiManager.callGmAiLarge(GDAM_SYSTEM_PROMPT, structPrompt).thenCompose(structRaw -> {
