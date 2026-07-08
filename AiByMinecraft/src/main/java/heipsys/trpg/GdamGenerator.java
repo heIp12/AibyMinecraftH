@@ -943,8 +943,9 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
      *  이전엔 random이 default(세계 지역 전설)로만 빠져 프로젝트 문·게임이 아예 안 나오거나 나와도 전용
      *  설정이 미반영이었다. random 40% + 특수 6종 각 10%. */
     private static final String[] RANDOM_KIND_POOL = {
-        "random", "random", "random", "random",
-        "projectmoon", "game", "cosmic", "scp", "korean", "japan"
+        "random", "random",
+        "projectmoon", "game", "cosmic", "scp", "korean", "japan",
+        "western", "creepypasta", "backrooms", "internet", "real", "sf"   // 카탈로그 신설 출처(sf 포함) 로테이션 편입
     };
 
     // 각 항목 = "태그\t이름". 구형 파일(이름만)은 로드 시 태그 "기타"로 흡수.
@@ -1182,6 +1183,38 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
         return RANDOM_KIND_POOL[java.util.concurrent.ThreadLocalRandom.current().nextInt(RANDOM_KIND_POOL.length)];
     }
 
+    /** filter가 카탈로그(GdamCatalog) 보유 출처면 그 src, 아니면 null(지역 전설 등은 카탈로그 미보유). */
+    private static String catalogSrcFor(String filter) {
+        if (filter == null) return null;
+        return switch (filter) {
+            case "korean", "japan", "scp", "cosmic", "game", "western", "creepypasta", "backrooms", "internet", "real", "sf" -> filter;
+            default -> null;
+        };
+    }
+    /** 후반 스테이지 규모 정합 안내(증폭/축소 레시피 — 작은 괴담 확장, 큰 괴담 축소). */
+    private static String catalogAmplifyNote(int stage) {
+        if (stage <= 2) return "";
+        return "★규모 정합: 고른 괴담의 native 규모가 이 스테이지보다 ★작으면★ 편재화(도처 복제)·감염(전파)·중첩(더 큰 구조의 일부)·격상(거대한 것의 파편이 드러남)으로 확장하되 ★핵심 기제·결은 유지★하라. ★크면★ 파편·전조·강림 직전으로 축소하라.\n";
+    }
+    /** 카탈로그 보유 출처면 인지도·규모 가중 + no-repeat로 후보를 뽑아 주입 블록을 만든다(없으면 ""). */
+    private String catalogCandidates(String filter, int stage, String famTag) {
+        String src = catalogSrcFor(filter);
+        if (src == null) return "";
+        java.util.Set<String> keys = recentFamiliarKeys(famTag);
+        java.util.Set<String> avoidNames = new java.util.HashSet<>();
+        for (GdamCatalog.Entry e : GdamCatalog.bySource(src)) {
+            String b = variantBase(e.name());
+            if (!b.isBlank() && keys.contains(b)) avoidNames.add(e.name());
+        }
+        java.util.List<GdamCatalog.Entry> cands = GdamCatalog.pick(src, stage, avoidNames, 8);
+        if (cands.isEmpty()) return "";
+        StringBuilder cb = new StringBuilder("★후보 (이 스테이지 인지도·규모 가중 + 최근 등장 제외) — 되도록 이 중에서 골라라:\n");
+        for (GdamCatalog.Entry e : cands) cb.append("· ").append(e.name()).append(" — ").append(e.desc()).append("\n");
+        cb.append("(목록 밖 같은 출처 괴담도 확실히 알면 가능하나 위 후보 우선. 이름은 통용명 그대로.)\n");
+        cb.append(catalogAmplifyNote(stage));
+        return cb.toString();
+    }
+
     /** 피날레 복귀 캐스트 지시를 컨셉 뒤에 덧붙인다(없으면 그대로). roles 청크가 head(=컨셉 포함)로 이를 본다. */
     private String appendReturningCast(String concept, String returningCast) {
         if (returningCast == null || returningCast.isBlank()) return concept;
@@ -1239,14 +1272,28 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
             case "cosmic" -> { scope = "코즈믹 호러(우주적 공포) — 크툴루 신화·러브크래프트 계열, 외우주·차원 너머의 존재, 인간의 이해·이성을 넘어선 공포 (실존하는 창작 신화·전승)";
                 criterion = "★크툴루 신화 등 실존하는 코즈믹 호러 원전을 택하라(예: 크툴루·니알라토텝·요그소토스·하스터·슈브니구라스·미고·심연에서 온 것들·인스머스). 새로 지어내지 마라. "
                     + "약점이 뚜렷하지 않을 수 있으니 '이름을 부르지 말 것·바라보면 미침·특정 장소 접근 금지·의식을 멈춰라' 같은 ★금기·회피 조건★을 규칙(약점)으로 삼아라. 인간이 이길 수 없어도 '봉인·지연·탈출·희생'으로 해결 경로를 반드시 남겨라."; }
+            case "western" -> { scope = "서양 전설·민담·크립티드 (유럽·미주 등 실존 전승)";
+                criterion = "실존하는 서양 전설·크립티드를 택하라(규칙·약점 뚜렷). 새로 지어내지 마라."; }
+            case "creepypasta" -> { scope = "크리피파스타 (인터넷 창작 괴담 — 실존하는 유명 창작물)";
+                criterion = "실존하는 크리피파스타를 택하라(슬렌더맨·제프 더 킬러·사이렌헤드 등). 새로 지어내지 마라."; }
+            case "backrooms" -> { scope = "백룸(Backrooms) — 노클립으로 빠지는 이세계 레벨·실체(Entity)";
+                criterion = "실존하는 백룸 레벨·엔티티를 택하라(레벨0·스마일러·아몬드워터 등). 노클립·탈출 규칙을 살려라."; }
+            case "internet" -> { scope = "인터넷 괴담·아날로그 호러 (붉은방·모모·로컬58 등 실존)";
+                criterion = "실존하는 인터넷 괴담·아날로그 호러를 택하라. 새로 지어내지 마라."; }
+            case "real" -> { scope = "실화·미제사건·심리 증후군 (춤추는 역병·댜틀로프·리플리 증후군 등 실존)";
+                criterion = "실존하는 실화·미제사건·심리 증후군을 택하라(리플리·코타르·카그라 등 심리 증후군 환영 — 잘 안 나오니 적극)."; }
+            case "sf" -> { scope = "SF·과학 공포 — 외계 접촉·납치·지저인·시뮬레이션·기관 음모·기생·폭주 AI 등";
+                criterion = "외계·시뮬레이션·기관음모·기생·AI 등 ★과학적 공포★ 소재로 구성하라(로즈웰·MKULTRA·만델라효과·그레이 외계인·통 속의 뇌 등 실존 소재). 초자연이 아닌 '과학적·물질적 설명틀'이 핵심."; }
             default -> { scope = region;
                 criterion = "마이너·모호한 것 말고, 규칙과 약점이 뚜렷한 괴담을 택하라."; } // random
         }
+        String catBlock = catalogCandidates(filter, roomNumber, famTag);  // 카탈로그 인지도·규모 가중 + no-repeat 후보 주입
         String task = "너는 전 세계 괴담·도시전설·민간전승·SCP를 꿰뚫는 큐레이터다.\n"
             + "다음 범위에서 '실제로 전해지는(실존하는)' 괴담 1개를 골라라:\n"
             + "→ " + scope + "\n"
             + avoid
             + criterion + " 거울·반사·모방 소재는 금지.\n"
+            + catBlock
             + "★실재성 원칙(최우선): 반드시 ★실제로 존재하는 원전★만 골라라 — 그럴듯한 이름을 새로 창작하지 마라. 확신이 없으면 가장 유명하고 확실한 것을 택하라.\n"
             + "★원어 명칭 보존: 비영어권 원전(한국·일본·프로젝트 문 등)은 ★원어(공식) 명칭★을 그대로 써라 — 영어를 거쳐 임의로 재번역해 원래 이름을 훼손하지 마라.";
         String data = "아래 형식의 평문으로만 출력(JSON·머리말·해설 금지):\n"

@@ -93,8 +93,11 @@ description: >-
 - **★괴담 카탈로그(Phase 0 완료, GdamCatalog.java)★**: 173항목 큐레이트 — 통용명·출처(11: 한국/일본/서양/creepypasta/
   scp/cosmic/game/backrooms/internet/real/★sf 신설★)·fame(major28/semi58/minor87)·native_scale[min,max]·vibe(공존 페어링 결)·한줄.
   "::" 구분 텍스트블록+parse(SCP-2521 이름에 '|' 있어 파이프 회피). PM은 ProjectMoonLore 전용이라 제외. all()/bySource()/sources().
-  ★아직 소비처 없음 — Phase 1 선정엔진이 인지도·스케일 가중 + 공존 페어링에 쓸 예정.★ 공존은 ★같은 출처끼리만★
-  (SCP+cosmic 교차 금지 — 사용자 확정), 그 안에서 vibe로 짝. sf 6하위결(외계·지저·시뮬·음모·기생·AI우주).
+  ★Phase 1a 소비 중★: familiarConcept의 catalogCandidates()가 인지도(FAME_W 스테이지곡선)·규모(scaleWeight, 범위 벗어날수록
+  감점 최소15=0 아님) 가중 + no-repeat(recentFamiliarKeys+variantBase) 필터로 8후보 주입 → GdamCatalog.pick(비복원 가중추출).
+  RANDOM_KIND_POOL에 신설 출처(western/creepypasta/backrooms/internet/real/sf) 편입 + switch 케이스 + catalogAmplifyNote(규모
+  정합 증폭/축소). ★공존(같은 출처끼리만·SCP+cosmic 교차 금지·vibe로 짝·1~4 가변)은 Phase 1b 예정.★ sf 6하위결(외계·지저·
+  시뮬·음모·기생·AI우주). 검증: korean major S1 45%→S6 3%(억제, 0아님)·cosmic major S1 13%(규모 억제).
 - **[예약] 정보 경제 원칙(시나리오 개편 종료 후 검토)**: ①저해상도 힌트가 '사물함이 보인다'처럼 콕 찍어 과다노출 → 다른 것도
   섞어 진짜 저해상도로 ②정보는 얻기 어렵게 + 중요정보는 위험 감수 ③정확 정보=대부분 괴담 쉽게 종결(다회차·강능력 조기종결,
   질질끌기 X) ④잘못된 정보=파멸. 현재 안 지켜짐 — 이전 예약 항목 포함 시나리오 개편 종료 후 착수.
