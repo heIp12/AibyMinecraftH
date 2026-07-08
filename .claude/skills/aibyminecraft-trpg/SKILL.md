@@ -79,6 +79,12 @@ description: >-
   상시 갱신(효율 될 만한 지식은 항상 등록).
 
 ## 최근 추가된 아키텍처 사실 (회귀 방지)
+- **★프로젝트 문 시나리오 구조 룰렛(ProjectMoonLore)★**: build()가 ★구조를 먼저 추첨★(pickStructure)한 뒤 그 구조를
+  중심으로 짜게 한다 — 예전엔 pickAbnormalityBlock가 ★무조건★ 붙어 "환상체 1개 관리"로 100% 붕괴(실측 100/100, 변종·
+  특수사건 0). 이제 시대별 가중: 환상체관리(~60% 최다)·변종(ABNO_VARIANT→pickAbnormalityBlock variant=true, 실재성 완화
+  예외로 원본기반 변형 허용)·시련(Ordeal)·세피라억제·접대(주최/★손님=관점역전★/기타)·거울던전·도시사건. 에라도 가중
+  (pickEra: 로보토미48%>라오루32%>림버스20%). 헤지 '추가 사건'(드물게/매번은아님) 문구 제거(0% 발화 원인). directive()
+  0.5)에 구조 준수 규칙. ★"환상체 관리로만"으로 되돌리지 말 것.★
 - **자동진행 = GM위임 아닌 코드 결정(전지성 차단)**: 자동진행 경로 4개 중 GM을 호출하는 건 `maybeAccelerateIdle`
   하나뿐 — 나머지(advanceRoundAfterAllActed / busyClockJumpIfAllBusy / summonAllFree / 전원무력 워치독)는
   ★GM콜 0★(순수 시계·카운터 연산)이라 프로즈를 안 만들어 미발견 정보 누출이 원천 불가. maybeAccelerateIdle은
