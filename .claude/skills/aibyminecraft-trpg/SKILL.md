@@ -19,6 +19,12 @@ description: >-
    `python .claude/skills/aibyminecraft-trpg/tools/bracecheck.py <file>` → `OK 0/0/0` 이어야 함.
    - Java에서 정규식-무관하므로 신뢰. **주의**: HTML 안의 JS 정규식 리터럴(`/\(([^)]*)\)/` 등)은
      오탐(MISMATCH)을 낼 수 있음 → 그 줄이 편집 대상이 아니고 아래 node --check가 통과하면 무시.
+   - **★사각지대: 텍스트 블록 64KB 한도★** — bracecheck가 `OK`여도 ★단일 String 상수(텍스트 블록 `"""…"""`)가
+     UTF-8 65535바이트를 넘으면 컴파일 실패★("constant string too long"). 한글은 3바이트/자라 ~21800자에서 걸린다.
+     GM 프롬프트(PromptBuilder의 `GM_SYSTEM_BASE_*`)에 ★한글을 추가하면 반드시 블록별 바이트를 재라★:
+     `python3 -c "import re;… len(block.encode('utf-8'))"` (각 `"""…"""` < 65535). 넘으면 그 블록을 헤더 경계에서
+     둘로 쪼개(`_1A`/`_1B`) ★런타임★ `String.join`에 추가한다(컴파일타임 `+`·`final` 상수 연결은 여전히 단일 상수라 안 됨).
+     조립 결과가 분할 전과 바이트 동일한지 파이썬으로 확인. (이 한도는 BASE_2·BASE_1에서 두 번 걸렸다.)
 2. **JS 문법** (log-viewer.html 수정 시): `<script>` 추출 후 `node --check`. → node가 최종 판정.
 3. **크로미엄 렌더** (뷰어 동작 검증): 헤드리스로 로그 주입해 실제 결과 확인.
    - 편의 도구: `python .claude/skills/aibyminecraft-trpg/tools/viewer_verify.py --viewer AiByMinecraft/src/main/resources/log-viewer.html --log <a.jsonl> [--scenario <s.json>] [--probe <probe.js>]`
