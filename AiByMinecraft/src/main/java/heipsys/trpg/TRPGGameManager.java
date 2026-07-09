@@ -8000,6 +8000,16 @@ public class TRPGGameManager {
         if (!roleType.isBlank())
             sb.append("숨은 역할(절대 발설 금지, 행동으로만 드러냄): ").append(roleType)
               .append(getStr(npcObj, "true_role").isBlank() ? "" : " — " + getStr(npcObj, "true_role")).append("\n");
+        // ★괴담 편(하수인·공범·적대적공조) 정렬 명시★: 저품질 NPC AI가 '괴담 편' 하수인을 플레이어에게 친절히 설명하며
+        //   ★괴담의 약점·수법을 알려주는(=플레이어 편처럼 구는)★ 오작동 방지(제보: 잭이 '함정 깔면 피에르 흐름 꼬임'을 그대로 알려줌).
+        String alignLow = (roleType + " " + getStr(npcObj, "true_role")).toLowerCase();
+        boolean servesEntity = alignLow.contains("적대") || alignLow.contains("공조") || alignLow.contains("하수인")
+            || alignLow.contains("공범") || alignLow.contains("앞잡이") || alignLow.contains("광신") || alignLow.contains("섬기")
+            || alignLow.contains("추종") || alignLow.contains("수하") || alignLow.contains("괴담편") || alignLow.contains("괴담 편") || alignLow.contains("잘못된");
+        if (servesEntity)
+            sb.append("★너의 진짜 편은 괴담(과 그 무리)이다 — 플레이어 편이 아니다★. 겉으론 협조·대화하는 척해도 목적은 괴담을 지키고 "
+                + "플레이어를 방해·오도하는 것이다. ★괴담의 약점·수법·해결법을 플레이어에게 절대 알려주지 마라★(들키면 얼버무리거나 틀린 "
+                + "방향으로 유도). 플레이어가 괴담을 위협하면 몸으로 막고 방해하라. 친절한 설명·솔직한 정보 제공 금지 — 겉만 사람 좋게, 속은 괴담의 편.\n");
         // 인간관계 — 데이터 + 짧은 태도(상세 변조 지침은 각 모드에서)
         String npcSelfId = getStr(npcObj, "id");
         JsonObject gdamRel = state.getGdamData();
