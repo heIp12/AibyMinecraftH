@@ -12168,6 +12168,49 @@ public class TRPGGameManager {
                 + (fdc > 0 ? " §8(성공 기준 " + fdc + " 이상)" : "")
                 + " §7→ " + colorCode(col) + (outcome.isEmpty() ? "판정" : outcome));
         }, lastTick + 7L);
+        // ★즉시 자동 결과 서술(바로적용, "즉시 자동")★: [판정 결과]·[영감 통찰] 주입을 방금 마쳤으니 지금 바로 GM에게
+        //   결과 서술을 요청한다 — 다음 플레이어 행동을 기다리지 않고 판정 직후 자연스럽게 이어진다. 응답(~네트워크 2~3s)이
+        //   주사위 애니메이션과 겹쳐 도착 → 화면은 [시도 서술]→[주사위]→[결과 서술] 순으로 흐른다. 지금 바로 호출해 [판정
+        //   결과] 노트를 이 호출이 선점(다른 플레이어 턴이 가로채 이중 처리하는 것 방지) · 소비되므로 다음 행동에서 재서술 안 됨.
+        resolveDiceOutcome(player);
+    }
+
+    /** ★즉시 자동 결과 서술(바로적용, "즉시 자동")★ — 판정 직후 GM이 [판정 결과]대로 장면을 이어 서술하고 결과의
+     *  기계효과(피해·상태·봉인·종결)를 적용한다. ★턴 누적 처리(시계·쿨다운·NPC 자율·페이스·워치독 등)는 하지 않는다★ —
+     *  이건 같은 판정의 마무리 비트지 새 턴이 아니다(onGmResponse 경유 시 이 모두가 이중 발화하므로 직접 처리). 새 <DICE>는
+     *  파싱하지 않아 재귀 없음. [판정 결과]/[영감 통찰] 주입을 이 호출이 소비 → 다음 행동에서 이중 서술 안 됨. */
+    private void resolveDiceOutcome(Player player) {
+        if (player == null || !player.isOnline()) return;
+        if (currentPhase != Phase.HORROR && currentPhase != Phase.DAILY) return;
+        if (concludingEnding) return;
+        String contInput = "판정 결과가 나왔다 — 위 [판정 결과]대로 방금 그 인물의 장면을 ★이어서★ 서술하고, 그 결과의 여파와 "
+            + "기계효과(피해·상태 변화·봉인·종결 등 필요한 것)를 적용하라. 결과와 어긋나게(실패인데 성공한 듯, 또는 반대로) 쓰지 마라. "
+            + "★새 판정(<DICE>)·행동 소요(<DUR>)는 내지 마라 — 이 판정은 이미 끝났다.★ 결과 전개만 짧고 자연스럽게.";
+        ai.callGmAi(gmSystemPrompt, contInput).thenAccept(raw ->
+            plugin.getServer().getScheduler().runTask(plugin, () -> {
+                if (!player.isOnline()) return;
+                if (currentPhase == Phase.GAMEOVER || currentPhase == Phase.CLEAR || currentPhase == Phase.IDLE || concludingEnding) return;
+                if (raw == null || raw.isBlank() || raw.startsWith("§c[GM")) return; // 네트워크 오류 응답은 서술로 흘리지 않는다
+                // 종결(CLEAR): 결정적 성공이면 결과 서술 후 시나리오를 바로 매듭(다음 행동 대기 없이). onGmResponse의 CLEAR 처리와 동형.
+                JsonObject clearTag = (currentPhase == Phase.HORROR) ? ai.parseClearTag(raw) : null;
+                if (clearTag != null) {
+                    String grade = clearTag.has("grade") ? clearTag.get("grade").getAsString() : "C";
+                    String capG = capGradeByThreat(grade);
+                    if (!capG.equals(grade)) { gameLogger.logEvent("위협도 " + state.getThreat() + " → 클리어 등급 상한 " + grade + "→" + capG); grade = capG; }
+                    String reason = clearTag.has("reason") ? clearTag.get("reason").getAsString() : "";
+                    String by = clearTag.has("by") && !clearTag.get("by").isJsonNull() ? clearTag.get("by").getAsString().trim() : "";
+                    boolean resolved = clearTag.has("resolved") ? clearTag.get("resolved").getAsBoolean() : gradeIdx(grade) >= gradeIdx("B");
+                    deliverNarrative(player, raw);
+                    onClearEnding(grade, reason, resolved, by);
+                    return;
+                }
+                // 상태·위협 기계효과 적용 후 결과 서술 배달. 연출 싱크(present) 없이 즉시 반영(이 비트엔 주사위·팝업 연출이 없다).
+                JsonObject stateUpdate = ai.parseStateUpdate(raw);
+                if (stateUpdate != null) applyStateUpdate(stateUpdate);
+                applyThreatAngerTags(raw);
+                deliverNarrative(player, raw);
+                checkDeaths();
+            }));
     }
 
     /** NamedTextColor → §코드 (채팅 기록 강조용) */
