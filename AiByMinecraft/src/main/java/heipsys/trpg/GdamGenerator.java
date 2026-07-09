@@ -524,6 +524,7 @@ area보다 상위 개념. 서로 ★도보로 오갈 수 없는 완전히 분리
 ## npcs 설계 원칙 ★ (하이브리드 NPC)
 npcs 배열은 시나리오에 등장하는 주변 인물(플레이어 배역 외)을 정의한다.
 - critical: false (일반 NPC): GM AI가 서술에 통합하여 직접 조종. name·zone만 필수.
+- ★age(나이, 정수 8~85)★: ★모든 NPC★(critical·비critical)에 역할·맥락에 맞는 현실적 나이를 넣어라 — 게임이 이 나이로 세대별 말투·어휘(어린이=쉬운 말·짧은 문장, 청소년=줄임말·유행어, 청년=표준 회화, 중장년=관용구·에두름, 노년=옛말투·속담)를 자동으로 입힌다. 예: 학생=10대, 직장인=20~50대, 노인 관리인·촌로=60대+. ★빠지면 '세대 불명'이 되어 나이대 말투가 통째로 안 붙는다.★
 - critical: true (중요 NPC): 독립 AI 인스턴스로 자율 행동. 스테이지당 1~2명으로 제한.
   * personality: 성격·숨겨진 면 한 문장 — ★상투형 라벨로 때우지 마라(겁쟁이·친절·예민 같은 유형어만 쓰지 말 것). 이 인물만의 구체적 모순·습관·디테일로 잡아라★ (예: "겁쟁이지만 비밀을 안다"처럼 뭉뚱그리지 말고 → "남 앞에선 침착한 척하지만 혼자되면 문을 세 번 확인하고, 열쇠를 쥐고도 모른 척한다"처럼). ★personality엔 화법·말투('세월에 빗대어 말하며' 류)도, 정서 기질('웬만해선 안 놀란다' 류)도 넣지 마라 — 말투는 speech_style가, 기질은 temperament가 맡는다. personality는 '무슨 사람인가(가치관·모순·습관·비밀)'만 담고 speech_style·temperament와 ★내용이 겹치지 않게★ 나눠라.★
   * motivation: 이 NPC의 목표 한 문장 (예: "살아남기 위해 진실을 숨기려 한다")
@@ -700,8 +701,8 @@ critical NPC는 한자리 고정이 아니다 — 메인/사이드 사건에 참
   ],
   "zones": [{"zone_id":"zone_A","name":"","area":"","accessible_by":[],"exclusive":false,"connections":["zone_B"]}],
   "npcs": [
-    {"id":"npc_A","name":"","zone":"zone_A","critical":false,"role_type":"무관"},
-    {"id":"npc_B","name":"","zone":"zone_B","critical":true,"role_type":"방어막","true_role":"","personality":"","motivation":"","honesty":"방어형","speech_style":"","knowledge":[],
+    {"id":"npc_A","name":"","zone":"zone_A","critical":false,"role_type":"무관","age":45},
+    {"id":"npc_B","name":"","zone":"zone_B","critical":true,"role_type":"방어막","age":29,"true_role":"","personality":"","motivation":"","honesty":"방어형","speech_style":"","knowledge":[],
      "schedule":[{"goal":"","time":"E1 이후 1턴","action":"","will":"강함"},{"goal":"","time":"반응","condition":"정체를 의심받으면","action":"","will":"상황"}]}
   ],
   "key_items": [
@@ -1822,7 +1823,36 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
                 for (JsonObject npc : withEnding) npc.addProperty("ending_style", "");
                 logger.info("[gdam] 개성 어미 미등장(70%) → " + withEnding.size() + "명 어미 제거");
             }
+            // ★모든 NPC 나이 보장(세대 말투)★: age가 없으면 런타임에서 ageRegisterHint(나이대 어휘)가 통째로 스킵된다 —
+            //   AI가 안 넣었거나 구 스키마면 역할·이름 힌트로, 없으면 안정 해시로 현실적 나이를 채운다(AI가 넣은 유효 나이는 존중).
+            for (JsonElement el : npcs) {
+                if (el != null && el.isJsonObject()) ensureNpcAge(el.getAsJsonObject());
+            }
         } catch (Exception ignore) { /* 후처리 실패해도 저장은 진행 */ }
+    }
+    /** ★모든 NPC 나이 보장★ — 유효 나이(6~100)면 존중, 없으면 guessNpcAge로 채워 나이대 말투가 늘 붙게. */
+    private void ensureNpcAge(JsonObject npc) {
+        int age = -1;
+        try { if (npc.has("age") && !npc.get("age").isJsonNull()) age = npc.get("age").getAsInt(); } catch (Exception ignore) {}
+        if (age >= 6 && age <= 100) return; // AI가 넣은 유효 나이 존중
+        npc.addProperty("age", guessNpcAge(npc));
+    }
+    /** 역할·이름·성격 키워드로 대략의 나이대, 없으면 안정 해시로 성인(22~54) 배정. */
+    private int guessNpcAge(JsonObject npc) {
+        StringBuilder b = new StringBuilder();
+        for (String k : new String[]{"role_type","true_role","name","personality","motivation"})
+            if (npc.has(k) && !npc.get(k).isJsonNull()) b.append(npc.get(k).getAsString()).append(' ');
+        String s = b.toString();
+        int h = Math.floorMod(idName(npc).hashCode(), 1000);
+        if (containsAny(s, "아이","어린이","아동","꼬마","소년","소녀","유치","초등"))            return 8  + h % 5;   // 8~12
+        if (containsAny(s, "학생","청소년","중학","고교","고등","십대","교복"))                 return 14 + h % 5;   // 14~18
+        if (containsAny(s, "노인","노파","촌로","할머","할아버","원로","은퇴","고령"))            return 62 + h % 18;  // 62~79
+        if (containsAny(s, "교장","원장","소장","촌장","사장","부장","중년","가장","아버","어머")) return 45 + h % 15;  // 45~59
+        return 22 + h % 33; // 성인 기본 22~54
+    }
+    private static boolean containsAny(String s, String... kws) {
+        for (String k : kws) if (s.contains(k)) return true;
+        return false;
     }
     /** ending_style 인물 나이를 12~35로: 실제 나이가 있으면 경계로 클램프, 없으면 안정적 해시로 16~35 배정(D2). */
     private void clampSpeechAge(JsonObject npc) {
