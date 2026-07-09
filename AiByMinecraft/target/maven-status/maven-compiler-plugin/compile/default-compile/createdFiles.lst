@@ -2,6 +2,7 @@ heipsys\trpg\TRPGGameManager$1.class
 heipsys\trpg\CharacterGenerator.class
 heipsys\trpg\CorruptionManager.class
 heipsys\trpg\TRPGGameManager$PendingDelivery.class
+heipsys\trpg\GdamCatalog$Entry.class
 heipsys\trpg\TRPGGameManager$DroppedNote.class
 heipsys\trpg\AiManager.class
 heipsys\trpg\ItemManager.class
@@ -15,6 +16,7 @@ heipsys\trpg\GameStateManager.class
 heipsys\trpg\model\PlayerData.class
 heipsys\trpg\TurnManager.class
 heipsys\trpg\DialogManager$DialogState.class
+heipsys\trpg\projectmoon\ProjectMoonLore$Structure.class
 heipsys\trpg\projectmoon\ProjectMoonLore$Injection.class
 heipsys\trpg\cmd\CMDJoin.class
 heipsys\trpg\TRPGGameManager$OracleChoice.class
@@ -41,9 +43,11 @@ heipsys\trpg\ScenarioArchetypes$Arch.class
 heipsys\trpg\CharacterGenerator$JobTier.class
 heipsys\trpg\model\TraitData.class
 heipsys\trpg\AiManager$Quality.class
+heipsys\trpg\GdamCatalog$Fame.class
 heipsys\trpg\projectmoon\ProjectMoonLore.class
 heipsys\trpg\AiManager$UsageStat.class
 heipsys\trpg\TraitManager$StageEndChoices.class
+heipsys\trpg\TRPGGameManager$SecretChannel.class
 heipsys\trpg\MapManager$OverviewRenderer.class
 heipsys\trpg\GdamGenerator$FamiliarEntity.class
 heipsys\trpg\TRPGGameManager$EvalResult.class
@@ -57,10 +61,12 @@ heipsys\trpg\TRPGGameManager$Phase.class
 heipsys\ChatListener.class
 heipsys\trpg\ContextCompressor.class
 heipsys\trpg\TraitButtonManager.class
+heipsys\trpg\GdamCatalog.class
 heipsys\trpg\ScenarioArchetypes$Tier.class
 heipsys\trpg\cmd\CMDReload.class
 heipsys\trpg\MapManager.class
 heipsys\trpg\SystemTraitRegistry$Effect.class
 heipsys\trpg\TurnManager$GmResponse.class
 heipsys\trpg\GdamGenerator.class
+heipsys\trpg\JsonSalvage.class
 heipsys\AICraft.class
