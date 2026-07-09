@@ -1044,13 +1044,23 @@ public class TRPGGameManager {
         gmSystemPrompt = buildGmPrompt(state.getGdamData());
 
         // 배역 스탯 재적용 + 등장 상태 재설정 (resetToBase로 제거된 배역 보정 복구)
-        // 배역 자체(roleId/zone)와 특성은 resetToBase에서 유지되므로 재배정 불필요
+        // 배역 자체(roleId)·특성은 resetToBase에서 유지되므로 재배정은 불필요하나,
+        // ★위치·소지품은 배역 시작값으로 되돌린다★(재도전 = 같은 스테이지를 처음부터):
+        //   pd.zone은 resetToBase가 '유지'해 전판 마지막 위치가 남고(제보: "재도전 시 시작위치가
+        //   전판 마지막 장소와 이어짐"), 인벤토리도 초기화되지 않아 전판 아이템이 그대로 이월된다.
+        //   giveRoleStartItems로 시작 구역 복원 + start_item 재지급. 정보·지도(visitedZones)는 유지
+        //   (giveRoleStartItems는 visitedZones를 add만 하므로 지도는 그대로 이어짐 — 사용자 허용사항).
         for (PlayerData pd : state.getAllPlayers()) {
             JsonObject roleData = getRoleDataById(pd.roleId);
             if (roleData != null) applyRoleStats(pd, roleData);
             if (isImmediateSpawn(pd.roleId)) spawnedPlayers.add(pd.uuid);
             Player rp = Bukkit.getPlayer(pd.uuid);
-            if (rp != null && rp.isOnline()) scoreMan.update(rp, pd, state.getRoomNumber());
+            if (rp != null && rp.isOnline()) {
+                pd.heldItemIds.clear(); pd.itemStates.clear(); pd.spot = ""; // 소지 추적·부위치 초기화(전판 아이템 desync 방지)
+                rp.getInventory().clear();                                   // 전판 아이템 물리 제거
+                giveRoleStartItems(rp, pd.roleId);                          // 배역 시작 구역 복원 + 시작 아이템 재지급
+                scoreMan.update(rp, pd, state.getRoomNumber());
+            }
         }
 
         currentPhase = Phase.DAILY;
