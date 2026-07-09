@@ -144,10 +144,14 @@ public class AiManager {
     }
 
     // ── provider별 등급 기본 모델 (네트워크 없음) ──
+    // 티어 지도(역할↔능력): HIGH=GM고품질·생성고품질(플래그십) · MEDIUM=GM기본·생성기본(강한 중형) · LOW=엔티티·보조(유능한 소형) · MINI=NPC(유능한 소형)
+    //   ★provider 능력 정렬★: Claude Haiku 4.5는 유능한 소형이라 LOW/MINI에 적합하나, OpenAI nano는 그보다 아래 급이라 엔티티·보조에도 부실 → OpenAI LOW/MINI는 mini로 통일(nano 미사용).
     private String defHigh()   { return switch (apiType) { case "claude" -> "claude-opus-4-8";          case "openai" -> "gpt-5.5";      default -> "gemini-2.5-pro"; }; }
-    private String defMedium() { return switch (apiType) { case "claude" -> "claude-sonnet-5";          case "openai" -> "gpt-5.4";      default -> "gemini-2.5-flash"; }; }
-    private String defLow()    { return switch (apiType) { case "claude" -> "claude-haiku-4-5-20251001"; case "openai" -> "gpt-5.4-nano"; default -> "gemini-2.5-flash-lite"; }; }
-    private String defMini()   { return switch (apiType) { case "claude" -> "claude-haiku-4-5-20251001"; case "openai" -> "gpt-5.4-mini"; default -> "gemini-2.5-flash"; }; }
+    private String defMedium() { return switch (apiType) { case "claude" -> "claude-sonnet-5";          case "openai" -> "gpt-5.4";      default -> "gemini-3.5-flash"; }; }
+    private String defLow()    { return switch (apiType) { case "claude" -> "claude-haiku-4-5-20251001"; case "openai" -> "gpt-5.4-mini"; default -> "gemini-3.1-flash-lite"; }; }
+    private String defMini()   { return switch (apiType) { case "claude" -> "claude-haiku-4-5-20251001"; case "openai" -> "gpt-5.4-mini"; default -> "gemini-3.1-flash-lite"; }; }
+    // 티어별 대표 모델(2026): HIGH claude=Opus4.8/openai=gpt-5.5/gemini=2.5-pro(최심추론) · MEDIUM sonnet-5/gpt-5.4/3.5-flash(주력)
+    //   · LOW·MINI haiku-4.5/gpt-5-mini/3.1-flash-lite(경량 floor·nano 미사용). GM은 gmModel()에서 LOW라도 mini 바닥 보장.
 
     /** 백그라운드 워밍업 — 시작 시 호출하면 최신 모델 탐지가 메인 스레드를 막지 않는다. */
     public void warmUpModels() { CompletableFuture.runAsync(this::ensureModelsDiscovered); }
@@ -175,9 +179,9 @@ public class AiManager {
                         if (autoHigh == null) autoHigh = latestVer(ids, new String[]{"gpt-4"}, OAI_NON_FLAGSHIP);
                         autoMedium = latestVer(ids, new String[]{"gpt-5", "mini"}, OAI_SPECIAL); // 최신 gpt-5*-mini
                         if (autoMedium == null) autoMedium = autoHigh;
-                        autoLow = latestVer(ids, new String[]{"nano"}, OAI_SPECIAL);          // 최신 *-nano(최저가)
-                        if (autoLow == null) autoLow = latestVer(ids, new String[]{"mini"}, OAI_SPECIAL);
-                        autoMini = latestVer(ids, new String[]{"mini"}, OAI_SPECIAL);         // 미니 = 최신 *-mini(나노 한 단계 위)
+                        autoLow = latestVer(ids, new String[]{"mini"}, OAI_SPECIAL);          // ★nano는 엔티티·보조에도 부실 → 저티어 바닥도 mini★(nano 미사용)
+                        if (autoLow == null) autoLow = autoMedium;
+                        autoMini = latestVer(ids, new String[]{"mini"}, OAI_SPECIAL);         // 미니(NPC) = 최신 *-mini
                     }
                     default -> { // gemini — 버전 최신 우선(gemini-2.5 < 3 < 3.1 < 3.5 …), 특수형 제외
                         autoHigh   = latestVer(ids, new String[]{"pro"}, GEMINI_NONCHAT);
@@ -299,7 +303,8 @@ public class AiManager {
     /** 모델 가격 (USD per 1M 토큰) [입력, 출력]. 모르는 모델은 보수적 추정. */
     private static double[] modelPriceUsd(String model) {
         String m = model == null ? "" : model.toLowerCase();
-        // Claude
+        // Claude (2026: Fable 5 $10/$50 · Opus 4.8 $5/$25 · Sonnet 5 $3/$15 · Haiku 4.5 $1/$5)
+        if (m.contains("fable") || m.contains("mythos")) return new double[]{10, 50}; // 최상위(플래그십 초과) — 누락 시 기본값으로 과소추정되던 것 보정
         if (m.contains("opus"))   return new double[]{5, 25};
         if (m.contains("sonnet")) return new double[]{3, 15};
         if (m.contains("haiku"))  return m.contains("3-haiku")   ? new double[]{0.25, 1.25}
@@ -509,14 +514,19 @@ public class AiManager {
         catch (Exception e) { return 0L; }
     }
 
-    /** GM AI 호출 모델 — 역할 오버라이드 우선, 없으면 ★최소 Sonnet(중) 보장★(고품질만 Opus). */
+    /** GM AI 호출 모델 — 역할 오버라이드 우선, 없으면 ★최소 mini 보장(nano 금지)★. 저=mini·중=Sonnet·고=Opus. */
     private String gmModel() {
         if (gmOverride != null) return gmOverride;
-        // ★GM 이야기 엔진은 나노/Haiku급으로는 못 돌린다★: 저품질(LOW)로 GM을 최저 모델에 태우면 서술·판정·규칙준수가
-        //   무너져 교착(전행동 봉쇄)·능력효과 무시·아이템↔구역 정합 붕괴·태그 오형식이 쏟아진다(플레이 로그 실측).
-        //   그래서 GM은 생성기(gdamModel)와 동일하게 ★중품질(Sonnet)을 바닥★으로 둔다 — 저품질 세션은
-        //   NPC·엔티티·보조(mini/Haiku)에서만 비용을 아끼고, GM은 중품질 이상으로 굴러가 게임이 진행되게 한다.
-        return gmQuality == Quality.HIGH ? highModel() : sonnetModel();
+        // ★GM에 nano 금지★: GM은 '규칙 달린 런타임 오퍼레이터'(긴 시스템 프롬프트 유지·시나리오 JSON 교차검증·
+        //   zone/item/clue/state 정합·태그 형식 준수·진행 가능 상태 보존)라 단순 대화 생성과 다르다. 최저(nano)에선
+        //   제약 유지가 먼저 무너져 교착(전행동 봉쇄)·구역 정합 붕괴·태그 오형식으로 게임이 멈춘다(플레이 로그 실측).
+        //   그래서 저/중/고 등급은 살리되 ★GM 바닥은 mini★ — 저=mini(플레이 가능선), 중=Sonnet(권장 기본), 고=Opus(복합·고난도).
+        //   저품질 세션은 mini로 굴러가고(방호벽: 교착차단·태그누출·지오검증 프롬프트가 받쳐줌), 나노는 GM에 안 쓴다.
+        return switch (gmQuality) {
+            case HIGH -> highModel();
+            case LOW  -> miniModel();   // ★floor=mini★ (claude=Haiku 4.5 / openai=gpt-5-mini) — nano로 안 내려간다
+            default   -> sonnetModel(); // MEDIUM
+        };
     }
 
     /** .gdam 생성 모델 — 역할 오버라이드 우선, 없으면 최소 Sonnet 보장(고품질만 Opus). */
