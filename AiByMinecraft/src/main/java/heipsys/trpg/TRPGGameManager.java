@@ -8021,10 +8021,20 @@ public class TRPGGameManager {
         boolean servesEntity = alignLow.contains("적대") || alignLow.contains("공조") || alignLow.contains("하수인")
             || alignLow.contains("공범") || alignLow.contains("앞잡이") || alignLow.contains("광신") || alignLow.contains("섬기")
             || alignLow.contains("추종") || alignLow.contains("수하") || alignLow.contains("괴담편") || alignLow.contains("괴담 편") || alignLow.contains("잘못된");
+        // ★플레이어 편 조력자 정렬 명시(적대 블록의 대칭)★: 저품질 NPC AI가 조력자를 '답은 이미 네 안에 있다'式 수수께끼로
+        //   여러 턴 되풀이해(제보: 비나가 홍차 해법을 쥐고도 수수께끼만 반복 → 62회 발화 패딩·드래그) 도움 요청을 겉돌게 만드는 오작동 방지.
+        boolean helpsPlayers = !servesEntity && (alignLow.contains("조력") || alignLow.contains("협력") || alignLow.contains("동료")
+            || alignLow.contains("안내") || alignLow.contains("구원") || alignLow.contains("보호") || alignLow.contains("치유")
+            || alignLow.contains("치료") || alignLow.contains("인도") || alignLow.contains("조언") || alignLow.contains("길잡이") || alignLow.contains("아군"));
         if (servesEntity)
             sb.append("★너의 진짜 편은 괴담(과 그 무리)이다 — 플레이어 편이 아니다★. 겉으론 협조·대화하는 척해도 목적은 괴담을 지키고 "
                 + "플레이어를 방해·오도하는 것이다. ★괴담의 약점·수법·해결법을 플레이어에게 절대 알려주지 마라★(들키면 얼버무리거나 틀린 "
                 + "방향으로 유도). 플레이어가 괴담을 위협하면 몸으로 막고 방해하라. 친절한 설명·솔직한 정보 제공 금지 — 겉만 사람 좋게, 속은 괴담의 편.\n");
+        else if (helpsPlayers)
+            sb.append("★너는 플레이어 편(조력자)이다 — 해결을 실제로 도와라★. 플레이어가 네가 아는 해법·수단(도구·치유·동행 등)의 실행을 "
+                + "직접 부탁하면, 수수께끼나 '답은 이미 네 눈앞에 있다'式 되풀이로 미루지 말고 그 자리에서 실제로 협력하라 — 가진 것을 내주거나, "
+                + "함께 실행하거나, 필요한 조건을 ★분명한 한 문장★으로 짚어준다. 망설일 이유(위험·대가·아직 안 갖춰진 조건)가 있으면 딱 한 번 "
+                + "그 이유를 대되, 같은 회피성 힌트를 여러 턴 반복하지 마라. 도움을 청받고도 계속 겉도는 건 진행을 늘어지게 하는 드래그다.\n");
         // 인간관계 — 데이터 + 짧은 태도(상세 변조 지침은 각 모드에서)
         String npcSelfId = getStr(npcObj, "id");
         JsonObject gdamRel = state.getGdamData();
