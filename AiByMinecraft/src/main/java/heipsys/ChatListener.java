@@ -139,7 +139,11 @@ public class ChatListener implements Listener {
             //   빈 지도(MAP)가 우클릭 시 일반 지도로 변해 이름이 소실되거나, 물약을 마시거나,
             //   부싯돌로 불을 붙이는 등 소품의 바닐라 기능이 발동되던 버그 방지. 소품 내용은
             //   아이템 이름·설명(lore)으로 읽고, 실제 '사용'은 게임 행동(대사)·능력으로 처리한다.
-            event.setCancelled(true);
+            //   ★단 '읽는 책'(WRITTEN_BOOK)은 예외★ — 우클릭으로 페이지를 펼쳐 읽는 것이 정상 동작이고
+            //   읽어도 아이템이 변질되지 않는다. 4f68510 catch-all이 이 책까지 막아 '책이 안 열림'
+            //   버그가 났으므로, 책은 통과시켜 바닐라 읽기 UI가 열리게 둔다(그 외 소품만 취소).
+            var used = event.getItem();
+            if (used == null || used.getType() != Material.WRITTEN_BOOK) event.setCancelled(true);
         }
     }
 
