@@ -12537,6 +12537,7 @@ public class TRPGGameManager {
             int val = Math.max(1, Math.min(20, raw + statBonus + lb));
             int crit = raw == 20 ? 1 : raw == 1 ? -1 : 0;                // 자연 최대·최소 = 대성공·대실패
             rolls.addProperty(k, val);
+            if (lb != 0) rolls.addProperty(k + "_luck", lb);            // ★표시 분해용★ 행운 보정분 — 성패는 val로, 표시는 '능력치+행운'으로 쪼갠다
             if (crit != 0) rolls.addProperty(k + "_crit", crit);
             if (!first) note.append(" · ");
             first = false;
@@ -12601,9 +12602,8 @@ public class TRPGGameManager {
         //   예전 형식('영감 16 (기준 12) → 성공')엔 dN=M·'이상 성공'이 없어 뷰어가 주사위로 인식 못 해 애니메이션이 안 나왔다.
         gameLogger.logAbilityResult(pd != null ? pd.gmDisplayName() : player.getName(), "주사위 판정",
             (reason.isEmpty() ? "행동 판정" : reason) + " — d20=" + val + " (기준 " + dc + " 이상 성공) → " + outcome);
-        // 왜 굴리는지 먼저 안내(관전자 포함)
-        msgToWatchers(player, "§e🎲 " + (reason.isEmpty() ? "판정" : reason) + " §7— d20 (" + dc + " 이상 성공)"
-            + (label.isEmpty() ? "" : " §8[" + label + "]") + "§7 굴립니다…");
+        // 왜 굴리는지 먼저 안내(관전자 포함) — ★행동 텍스트는 여기 한 번만★(결과 줄엔 반복하지 않는다). d20·기준·능력치 표기는 결과 줄로 미뤄 짧게.
+        msgToWatchers(player, "§e🎲 " + (reason.isEmpty() ? "판정" : reason) + " §7— 굴립니다…");
         // ★인게임 굴림 연출★: 무작위 프레임(약 0.8s) → 착지값 강조. onDone은 착지 시점에 실행해 인라인 뒤 서술이 자연히 이어지게(연출은 서술과 겹쳐 흐른다).
         final int FRAMES = 8;
         for (int i = 0; i < FRAMES; i++) {
@@ -12617,7 +12617,9 @@ public class TRPGGameManager {
             }, i * 3L);
         }
         final long landTick = FRAMES * 3L + 2L;
-        final int fval = val, fdc = dc; final String fout = outcome, flabel = label, freason = reason;
+        int luckPart = (rolls != null && statKey != null && rolls.has(statKey + "_luck")) ? rolls.get(statKey + "_luck").getAsInt() : 0;
+        final int fval = val, fdc = dc, fstat = val - luckPart, fluck = luckPart; // 표시: 능력치분(fstat) + 행운분(fluck) = 판정값(fval)
+        final String fout = outcome, flabel = label, freason = reason;
         final NamedTextColor fcol = col;
         plugin.getServer().getScheduler().runTaskLater(plugin, () -> {   // ★굴림이 끝난 뒤에야 결과 공개★(강조 타이틀 + 채팅) — 미리 노출 금지
             if (!player.isOnline()) return;
@@ -12625,8 +12627,11 @@ public class TRPGGameManager {
                 Component.text("《 " + fval + " 》", fcol, TextDecoration.BOLD),
                 Component.text("d20 · " + fdc + " 이상 성공 · " + fout, fcol),
                 Title.Times.times(Duration.ofMillis(120), Duration.ofMillis(2200), Duration.ofMillis(500))));
-            msgToWatchers(player, "§7─ §e🎲 " + (freason.isEmpty() ? "판정" : freason)
-                + " §7[" + (flabel.isEmpty() ? "판정" : flabel) + " " + fval + " / 기준 " + fdc + "] → " + colorCode(fcol) + fout + " §7─");
+            // ★압축 결과 표기(요청)★: 행동 텍스트(freason)는 위 '굴립니다' 줄에 이미 나왔으니 반복하지 않고,
+            //   [능력치(+행운 보정) / 기준] → 결과 만 짧게 — 긴 서술 반복·어중간한 줄바꿈 제거.
+            String statDisp = (flabel.isEmpty() ? "판정" : flabel) + " " + fstat
+                + (fluck > 0 ? " §7+행운 " + fluck : fluck < 0 ? " §7-행운 " + (-fluck) : "");
+            msgToWatchers(player, "§e🎲 §7[§f" + statDisp + " §7/ 기준 " + fdc + "§7] → " + colorCode(fcol) + fout);
         }, landTick);
         // ★순서 보장(사용자 요청)★: 굴림 → 착지(결과 공개) → ★그 다음에★ 결과 서술이 이어진다.
         //   결과가 눈에 들어올 짧은 틈(0.8s)을 준 뒤 onDone(뒤 서술)을 실행 — 결과·서술을 미리 보여주고 굴리지 않는다.
