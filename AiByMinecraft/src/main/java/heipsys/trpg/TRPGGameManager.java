@@ -1296,6 +1296,19 @@ public class TRPGGameManager {
             player.sendMessage("§6[설정] 무행동 자동 스킵: " + (autoSkipAllActed
                 ? "§a켜짐 §7(행동가능 전원이 행동을 마치면 즉시 진행 — turnMode 0/1, 실험적)"
                 : "§c꺼짐 §7(기본 — 3분 무행동 워치독으로만 진행)") + " §7— 즉시 적용");
+        } else if (key.equals("groupturn") || key.equals("단체턴") || key.equals("턴처리")) {
+            // ★단체턴★ true=단체(행동가능 전원 행동 수집 후 GM 1회 통합 처리 — 일관성·비용↓, 기본) / false=개별(행동마다 즉시 GM 호출).
+            if (sub.length >= 2) {
+                String v = sub[1].toLowerCase();
+                if (v.equals("on") || v.equals("단체") || v.equals("group") || v.equals("true") || v.equals("1")) state.setGroupTurn(true);
+                else if (v.equals("off") || v.equals("개별") || v.equals("individual") || v.equals("solo") || v.equals("false") || v.equals("0")) state.setGroupTurn(false);
+                else { player.sendMessage("§c사용법: §f/trpg setting groupturn <on=단체 | off=개별>"); return; }
+            } else {
+                state.setGroupTurn(!state.isGroupTurn()); // 값 없으면 토글
+            }
+            player.sendMessage("§6[설정] 턴 처리 방식: " + (state.isGroupTurn()
+                ? "§a단체턴 §7(행동가능 전원 행동 수집 후 GM 1회 통합 처리 — 일관성↑·비용↓, 기본)"
+                : "§e개별턴 §7(행동마다 즉시 GM 호출 — 응답 빠름·비용↑)") + " §7— 즉시 적용");
         } else {
             openStartSettings(player);
         }
@@ -1304,6 +1317,7 @@ public class TRPGGameManager {
     /** 현재 시작 설정 — 다이얼로그로 열어 자동생성·시작 스테이지·괴담 유형을 클릭으로 고른다(/trpg setting, /trpg s s). */
     public void openStartSettings(Player player) {
         dialogMan.showStartSettings(player, autoPregen, startStage, conceptTypeHint, gdamGen.getFamePool(),
+            state.isGroupTurn(),
             () -> { // 자동 사전생성 토글
                 autoPregen = !autoPregen;
                 player.sendMessage("§6[설정] 자동 사전생성: " + (autoPregen ? "§a켜짐" : "§c꺼짐 §7(/trpg next에서 즉석 생성)"));
@@ -1329,7 +1343,14 @@ public class TRPGGameManager {
                     case "major" -> "유명한 것만"; case "semi" -> "덜 유명한 것만"; case "minor" -> "마이너한 것만"; default -> "난이도별(기본)"; };
                 player.sendMessage("§6[설정] 인지도 풀: §e" + lbl + " §7— 다음 생성부터 적용");
                 openStartSettings(player);
-            }));
+            }),
+            () -> { // 단체턴/개별턴 토글
+                state.setGroupTurn(!state.isGroupTurn());
+                player.sendMessage("§6[설정] 턴 처리 방식: " + (state.isGroupTurn()
+                    ? "§a단체턴 §7(전원 행동 후 GM 1회 통합 — 일관성↑·비용↓)"
+                    : "§e개별턴 §7(행동마다 즉시 GM 호출 — 응답 빠름·비용↑)"));
+                openStartSettings(player);
+            });
     }
 
     private static final String[] GRADE_ORDER = {"F", "E", "D", "C", "B", "A", "S"}; // gradeIdx와 동일 순서

@@ -141,7 +141,7 @@ public class CMDTrpg implements CommandExecutor, TabCompleter {
             String sub = args[0].toLowerCase();
             String partial2 = args[1].toLowerCase();
             if (sub.equals("setting") || sub.equals("set")) {
-                return Stream.of("pregen", "stage", "type", "turnmode").filter(s -> s.startsWith(partial2)).collect(Collectors.toList());
+                return Stream.of("pregen", "stage", "type", "turnmode", "groupturn").filter(s -> s.startsWith(partial2)).collect(Collectors.toList());
             }
             if (sub.equals("start") || sub.equals("s")) {
                 return Stream.of("setting").filter(s -> s.startsWith(partial2)).collect(Collectors.toList());

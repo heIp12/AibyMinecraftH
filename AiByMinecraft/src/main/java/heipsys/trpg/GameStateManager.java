@@ -70,6 +70,7 @@ public class GameStateManager {
     private int     clockEnd           = -1;    // 종료 시각(분, 시작 기준 누적; start 이하이면 +1440)
     private int     minutesPerTurn     = 15;    // 공포 파트 1턴당 진행 분
     private int     turnMode           = 1;     // ★#151★ 0=고정(턴당 고정 분) / 1=가변(행동 DUR로 시계 진행, ★기본값★) / 2=비동기 busy. 세션 시작 시 래치, 세이브 포함.
+    private boolean groupTurn          = true;  // ★단체턴★ true=단체(행동가능 전원 행동 수집 후 GM 1회 통합 처리, ★기본값★ — 일관성·비용↓) / false=개별(행동마다 즉시 GM 호출). turnMode(시계)와 별개 축. 세션 시작 시 래치, 세이브 포함.
     private boolean timeVisibleDefault = true;  // 이 방에서 기본적으로 시간 인지 가능 여부
     private boolean endEventFired      = false; // 종료 사건/제한 시각 도달 여부
     private final Set<String>       firedEvents       = new HashSet<>();
@@ -203,6 +204,7 @@ public class GameStateManager {
         o.addProperty("clockEnd", clockEnd);
         o.addProperty("minutesPerTurn", minutesPerTurn);
         o.addProperty("turnMode", turnMode);
+        o.addProperty("groupTurn", groupTurn);
         o.addProperty("timeVisibleDefault", timeVisibleDefault);
         o.addProperty("endEventFired", endEventFired);
         o.addProperty("lastFiredEventLabel", lastFiredEventLabel);
@@ -248,6 +250,7 @@ public class GameStateManager {
         clockEnd          = snapI(o, "clockEnd", -1);
         minutesPerTurn    = snapI(o, "minutesPerTurn", 15);
         turnMode          = snapI(o, "turnMode", 1); // 구형 세이브(필드 없음)도 가변 시간 기본값으로
+        groupTurn         = snapB(o, "groupTurn", true); // 구형 세이브(필드 없음)도 단체턴 기본값
         timeVisibleDefault = snapB(o, "timeVisibleDefault", true);
         endEventFired     = snapB(o, "endEventFired", false);
         lastFiredEventLabel = snapS(o, "lastFiredEventLabel", "");
@@ -738,6 +741,8 @@ public class GameStateManager {
     public int getCurrentTurn()  { return currentTurn; }
     public int  getTurnMode()      { return turnMode; }
     public void setTurnMode(int m) { turnMode = (m < 0 ? 0 : (m > 2 ? 2 : m)); }
+    public boolean isGroupTurn()       { return groupTurn; }
+    public void    setGroupTurn(boolean b) { groupTurn = b; }
 
     /** ★#151 Stage A★ 행동 소요(DUR)만큼 시계를 진행 — DUR/비동기 모드에서 고정 tickClock 대신 호출.
      *  TIME_SKIP(skipTime)과 달리 syncStageToClock까지 수행(정상 진행과 동일 정렬). 일상/비활성 시계면 무효. */
