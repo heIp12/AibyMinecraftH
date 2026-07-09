@@ -7743,7 +7743,7 @@ public class TRPGGameManager {
             sb.append("- 욕설·비속어: 이 인물은 ★쓰지 않는다★(얌전·예의·격식·신앙·아동). 위기에도 순화된 표현만.\n");
             return;
         }
-        sb.append("- ★욕설·비속어 = 독립 3축(발동·강도·돌려까기). 대화 내내 일관 유지★:\n");
+        sb.append("- ★욕설·비속어 = 독립 3축(발동·강도·돌려까기), 대화 내내 일관 유지★. ★위 말투(①~④: speech_style·어미·나이대 말씨)는 그대로 두고 그 ‘위에 얹기’만 해라 — 기본 목소리·어조를 욕으로 덮어쓰지 마라(욕은 양념이지 말투 교체가 아니다).★:\n");
         if (sw != null) { // 생성기가 성격에서 정해 박은 성향 — 그대로 연기
             String it = sw.has("intensity") ? sw.get("intensity").getAsString() : "moderate";
             int bn = sw.has("burn") ? sw.get("burn").getAsInt() : 0;
