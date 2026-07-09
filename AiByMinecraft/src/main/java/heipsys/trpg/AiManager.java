@@ -862,10 +862,28 @@ public class AiManager {
     public JsonObject parseStateUpdate(String response) {
         JsonObject o = parseTag(response, "<STATE_UPDATE>", "</STATE_UPDATE>");
         if (o != null) return o;
-        // ★폴백★: 일부 모델(제미나이 등)이 <STATE_UPDATE {json}> ★단일 태그★(닫는 태그 없이 여는 태그에 JSON 내장)로 낸다.
+        // ★폴백1★: 일부 모델(제미나이 등)이 <STATE_UPDATE {json}> ★단일 태그★(닫는 태그 없이 여는 태그에 JSON 내장)로 낸다.
         //   이 형식은 위 parseTag(<STATE_UPDATE>…</STATE_UPDATE>)가 못 잡아 상태 적용도·서술 제거도 안 돼 태그가 그대로 누출됐다.
         //   여기서 내장 JSON을 뽑아 실제로 적용되게 하고, stripTags도 이 형식을 함께 제거한다.
-        return parseEmbeddedJsonTag(response, "STATE_UPDATE");
+        o = parseEmbeddedJsonTag(response, "STATE_UPDATE");
+        if (o != null) return o;
+        // ★폴백2★: 태그 없이 '벌거벗은' 상태 델타 JSON만 낸 경우(GPT 등) — 시그니처 키로 식별해 적용.
+        return parseNakedStateJson(response);
+    }
+
+    /** 태그(&lt;STATE_UPDATE&gt;) 래퍼 없이 서술에 흘러나온 상태 델타 JSON을 시그니처 키(hp_change·san_change·
+     *  timeline_change)로 식별해 추출. 일부 모델(GPT)이 &lt;STATE_UPDATE&gt; 래퍼 없이 {"player":..,"hp_change":..}만
+     *  내보내 상태 적용도 안 되고 서술로 그대로 누출되던 것을 잡는다. stripTags도 같은 형식을 함께 지운다. */
+    private JsonObject parseNakedStateJson(String text) {
+        if (text == null) return null;
+        if (text.indexOf("hp_change") < 0 && text.indexOf("san_change") < 0 && text.indexOf("timeline_change") < 0) return null;
+        try {
+            java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("(?s)\\{[^{}]*\"(?:hp_change|san_change|timeline_change)\"[^{}]*\\}")
+                .matcher(text);
+            if (m.find()) return gson.fromJson(m.group(), JsonObject.class);
+        } catch (Exception ignore) {}
+        return null;
     }
 
     /** &lt;TAG {json}&gt; 형태(닫는 태그 없이 여는 태그 안에 JSON 오브젝트 내장)에서 첫 JSON 오브젝트를 추출. 없으면 null. */
@@ -914,6 +932,10 @@ public class AiManager {
             .replaceAll("(?i)<STATE_UPDATE\\b[^{]*\\{[\\s\\S]*?\\}\\s*>", "")   // <STATE_UPDATE {json}>
             .replaceAll("(?i)<STATE_UPDATE\\b[\\s\\S]*?</STATE_UPDATE>", "")    // 속성 붙은 쌍 <STATE_UPDATE ...>…</STATE_UPDATE>
             .replaceAll("(?i)<STATE_UPDATE\\b[\\s\\S]*$", "")                   // 여는 태그만 남고 미완성/잘림
+            // ★태그 없는 '벌거벗은' 상태 델타 JSON 제거(GPT 등)★: <STATE_UPDATE> 래퍼 없이 {"player":..,"hp_change":..}만
+            //   흘려 상태 적용도 안 되고 서술로 누출되던 것. 시그니처 키(hp_change·san_change·timeline_change)로 식별 —
+            //   실제 서술엔 이 영문 스키마 키가 나올 수 없어 오탐 없음. parseNakedStateJson이 같은 형식을 파싱해 상태는 적용한다.
+            .replaceAll("(?s)\\{[^{}]*\"(?:hp_change|san_change|timeline_change)\"[^{}]*\\}", "")
             .replaceAll("<ITEM_GRANT>[\\s\\S]*?</ITEM_GRANT>", "")
             .replaceAll("<ITEM_USE>[\\s\\S]*?</ITEM_USE>", "")
             .replaceAll("(?i)<DROP_NOTE[^>]*>[\\s\\S]*?</DROP_NOTE>", "") // 쪽지 두고가기 태그(속성·여러 줄 내용) 서술 누출 차단 — parseDropNoteTags가 raw에서 이미 소비
@@ -933,7 +955,11 @@ public class AiManager {
             .replaceAll("<CONTACT_CHANGE [^/]*/?>", "")
             .replaceAll("<IMPERSONATE [^/]*/?>", "")
             .replaceAll("<IMPERSONATE_END [^/]*/?>", "")
-            .replaceAll("<ZONE_UPDATE [^/]*/?>", "")
+            // ★ZONE_UPDATE 누출 방어★: 정규 형식은 <ZONE_UPDATE player=".." zone=".." spot=".."/> (자기닫힘·속성)뿐이나,
+            //   일부 모델(GPT 등)이 <ZONE_UPDATE>{json}</ZONE_UPDATE> 쌍·<ZONE_UPDATE> 단독·</ZONE_UPDATE> 홀로 닫힘으로 낸다.
+            //   기존 "<ZONE_UPDATE [^/]*/?>"는 ZONE_UPDATE 뒤 ★공백 필수★라 이 변형들을 못 지워 서술로 누출됐다.
+            .replaceAll("(?is)<ZONE_UPDATE\\b[^>]*>[\\s\\S]*?</ZONE_UPDATE\\s*>", "") // 쌍(속성·JSON 본문 무관)
+            .replaceAll("(?i)</?ZONE_UPDATE\\b[^>]*>", "")                            // 남은 단독 여는/닫는·자기닫힘 태그
             .replaceAll("<NPC_AT [^/]*/?>", "")
             .replaceAll("<BUSY [^/]*/?>", "")
             .replaceAll("<BLOCK_MOVE [^/]*/?>", "")
