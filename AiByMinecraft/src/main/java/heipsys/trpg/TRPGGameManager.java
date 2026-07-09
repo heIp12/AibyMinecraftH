@@ -2853,6 +2853,8 @@ public class TRPGGameManager {
                 // 단일 주체 캐릭터 괴담(절망의 기사류)만 자율 AI로 캐릭터를 살린다 — NPC와 다른 박자(% 3 == 2)로,
                 //   내부 게이트로 대상 시나리오에서만 실제 호출(그 외엔 값싼 no-op).
                 if (curTurn % 3 == 2) fireEntityActorForTurn();
+                // ★꼭두각시 원격 기만(B)★: 완전조종(SAN 0) 꼭두각시가 아군에게 거짓 통신(NPC·엔티티와 다른 박자 % 3 == 1). 내부 게이트로 꼭두각시 없으면 즉시 반환.
+                if (curTurn % 3 == 1) firePuppetCallForTurn();
             }
             // ★편지 두고가기★: 문서형 괴담이 남겨진 쪽지를 발견·훼손(원본→변형). 값싼 게이트(쪽지 없거나 비문서형이면 즉시 반환).
             tamperDroppedNotes();
@@ -8394,6 +8396,80 @@ public class TRPGGameManager {
             // 다회차 학습: 괴담의 자율 행동을 오염 메모리에 누적 → 재도전 시 buildCorruptionContext가 '이전 회차 기억'으로 주입(더 집요해짐).
             corruptMan.addEntityMemory(trimmed.length() > 80 ? trimmed.substring(0, 80) + "…" : trimmed);
         });
+    }
+
+    /** 꼭두각시 원격 기만 호출 쿨다운(B) — 과잉 AI 호출·비용 방지(puppet uuid → 마지막 발신 턴). */
+    private final Map<UUID, Integer> lastPuppetCallTurn = new HashMap<>();
+
+    /** ★꼭두각시 원격 기만(B)★: SAN 0 완전조종(괴담팀) 꼭두각시가 아군에게 ★전화/서면★으로 거짓·유인을 흘린다.
+     *  통신제약 그대로(도달성·전화가능·번호 아는 사이·구역봉쇄), 거짓 내용은 GM(AI) 생성. 대면은 GM 서술 몫이라 원격만. 값싼 게이트. */
+    private void firePuppetCallForTurn() {
+        PlayerData puppet = null;
+        for (PlayerData pd : state.getAllPlayers())
+            if ("puppet".equals(pd.status) && pd.puppetRecoveryTurns == -1 // -1 = 완전조종(heal-only·입력차단)
+                && !pd.isDead && spawnedPlayers.contains(pd.uuid)) { puppet = pd; break; }
+        if (puppet == null) return; // 완전조종 꼭두각시 없음
+        int now = state.getCurrentTurn();
+        Integer last = lastPuppetCallTurn.get(puppet.uuid);
+        if (last != null && now - last < 4) return; // 쿨다운(4턴) — 과잉 호출 방지
+        final PlayerData fpuppet = puppet;
+        // 원격으로 닿는 아군: 다른 구역(대면 아님)·조종 안 당함·번호 아는 사이·수단 살아있음.
+        List<PlayerData> reach = new ArrayList<>();
+        for (PlayerData op : state.getAllPlayers()) {
+            if (op.uuid.equals(fpuppet.uuid) || op.isDead || !spawnedPlayers.contains(op.uuid)) continue;
+            if ("puppet".equals(op.status)) continue; // 이미 조종당하는 아군엔 무의미
+            boolean sameZone = !fpuppet.zone.isEmpty() && fpuppet.zone.equals(op.zone);
+            if (sameZone) continue; // 대면은 GM이 서술(B는 원격만)
+            if (op.knownContacts.contains(fpuppet.uuid) && (isPhoneUsable() || writtenCommAvailable())) reach.add(op);
+        }
+        if (reach.isEmpty()) return; // 원격으로 닿는 아군 없음
+        final PlayerData ftarget = reach.get(now % reach.size());
+        lastPuppetCallTurn.put(fpuppet.uuid, now); // 실제 발신 예약 → 쿨다운 시작
+        // 거짓 내용 GM(AI) 생성 — 괴담이 이 몸으로 아군을 속이는 한두 마디(변조된 티 없이 그 사람 말투로).
+        String sys = "너는 아군을 몸째 조종하는 괴담이다. 지금 조종 중인 사람('" + fpuppet.gmDisplayName()
+            + "')의 목소리로, 멀리 있는 동료('" + ftarget.gmDisplayName() + "')에게 전화/연락해 ★거짓·유인★을 흘린다. "
+            + "목표(하나 골라): 위험한 곳으로 부르기 · 가짜 안전·거짓 정보로 방심시키기 · 흩어지게 하기. "
+            + "★조종당하는 본인인 척 완벽히 자연스럽게(변조된 티 없이 평소 그 사람 말투·존반)★ 1~2문장만. 설명·따옴표·군더더기 없이 대사만.";
+        String usr = "조종 중인 사람: " + fpuppet.gmDisplayName() + " / 속일 동료: " + ftarget.gmDisplayName()
+            + "\n괴담 정체·결 힌트: " + getEntityName() + ". 그 성격에 맞는 그럴듯한 거짓말을 지어내라.";
+        try {
+            ai.callGmAiOnce(sys, usr).whenComplete((res, err) -> {
+                String msg = cleanTamperOutput(res); // 따옴표·오류 정리 재사용(실패 시 null)
+                if (err != null || msg == null || msg.isBlank()) return; // 실패 시 조용히 생략(하드코딩 거짓말은 부자연)
+                Bukkit.getScheduler().runTask(plugin, () -> deliverPuppetInitiatedContact(fpuppet, ftarget, msg));
+            });
+        } catch (Exception ignored) {}
+    }
+
+    /** 꼭두각시의 GM 생성 거짓 통신을 아군에게 전달(원격만). 아군은 진짜 그 사람인 줄 믿는다(기만). 매체 차단이면 은닉 실패. */
+    private void deliverPuppetInitiatedContact(PlayerData puppetPd, PlayerData target, String falseMsg) {
+        if (falseMsg == null || falseMsg.isBlank() || puppetPd == null || target == null) return;
+        if (target.isDead || !spawnedPlayers.contains(target.uuid) || "puppet".equals(target.status)) return;
+        Player tp = Bukkit.getPlayer(target.uuid);
+        if (tp == null || !tp.isOnline()) return;
+        String puppetZone = puppetPd.zone == null ? "" : puppetPd.zone;
+        if (!puppetZone.isEmpty() && puppetZone.equals(target.zone)) return; // 대면은 GM 서술 몫(B는 원격만)
+        boolean knowsCaller = target.knownContacts.contains(puppetPd.uuid);
+        boolean viaCall = isPhoneUsable() && knowsCaller;
+        boolean written = !viaCall && writtenCommAvailable() && knowsCaller;
+        if (!(viaCall || written)) return; // 통신제약: 번호 모르거나 수단 없으면 안 닿음
+        String media = commMediumName(target, written);
+        String modality = commModality(media, written);
+        if (state.isMediumBlocked(modality)) { // 매체 차단 → 닿지 않음(은닉), 시도만 GM 정황
+            ai.injectGmSystem("[꼭두각시 기만 시도 실패(은닉)] 괴담이 조종하는 " + puppetPd.gmDisplayName()
+                + "이(가) " + commDisplayName(target) + "에게 " + commMediumLabel(modality)
+                + "로 거짓 연락을 시도했으나 지금 그 수단이 통하지 않았다. 닿지 않음을 정황으로만 드러내라.");
+            return;
+        }
+        String callerName = puppetPd.gmDisplayName();
+        String tag = written ? ("§b[✉ " + media + "] §f") : ("§b[📞 " + media + "] §f");
+        tp.sendMessage(tag + callerName + ": " + falseMsg); // 아군은 진짜 그 사람이 연락한 줄 안다(기만·은닉)
+        appendNarrativeLog(target, "[" + media + "] " + callerName + ": " + falseMsg);
+        String kind = written ? "letter" : "call";
+        gameLogger.logComm(kind, callerName, java.util.List.of(commDisplayName(target)), falseMsg, media);
+        ai.injectGmSystem("[꼭두각시 기만 통신 — GM만 인지] 괴담이 조종하는 " + callerName + "이(가) "
+            + commDisplayName(target) + "에게 " + media + "로 ★거짓·유인★을 흘렸다(아군은 진짜 " + callerName
+            + "인 줄 믿는다): \"" + falseMsg + "\". 시스템이 이미 전달했으니 중복 말고, 이후 정황·오해·함정에 반영하라.");
     }
 
     /** 자율 NPC가 '먼저 연락'하게 — 닿는 상대(같은 곳/번호 아는 사이) 목록 + NPC_CALL 사용법. 닿을 사람 없으면 "". */
