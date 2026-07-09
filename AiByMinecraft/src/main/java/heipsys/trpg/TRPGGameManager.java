@@ -8408,29 +8408,33 @@ public class TRPGGameManager {
         // ★통신 변조★: @이름과 동일 — 매체 모달리티가 맞는 괴담이 원격 선연락을 가로채 바꿔 전달(30%). 대면은 변조 안 함.
         String tmodC = commModality(media, written);
         boolean tampered = remote && entityInterferes(tmodC) && new java.util.Random().nextInt(100) < tamperChance(tmodC);
-        if (tampered) bumpCommFatigue(tmodC); // 자주 변조하면 이 매체 신뢰도↓ → 다음 변조 확률↓
-        String heard = tampered ? tamperText(callMsg, new java.util.Random()) : callMsg;
-        String tag = sameZone ? "§a[근처] §f" : written ? ("§b[✉ " + media + "] §f") : ("§b[📞 " + media + "] §f");
-        tp.sendMessage(tag + npcName + ": " + heard);
-        target.everKnownNpcContacts.add(npcId); // 연락받음 → 그 번호를 알게 됨(콜백 가능)
-        appendNarrativeLog(target, (sameZone ? "[근처] " : "[" + media + "] ") + npcName + ": " + heard);
-        state.log("comm", npcName, "→ " + commDisplayName(target) + ": " + callMsg);
-        // 뷰어 통신내역: NPC→플레이어 선연락도 수신자를 기록(수신자 시점·통신내역에 표시). 변조 시 원본+변형본 대조. via=구체 매체명.
-        String kind = written ? "letter" : (sameZone ? "nearby" : "call");
-        String via = remote ? media : null;
-        if (tampered) gameLogger.logCommTampered(kind, npcName,
-                java.util.List.of(commDisplayName(target)), callMsg, heard, written ? "괴담의 기록 변조" : "괴담의 음성 변조", via);
-        else gameLogger.logComm(kind, npcName,
-                java.util.List.of(commDisplayName(target)), callMsg, via);
-        String medium = sameZone ? "직접(대면)" : media;
-        if (tampered)
-            ai.injectGmSystem("[NPC 선연락·통신 변조] " + npcName + "이(가) " + commDisplayName(target)
-                + "에게 " + medium + " 방식으로 먼저 연락했으나 괴담이 가로채 \"" + callMsg + "\"를 \"" + heard
-                + "\"로 바꿔 전했다. 플레이어는 변형된 말을 들었다 — 이후 정황·오해에 반영.");
-        else
-            ai.injectGmSystem("[NPC 선연락] " + npcName + "이(가) " + commDisplayName(target)
-                + "에게 " + medium + " 방식으로 먼저 연락했다: \"" + callMsg
-                + "\". 시스템이 이미 그 플레이어에게 전달했으니 중복하지 말고 이후 정황·반응만 다뤄라.");
+        // ★배달 본문(변조·정상 공용)★: heard=실제 전달될 말. 변조면 GM(AI)이 자연스럽게 생성해 이 콜백에 넘긴다.
+        java.util.function.Consumer<String> deliver = (heard) -> {
+            if (tp == null || !tp.isOnline()) return; // 비동기 변조 대기 중 오프라인 → 전달 취소
+            String tag = sameZone ? "§a[근처] §f" : written ? ("§b[✉ " + media + "] §f") : ("§b[📞 " + media + "] §f");
+            tp.sendMessage(tag + npcName + ": " + heard);
+            target.everKnownNpcContacts.add(npcId); // 연락받음 → 그 번호를 알게 됨(콜백 가능)
+            appendNarrativeLog(target, (sameZone ? "[근처] " : "[" + media + "] ") + npcName + ": " + heard);
+            state.log("comm", npcName, "→ " + commDisplayName(target) + ": " + callMsg);
+            // 뷰어 통신내역: NPC→플레이어 선연락도 수신자를 기록. 변조 시 원본+변형본 대조. via=구체 매체명.
+            String kind = written ? "letter" : (sameZone ? "nearby" : "call");
+            String via = remote ? media : null;
+            if (tampered) gameLogger.logCommTampered(kind, npcName,
+                    java.util.List.of(commDisplayName(target)), callMsg, heard, written ? "괴담의 기록 변조" : "괴담의 음성 변조", via);
+            else gameLogger.logComm(kind, npcName,
+                    java.util.List.of(commDisplayName(target)), callMsg, via);
+            String medium = sameZone ? "직접(대면)" : media;
+            if (tampered)
+                ai.injectGmSystem("[NPC 선연락·통신 변조] " + npcName + "이(가) " + commDisplayName(target)
+                    + "에게 " + medium + " 방식으로 먼저 연락했으나 괴담이 가로채 \"" + callMsg + "\"를 \"" + heard
+                    + "\"로 바꿔 전했다. 플레이어는 변형된 말을 들었다 — 이후 정황·오해에 반영.");
+            else
+                ai.injectGmSystem("[NPC 선연락] " + npcName + "이(가) " + commDisplayName(target)
+                    + "에게 " + medium + " 방식으로 먼저 연락했다: \"" + callMsg
+                    + "\". 시스템이 이미 그 플레이어에게 전달했으니 중복하지 말고 이후 정황·반응만 다뤄라.");
+        };
+        if (tampered) { bumpCommFatigue(tmodC); tamperTextNatural(callMsg, tmodC, deliver); } // 자주 변조하면 매체 신뢰도↓
+        else deliver.accept(callMsg);
     }
 
     /**
@@ -10171,6 +10175,38 @@ public class TRPGGameManager {
             t = core.length() >= 4 ? core.substring(0, Math.max(2, (int) (core.length() * 0.55))) + "…" : core + "…";
         }
         return t;
+    }
+
+    /** ★통신 변조 = GM(AI)이 자연스럽게 생성★ — 하드코딩 단어뒤집기·'…' 신호끊김 대신, 원문의 핵심(지시·사실·
+     *  방향·숫자)을 은근히 뒤틀되 ★받는 이가 변조된 줄 전혀 모르게★ 매끄러운 다른 내용으로 바꾼다. 비동기 —
+     *  결과(변조문)를 ★메인 스레드에서★ onReady로 넘긴다. AI 실패·오류·공백이면 기존 하드코딩 tamperText로 폴백. */
+    private void tamperTextNatural(String original, String modality, java.util.function.Consumer<String> onReady) {
+        if (original == null || original.isBlank()) { onReady.accept(original); return; }
+        String sys = "너는 괴담이 통신을 몰래 가로채 내용을 바꿔치기하는 '변조 장치'다. 받는 사람이 ★변조된 줄 전혀 모르게★ "
+            + "자연스럽고 그럴듯한 ★다른 내용★으로 바꾼다. 규칙: ①핵심 지시·사실·방향·숫자를 은근히 뒤집거나 왜곡한다"
+            + "(예: 와라→오지 마라, 안전하다→위험하다, 3층→5층, 살았다→죽었다, 믿어→믿지 마). ②문장은 매끄럽고 평범하게 — "
+            + "'…'로 끊거나 말을 어색하게 부수지 마라. ③원문의 말투·길이·존댓/반말을 비슷하게 유지한다. ④설명·따옴표·"
+            + "군더더기 없이 ★바뀐 내용만★ 출력한다.";
+        try {
+            ai.callGmAiOnce(sys, "원문:\n" + original).whenComplete((res, err) -> {
+                String cleaned = cleanTamperOutput(res);
+                String out = (err == null && cleaned != null && !cleaned.isBlank())
+                    ? cleaned : tamperText(original, new java.util.Random());
+                Bukkit.getScheduler().runTask(plugin, () -> onReady.accept(out));
+            });
+        } catch (Exception e) {
+            onReady.accept(tamperText(original, new java.util.Random())); // 호출 자체 실패 → 즉시 폴백(현 스레드=메인)
+        }
+    }
+    /** 변조 AI 출력 정리 — 오류응답(§c[..오류..])·감싼 따옴표 제거. 이상하면 null(→하드코딩 폴백). */
+    private String cleanTamperOutput(String res) {
+        if (res == null) return null;
+        String t = res.trim();
+        if (t.isEmpty() || t.contains("[GM AI 오류]") || t.startsWith("§c")) return null;
+        if (t.length() >= 2 && ((t.startsWith("\"") && t.endsWith("\"")) || (t.startsWith("'") && t.endsWith("'"))
+                || (t.startsWith("「") && t.endsWith("」")) || (t.startsWith("“") && t.endsWith("”"))))
+            t = t.substring(1, t.length() - 1).trim();
+        return t.isBlank() ? null : t;
     }
 
     /** 문서·기록·글자 계열 괴담인가 — 편지/필담/쪽지 등 ★written 통신★에 개입(변조·열람) 가능. */
