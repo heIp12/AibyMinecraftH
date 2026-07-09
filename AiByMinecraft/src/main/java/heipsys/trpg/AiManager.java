@@ -943,7 +943,11 @@ public class AiManager {
             .replaceAll("<DICE>[\\s\\S]*?</DICE>", "")
             .replaceAll("<BROADCAST>[\\s\\S]*?</BROADCAST>", "")
             .replaceAll("<CLEAR>[\\s\\S]*?</CLEAR>", "")
-            .replaceAll("<WITNESS[^>]*>[\\s\\S]*?</WITNESS>", "")
+            // ★WITNESS 누출/오라우팅 방어★: 정형 <WITNESS player="X">…</WITNESS> 외에, 약한 모델이 [WITNESS …](대괄호)나
+            //   </WITNESS> 없이 <WITNESS …>를 ★양쪽 북엔드★로 써서 시점 본문이 다른 플레이어에게 누출됐다(로그 실측).
+            //   여는 태그([·<)~(닫는 </WITNESS> | 다음 WITNESS 여는태그) 사이를 본문째 제거하고, 남은 고아 태그도 정리.
+            .replaceAll("(?is)[\\[<]\\s*WITNESS\\b[^\\]>]*[\\]>][\\s\\S]*?(?:</\\s*WITNESS\\s*>|(?=[\\[<]\\s*WITNESS\\b))", "")
+            .replaceAll("(?is)[\\[<]\\s*/?\\s*WITNESS\\b[^\\]>]*[\\]>]", "")   // 남은 단독/고아 WITNESS 태그(대괄호 포함)
             .replaceAll("<NPC_CALL[^>]*>[\\s\\S]*?</NPC_CALL>", "")
             .replaceAll("(?i)<NPC_LEARN[^>]*>[\\s\\S]*?</NPC_LEARN[^>]*>", "") // 여는·닫는 태그 모두 유연: <NPC_LEARNING>…</NPC_LEARNING>(-ING 변형)도 제거 — 닫는 태그가 literal </NPC_LEARN>이라 -ING이 안 잡혀 서술로 누출되던 버그
             .replaceAll("(?i)<NPC_LEARN[^>]*>[\\s\\S]*$", "")                 // 닫는 태그 누락·잘림 대비(응답 말미 미완성 태그)
@@ -974,8 +978,9 @@ public class AiManager {
             .replaceAll("<COMM_BLOCK [^/]*/?>", "")
             .replaceAll("<COMM_UNBLOCK [^/]*/?>", "")
             .replaceAll("<TIME_VISIBLE [^/]*/?>", "")
-            .replaceAll("<THREAT [^/]*/?>", "")
-            .replaceAll("<ANGER [^/]*/?>", "")
+            .replaceAll("(?i)</?THREAT\\b[^>]*>", "")   // 여는·자기닫힘·★고아 </THREAT>★ 모두(약한 모델이 </THREAT> 홀로 냄 — 로그 실측 누출)
+            .replaceAll("(?i)</?ANGER\\b[^>]*>", "")
+            .replaceAll("(?i)</?DANGER\\b[^>]*>", "")   // GPT 등이 <THREAT> 대신 내는 <DANGER delta.../> 변형 누출 차단
             .replaceAll("<SUMMON[^>]*>", "")
             .replaceAll("<PACE [^/]*/?>", "")
             // ★[지난 자율 행동] 마커 누적 방지★: 미니 모델이 이전 턴의 이 내부 마커를 에코해 매턴 하나씩
