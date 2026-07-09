@@ -1774,6 +1774,7 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
                     if (!validate(gdam)) {
                         throw new RuntimeException(".gdam 검증 실패: 필수 항목 누락");
                     }
+                    repairZoneRefs(gdam); // ★zone 참조 자동 검증·보정(존재하지 않는 zone_id → 이름 매칭 보정, 못 찾으면 경고)
 
                     save(seed, gdam);
                     if (progress != null) progress.accept("저장");
@@ -2040,6 +2041,97 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
             }
         }
         return true;
+    }
+
+    /**
+     * ★생성 후 zone 참조 자동 검증·보정★ (버그: 존재하지 않는 맵을 아이템·잠금이 참조).
+     * constraints.gated_zones[].zone 과 key_items[].item_params.unlocks 가 zones[].zone_id에 없으면
+     * zone 이름 매칭으로 실제 id에 대응시키고(확신 있을 때만), 못 찾으면 경고만 남긴다(런타임은 알 수 없는 구역을 무시).
+     * ※ 이중 잠금(전력+카드키)은 하나가 world_rules 자유서술에 살아 있어 구조화 JSON만으론 신뢰성 있게 검출 불가 →
+     *   생성 프롬프트 규칙(gated_zones 이중 잠금 금지 조항)에 맡긴다. 여기선 zone_id 정합만 담당한다.
+     * ※ 같은 zone에 gated_zones와 item.unlocks가 함께 있는 것은 '문 + 그 문의 열쇠'라는 ★정상 설계★이므로 건드리지 않는다.
+     */
+    private void repairZoneRefs(JsonObject g) {
+        try {
+            if (!g.has("zones") || !g.get("zones").isJsonArray()) return;
+            java.util.Set<String> validIds = new java.util.HashSet<>();
+            java.util.Map<String, String> nameToId = new java.util.HashMap<>();
+            for (JsonElement ze : g.getAsJsonArray("zones")) {
+                if (ze == null || !ze.isJsonObject()) continue;
+                JsonObject zo = ze.getAsJsonObject();
+                if (!zo.has("zone_id") || zo.get("zone_id").isJsonNull()) continue;
+                String id = zo.get("zone_id").getAsString().trim();
+                if (id.isEmpty()) continue;
+                validIds.add(id);
+                if (zo.has("name") && !zo.get("name").isJsonNull()) {
+                    String nm = zo.get("name").getAsString().trim();
+                    if (!nm.isEmpty()) nameToId.putIfAbsent(nm, id);
+                }
+            }
+            if (validIds.isEmpty()) return;
+
+            // 1) constraints.gated_zones[].zone 보정
+            if (g.has("constraints") && g.get("constraints").isJsonObject()) {
+                JsonObject cons = g.getAsJsonObject("constraints");
+                if (cons.has("gated_zones") && cons.get("gated_zones").isJsonArray()) {
+                    for (JsonElement ge : cons.getAsJsonArray("gated_zones")) {
+                        if (ge == null || !ge.isJsonObject()) continue;
+                        JsonObject go = ge.getAsJsonObject();
+                        if (!go.has("zone") || go.get("zone").isJsonNull()) continue;
+                        String z = go.get("zone").getAsString().trim();
+                        if (z.isEmpty() || validIds.contains(z)) continue;
+                        String fixed = matchZoneId(z, nameToId);
+                        if (fixed != null) {
+                            logger.warning("[gdam] gated_zone zone 보정: '" + z + "' → '" + fixed + "'");
+                            go.addProperty("zone", fixed);
+                        } else {
+                            logger.warning("[gdam] gated_zone zone 미해결(런타임 무시→잠금 무효): '" + z + "'");
+                        }
+                    }
+                }
+            }
+
+            // 2) key_items[].item_params.unlocks 보정
+            if (g.has("key_items") && g.get("key_items").isJsonArray()) {
+                for (JsonElement ie : g.getAsJsonArray("key_items")) {
+                    if (ie == null || !ie.isJsonObject()) continue;
+                    JsonObject io = ie.getAsJsonObject();
+                    if (!io.has("item_params") || !io.get("item_params").isJsonObject()) continue;
+                    JsonObject ip = io.getAsJsonObject("item_params");
+                    if (!ip.has("unlocks") || ip.get("unlocks").isJsonNull()) continue;
+                    String u = ip.get("unlocks").getAsString().trim();
+                    if (u.isEmpty() || validIds.contains(u)) continue;
+                    String fixed = matchZoneId(u, nameToId);
+                    if (fixed != null) {
+                        logger.warning("[gdam] item unlocks 보정: '" + u + "' → '" + fixed + "'");
+                        ip.addProperty("unlocks", fixed);
+                    } else {
+                        logger.warning("[gdam] item unlocks 미해결(열쇠 무효 가능): '" + u + "'");
+                    }
+                }
+            }
+        } catch (Exception e) {
+            logger.warning("[gdam] repairZoneRefs 예외(무시): " + e.getMessage());
+        }
+    }
+
+    /** 존재하지 않는 zone 참조를 zone 이름 매칭으로 실제 zone_id에 대응(확신 있을 때만). 못 찾으면 null.
+     *  "zone_격리실 복도"처럼 이름에 "zone_" 접두어를 붙인 흔한 오류를 우선 처리하고,
+     *  부분 일치는 후보가 ★정확히 1개★일 때만 채택한다(애매하면 포기 — 오배선 방지). */
+    private String matchZoneId(String ref, java.util.Map<String, String> nameToId) {
+        if (ref == null) return null;
+        String r = ref.trim();
+        String bare = r.startsWith("zone_") ? r.substring(5).trim() : r;
+        if (nameToId.containsKey(bare)) return nameToId.get(bare); // "zone_"+정확한 이름
+        if (nameToId.containsKey(r))    return nameToId.get(r);
+        if (bare.isEmpty()) return null;
+        String hit = null; int hits = 0;
+        for (java.util.Map.Entry<String, String> en : nameToId.entrySet()) {
+            String nm = en.getKey();
+            if (nm.isEmpty()) continue;
+            if (nm.equals(bare) || nm.contains(bare) || bare.contains(nm)) { hit = en.getValue(); hits++; }
+        }
+        return hits == 1 ? hit : null; // 후보가 유일할 때만 보정
     }
 
     /** JsonObject에 key가 있고 값이 비어있지 않은가(문자열 기준). */
