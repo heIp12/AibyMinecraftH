@@ -859,7 +859,24 @@ public class AiManager {
     // ======================================================
 
     public JsonObject parseStateUpdate(String response) {
-        return parseTag(response, "<STATE_UPDATE>", "</STATE_UPDATE>");
+        JsonObject o = parseTag(response, "<STATE_UPDATE>", "</STATE_UPDATE>");
+        if (o != null) return o;
+        // ★폴백★: 일부 모델(제미나이 등)이 <STATE_UPDATE {json}> ★단일 태그★(닫는 태그 없이 여는 태그에 JSON 내장)로 낸다.
+        //   이 형식은 위 parseTag(<STATE_UPDATE>…</STATE_UPDATE>)가 못 잡아 상태 적용도·서술 제거도 안 돼 태그가 그대로 누출됐다.
+        //   여기서 내장 JSON을 뽑아 실제로 적용되게 하고, stripTags도 이 형식을 함께 제거한다.
+        return parseEmbeddedJsonTag(response, "STATE_UPDATE");
+    }
+
+    /** &lt;TAG {json}&gt; 형태(닫는 태그 없이 여는 태그 안에 JSON 오브젝트 내장)에서 첫 JSON 오브젝트를 추출. 없으면 null. */
+    private JsonObject parseEmbeddedJsonTag(String text, String tag) {
+        if (text == null || text.indexOf(tag) < 0) return null;
+        try {
+            java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("(?is)<\\s*" + tag + "\\b[^{]*(\\{[\\s\\S]*?\\})\\s*>")
+                .matcher(text);
+            if (m.find()) return gson.fromJson(m.group(1).trim(), JsonObject.class);
+        } catch (Exception ignore) {}
+        return null;
     }
 
     public JsonObject parseItemGrant(String response) {
@@ -891,6 +908,11 @@ public class AiManager {
             .replaceAll("(?i)<(thought|thinking)>[\\s\\S]*$", "")
             .replaceAll("(?i)</?(thought|thinking)>", "")
             .replaceAll("<STATE_UPDATE>[\\s\\S]*?</STATE_UPDATE>", "")
+            // ★단일/속성형 <STATE_UPDATE {json}> (닫는 태그 없이 여는 태그에 JSON 내장 — 제미나이 등)도 제거.★
+            //   parseStateUpdate가 이 형식을 파싱해 상태는 적용하되, 서술·히스토리엔 태그가 남지 않게 여기서 지운다(누출 버그 수정).
+            .replaceAll("(?i)<STATE_UPDATE\\b[^{]*\\{[\\s\\S]*?\\}\\s*>", "")   // <STATE_UPDATE {json}>
+            .replaceAll("(?i)<STATE_UPDATE\\b[\\s\\S]*?</STATE_UPDATE>", "")    // 속성 붙은 쌍 <STATE_UPDATE ...>…</STATE_UPDATE>
+            .replaceAll("(?i)<STATE_UPDATE\\b[\\s\\S]*$", "")                   // 여는 태그만 남고 미완성/잘림
             .replaceAll("<ITEM_GRANT>[\\s\\S]*?</ITEM_GRANT>", "")
             .replaceAll("<ITEM_USE>[\\s\\S]*?</ITEM_USE>", "")
             .replaceAll("(?i)<DROP_NOTE[^>]*>[\\s\\S]*?</DROP_NOTE>", "") // 쪽지 두고가기 태그(속성·여러 줄 내용) 서술 누출 차단 — parseDropNoteTags가 raw에서 이미 소비

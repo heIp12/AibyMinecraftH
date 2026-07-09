@@ -56,6 +56,10 @@ description: >-
   cost_san·sacrifice cost를 [0,5]로 클램프(표시·실차감 동기화). ★‘풀 100’·cost 10~20으로 되돌리지 말 것.★
 - **메타 노출 금지**: 계정명·영문 아이템 id(smartphone 등)·내부 스키마 용어(role_id/zone_id)를
   플레이어 서술·로그에 노출 금지. 표시명은 charName(직업), 아이템은 한국어명.
+- **★내부 태그 누출 방지(AiManager.stripTags·parseStateUpdate)★**: GM 태그(STATE_UPDATE 등)는 서술·히스토리에서 반드시 제거.
+  ★모델별 형식 변형 주의★ — 제미나이 등은 `<STATE_UPDATE {json}>` ★단일 태그★(닫는 태그 없이 여는 태그에 JSON 내장)로 내
+  parseTag(`<STATE_UPDATE>`…`</STATE_UPDATE>`)가 못 잡아 적용도·제거도 안 돼 누출됐다. parseStateUpdate에 parseEmbeddedJsonTag
+  폴백(단일태그 JSON 추출→상태 적용) + stripTags에 단일태그·잘림 정규식 3종 추가로 해결. ★새 태그 파서 만들 때 이 변형(단일 `<TAG {json}>`)도 함께 처리.★
 - **★계정명(pd.name)은 프롬프트에 절대 금지★**(서버·로그·메타화면 전용): AI로 가는 모든 문자열은
   gmDisplayName()(=charName→직업→"이름 모를 인물") 또는 resolveDisplayName()만 쓴다. 안전 경로(검증됨):
   buildTurnInput(폴백도 익명)·buildEntityLog·buildFullEvalLog/buildCampaignEvalLog(resolveDisplayName)·GM
