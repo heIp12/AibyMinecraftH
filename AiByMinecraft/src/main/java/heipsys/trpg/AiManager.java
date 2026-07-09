@@ -64,11 +64,16 @@ public class AiManager {
     //  모델 선택
     // ======================================================
 
-    /** GM AI 품질 등급. 저품질=Haiku / 중품질=Sonnet / 고품질=Opus. */
-    public enum Quality { LOW, MEDIUM, HIGH }
+    /** GM AI 품질 등급. 저품질=Haiku / 중품질=Sonnet / 고품질=Opus / 효율=적응형(평시 Sonnet, 절정만 Opus). */
+    public enum Quality { LOW, MEDIUM, HIGH, EFFICIENT }
 
     /** 게임 시작 시 선택되는 GM AI 품질 (기본: 중품질). */
     private volatile Quality gmQuality = Quality.MEDIUM;
+
+    /** ★효율(적응형) 모드★: GM 모델을 현재 위협도로 자동 격상 — 평시=Sonnet(바닥), 절정(≥임계)=Opus. 게임이 위협도 공급자를 꽂아준다. */
+    private volatile java.util.function.IntSupplier threatSupplier = () -> 0;
+    private static final int EFFICIENT_PEAK_THREAT = 70; // 이 이상이면 절정(위험 밴드)으로 보고 Opus 격상 — 위협도는 전투·사망·사건으로 오르는 난이도 프록시
+    public void setThreatSupplier(java.util.function.IntSupplier s) { if (s != null) threatSupplier = s; }
 
     // 등급별 모델 오버라이드 (config; 비우면 자동 탐지 → 하드코딩 폴백)
     private String highModelOverride = null, mediumModelOverride = null, lowModelOverride = null;
@@ -144,10 +149,14 @@ public class AiManager {
     }
 
     // ── provider별 등급 기본 모델 (네트워크 없음) ──
+    // 티어 지도(역할↔능력): HIGH=GM고품질·생성고품질(플래그십) · MEDIUM=GM기본·생성기본(강한 중형) · LOW=엔티티·보조(유능한 소형) · MINI=NPC(유능한 소형)
+    //   ★provider 능력 정렬★: Claude Haiku 4.5는 유능한 소형이라 LOW/MINI에 적합하나, OpenAI nano는 그보다 아래 급이라 엔티티·보조에도 부실 → OpenAI LOW/MINI는 mini로 통일(nano 미사용).
     private String defHigh()   { return switch (apiType) { case "claude" -> "claude-opus-4-8";          case "openai" -> "gpt-5.5";      default -> "gemini-2.5-pro"; }; }
-    private String defMedium() { return switch (apiType) { case "claude" -> "claude-sonnet-5";          case "openai" -> "gpt-5.4";      default -> "gemini-2.5-flash"; }; }
-    private String defLow()    { return switch (apiType) { case "claude" -> "claude-haiku-4-5-20251001"; case "openai" -> "gpt-5.4-nano"; default -> "gemini-2.5-flash-lite"; }; }
-    private String defMini()   { return switch (apiType) { case "claude" -> "claude-haiku-4-5-20251001"; case "openai" -> "gpt-5.4-mini"; default -> "gemini-2.5-flash"; }; }
+    private String defMedium() { return switch (apiType) { case "claude" -> "claude-sonnet-5";          case "openai" -> "gpt-5.4";      default -> "gemini-3.5-flash"; }; }
+    private String defLow()    { return switch (apiType) { case "claude" -> "claude-haiku-4-5-20251001"; case "openai" -> "gpt-5.4-mini"; default -> "gemini-3.1-flash-lite"; }; }
+    private String defMini()   { return switch (apiType) { case "claude" -> "claude-haiku-4-5-20251001"; case "openai" -> "gpt-5.4-mini"; default -> "gemini-3.1-flash-lite"; }; }
+    // 티어별 대표 모델(2026): HIGH claude=Opus4.8/openai=gpt-5.5/gemini=2.5-pro(최심추론) · MEDIUM sonnet-5/gpt-5.4/3.5-flash(주력)
+    //   · LOW·MINI haiku-4.5/gpt-5-mini/3.1-flash-lite(경량 floor·nano 미사용). GM은 gmModel()에서 LOW라도 mini 바닥 보장.
 
     /** 백그라운드 워밍업 — 시작 시 호출하면 최신 모델 탐지가 메인 스레드를 막지 않는다. */
     public void warmUpModels() { CompletableFuture.runAsync(this::ensureModelsDiscovered); }
@@ -175,9 +184,9 @@ public class AiManager {
                         if (autoHigh == null) autoHigh = latestVer(ids, new String[]{"gpt-4"}, OAI_NON_FLAGSHIP);
                         autoMedium = latestVer(ids, new String[]{"gpt-5", "mini"}, OAI_SPECIAL); // 최신 gpt-5*-mini
                         if (autoMedium == null) autoMedium = autoHigh;
-                        autoLow = latestVer(ids, new String[]{"nano"}, OAI_SPECIAL);          // 최신 *-nano(최저가)
-                        if (autoLow == null) autoLow = latestVer(ids, new String[]{"mini"}, OAI_SPECIAL);
-                        autoMini = latestVer(ids, new String[]{"mini"}, OAI_SPECIAL);         // 미니 = 최신 *-mini(나노 한 단계 위)
+                        autoLow = latestVer(ids, new String[]{"mini"}, OAI_SPECIAL);          // ★nano는 엔티티·보조에도 부실 → 저티어 바닥도 mini★(nano 미사용)
+                        if (autoLow == null) autoLow = autoMedium;
+                        autoMini = latestVer(ids, new String[]{"mini"}, OAI_SPECIAL);         // 미니(NPC) = 최신 *-mini
                     }
                     default -> { // gemini — 버전 최신 우선(gemini-2.5 < 3 < 3.1 < 3.5 …), 특수형 제외
                         autoHigh   = latestVer(ids, new String[]{"pro"}, GEMINI_NONCHAT);
@@ -299,7 +308,8 @@ public class AiManager {
     /** 모델 가격 (USD per 1M 토큰) [입력, 출력]. 모르는 모델은 보수적 추정. */
     private static double[] modelPriceUsd(String model) {
         String m = model == null ? "" : model.toLowerCase();
-        // Claude
+        // Claude (2026: Fable 5 $10/$50 · Opus 4.8 $5/$25 · Sonnet 5 $3/$15 · Haiku 4.5 $1/$5)
+        if (m.contains("fable") || m.contains("mythos")) return new double[]{10, 50}; // 최상위(플래그십 초과) — 누락 시 기본값으로 과소추정되던 것 보정
         if (m.contains("opus"))   return new double[]{5, 25};
         if (m.contains("sonnet")) return new double[]{3, 15};
         if (m.contains("haiku"))  return m.contains("3-haiku")   ? new double[]{0.25, 1.25}
@@ -344,8 +354,21 @@ public class AiManager {
      *  ③ 시나리오 생성(.gdam): 스테이지 진입마다 대형 호출(1회 ~$0.4@Opus). 시간당 ~1.2회로 amortize.
      */
     private double estimateHourlyUsd(Quality q, int players) {
-        double[] gmP  = modelPriceUsd(nominalModel(q));
+        // GM 턴 단가 — ★효율(적응형)★은 평시 Sonnet 바닥 + 절정(위협도≥임계)만 Opus → 절정 비중으로 혼합 추정.
+        //   (실측은 매 호출 '실제로 굴린 모델'로 집계된다 — 이건 선택화면 예상치일 뿐, 위협도 곡선에 따라 실비가 Sonnet~Opus 사이를 오간다.)
+        double[] gmP;
+        if (q == Quality.EFFICIENT) {
+            double[] baseP = modelPriceUsd(sonnetModel());
+            double[] peakP = modelPriceUsd(highModel());
+            final double PEAK_FRAC = 0.20; // 전투·클라이맥스(위협도 절정) 밴드 추정 비중 — 나머지 시간은 Sonnet 바닥
+            gmP = new double[]{ baseP[0] * (1 - PEAK_FRAC) + peakP[0] * PEAK_FRAC,
+                                baseP[1] * (1 - PEAK_FRAC) + peakP[1] * PEAK_FRAC };
+        } else {
+            gmP = modelPriceUsd(nominalModel(q));
+        }
         double[] auxP = modelPriceUsd(nominalModel(Quality.LOW)); // 괴담/NPC/보조 = 저품질(mini) 모델
+        // 시나리오 생성(.gdam) 단가 — gdamModel과 동일 규칙: HIGH만 Opus, 그 외(효율·중·저)는 Sonnet.
+        double[] genP = modelPriceUsd(q == Quality.HIGH ? highModel() : sonnetModel());
         final int TURNS = 15 * Math.max(1, players);   // 시간당 GM 턴 — 1인 ~15
         // ① 시스템 프롬프트(캐시): HIT면 0.1× 읽기, MISS면 ★캐시쓰기 2×(1h TTL)★로 재적재 — 실측 집계(accumulateUsage)와 동일 단가로 정정.
         //   (예전 1.0× 근사는 캐시쓰기 과소계상 → 예측이 실측보다 ~40% 낮던 원인. 1h TTL이라도 단발게임·턴 간격으로 절반가량 만료.)
@@ -357,9 +380,9 @@ public class AiManager {
         // 보조(NPC·괴담·정보추출) — 저품질, 턴당 ~2회
         final int AUX_CALLS = 2, AUX_IN = 3000, AUX_OUT = 500;
         double aux = TURNS * AUX_CALLS * (AUX_IN * auxP[0] + AUX_OUT * auxP[1]) / 1_000_000.0;
-        // ③ 시나리오 생성 — 스테이지 페이스 ~1.2회/시간, GM 모델
+        // ③ 시나리오 생성 — 스테이지 페이스 ~1.2회/시간, gdam 모델(효율·중=Sonnet / 고=Opus)
         final double GENS_PER_HR = 1.2; final int GEN_IN = 20000, GEN_OUT = 11000;
-        double gen = GENS_PER_HR * (GEN_IN * gmP[0] + GEN_OUT * gmP[1]) / 1_000_000.0;
+        double gen = GENS_PER_HR * (GEN_IN * genP[0] + GEN_OUT * genP[1]) / 1_000_000.0;
         return gm + aux + gen;
     }
 
@@ -509,13 +532,20 @@ public class AiManager {
         catch (Exception e) { return 0L; }
     }
 
-    /** GM AI 호출 모델 — 역할 오버라이드 우선, 없으면 품질 등급(저=Haiku/중=Sonnet/고=Opus). */
+    /** GM AI 호출 모델 — 역할 오버라이드 우선, 없으면 ★최소 mini 보장(nano 금지)★. 저=mini·중=Sonnet·고=Opus. */
     private String gmModel() {
         if (gmOverride != null) return gmOverride;
+        // ★GM에 nano 금지★: GM은 '규칙 달린 런타임 오퍼레이터'(긴 시스템 프롬프트 유지·시나리오 JSON 교차검증·
+        //   zone/item/clue/state 정합·태그 형식 준수·진행 가능 상태 보존)라 단순 대화 생성과 다르다. 최저(nano)에선
+        //   제약 유지가 먼저 무너져 교착(전행동 봉쇄)·구역 정합 붕괴·태그 오형식으로 게임이 멈춘다(플레이 로그 실측).
+        //   그래서 저/중/고 등급은 살리되 ★GM 바닥은 mini★ — 저=mini(플레이 가능선), 중=Sonnet(권장 기본), 고=Opus(복합·고난도).
+        //   저품질 세션은 mini로 굴러가고(방호벽: 교착차단·태그누출·지오검증 프롬프트가 받쳐줌), 나노는 GM에 안 쓴다.
         return switch (gmQuality) {
-            case HIGH   -> highModel();
-            case LOW    -> haikuModel();
-            default     -> sonnetModel();   // MEDIUM
+            case HIGH      -> highModel();
+            case LOW       -> miniModel();   // ★floor=mini★ (claude=Haiku 4.5 / openai=gpt-5-mini) — nano로 안 내려간다
+            // ★효율(적응형)★: 평시엔 Sonnet(바닥·게임 제대로 굴러가는 선), 위협도 절정(전투·클라이맥스)에만 Opus로 격상 → 최대 절약.
+            case EFFICIENT -> threatSupplier.getAsInt() >= EFFICIENT_PEAK_THREAT ? highModel() : sonnetModel();
+            default        -> sonnetModel(); // MEDIUM
         };
     }
 
@@ -943,7 +973,11 @@ public class AiManager {
             .replaceAll("<DICE>[\\s\\S]*?</DICE>", "")
             .replaceAll("<BROADCAST>[\\s\\S]*?</BROADCAST>", "")
             .replaceAll("<CLEAR>[\\s\\S]*?</CLEAR>", "")
-            .replaceAll("<WITNESS[^>]*>[\\s\\S]*?</WITNESS>", "")
+            // ★WITNESS 누출/오라우팅 방어★: 정형 <WITNESS player="X">…</WITNESS> 외에, 약한 모델이 [WITNESS …](대괄호)나
+            //   </WITNESS> 없이 <WITNESS …>를 ★양쪽 북엔드★로 써서 시점 본문이 다른 플레이어에게 누출됐다(로그 실측).
+            //   여는 태그([·<)~(닫는 </WITNESS> | 다음 WITNESS 여는태그) 사이를 본문째 제거하고, 남은 고아 태그도 정리.
+            .replaceAll("(?is)[\\[<]\\s*WITNESS\\b[^\\]>]*[\\]>][\\s\\S]*?(?:</\\s*WITNESS\\s*>|(?=[\\[<]\\s*WITNESS\\b))", "")
+            .replaceAll("(?is)[\\[<]\\s*/?\\s*WITNESS\\b[^\\]>]*[\\]>]", "")   // 남은 단독/고아 WITNESS 태그(대괄호 포함)
             .replaceAll("<NPC_CALL[^>]*>[\\s\\S]*?</NPC_CALL>", "")
             .replaceAll("(?i)<NPC_LEARN[^>]*>[\\s\\S]*?</NPC_LEARN[^>]*>", "") // 여는·닫는 태그 모두 유연: <NPC_LEARNING>…</NPC_LEARNING>(-ING 변형)도 제거 — 닫는 태그가 literal </NPC_LEARN>이라 -ING이 안 잡혀 서술로 누출되던 버그
             .replaceAll("(?i)<NPC_LEARN[^>]*>[\\s\\S]*$", "")                 // 닫는 태그 누락·잘림 대비(응답 말미 미완성 태그)
@@ -974,8 +1008,9 @@ public class AiManager {
             .replaceAll("<COMM_BLOCK [^/]*/?>", "")
             .replaceAll("<COMM_UNBLOCK [^/]*/?>", "")
             .replaceAll("<TIME_VISIBLE [^/]*/?>", "")
-            .replaceAll("<THREAT [^/]*/?>", "")
-            .replaceAll("<ANGER [^/]*/?>", "")
+            .replaceAll("(?i)</?THREAT\\b[^>]*>", "")   // 여는·자기닫힘·★고아 </THREAT>★ 모두(약한 모델이 </THREAT> 홀로 냄 — 로그 실측 누출)
+            .replaceAll("(?i)</?ANGER\\b[^>]*>", "")
+            .replaceAll("(?i)</?DANGER\\b[^>]*>", "")   // GPT 등이 <THREAT> 대신 내는 <DANGER delta.../> 변형 누출 차단
             .replaceAll("<SUMMON[^>]*>", "")
             .replaceAll("<PACE [^/]*/?>", "")
             // ★[지난 자율 행동] 마커 누적 방지★: 미니 모델이 이전 턴의 이 내부 마커를 에코해 매턴 하나씩

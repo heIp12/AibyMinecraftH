@@ -689,17 +689,21 @@ public class TRPGGameManager {
             () -> dialogMan.showQualityChoice(initiator,
                 ai.providerLabel(), ai.hourlyCostLabel(AiManager.Quality.LOW, np),
                 ai.hourlyCostLabel(AiManager.Quality.MEDIUM, np), ai.hourlyCostLabel(AiManager.Quality.HIGH, np),
+                ai.hourlyCostLabel(AiManager.Quality.EFFICIENT, np),
                 () -> beginSession(initiator, AiManager.Quality.LOW,    false, "random"),
                 () -> beginSession(initiator, AiManager.Quality.MEDIUM, false, "random"),
-                () -> beginSession(initiator, AiManager.Quality.HIGH,   false, "random")),
+                () -> beginSession(initiator, AiManager.Quality.HIGH,   false, "random"),
+                () -> beginSession(initiator, AiManager.Quality.EFFICIENT, false, "random")),
             // 친숙 모드 → 괴담 범위(필터) 선택 → 품질 선택 순서
             () -> dialogMan.showFamiliarFilter(initiator, filter ->
                 dialogMan.showQualityChoice(initiator,
                     ai.providerLabel(), ai.hourlyCostLabel(AiManager.Quality.LOW, np),
                     ai.hourlyCostLabel(AiManager.Quality.MEDIUM, np), ai.hourlyCostLabel(AiManager.Quality.HIGH, np),
+                    ai.hourlyCostLabel(AiManager.Quality.EFFICIENT, np),
                     () -> beginSession(initiator, AiManager.Quality.LOW,    true, filter),
                     () -> beginSession(initiator, AiManager.Quality.MEDIUM, true, filter),
-                    () -> beginSession(initiator, AiManager.Quality.HIGH,   true, filter))));
+                    () -> beginSession(initiator, AiManager.Quality.HIGH,   true, filter),
+                    () -> beginSession(initiator, AiManager.Quality.EFFICIENT, true, filter))));
     }
 
     private static String familiarFilterLabel(String key) {
@@ -732,9 +736,11 @@ public class TRPGGameManager {
         familiarFilter = (familiarFilterKey == null || familiarFilterKey.isBlank()) ? "random" : familiarFilterKey;
         reservedNextSeed = ""; // ★#228★ 새 게임 시작 — 이전 게임의 미소비 예약이 남아있지 않게 초기화
         ai.setGmQuality(quality);
+        ai.setThreatSupplier(state::getThreat); // ★효율 모드★ — 위협도(절정) 감지해 자동 티어 상향에 사용
         String qLabel = switch (quality) {
             case HIGH -> "§b고품질 모드";
             case LOW  -> "§7저품질 모드";
+            case EFFICIENT -> "§a효율 모드 (적응형)";
             default   -> "§e중품질 모드";
         };
         broadcast("§7[AI 품질] " + qLabel

@@ -178,8 +178,8 @@ public class DialogManager {
     // ──────────────────────────────────────────────────────────────
 
     /** 게임 시작 전 GM AI 품질(표준/고품질)을 선택하는 다이얼로그 */
-    public void showQualityChoice(Player player, String provider, String lowCost, String medCost, String highCost,
-                                  Runnable onLow, Runnable onMedium, Runnable onHigh) {
+    public void showQualityChoice(Player player, String provider, String lowCost, String medCost, String highCost, String effCost,
+                                  Runnable onLow, Runnable onMedium, Runnable onHigh, Runnable onEfficient) {
         Component body = Component.text()
             .append(Component.text("GM AI 품질을 선택하세요.", NamedTextColor.WHITE))
             .appendNewline()
@@ -193,6 +193,9 @@ public class DialogManager {
             .appendNewline()
             .append(Component.text("고품질  ", NamedTextColor.AQUA))
             .append(Component.text("가장 풍부·일관 · " + highCost, NamedTextColor.GRAY))
+            .appendNewline()
+            .append(Component.text("효율  ", NamedTextColor.GREEN))
+            .append(Component.text("평시 중품질·절정만 고품질(적응형) · " + effCost, NamedTextColor.GRAY))
             .build();
 
         List<ActionButton> buttons = new ArrayList<>();
@@ -215,6 +218,13 @@ public class DialogManager {
             Component.text("가장 똑똑한 모델로 진행합니다.\n응답이 느리고 토큰 비용이 큽니다.\n" + highCost),
             150,
             DialogAction.customClick((v, a) -> onHigh.run(),
+                ClickCallback.Options.builder().uses(1).build())
+        ));
+        buttons.add(ActionButton.create(
+            Component.text("효율 모드 (적응형)  " + effCost, NamedTextColor.GREEN),
+            Component.text("평소엔 중품질로 저렴하게, 전투·절정에만 자동으로 고품질(Opus 등).\n비용/품질을 자동 균형.\n" + effCost),
+            150,
+            DialogAction.customClick((v, a) -> onEfficient.run(),
                 ClickCallback.Options.builder().uses(1).build())
         ));
 
