@@ -175,6 +175,9 @@ public class TRPGGameManager {
     /** 행운 능력으로 무장한 판정 보정 — ★다음 실제 판정(주사위)까지 유지★되고 playDiceResult가 굴림 시 1회 소비(#176).
      *  예전엔 행동 처리 시점에 소비돼, 판정 없이 서술만 된 행동에서 보정이 증발했다. */
     private final Map<UUID, Integer> pendingLuckModifier   = new ConcurrentHashMap<>();
+    /** ★체력·정신 소모 메시지 지연 큐★ — STATE_UPDATE(공격받음 등)로 생긴 vital 변화 안내를 ★관련 서술이 나온 뒤★
+     *  출력하려고 모아둔다(주사위 결과처럼). applyStateUpdate가 적립 → 서술 전달 후 flushPendingVitalMsgs가 배출. */
+    private final Map<UUID, java.util.List<String>> pendingVitalMsgs = new ConcurrentHashMap<>();
     private final Map<UUID, List<OracleChoice>> pendingOracleChoices = new ConcurrentHashMap<>();
     private final Map<UUID, String> pendingSaintTrait = new ConcurrentHashMap<>();
     private final Map<UUID, String> pendingAreaScanInput = new ConcurrentHashMap<>(); // UUID → traitId
@@ -1827,15 +1830,10 @@ public class TRPGGameManager {
                     if (pd != null) noteHeldItem(pd, itemId);
                 }
             }
-            // ★시작부터 아는 것(initial_info)을 '알고있는 정보'에 등록(#6)★ — 예전엔 GM 프롤로그 컨텍스트에만 쓰여
-            //   기록 GUI에는 남지 않아, 배역이 처음부터 알던 배경·단서를 플레이어가 다시 확인할 수 없었다.
-            if (pd != null && r.has("initial_info") && r.get("initial_info").isJsonArray()) {
-                for (var inf : r.getAsJsonArray("initial_info")) {
-                    if (inf == null || inf.isJsonNull()) continue;
-                    String s = inf.getAsString().trim();
-                    if (!s.isEmpty()) pd.addInfo("시작 정보", s); // infoGroups '시작 정보' 묶음 → 기록 GUI에 표시
-                }
-            }
+            // ★시작 배경지식(initial_info) 기록 등록은 ★프롤로그 뒤★로 미룬다★(아래 프롤로그 콜백) —
+            //   예전엔 스폰 즉시 '시작 정보' 묶음에 통째로 실려, GM이 서술하기도 전에 플레이어가 목록을 들고 있었다
+            //   (제보: "gm이 서술하지도 않았는데 시작정보를 바로 들고있다"). 이제 GM이 프롤로그로 자연스럽게
+            //   드러낸 다음에 기록에 남겨 재확인만 가능하게 한다(#6 재확인 유지 + 자연스러운 노출).
         }
     }
 
@@ -2108,6 +2106,18 @@ public class TRPGGameManager {
                         // (#164 후속) 시작 자동 추천(<-#...-> 1인칭 힌트) 제거 — 프롤로그 서술이 이미 '이 인물이 다음에
                         //   하려던 행동·의도'를 자연스럽게 내비치므로, 별도 assistant AI 호출은 중복이자 토큰 낭비였다.
                         //   추천이 필요하면 플레이어가 /trpg 추천(hint)로 직접 부른다(showRecommendations 유지).
+                    }
+                    // ★시작 배경지식(initial_info)은 ★프롤로그로 GM이 드러낸 뒤★ 기록에 남긴다(제보 반영)★ —
+                    //   예전엔 스폰 즉시 '시작 정보'에 통째로 실려, GM이 서술하기도 전에 플레이어가 목록을 들고 있었다.
+                    //   addInfo는 조용히 저장만(알림 없음)이라, 플레이어는 프롤로그로 자연스럽게 알고 → 기록은 재확인용으로만 남는다.
+                    //   생성 실패(blank)여도 배경지식 유실 방지로 등록한다(#6 재확인 유지).
+                    if (roleDataForPrologue != null && roleDataForPrologue.has("initial_info")
+                            && roleDataForPrologue.get("initial_info").isJsonArray()) {
+                        for (var inf : roleDataForPrologue.getAsJsonArray("initial_info")) {
+                            if (inf == null || inf.isJsonNull()) continue;
+                            String s = inf.getAsString().trim();
+                            if (!s.isEmpty()) pd.addInfo("시작 정보", s);
+                        }
                     }
                     scoreMan.update(p, pd, state.getRoomNumber());
                 }));
@@ -2600,6 +2610,9 @@ public class TRPGGameManager {
             JsonObject inlineDice = (player != null && player.isOnline()) ? ai.parseDiceTag(raw) : null;
             if (inlineDice != null) deliverNarrativeWithInlineDice(player, raw, inlineDice);
             else deliverNarrative(player, raw);
+            // ★체력·정신 소모 안내는 관련 서술(공격받았다 등) '뒤'에 출력★(요청): 서술을 배달(큐 적재)한 직후
+            //   플러시 예약 → runAfterDelivery로 서술이 다 나온 뒤 대상별로 배출된다(주사위 결과와 동일한 순서).
+            flushPendingVitalMsgs();
 
             // 4-B. ★방송(PA) — GM이 <BROADCAST>로 '진짜 방송'이라 판정했을 때만★ 같은 건물 인원에게 결정적 전달(이 응답 턴에 재생).
             //   판단은 GM이 한다 → '방송을 끄고 말한다'류 오판 없음. from 비면 발신자(anchor) 표시명.
@@ -3130,8 +3143,23 @@ public class TRPGGameManager {
         if (p == null || !p.isOnline()) return;
 
         String sign = scaledDelta > 0 ? "+" : "-";
-        p.sendMessage(color + label + " " + sign + Math.abs(scaledDelta)
-            + " §7(남은 " + label + " " + scaledAfter + "/100)");
+        // ★서술 뒤 출력★(요청): 여기서 바로 보내지 않고 큐에 적립 → 관련 GM 서술(공격받았다 등)이 전달된 뒤
+        //   flushPendingVitalMsgs가 배출한다(주사위 결과가 서술 뒤에 나오는 것과 동일한 순서).
+        pendingVitalMsgs.computeIfAbsent(pd.uuid, k -> new java.util.ArrayList<>())
+            .add(color + label + " " + sign + Math.abs(scaledDelta) + " §7(남은 " + label + " " + scaledAfter + "/100)");
+    }
+
+    /** 적립된 체력·정신 소모 안내를 각 대상의 ★서술 전달이 끝난 뒤★ 출력한다(주사위처럼 순서 보장). */
+    private void flushPendingVitalMsgs() {
+        if (pendingVitalMsgs.isEmpty()) return;
+        for (UUID uuid : new java.util.ArrayList<>(pendingVitalMsgs.keySet())) {
+            java.util.List<String> msgs = pendingVitalMsgs.remove(uuid);
+            if (msgs == null || msgs.isEmpty()) continue;
+            Player p = Bukkit.getPlayer(uuid);
+            if (p == null || !p.isOnline()) continue;
+            final java.util.List<String> fmsgs = msgs;
+            narrativeDelivery.runAfterDelivery(p, () -> { if (p.isOnline()) for (String m : fmsgs) p.sendMessage(m); });
+        }
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -6713,25 +6741,43 @@ public class TRPGGameManager {
                 extractAndStoreInfo(narrative, apd);
             }
         }
-        ai.parseWitnessTags(raw).forEach((pName, witnessText) -> {
-            if (witnessText.isBlank()) return;
-            // ★ GM은 메타 은닉 규칙상 WITNESS player="..."에 ★캐릭터명★을 쓴다(계정명 금지).
-            //   과거엔 계정명(pd.name)으로만 매칭해, 캐릭터명 WITNESS가 전부 매칭 실패→조용히 버려졌다
-            //   (= 같은 구역 동료에게 행동·방송이 전달 안 되던 버그). 이제 계정명·캐릭터명 둘 다 허용한다.
-            state.getAllPlayers().stream()
+        // ★원거리 WITNESS 게이트★: 저품질 GM이 먼 구역 동료에게까지 '작은 행동'을 WITNESS로 뿌려
+        //   '난 보관실인데 왜 접객실 동료 행동이 보이지?'가 생겼다. 같은/인접 구역은 그대로 전달하되,
+        //   ★비인접(먼 구역)★엔 GM이 far="true"로 표시한 '멀리 퍼지는 큰 사건'만 닿게 한다(규모 판단은 GM이).
+        PlayerData actorPd = actor != null ? state.getPlayer(actor) : null;
+        final String actorZone = actorPd != null && actorPd.zone != null ? actorPd.zone : "";
+        for (String[] w : ai.parseWitnessTags(raw)) {
+            String pName = w[0], witnessText = w[1];
+            boolean gmMarkedFar = "1".equals(w[2]); // GM이 '멀리 퍼지는 큰 사건'으로 명시(엔진 단어추측 아님)
+            if (witnessText.isBlank()) continue;
+            // ★ GM은 메타 은닉 규칙상 WITNESS player="..."에 ★캐릭터명★을 쓴다(계정명 금지) → 계정명·캐릭터명 둘 다 매칭.
+            PlayerData wpd = state.getAllPlayers().stream()
                 .filter(pd -> spawnedPlayers.contains(pd.uuid) && matchesPlayerName(pd, pName))
-                .findFirst()
-                .ifPresent(pd -> {
-                    Player target = Bukkit.getPlayer(pd.uuid);
-                    if (target != null && target.isOnline()) {
-                        narrativeDelivery.deliver(target, witnessText);
-                        relayToSpectators(target, witnessText); // 관전자에게도 목격 서술 전달(#7)
-                        appendNarrativeLog(pd, witnessText);
-                        extractAndStoreInfo(witnessText, pd);
-                    }
-                    gameLogger.logGmOutput(pName + "(목격)", witnessText);
-                });
-        });
+                .findFirst().orElse(null);
+            if (wpd == null) continue;
+            if (!witnessReaches(actorZone, wpd.zone, gmMarkedFar)) { // 먼 구역인데 GM이 far 표시 안 함 → 차단
+                gameLogger.write("목격", "", "[원거리 WITNESS 차단: " + pName + " — 먼 구역·GM far 미표시(작은 행동)]");
+                continue;
+            }
+            Player target = Bukkit.getPlayer(wpd.uuid);
+            if (target != null && target.isOnline()) {
+                narrativeDelivery.deliver(target, witnessText);
+                relayToSpectators(target, witnessText); // 관전자에게도 목격 서술 전달(#7)
+                appendNarrativeLog(wpd, witnessText);
+                extractAndStoreInfo(witnessText, wpd);
+            }
+            gameLogger.logGmOutput(pName + "(목격)", witnessText);
+        }
+    }
+
+    /** ★WITNESS 원거리 게이트★: 행동자(actorZone)와 목격자(targetZone)가 ★비인접(2홉+)★이면
+     *  ★GM이 far로 표시한 '멀리 퍼지는 큰 사건'★일 때만 전달한다. 같은/인접 구역·위치 불명은 항상 전달.
+     *  (엔진이 단어로 규모를 추측하지 않는다 — '폭파시키자'는 의논까지 오탐하던 문제를 피해 판단을 GM에 맡긴다.) */
+    private boolean witnessReaches(String actorZone, String targetZone, boolean gmMarkedFar) {
+        if (actorZone == null || actorZone.isEmpty() || targetZone == null || targetZone.isEmpty()) return true; // 위치 불명 — 막지 않음
+        if (actorZone.equals(targetZone)) return true;                                // 같은 구역 — 직접 목격
+        if (mapMan.getAdjacentZones(actorZone).contains(targetZone)) return true;     // 인접 구역 — 벽 너머 기척 허용
+        return gmMarkedFar;                                                           // 비인접(멀리) — GM이 큰 사건이라 far 표시했을 때만
     }
 
     /** 태그의 player 이름이 이 플레이어를 가리키는가 — 계정명·캐릭터명 둘 다 허용(공백·대소문자 무시). */
@@ -11404,8 +11450,21 @@ public class TRPGGameManager {
             }
         }
         // 세부 위치: 명시되면 갱신, zone이 바뀌었는데 미명시면 이전 spot 무효화
-        if (spot != null && !spot.isBlank()) moved.spot = spot.trim();
-        else if (zoneChanged)                moved.spot = "";
+        if (spot != null && !spot.isBlank()) {
+            String spotTrim = spot.trim();
+            // ★spot 오염 방어★: GM이 '세부위치(창가·계단앞)' 자리에 ★다른 구역명★을 넣는 실수(예: 보관실인데 spot="접객실")
+            //   → 스코어보드가 '보관실[접객실]'처럼 두 곳에 있는 듯 잘못 표시된다. spot이 (현재 구역이 아닌) 실제 구역으로
+            //   해석되면 세부위치가 아니므로 버린다(다른 구역으로 가려면 zone= 을 써야 함 — 이건 GM 태그 오용).
+            String asZone = resolveZoneId(spotTrim);
+            if (asZone != null && !asZone.equals(newZone)) {
+                gameLogger.write("이동", "", "[spot 무시: 구역명 '" + spotTrim + "'이 세부위치로 옴]");
+                if (zoneChanged) moved.spot = ""; // 새 구역인데 오염 spot → 깨끗이 비움(구 구역이면 기존 spot 유지)
+            } else {
+                moved.spot = spotTrim;
+            }
+        } else if (zoneChanged) {
+            moved.spot = "";
+        }
         // 같은 zone에 이미 있는 생존 플레이어들과 연락처 교환
         state.getAllPlayers().stream()
             .filter(other -> other != moved && !other.isDead
@@ -12499,6 +12558,7 @@ public class TRPGGameManager {
             int val = Math.max(1, Math.min(20, raw + statBonus + lb));
             int crit = raw == 20 ? 1 : raw == 1 ? -1 : 0;                // 자연 최대·최소 = 대성공·대실패
             rolls.addProperty(k, val);
+            if (lb != 0) rolls.addProperty(k + "_luck", lb);            // ★표시 분해용★ 행운 보정분 — 성패는 val로, 표시는 '능력치+행운'으로 쪼갠다
             if (crit != 0) rolls.addProperty(k + "_crit", crit);
             if (!first) note.append(" · ");
             first = false;
@@ -12526,8 +12586,27 @@ public class TRPGGameManager {
         deliverNarrative(player, before);                       // 1) 시도까지의 앞 서술
         final String fAfter = after;
         narrativeDelivery.runAfterDelivery(player, () ->        // 2) 앞 서술이 다 나온 뒤 주사위 결과 인라인 → 3) 뒤 결과 서술
-            showInlineDice(player, dice, () -> {
-                if (player.isOnline() && !ai.stripTags(fAfter).isBlank()) deliverNarrative(player, fAfter);
+            showInlineDice(player, dice, outcome -> {
+                if (player.isOnline() && !ai.stripTags(fAfter).isBlank()) deliverNarrative(player, fAfter); // GM이 결과를 이어 썼음
+                else if (player.isOnline()) followUpDiceResult(player, dice, outcome); // ★결과 서술 없음 → 자동 후속★(주사위만 굴리고 방치 방지)
+            }));
+    }
+
+    /** ★판정 결과 자동 후속 서술★: GM이 <DICE>만 내고 결과 서술을 안 붙이면(2단계 의도·저품질 모델), 그 판정 결과로
+     *  장면에서 ★실제로 무슨 일이 일어났는지★ 곧바로 이어서 서술시킨다. 예전엔 '실패/성공'만 뜨고 아무 전개도 없이
+     *  플레이어가 방치돼(두 턴 내리 주사위만 굴림), '행동 전달 좀…' 같은 요청이 나왔다. */
+    private void followUpDiceResult(Player player, JsonObject dice, String outcome) {
+        PlayerData pd = player != null ? state.getPlayer(player) : null;
+        if (pd == null || !player.isOnline()) return;
+        String reason = dice.has("reason") && !dice.get("reason").isJsonNull() ? dice.get("reason").getAsString().trim() : "";
+        String who = pd.gmDisplayName();
+        String sys = "직전 행동의 판정 결과가 나왔다 — " + (reason.isEmpty() ? "판정" : reason) + " → ★" + (outcome == null || outcome.isBlank() ? "판정" : outcome) + "★. "
+            + "이 결과로 " + who + "의 장면에서 ★실제로 무슨 일이 일어났는지★ 2~4문장으로 이어서 서술하라(주사위만 굴리고 끝내지 마라). "
+            + "성공·대성공이면 그 행동이 표적·상황에 ★실제 유효타·진전★으로 반영되고(적을 흘려보내지 마라), 실패·부분성공이면 ★구체적 대가·전개★를 보여라. "
+            + "★새 <DICE>는 내지 마라(이미 굴렸다)★ — 이 판정 결과에 맞는 서술만. 다른 위치 플레이어의 장면은 끌어오지 마라.";
+        ai.callGmAiOnce(gmSystemPrompt, sys).thenAccept(resp ->
+            plugin.getServer().getScheduler().runTask(plugin, () -> {
+                if (player.isOnline() && resp != null && !ai.stripTags(resp).isBlank()) deliverNarrative(player, resp);
             }));
     }
 
@@ -12535,8 +12614,8 @@ public class TRPGGameManager {
      *  ★연출·뷰어 재생 복원★: (1) 인게임은 굴림(무작위 프레임)→착지값 강조로 연출하고(예전 밋밋한 1회 플래시 대체),
      *  (2) 로그는 log-viewer.html의 diceParse가 요구하는 형식(dN=M · (기준 D 이상 성공) · → 결과)으로 남긴다 —
      *  이 형식이라야 뷰어가 '주사위 전용 카드'로 인식해 굴림 애니메이션을 재생한다(형식이 어긋나 재생 안 되던 버그 수정). */
-    private void showInlineDice(Player player, JsonObject dice, Runnable onDone) {
-        if (player == null || !player.isOnline()) { if (onDone != null) onDone.run(); return; }
+    private void showInlineDice(Player player, JsonObject dice, java.util.function.Consumer<String> onDone) {
+        if (player == null || !player.isOnline()) { if (onDone != null) onDone.accept(""); return; }
         PlayerData pd = state.getPlayer(player);
         String reason = dice.has("reason") && !dice.get("reason").isJsonNull() ? dice.get("reason").getAsString().trim() : "";
         String statKey = pickDiceStat(dice, reason);
@@ -12563,9 +12642,8 @@ public class TRPGGameManager {
         //   예전 형식('영감 16 (기준 12) → 성공')엔 dN=M·'이상 성공'이 없어 뷰어가 주사위로 인식 못 해 애니메이션이 안 나왔다.
         gameLogger.logAbilityResult(pd != null ? pd.gmDisplayName() : player.getName(), "주사위 판정",
             (reason.isEmpty() ? "행동 판정" : reason) + " — d20=" + val + " (기준 " + dc + " 이상 성공) → " + outcome);
-        // 왜 굴리는지 먼저 안내(관전자 포함)
-        msgToWatchers(player, "§e🎲 " + (reason.isEmpty() ? "판정" : reason) + " §7— d20 (" + dc + " 이상 성공)"
-            + (label.isEmpty() ? "" : " §8[" + label + "]") + "§7 굴립니다…");
+        // 왜 굴리는지 먼저 안내(관전자 포함) — ★행동 텍스트는 여기 한 번만★(결과 줄엔 반복하지 않는다). d20·기준·능력치 표기는 결과 줄로 미뤄 짧게.
+        msgToWatchers(player, "§e🎲 " + (reason.isEmpty() ? "판정" : reason) + " §7— 굴립니다…");
         // ★인게임 굴림 연출★: 무작위 프레임(약 0.8s) → 착지값 강조. onDone은 착지 시점에 실행해 인라인 뒤 서술이 자연히 이어지게(연출은 서술과 겹쳐 흐른다).
         final int FRAMES = 8;
         for (int i = 0; i < FRAMES; i++) {
@@ -12579,7 +12657,9 @@ public class TRPGGameManager {
             }, i * 3L);
         }
         final long landTick = FRAMES * 3L + 2L;
-        final int fval = val, fdc = dc; final String fout = outcome, flabel = label, freason = reason;
+        int luckPart = (rolls != null && statKey != null && rolls.has(statKey + "_luck")) ? rolls.get(statKey + "_luck").getAsInt() : 0;
+        final int fval = val, fdc = dc, fstat = val - luckPart, fluck = luckPart; // 표시: 능력치분(fstat) + 행운분(fluck) = 판정값(fval)
+        final String fout = outcome, flabel = label, freason = reason;
         final NamedTextColor fcol = col;
         plugin.getServer().getScheduler().runTaskLater(plugin, () -> {   // ★굴림이 끝난 뒤에야 결과 공개★(강조 타이틀 + 채팅) — 미리 노출 금지
             if (!player.isOnline()) return;
@@ -12587,12 +12667,15 @@ public class TRPGGameManager {
                 Component.text("《 " + fval + " 》", fcol, TextDecoration.BOLD),
                 Component.text("d20 · " + fdc + " 이상 성공 · " + fout, fcol),
                 Title.Times.times(Duration.ofMillis(120), Duration.ofMillis(2200), Duration.ofMillis(500))));
-            msgToWatchers(player, "§7─ §e🎲 " + (freason.isEmpty() ? "판정" : freason)
-                + " §7[" + (flabel.isEmpty() ? "판정" : flabel) + " " + fval + " / 기준 " + fdc + "] → " + colorCode(fcol) + fout + " §7─");
+            // ★압축 결과 표기(요청)★: 행동 텍스트(freason)는 위 '굴립니다' 줄에 이미 나왔으니 반복하지 않고,
+            //   [능력치(+행운 보정) / 기준] → 결과 만 짧게 — 긴 서술 반복·어중간한 줄바꿈 제거.
+            String statDisp = (flabel.isEmpty() ? "판정" : flabel) + " " + fstat
+                + (fluck > 0 ? " §7+행운 " + fluck : fluck < 0 ? " §7-행운 " + (-fluck) : "");
+            msgToWatchers(player, "§e🎲 §7[§f" + statDisp + " §7/ 기준 " + fdc + "§7] → " + colorCode(fcol) + fout);
         }, landTick);
         // ★순서 보장(사용자 요청)★: 굴림 → 착지(결과 공개) → ★그 다음에★ 결과 서술이 이어진다.
         //   결과가 눈에 들어올 짧은 틈(0.8s)을 준 뒤 onDone(뒤 서술)을 실행 — 결과·서술을 미리 보여주고 굴리지 않는다.
-        plugin.getServer().getScheduler().runTaskLater(plugin, () -> { if (onDone != null) onDone.run(); }, landTick + 16L);
+        plugin.getServer().getScheduler().runTaskLater(plugin, () -> { if (onDone != null) onDone.accept(fout); }, landTick + 16L);
     }
 
     // ══════════════════════════════════════════════════════════════
