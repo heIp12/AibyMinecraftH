@@ -8794,13 +8794,19 @@ public class TRPGGameManager {
             Player op2 = Bukkit.getPlayer(op.uuid);
             if (op2 == null || !op2.isOnline() || !(bypass || hasCommDevice(op))) continue; // 개방 시 수신자 기기 부재도 관통
             boolean tampered = chanInterfered && tamperRng.nextInt(100) < elecTamperChance; // @이름과 동일(신뢰도 반영)
-            if (tampered) elecTamperedAny = true;
-            String heard = tampered ? tamperText(message, tamperRng) : message;
-            msgToWatchers(op2, "§b[📞 " + disp + " → " + (senderNet != null ? senderNet + "망" : "전체") + "] §f" + heard); // 변조돼도 원문처럼(은닉)
-            if (tampered)
-                gameLogger.logCommTampered("call", disp, java.util.List.of(op.gmDisplayName()), message, heard, "괴담의 음성 변조", senderNet);
-            else
+            String head = "§b[📞 " + disp + " → " + (senderNet != null ? senderNet + "망" : "전체") + "] §f";
+            if (tampered) {
+                elecTamperedAny = true; // 변조 여부는 동기 확정 → 아래 남용도·잡음 주입은 즉시 처리 가능
+                final Player fop2 = op2; final PlayerData fop = op; // 루프 변수 → 람다용 final 사본
+                // 변조 내용은 GM(AI)이 자연스럽게 다시 씀(비동기) — 실패 시 하드코딩 폴백. 변조돼도 원문처럼 은닉 전달.
+                tamperTextNatural(message, "electronic", (heard) -> {
+                    msgToWatchers(fop2, head + heard);
+                    gameLogger.logCommTampered("call", disp, java.util.List.of(fop.gmDisplayName()), message, heard, "괴담의 음성 변조", senderNet);
+                });
+            } else {
+                msgToWatchers(op2, head + message); // 온전 수신자는 동기 전달
                 cleanNames.add(op.gmDisplayName());
+            }
         }
         if (elecTamperedAny) bumpCommFatigue("electronic"); // 방송 변조 1회 = 남용도 1회(수신자 수와 무관)
         if (chanInterfered)
@@ -9450,31 +9456,34 @@ public class TRPGGameManager {
             String endStyle = endingRenderSpec(npcObj); // ending_style 우선, 없으면 '어미'를 규정한 speech_style(#207)
             if (!endStyle.isBlank()) visible = ai.restyleDialogue(visible, endStyle);
             // ★통신 변조★: 매체 모달리티가 맞는 괴담이 원격 답신을 가로채 바꿔 전달(30%). 대면(sameZone)은 변조 안 함.
+            //   변조 내용은 GM(AI)이 자연스럽게 다시 씀(tamperTextNatural, 비동기) — 실패 시 하드코딩 폴백.
             final String tmodR = commModality(media, writtenF);
             final boolean tamperedR = remote && entityInterferes(tmodR) && new java.util.Random().nextInt(100) < tamperChance(tmodR);
             if (tamperedR) bumpCommFatigue(tmodR); // 남용 시 신뢰도↓
-            final String heardR = tamperedR ? tamperText(visible, new java.util.Random()) : visible;
 
-            plugin.getServer().getScheduler().runTask(plugin, () -> {
-                if (sender.isOnline())
-                    sender.sendMessage("§e[" + npcName + "] §f" + heardR);
-            });
-
-            // GM 컨텍스트에 요약만 주입 (전체 대화 노출 방지)
+            // GM 컨텍스트에 요약만 주입 (전체 대화 노출 방지) — 원본 기준, 변조와 무관하게 즉시.
             String summary = visible.length() > 120 ? visible.substring(0, 120) + "…" : visible;
             ai.injectGmSystem("[NPC " + (media.isEmpty() ? "직접 대화" : media) + "] " + commDisplayName(senderPd) + " → " + npcName
                 + ": \"" + (message.length() > 60 ? message.substring(0, 60) + "…" : message)
                 + "\" / " + npcName + " 반응: " + summary);
 
+            final String visibleF = visible;           // restyleDialogue로 재대입될 수 있어 람다용 final 사본
+            final String kindR = writtenF ? "letter" : (viaCallF ? "call" : "nearby");
+            final String viaR = media.isEmpty() ? null : media;
             // 뷰어: NPC 답신을 '발신자에게 온 통신'으로 기록(수신자=발신자) → ★발신자 시점에서도 대화가 보이게★ 양방향 연결.
-            //   (기존 logGmOutput은 to가 없어 발신자 개별 시점에 답이 안 떠 대화 흐름을 못 따라가던 문제 해결)
             //   변조되면 원본+변형본을 함께 기록(뷰어 원본/변형됨 대조).
-            String kindR = writtenF ? "letter" : (viaCallF ? "call" : "nearby");
-            String viaR = media.isEmpty() ? null : media;
-            if (tamperedR) gameLogger.logCommTampered(kindR, npcName,
-                    java.util.List.of(senderPd.gmDisplayName()), visible, heardR, writtenF ? "괴담의 기록 변조" : "괴담의 음성 변조", viaR);
-            else gameLogger.logComm(kindR, npcName,
-                    java.util.List.of(senderPd.gmDisplayName()), visible, viaR);
+            java.util.function.Consumer<String> deliverR = (heardR) -> {
+                plugin.getServer().getScheduler().runTask(plugin, () -> {
+                    if (sender.isOnline())
+                        sender.sendMessage("§e[" + npcName + "] §f" + heardR);
+                });
+                if (tamperedR) gameLogger.logCommTampered(kindR, npcName,
+                        java.util.List.of(senderPd.gmDisplayName()), visibleF, heardR, writtenF ? "괴담의 기록 변조" : "괴담의 음성 변조", viaR);
+                else gameLogger.logComm(kindR, npcName,
+                        java.util.List.of(senderPd.gmDisplayName()), visibleF, viaR);
+            };
+            if (tamperedR) tamperTextNatural(visibleF, tmodR, deliverR);
+            else deliverR.accept(visibleF);
         });
     }
 
@@ -10678,12 +10687,16 @@ public class TRPGGameManager {
             for (DroppedNote n : e.getValue()) {
                 if (n.tampered) continue;
                 if (rng.nextInt(100) < 25) { // 미발견 쪽지를 문서형 괴담이 발견·훼손
-                    String altered = tamperText(n.orig, rng);
-                    n.content = altered; n.tampered = true;
-                    gameLogger.logItemTampered(getEntityName(), "쪽지", n.orig, altered, "괴담의 문서 훼손");
-                    ai.injectGmSystem("[편지 훼손] 괴담이 " + zoneDisplayName(e.getKey())
-                        + "에 남겨진 쪽지를 발견해 내용을 바꿔놓았다: \"" + n.orig + "\" → \"" + altered
-                        + "\". 나중에 읽는 이는 훼손본을 믿게 된다.");
+                    n.tampered = true; // 즉시 표식(중복 훼손·이중 AI호출 방지) — 내용은 비동기 완료 시 대체
+                    final DroppedNote fn = n; final String zoneK = e.getKey();
+                    // 훼손 내용은 GM(AI)이 자연스럽게 다시 씀(비동기) — 실패 시 하드코딩 폴백.
+                    tamperTextNatural(n.orig, "text", (altered) -> {
+                        fn.content = altered;
+                        gameLogger.logItemTampered(getEntityName(), "쪽지", fn.orig, altered, "괴담의 문서 훼손");
+                        ai.injectGmSystem("[편지 훼손] 괴담이 " + zoneDisplayName(zoneK)
+                            + "에 남겨진 쪽지를 발견해 내용을 바꿔놓았다: \"" + fn.orig + "\" → \"" + altered
+                            + "\". 나중에 읽는 이는 훼손본을 믿게 된다.");
+                    });
                 }
             }
         }
@@ -10709,16 +10722,21 @@ public class TRPGGameManager {
             int delay = Math.max(1, d.deliverTurn - d.sentTurn); // 지연이 길수록 가로챌 시간이 길다
             boolean tampered = entityInterferes(modality) && new java.util.Random().nextInt(100) < tamperChanceDelayed(modality, delay); // 전달 중 변조(지연 길수록↑, #248)
             if (tampered) bumpCommFatigue(modality);
-            String heard = tampered ? tamperText(d.content, new java.util.Random()) : d.content;
-            String tdisp = commDisplayName(tp);
-            String viaName = d.via == null || d.via.isBlank() ? "편지" : d.via;
-            Player p = Bukkit.getPlayer(d.targetUuid);
-            if (p != null && p.isOnline()) msgToWatchers(p, "§b[✉ " + viaName + " 도착] §f" + d.senderDisp + ": " + heard); // 수신자+관전자(관전 중계)
-            appendNarrativeLog(tp, "[" + viaName + " 도착] " + d.senderDisp + ": " + heard);
-            if (tampered) gameLogger.logCommTampered(d.kind, d.senderDisp, java.util.List.of(tdisp), d.content, heard, "전달 중 괴담 변조", d.via);
-            else gameLogger.logComm(d.kind, d.senderDisp, java.util.List.of(tdisp), d.content, d.via);
-            ai.injectGmSystem("[지연 전달 도착] " + d.senderDisp + "이(가) " + (now - d.sentTurn) + "턴 전 부친 " + viaName
-                + "이(가) " + tdisp + "에게 지금 도착했다: \"" + heard + "\"" + (tampered ? " (전달 중 훼손됨)" : "") + ". 정황에 반영.");
+            final PendingDelivery fd = d; final PlayerData ftp = tp; final boolean ftampered = tampered;
+            final String tdisp = commDisplayName(tp);
+            final String viaName = d.via == null || d.via.isBlank() ? "편지" : d.via;
+            // 변조 내용은 GM(AI)이 자연스럽게 다시 씀(비동기) — 실패 시 하드코딩 폴백.
+            java.util.function.Consumer<String> deliverArr = (heard) -> {
+                Player p = Bukkit.getPlayer(fd.targetUuid);
+                if (p != null && p.isOnline()) msgToWatchers(p, "§b[✉ " + viaName + " 도착] §f" + fd.senderDisp + ": " + heard); // 수신자+관전자(관전 중계)
+                appendNarrativeLog(ftp, "[" + viaName + " 도착] " + fd.senderDisp + ": " + heard);
+                if (ftampered) gameLogger.logCommTampered(fd.kind, fd.senderDisp, java.util.List.of(tdisp), fd.content, heard, "전달 중 괴담 변조", fd.via);
+                else gameLogger.logComm(fd.kind, fd.senderDisp, java.util.List.of(tdisp), fd.content, fd.via);
+                ai.injectGmSystem("[지연 전달 도착] " + fd.senderDisp + "이(가) " + (now - fd.sentTurn) + "턴 전 부친 " + viaName
+                    + "이(가) " + tdisp + "에게 지금 도착했다: \"" + heard + "\"" + (ftampered ? " (전달 중 훼손됨)" : "") + ". 정황에 반영.");
+            };
+            if (tampered) tamperTextNatural(d.content, modality, deliverArr);
+            else deliverArr.accept(d.content);
         }
     }
 
@@ -10740,22 +10758,26 @@ public class TRPGGameManager {
         boolean interfered = viaDevice && entityInterferes(modality); // 이 채널이 괴담의 간섭권인가(채널 건강)
         boolean tampered = interfered && new java.util.Random().nextInt(100) < tamperChance(modality);
         if (tampered) bumpCommFatigue(modality); // 자주 변조하면 이 매체 신뢰도↓ → 효과 감소(#249)
-        String heard = tampered ? tamperText(message, new java.util.Random()) : message;
-        String inLine = tag + " §f" + commDisplayName(senderPd) + ": " + heard;
-        if (target != null && target.isOnline()) msgToWatchers(target, inLine); // 수신자+그 관전자에게(관전 중계)
-
         state.log("comm", commDisplayName(senderPd),
-            "→ " + commDisplayName(targetPd) + " (" + medium + "): " + message);
-        // 뷰어: 발신자·★수신자★ 함께 기록(수신자 시점에도 보이게). 변조되면 원본+변형본 대조. via=구체 매체 이름.
-        if (tampered) {
-            gameLogger.logCommTampered(kind, commDisplayName(senderPd),
-                java.util.List.of(commDisplayName(targetPd)), message, heard, written ? "괴담의 기록 변조" : "괴담의 음성 변조", via);
-            ai.injectGmSystem("[통신 변조] 괴담이 " + commDisplayName(senderPd) + "→" + commDisplayName(targetPd)
-                + " " + (viaDevice ? media : "대화") + "을(를) 가로채 \"" + message + "\"를 \"" + heard + "\"로 바꿔 전했다. 이후 정황·오해에 반영.");
-        } else {
-            gameLogger.logComm(kind, commDisplayName(senderPd),
-                java.util.List.of(commDisplayName(targetPd)), message, via);
-        }
+            "→ " + commDisplayName(targetPd) + " (" + medium + "): " + message); // 발신 자체 기록(원문)
+        // ★수신자 배달(변조·정상 공용)★: heard=수신자가 실제 듣는 말. 변조면 GM(AI)이 자연스럽게 생성해 이 콜백에 넘긴다.
+        final Player ftarget = target;
+        java.util.function.Consumer<String> deliverIn = (heard) -> {
+            String inLine = tag + " §f" + commDisplayName(senderPd) + ": " + heard;
+            if (ftarget != null && ftarget.isOnline()) msgToWatchers(ftarget, inLine); // 수신자+그 관전자(관전 중계)
+            // 뷰어: 발신자·★수신자★ 함께 기록. 변조되면 원본+변형본 대조. via=구체 매체 이름.
+            if (tampered) {
+                gameLogger.logCommTampered(kind, commDisplayName(senderPd),
+                    java.util.List.of(commDisplayName(targetPd)), message, heard, written ? "괴담의 기록 변조" : "괴담의 음성 변조", via);
+                ai.injectGmSystem("[통신 변조] 괴담이 " + commDisplayName(senderPd) + "→" + commDisplayName(targetPd)
+                    + " " + (viaDevice ? media : "대화") + "을(를) 가로채 \"" + message + "\"를 \"" + heard + "\"로 바꿔 전했다. 이후 정황·오해에 반영.");
+            } else {
+                gameLogger.logComm(kind, commDisplayName(senderPd),
+                    java.util.List.of(commDisplayName(targetPd)), message, via);
+            }
+        };
+        if (tampered) tamperTextNatural(message, modality, deliverIn);
+        else deliverIn.accept(message);
 
         // (Phase1) ★채널 건강★: 이 매체가 괴담의 간섭권이면, 이번엔 온전히 갔더라도 채널이 불안정함을 GM에 알려 서술에 반영(잡음·지연·부분 왜곡 여지).
         if (interfered && !tampered)
