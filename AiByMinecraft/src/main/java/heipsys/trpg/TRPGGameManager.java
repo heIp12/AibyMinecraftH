@@ -9049,6 +9049,15 @@ public class TRPGGameManager {
         return false;
     }
 
+    /** ★발신 실패 환불★: 실제로 닿지 않은 발신(잘못된 번호·자기 자신·매체 차단·빈 메시지 등)은 한 턴 발신 횟수에서
+     *  되돌린다 — 실패한 발신 때문에 재시도가 막히지 않게(제보). commRateLimitBlocks가 미리 +1 해둔 것을 취소한다. */
+    private void refundCommUse(Player sender) {
+        if (sender == null) return;
+        UUID id = sender.getUniqueId();
+        Integer u = commUsesThisTurn.get(id);
+        if (u != null && u > 0) commUsesThisTurn.put(id, u - 1);
+    }
+
     /** ★#220 관계 호칭 주소어★ — 친족·관계로 부르는 말(이름이 아님). 이 말로 근처 NPC를 부르면 관계로 연결한다. */
     private static final java.util.Set<String> HONORIFIC_ADDRESS_TERMS = java.util.Set.of(
         "형","형님","형아","누나","누님","오빠","오라버니","언니","동생","막내",
@@ -9127,6 +9136,7 @@ public class TRPGGameManager {
             ai.injectGmSystem("[통신 미도달(은닉)] " + senderPd.gmDisplayName() + "이(가) " + commMediumLabel(intendedMedium)
                 + "(으)로 전하려 했으나 지금 그 수단이 통하지 않는다(괴담·상황). 발신자는 모른 채 보냈다고 여긴다 — "
                 + "상대에게 닿지 않았음을 정황·결과로만 드러내고, '차단됐다'고 시스템이 미리 알렸다는 티를 내지 마라.");
+            refundCommUse(sender); // 매체 차단으로 실제 미도달 → 횟수 환불(다른 수단 재시도 가능하게)
             sender.sendMessage("§7[전송 중...]");
             return;
         }
@@ -9140,23 +9150,25 @@ public class TRPGGameManager {
         if (dialedByNumber && targetPd == null) {
             JsonObject npcByNum = findNpcByContactNumber(token);
             if (npcByNum != null) {
-                if (message.isEmpty()) { sender.sendMessage("§c사용법: @번호 메시지"); return; }
+                if (message.isEmpty()) { refundCommUse(sender); sender.sendMessage("§c사용법: @번호 메시지"); return; }
                 String nid = getStr(npcByNum, "id");
                 if (!nid.isEmpty()) senderPd.everKnownNpcContacts.add(nid); // 올바른 번호 입력 = 번호를 안다
                 handleNpcDirectComm(sender, senderPd, npcByNum, message);
                 return;
             }
+            refundCommUse(sender); // 잘못된 번호 = 미발신 → 횟수 환불
             sender.sendMessage("§c연결되지 않는 번호입니다. §7(존재하지 않는 번호)");
             return;
         }
         // NPC 대상
         if (targetPd == null && npcObj != null) {
-            if (message.isEmpty()) { sender.sendMessage("§c사용법: @이름 메시지"); return; }
+            if (message.isEmpty()) { refundCommUse(sender); sender.sendMessage("§c사용법: @이름 메시지"); return; }
             handleNpcDirectComm(sender, senderPd, npcObj, message);
             return;
         }
-        if (message.isEmpty()) { sender.sendMessage("§c사용법: @이름(또는 번호) 메시지"); return; }
+        if (message.isEmpty()) { refundCommUse(sender); sender.sendMessage("§c사용법: @이름(또는 번호) 메시지"); return; }
         if (targetPd.uuid.equals(sender.getUniqueId())) {
+            refundCommUse(sender); // 자기 자신 = 미발신 → 환불
             sender.sendMessage("§c자기 자신에게 통신할 수 없습니다.");
             return;
         }
