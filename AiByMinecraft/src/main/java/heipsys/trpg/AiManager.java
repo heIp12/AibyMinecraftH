@@ -509,14 +509,14 @@ public class AiManager {
         catch (Exception e) { return 0L; }
     }
 
-    /** GM AI 호출 모델 — 역할 오버라이드 우선, 없으면 품질 등급(저=Haiku/중=Sonnet/고=Opus). */
+    /** GM AI 호출 모델 — 역할 오버라이드 우선, 없으면 ★최소 Sonnet(중) 보장★(고품질만 Opus). */
     private String gmModel() {
         if (gmOverride != null) return gmOverride;
-        return switch (gmQuality) {
-            case HIGH   -> highModel();
-            case LOW    -> haikuModel();
-            default     -> sonnetModel();   // MEDIUM
-        };
+        // ★GM 이야기 엔진은 나노/Haiku급으로는 못 돌린다★: 저품질(LOW)로 GM을 최저 모델에 태우면 서술·판정·규칙준수가
+        //   무너져 교착(전행동 봉쇄)·능력효과 무시·아이템↔구역 정합 붕괴·태그 오형식이 쏟아진다(플레이 로그 실측).
+        //   그래서 GM은 생성기(gdamModel)와 동일하게 ★중품질(Sonnet)을 바닥★으로 둔다 — 저품질 세션은
+        //   NPC·엔티티·보조(mini/Haiku)에서만 비용을 아끼고, GM은 중품질 이상으로 굴러가 게임이 진행되게 한다.
+        return gmQuality == Quality.HIGH ? highModel() : sonnetModel();
     }
 
     /** .gdam 생성 모델 — 역할 오버라이드 우선, 없으면 최소 Sonnet 보장(고품질만 Opus). */
