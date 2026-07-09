@@ -425,9 +425,12 @@ public class MapManager {
     }
 
     private Set<String> visibleZones(PlayerData pd, boolean full, String filterArea) {
-        // 단일 구역 시나리오: 처음부터 전체 공개 (플레이어가 한 맵에서 진행하는 경우 대응)
-        boolean singleArea = areaOrder.size() <= 1;
-        Set<String> base = (full || singleArea) ? new LinkedHashSet<>(zoneOrder) : new LinkedHashSet<>(pd.visitedZones);
+        // ★방문한 구역 + 진입 시 공개된 인접 길목만★ 노출한다 — 단일 구역 시나리오라도 아직 안 가본
+        //   '먼(비인접)' 방은 숨긴다(스포 방지, 사용자 요청). visitedZones엔 updatePlayerZone이 '들어선 구역 +
+        //   같은 대분류·realm의 인접 구역(눈에 보이는 길목)'을 넣어두므로, 이것만으로 방문+인접이 그려진다.
+        //   (예전엔 단일 구역이면 zoneOrder 전체를 깔아, 한 건물 시나리오에서 안 가본 방까지 다 보였다.)
+        Set<String> base = full ? new LinkedHashSet<>(zoneOrder) : new LinkedHashSet<>(pd.visitedZones);
+        if (!full && pd.zone != null && !pd.zone.isEmpty()) base.add(pd.zone); // 현위치는 방문기록 누락에 대비해 항상 포함
         base.retainAll(zoneNames.keySet());
         if (filterArea != null) base.removeIf(z -> !filterArea.equals(zoneArea.get(z)));
         return base;

@@ -11404,8 +11404,21 @@ public class TRPGGameManager {
             }
         }
         // 세부 위치: 명시되면 갱신, zone이 바뀌었는데 미명시면 이전 spot 무효화
-        if (spot != null && !spot.isBlank()) moved.spot = spot.trim();
-        else if (zoneChanged)                moved.spot = "";
+        if (spot != null && !spot.isBlank()) {
+            String spotTrim = spot.trim();
+            // ★spot 오염 방어★: GM이 '세부위치(창가·계단앞)' 자리에 ★다른 구역명★을 넣는 실수(예: 보관실인데 spot="접객실")
+            //   → 스코어보드가 '보관실[접객실]'처럼 두 곳에 있는 듯 잘못 표시된다. spot이 (현재 구역이 아닌) 실제 구역으로
+            //   해석되면 세부위치가 아니므로 버린다(다른 구역으로 가려면 zone= 을 써야 함 — 이건 GM 태그 오용).
+            String asZone = resolveZoneId(spotTrim);
+            if (asZone != null && !asZone.equals(newZone)) {
+                gameLogger.write("이동", "", "[spot 무시: 구역명 '" + spotTrim + "'이 세부위치로 옴]");
+                if (zoneChanged) moved.spot = ""; // 새 구역인데 오염 spot → 깨끗이 비움(구 구역이면 기존 spot 유지)
+            } else {
+                moved.spot = spotTrim;
+            }
+        } else if (zoneChanged) {
+            moved.spot = "";
+        }
         // 같은 zone에 이미 있는 생존 플레이어들과 연락처 교환
         state.getAllPlayers().stream()
             .filter(other -> other != moved && !other.isDead
