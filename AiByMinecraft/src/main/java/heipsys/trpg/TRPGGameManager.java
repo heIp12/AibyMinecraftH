@@ -12317,7 +12317,10 @@ public class TRPGGameManager {
             }));
     }
 
-    /** ★#254★ 미리 굴려둔 판정값으로 주사위 결과를 인라인 표시(채팅 한 줄 + 짧은 타이틀 플래시)한 뒤 onDone 실행. 값·성패는 코드가 정한다(공정). */
+    /** ★#254★ 미리 굴려둔 판정값으로 주사위 결과를 인라인 표시한 뒤 onDone 실행. 값·성패는 코드가 정한다(공정).
+     *  ★연출·뷰어 재생 복원★: (1) 인게임은 굴림(무작위 프레임)→착지값 강조로 연출하고(예전 밋밋한 1회 플래시 대체),
+     *  (2) 로그는 log-viewer.html의 diceParse가 요구하는 형식(dN=M · (기준 D 이상 성공) · → 결과)으로 남긴다 —
+     *  이 형식이라야 뷰어가 '주사위 전용 카드'로 인식해 굴림 애니메이션을 재생한다(형식이 어긋나 재생 안 되던 버그 수정). */
     private void showInlineDice(Player player, JsonObject dice, Runnable onDone) {
         if (player == null || !player.isOnline()) { if (onDone != null) onDone.run(); return; }
         PlayerData pd = state.getPlayer(player);
@@ -12342,15 +12345,40 @@ public class TRPGGameManager {
         NamedTextColor col = crit == 1 ? NamedTextColor.AQUA : crit == -1 ? NamedTextColor.DARK_RED
                            : success ? NamedTextColor.GREEN : partial ? NamedTextColor.GOLD : NamedTextColor.RED;
         String label = diceStatLabel(statKey);
-        msgToWatchers(player, "§7─ §e🎲 " + (reason.isEmpty() ? "판정" : reason)
-            + " §7[" + (label.isEmpty() ? "판정" : label) + " " + val + " / 기준 " + dc + "] → " + colorCode(col) + outcome + " §7─");
-        titleToWatchers(player, Title.title(
-            Component.text("🎲 " + val, col, TextDecoration.BOLD),
-            Component.text((label.isEmpty() ? "" : label + " · ") + "기준 " + dc + " · " + outcome, col),
-            Title.Times.times(Duration.ofMillis(150), Duration.ofMillis(1400), Duration.ofMillis(300))));
+        // ★뷰어 호환 로그(핵심 수정)★ — diceParse가 dN=M·(기준 D 이상 성공)·→ 결과 세 패턴을 모두 요구한다.
+        //   예전 형식('영감 16 (기준 12) → 성공')엔 dN=M·'이상 성공'이 없어 뷰어가 주사위로 인식 못 해 애니메이션이 안 나왔다.
         gameLogger.logAbilityResult(pd != null ? pd.gmDisplayName() : player.getName(), "주사위 판정",
-            (reason.isEmpty() ? "행동 판정" : reason) + " — " + (label.isEmpty() ? "" : label + " ") + val + " (기준 " + dc + ") → " + outcome);
-        plugin.getServer().getScheduler().runTaskLater(plugin, () -> { if (onDone != null) onDone.run(); }, 30L); // 플래시 잠깐 뒤 결과 서술 이어감(~1.5s)
+            (reason.isEmpty() ? "행동 판정" : reason) + " — d20=" + val + " (기준 " + dc + " 이상 성공) → " + outcome);
+        // 왜 굴리는지 먼저 안내(관전자 포함)
+        msgToWatchers(player, "§e🎲 " + (reason.isEmpty() ? "판정" : reason) + " §7— d20 (" + dc + " 이상 성공)"
+            + (label.isEmpty() ? "" : " §8[" + label + "]") + "§7 굴립니다…");
+        // ★인게임 굴림 연출★: 무작위 프레임(약 0.8s) → 착지값 강조. onDone은 착지 시점에 실행해 인라인 뒤 서술이 자연히 이어지게(연출은 서술과 겹쳐 흐른다).
+        final int FRAMES = 8;
+        for (int i = 0; i < FRAMES; i++) {
+            final int n = ThreadLocalRandom.current().nextInt(1, 21);
+            plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+                if (!player.isOnline()) return;
+                titleToWatchers(player, Title.title(
+                    Component.text("🎲 " + n, NamedTextColor.GRAY, TextDecoration.BOLD),
+                    Component.text("주사위(d20)를 굴리는 중...", NamedTextColor.DARK_GRAY),
+                    Title.Times.times(Duration.ZERO, Duration.ofMillis(200), Duration.ZERO)));
+            }, i * 3L);
+        }
+        final long landTick = FRAMES * 3L + 2L;
+        final int fval = val, fdc = dc; final String fout = outcome, flabel = label, freason = reason;
+        final NamedTextColor fcol = col;
+        plugin.getServer().getScheduler().runTaskLater(plugin, () -> {   // ★굴림이 끝난 뒤에야 결과 공개★(강조 타이틀 + 채팅) — 미리 노출 금지
+            if (!player.isOnline()) return;
+            titleToWatchers(player, Title.title(
+                Component.text("《 " + fval + " 》", fcol, TextDecoration.BOLD),
+                Component.text("d20 · " + fdc + " 이상 성공 · " + fout, fcol),
+                Title.Times.times(Duration.ofMillis(120), Duration.ofMillis(2200), Duration.ofMillis(500))));
+            msgToWatchers(player, "§7─ §e🎲 " + (freason.isEmpty() ? "판정" : freason)
+                + " §7[" + (flabel.isEmpty() ? "판정" : flabel) + " " + fval + " / 기준 " + fdc + "] → " + colorCode(fcol) + fout + " §7─");
+        }, landTick);
+        // ★순서 보장(사용자 요청)★: 굴림 → 착지(결과 공개) → ★그 다음에★ 결과 서술이 이어진다.
+        //   결과가 눈에 들어올 짧은 틈(0.8s)을 준 뒤 onDone(뒤 서술)을 실행 — 결과·서술을 미리 보여주고 굴리지 않는다.
+        plugin.getServer().getScheduler().runTaskLater(plugin, () -> { if (onDone != null) onDone.run(); }, landTick + 16L);
     }
 
     // ══════════════════════════════════════════════════════════════
