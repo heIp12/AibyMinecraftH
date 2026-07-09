@@ -407,6 +407,7 @@ type 값 규칙: "written_book"=책/일기/문서류, "paper"=쪽지/메모, "ma
 - evidence: NPC에게 제시하면 반응이 바뀜(사진·증거물). item_params:{"uses":N}. lore_info에 '무엇을 증명하는지' 적는다.
 ★ 남용 금지: 핵심 공략 동선에 필요한 아이템에만 item_type을 준다. 분위기·소품은 item_type 생략.
 ★ key의 unlocks는 gated_zones의 zone과 일치시키고, 그 구역 requires와 모순 없게 하라.
+★★ item_params.unlocks에 쓰는 zone_id는 반드시 이 .gdam의 zones[*].zone_id 목록에 있는 값을 그대로 복사한다 — "zone_엘리베이터홀"처럼 zone 이름에 "zone_" 접두어를 붙여 임의로 만들거나 존재하지 않는 id를 쓰면 런타임에서 '[무시: 알 수 없는 구역]' 오류로 잠금이 해제되지 않는다.
 ### item_type 심화 규칙 (런타임 상태·정합성):
 - ★잔량이 있는 타입(light=charges, weapon=ammo, consumable/ritual/evidence=uses)은 초기값을 반드시 명시한다.
   값이 작을수록(예: charges 2~3, ammo 1~6) 자원 관리 긴장이 생긴다. 무한이 자연스러우면 생략(−1 취급).
@@ -479,6 +480,8 @@ type 값 규칙: "written_book"=책/일기/문서류, "paper"=쪽지/메모, "ma
   * 시간 인지(timeline.time_visible)도 배경에 맞게: 시계가 없는 시대·공간이면 false.
 - notes: 위로 표현 못 한 기타 자연 제약을 짧게(예: "정전으로 조명 제한", "무전기 배터리 잔량 부족").
 - gated_zones: (선택) 장비·인증 잠금이 있는 구역 배열. 각 항목: {zone: "zone_id", requires: "필요 조건(장비명/인증)", bypass: "물리 우회 방법(없으면 생략)", bypass_dc: DC숫자(생략 가능), remote_bypass: true/false(원격으로 우회·해제 가능한가. 현장 필수면 false — 급박 구간에 이동만으로 기회 전소 금지·이동 비용 명시)}.
+  ★★ gated_zones[].zone ID 절대 규칙: zone 값은 반드시 이 시나리오 zones[*].zone_id 목록에 실제로 존재하는 id를 그대로 복사한다. "zone_엘리베이터홀"처럼 존 이름에 "zone_" 접두어를 붙이거나 임의 id를 지어내면 런타임에서 '[무시: 알 수 없는 구역]' 오류가 발생해 잠금이 영구 무효가 된다.
+  ★★ 퍼즐 이중 잠금 방지 (절대 금지 — 억지 왕복 차단): 하나의 문(한 zone_id)에 잠금 수단을 두 개 이상 겹치지 마라. 전형적 금지 패턴: gated_zones[].requires(카드키)와 key_items[*].item_params.unlocks(전력/아이템 해제)가 같은 zone을 동시에 잠그는 것. 문이 전력으로 열린다면 전력만으로, 카드키가 필요하면 처음부터 카드키만으로 설계하라. 규칙: 하나의 zone에 (a) gated_zones[].requires와 (b) key_items[*].item_params.unlocks가 모두 설정되어 있으면 둘 중 하나를 반드시 제거하라.
 - notes (과거 시대 + phone_usable=false): 대체 통신 수단명·도달 소요 시간·발각 위험 수준을 반드시 명시한다(예: "전령은 도보 2턴, 발각 위험 중"). NPC가 수신하는 대체통신도 동일한 도달 소요·발각 위험을 따른다(대면 즉시 전달과 구분). comms_monitored 대신 이 notes 기준을 적용한다.
 - notes (미래 + 복수 통신 채널): "감청 대상 채널 = [목록], 안전 채널 = [목록]"을 명시한다. 안전 채널이 명시되면 그 채널로 핵심 정보를 안전하게 전달하는 공략을 허용한다.
 - 제약은 플레이어 자유를 부수는 장치가 아니라, '이 괴담을 왜 벗어날 수 없는가'를 설득력 있게 만드는 장치다.
@@ -829,6 +832,7 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
 5. ★정답 경로 실물 연결(orphan 금지)★: collapse_condition을 이루는 authored 정답 아이템·단서·NPC 지식이 ★실제 획득·사용 경로★(어디서 어떻게 손에 넣고 무엇에 쓰는지)에 물려 있는가. 정답 자료가 놀고 GM이 즉흥 사실로 대체하게 두지 마라 — 정답은 배치한 그 자료를 통해 도달하게.
 6. ★collapse_condition 자기정합★: entity.weakness/solution과 논리적으로 일치하고, ①우회로(엉뚱한 방법으로 손쉽게 충족되는 구멍)나 ②순환(정의상 불가능한 것을 요구 — '이름 잃은 넋'을 '이름 돌려주기'로 풀라는 식)이 없는가. 소환·발동 규칙과 파훼 규칙이 서로 어긋나지 않게(부른 자만 표적인데 아무나 자처하면 클리어되는 구멍 금지).
 7. ★내부 토큰 잔존 금지★: 어떤 텍스트 필드(note·description·prologue 등)에도 role_A/zone_B/npc_C 같은 ★내부 스키마 토큰★이 남아 있지 않게(플레이어에게 노출된다). 사람이 읽을 이름·표시명으로 치환하라.
+8. ★zone ID 일관성 + 이중 잠금 검사★: (a) gated_zones[].zone과 key_items[*].item_params.unlocks에 쓴 모든 zone_id가 zones[*].zone_id 목록에 실제로 있는가 — 없으면 '[무시: 알 수 없는 구역]' 오류로 잠금이 작동하지 않는다. 아이템의 location과 clues의 위치 명칭도 zones의 실제 이름과 일치하는지 확인하라. (b) 같은 zone에 gated_zones[].requires(카드키)와 key_items[*].item_params.unlocks(전력·아이템 해제)가 동시에 설정된 이중 잠금이 없는가 — 있으면 둘 중 하나를 제거하라.
 """;
 
     // 두 조각을 런타임에 결합('+'는 상수 폴딩되어 64KB 단일 상수가 되므로 String.join 사용).
