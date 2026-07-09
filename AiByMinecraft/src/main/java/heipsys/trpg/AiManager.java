@@ -354,8 +354,21 @@ public class AiManager {
      *  ③ 시나리오 생성(.gdam): 스테이지 진입마다 대형 호출(1회 ~$0.4@Opus). 시간당 ~1.2회로 amortize.
      */
     private double estimateHourlyUsd(Quality q, int players) {
-        double[] gmP  = modelPriceUsd(nominalModel(q));
+        // GM 턴 단가 — ★효율(적응형)★은 평시 Sonnet 바닥 + 절정(위협도≥임계)만 Opus → 절정 비중으로 혼합 추정.
+        //   (실측은 매 호출 '실제로 굴린 모델'로 집계된다 — 이건 선택화면 예상치일 뿐, 위협도 곡선에 따라 실비가 Sonnet~Opus 사이를 오간다.)
+        double[] gmP;
+        if (q == Quality.EFFICIENT) {
+            double[] baseP = modelPriceUsd(sonnetModel());
+            double[] peakP = modelPriceUsd(highModel());
+            final double PEAK_FRAC = 0.20; // 전투·클라이맥스(위협도 절정) 밴드 추정 비중 — 나머지 시간은 Sonnet 바닥
+            gmP = new double[]{ baseP[0] * (1 - PEAK_FRAC) + peakP[0] * PEAK_FRAC,
+                                baseP[1] * (1 - PEAK_FRAC) + peakP[1] * PEAK_FRAC };
+        } else {
+            gmP = modelPriceUsd(nominalModel(q));
+        }
         double[] auxP = modelPriceUsd(nominalModel(Quality.LOW)); // 괴담/NPC/보조 = 저품질(mini) 모델
+        // 시나리오 생성(.gdam) 단가 — gdamModel과 동일 규칙: HIGH만 Opus, 그 외(효율·중·저)는 Sonnet.
+        double[] genP = modelPriceUsd(q == Quality.HIGH ? highModel() : sonnetModel());
         final int TURNS = 15 * Math.max(1, players);   // 시간당 GM 턴 — 1인 ~15
         // ① 시스템 프롬프트(캐시): HIT면 0.1× 읽기, MISS면 ★캐시쓰기 2×(1h TTL)★로 재적재 — 실측 집계(accumulateUsage)와 동일 단가로 정정.
         //   (예전 1.0× 근사는 캐시쓰기 과소계상 → 예측이 실측보다 ~40% 낮던 원인. 1h TTL이라도 단발게임·턴 간격으로 절반가량 만료.)
@@ -367,9 +380,9 @@ public class AiManager {
         // 보조(NPC·괴담·정보추출) — 저품질, 턴당 ~2회
         final int AUX_CALLS = 2, AUX_IN = 3000, AUX_OUT = 500;
         double aux = TURNS * AUX_CALLS * (AUX_IN * auxP[0] + AUX_OUT * auxP[1]) / 1_000_000.0;
-        // ③ 시나리오 생성 — 스테이지 페이스 ~1.2회/시간, GM 모델
+        // ③ 시나리오 생성 — 스테이지 페이스 ~1.2회/시간, gdam 모델(효율·중=Sonnet / 고=Opus)
         final double GENS_PER_HR = 1.2; final int GEN_IN = 20000, GEN_OUT = 11000;
-        double gen = GENS_PER_HR * (GEN_IN * gmP[0] + GEN_OUT * gmP[1]) / 1_000_000.0;
+        double gen = GENS_PER_HR * (GEN_IN * genP[0] + GEN_OUT * genP[1]) / 1_000_000.0;
         return gm + aux + gen;
     }
 
