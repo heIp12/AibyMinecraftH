@@ -2370,6 +2370,10 @@ public class TRPGGameManager {
             return;
         }
 
+        // ★관전 중계(입력)★: 관전자가 '대상이 무엇을 해서 이 상황이 됐는지' 알 수 있게, 이 행동 입력 원문을 그 대상의
+        //   관전자에게 보여준다(@통신은 각 통신 핸들러가 이미 관전 중계하므로 여기선 그 외 행동만). 대상 본인엔 안 보냄.
+        relayInputToSpectators(player, pd, message);
+
         // ★이동 중(#190)★: 취소·정지어('멈춰' 등)면 처리 대기와 무관하게 언제든 그 자리에서 멈춘다.
         if (pd.isTraveling() && (isCancelWord(message) || isStopWord(message))) {
             pd.travelPath.clear(); pd.travelDest = "";
@@ -6726,6 +6730,17 @@ public class TRPGGameManager {
         for (Player sp : Bukkit.getOnlinePlayers()) {
             if (sp.getGameMode() != GameMode.SPECTATOR || sp.getUniqueId().equals(target.getUniqueId())) continue;
             if (isWatching(sp, target)) narrativeDelivery.deliver(sp, text);
+        }
+    }
+
+    /** ★관전 중계(입력)★: 대상이 방금 입력한 행동 원문을 그 대상을 관전 중인 사람에게 즉시 보여준다(무엇을 해서 이
+     *  상황이 됐는지 파악용). 타자기 없이 한 줄로. 대상 본인엔 안 보냄(이미 자기 입력). */
+    private void relayInputToSpectators(Player actor, PlayerData pd, String input) {
+        if (actor == null || input == null || input.isBlank()) return;
+        String disp = (pd != null) ? pd.gmDisplayName() : actor.getName();
+        for (Player sp : Bukkit.getOnlinePlayers()) {
+            if (sp.getGameMode() != GameMode.SPECTATOR || sp.getUniqueId().equals(actor.getUniqueId())) continue;
+            if (isWatching(sp, actor)) sp.sendMessage("§8[" + disp + " 행동] §7" + input);
         }
     }
     private void deliverNarrative(Player actor, String raw) {
