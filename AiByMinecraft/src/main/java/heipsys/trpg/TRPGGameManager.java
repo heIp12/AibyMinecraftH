@@ -1827,15 +1827,10 @@ public class TRPGGameManager {
                     if (pd != null) noteHeldItem(pd, itemId);
                 }
             }
-            // ★시작부터 아는 것(initial_info)을 '알고있는 정보'에 등록(#6)★ — 예전엔 GM 프롤로그 컨텍스트에만 쓰여
-            //   기록 GUI에는 남지 않아, 배역이 처음부터 알던 배경·단서를 플레이어가 다시 확인할 수 없었다.
-            if (pd != null && r.has("initial_info") && r.get("initial_info").isJsonArray()) {
-                for (var inf : r.getAsJsonArray("initial_info")) {
-                    if (inf == null || inf.isJsonNull()) continue;
-                    String s = inf.getAsString().trim();
-                    if (!s.isEmpty()) pd.addInfo("시작 정보", s); // infoGroups '시작 정보' 묶음 → 기록 GUI에 표시
-                }
-            }
+            // ★시작 배경지식(initial_info) 기록 등록은 ★프롤로그 뒤★로 미룬다★(아래 프롤로그 콜백) —
+            //   예전엔 스폰 즉시 '시작 정보' 묶음에 통째로 실려, GM이 서술하기도 전에 플레이어가 목록을 들고 있었다
+            //   (제보: "gm이 서술하지도 않았는데 시작정보를 바로 들고있다"). 이제 GM이 프롤로그로 자연스럽게
+            //   드러낸 다음에 기록에 남겨 재확인만 가능하게 한다(#6 재확인 유지 + 자연스러운 노출).
         }
     }
 
@@ -2108,6 +2103,18 @@ public class TRPGGameManager {
                         // (#164 후속) 시작 자동 추천(<-#...-> 1인칭 힌트) 제거 — 프롤로그 서술이 이미 '이 인물이 다음에
                         //   하려던 행동·의도'를 자연스럽게 내비치므로, 별도 assistant AI 호출은 중복이자 토큰 낭비였다.
                         //   추천이 필요하면 플레이어가 /trpg 추천(hint)로 직접 부른다(showRecommendations 유지).
+                    }
+                    // ★시작 배경지식(initial_info)은 ★프롤로그로 GM이 드러낸 뒤★ 기록에 남긴다(제보 반영)★ —
+                    //   예전엔 스폰 즉시 '시작 정보'에 통째로 실려, GM이 서술하기도 전에 플레이어가 목록을 들고 있었다.
+                    //   addInfo는 조용히 저장만(알림 없음)이라, 플레이어는 프롤로그로 자연스럽게 알고 → 기록은 재확인용으로만 남는다.
+                    //   생성 실패(blank)여도 배경지식 유실 방지로 등록한다(#6 재확인 유지).
+                    if (roleDataForPrologue != null && roleDataForPrologue.has("initial_info")
+                            && roleDataForPrologue.get("initial_info").isJsonArray()) {
+                        for (var inf : roleDataForPrologue.getAsJsonArray("initial_info")) {
+                            if (inf == null || inf.isJsonNull()) continue;
+                            String s = inf.getAsString().trim();
+                            if (!s.isEmpty()) pd.addInfo("시작 정보", s);
+                        }
                     }
                     scoreMan.update(p, pd, state.getRoomNumber());
                 }));
