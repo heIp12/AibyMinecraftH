@@ -1086,23 +1086,30 @@ public class AiManager {
             .trim();
     }
 
-    /** <WITNESS player="name">text</WITNESS> 태그를 파싱 → {playerName: witnessText} */
-    public Map<String, String> parseWitnessTags(String response) {
-        Map<String, String> result = new java.util.LinkedHashMap<>();
-        final String PREFIX = "<WITNESS player=\"";
-        int from = 0;
-        while (true) {
-            int open = response.indexOf(PREFIX, from);
-            if (open == -1) break;
-            int nameEnd = response.indexOf("\">", open + PREFIX.length());
-            if (nameEnd == -1) break;
-            String name = response.substring(open + PREFIX.length(), nameEnd);
-            int close = response.indexOf("</WITNESS>", nameEnd + 2);
-            if (close == -1) break;
-            result.put(name, response.substring(nameEnd + 2, close).trim());
-            from = close + "</WITNESS>".length();
+    /** <WITNESS player="name" [far="true"]>text</WITNESS> 파싱 → [{player, text, far("1"|"")}, …].
+     *  ★속성 순서·개수 무관(정규식)★ — player 외에 far/loud/scale 같은 '멀리까지 퍼지는 큰 사건' 표식을 GM이 붙일 수 있다.
+     *  far 판정은 ★엔진의 단어 추측이 아니라 GM의 명시적 표식★이다(원거리 전달 여부를 GM이 판단하도록). */
+    public java.util.List<String[]> parseWitnessTags(String response) {
+        java.util.List<String[]> out = new java.util.ArrayList<>();
+        if (response == null) return out;
+        java.util.regex.Matcher m = java.util.regex.Pattern
+            .compile("(?is)<WITNESS\\b([^>]*)>(.*?)</WITNESS>").matcher(response);
+        while (m.find()) {
+            String attrs = m.group(1) == null ? "" : m.group(1);
+            String text  = m.group(2) == null ? "" : m.group(2).trim();
+            java.util.regex.Matcher pm = java.util.regex.Pattern
+                .compile("(?i)player\\s*=\\s*\"([^\"]*)\"").matcher(attrs);
+            if (!pm.find()) continue;                 // player 없는 WITNESS는 라우팅 불가 → 스킵
+            String name = pm.group(1).trim();
+            if (name.isEmpty()) continue;
+            String a = attrs.toLowerCase().replace(" ", "");
+            // GM이 '멀리까지 퍼지는 큰 사건'으로 표시한 경우만 far — 표식 이름은 관대하게(약한 모델 변형 흡수).
+            boolean far = a.contains("far=\"true\"") || a.contains("far=\"1\"") || a.contains("far=\"yes\"")
+                || a.contains("loud=\"true\"") || a.contains("carries=\"true\"") || a.contains("distant=\"true\"")
+                || a.contains("scale=\"large\"") || a.contains("scale=\"big\"") || a.contains("scale=\"far\"") || a.contains("scale=\"huge\"");
+            out.add(new String[]{ name, text, far ? "1" : "" });
         }
-        return result;
+        return out;
     }
 
     /** <NPC_CALL player="name">말</NPC_CALL> 태그 파싱 → {playerName: 전할 말}. NPC가 먼저 연락하는 용도. */

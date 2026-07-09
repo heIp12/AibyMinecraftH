@@ -6713,53 +6713,43 @@ public class TRPGGameManager {
                 extractAndStoreInfo(narrative, apd);
             }
         }
-        // ★원거리 소액션 WITNESS 게이트(멀리서 = 규모 클 때만)★: 저품질 GM이 먼 구역 동료에게까지 '작은 행동'을
-        //   WITNESS로 뿌려 '난 보관실인데 왜 접객실 동료 행동이 보이지?'가 생겼다. 행동자와 ★비인접(2홉+)★인
-        //   동료에겐 '큰 사건(폭발·굉음·비명 등)'일 때만 닿게 한다(같은/인접 구역·위치 불명은 그대로 전달).
+        // ★원거리 WITNESS 게이트★: 저품질 GM이 먼 구역 동료에게까지 '작은 행동'을 WITNESS로 뿌려
+        //   '난 보관실인데 왜 접객실 동료 행동이 보이지?'가 생겼다. 같은/인접 구역은 그대로 전달하되,
+        //   ★비인접(먼 구역)★엔 GM이 far="true"로 표시한 '멀리 퍼지는 큰 사건'만 닿게 한다(규모 판단은 GM이).
         PlayerData actorPd = actor != null ? state.getPlayer(actor) : null;
         final String actorZone = actorPd != null && actorPd.zone != null ? actorPd.zone : "";
-        ai.parseWitnessTags(raw).forEach((pName, witnessText) -> {
-            if (witnessText.isBlank()) return;
-            // ★ GM은 메타 은닉 규칙상 WITNESS player="..."에 ★캐릭터명★을 쓴다(계정명 금지).
-            //   과거엔 계정명(pd.name)으로만 매칭해, 캐릭터명 WITNESS가 전부 매칭 실패→조용히 버려졌다
-            //   (= 같은 구역 동료에게 행동·방송이 전달 안 되던 버그). 이제 계정명·캐릭터명 둘 다 허용한다.
-            state.getAllPlayers().stream()
+        for (String[] w : ai.parseWitnessTags(raw)) {
+            String pName = w[0], witnessText = w[1];
+            boolean gmMarkedFar = "1".equals(w[2]); // GM이 '멀리 퍼지는 큰 사건'으로 명시(엔진 단어추측 아님)
+            if (witnessText.isBlank()) continue;
+            // ★ GM은 메타 은닉 규칙상 WITNESS player="..."에 ★캐릭터명★을 쓴다(계정명 금지) → 계정명·캐릭터명 둘 다 매칭.
+            PlayerData wpd = state.getAllPlayers().stream()
                 .filter(pd -> spawnedPlayers.contains(pd.uuid) && matchesPlayerName(pd, pName))
-                .findFirst()
-                .ifPresent(pd -> {
-                    if (!witnessReaches(actorZone, pd.zone, witnessText)) { // 먼 구역 + 작은 행동 → 차단
-                        gameLogger.write("목격", "", "[원거리 WITNESS 차단: " + pName + " — 먼 구역·작은 행동(규모 큰 사건만 전달)]");
-                        return;
-                    }
-                    Player target = Bukkit.getPlayer(pd.uuid);
-                    if (target != null && target.isOnline()) {
-                        narrativeDelivery.deliver(target, witnessText);
-                        relayToSpectators(target, witnessText); // 관전자에게도 목격 서술 전달(#7)
-                        appendNarrativeLog(pd, witnessText);
-                        extractAndStoreInfo(witnessText, pd);
-                    }
-                    gameLogger.logGmOutput(pName + "(목격)", witnessText);
-                });
-        });
+                .findFirst().orElse(null);
+            if (wpd == null) continue;
+            if (!witnessReaches(actorZone, wpd.zone, gmMarkedFar)) { // 먼 구역인데 GM이 far 표시 안 함 → 차단
+                gameLogger.write("목격", "", "[원거리 WITNESS 차단: " + pName + " — 먼 구역·GM far 미표시(작은 행동)]");
+                continue;
+            }
+            Player target = Bukkit.getPlayer(wpd.uuid);
+            if (target != null && target.isOnline()) {
+                narrativeDelivery.deliver(target, witnessText);
+                relayToSpectators(target, witnessText); // 관전자에게도 목격 서술 전달(#7)
+                appendNarrativeLog(wpd, witnessText);
+                extractAndStoreInfo(witnessText, wpd);
+            }
+            gameLogger.logGmOutput(pName + "(목격)", witnessText);
+        }
     }
 
-    /** ★WITNESS 원거리 게이트★: 행동자(actorZone)와 목격자(targetZone)가 ★비인접(2홉+)★이면 '큰 사건'일 때만 전달한다.
-     *  사용자 규칙: 멀리서의 행동 서술은 규모가 클 때만. 같은/인접 구역, 또는 위치 불명(막지 않음)은 항상 전달. */
-    private boolean witnessReaches(String actorZone, String targetZone, String witnessText) {
+    /** ★WITNESS 원거리 게이트★: 행동자(actorZone)와 목격자(targetZone)가 ★비인접(2홉+)★이면
+     *  ★GM이 far로 표시한 '멀리 퍼지는 큰 사건'★일 때만 전달한다. 같은/인접 구역·위치 불명은 항상 전달.
+     *  (엔진이 단어로 규모를 추측하지 않는다 — '폭파시키자'는 의논까지 오탐하던 문제를 피해 판단을 GM에 맡긴다.) */
+    private boolean witnessReaches(String actorZone, String targetZone, boolean gmMarkedFar) {
         if (actorZone == null || actorZone.isEmpty() || targetZone == null || targetZone.isEmpty()) return true; // 위치 불명 — 막지 않음
         if (actorZone.equals(targetZone)) return true;                                // 같은 구역 — 직접 목격
         if (mapMan.getAdjacentZones(actorZone).contains(targetZone)) return true;     // 인접 구역 — 벽 너머 기척 허용
-        return looksLargeScaleEvent(witnessText);                                     // 비인접(멀리) — 큰 사건일 때만
-    }
-
-    /** 큰(먼 구역까지 퍼지는) 사건의 감각어가 서술에 있는가 — 폭발·굉음·총성·비명·경보·붕괴·진동·섬광·정전 등. */
-    private static final String[] LARGE_EVENT_WORDS = {
-        "폭발","폭음","굉음","총성","총소리","비명","절규","경보","사이렌","무너","붕괴","진동","흔들",
-        "섬광","번쩍","정전","화염","불길","지진","포효","울부","파열","천둥","쿵","깨지","울려" };
-    private static boolean looksLargeScaleEvent(String text) {
-        if (text == null || text.isBlank()) return false;
-        for (String w : LARGE_EVENT_WORDS) if (text.contains(w)) return true;
-        return false;
+        return gmMarkedFar;                                                           // 비인접(멀리) — GM이 큰 사건이라 far 표시했을 때만
     }
 
     /** 태그의 player 이름이 이 플레이어를 가리키는가 — 계정명·캐릭터명 둘 다 허용(공백·대소문자 무시). */
