@@ -175,6 +175,9 @@ public class TRPGGameManager {
     /** 행운 능력으로 무장한 판정 보정 — ★다음 실제 판정(주사위)까지 유지★되고 playDiceResult가 굴림 시 1회 소비(#176).
      *  예전엔 행동 처리 시점에 소비돼, 판정 없이 서술만 된 행동에서 보정이 증발했다. */
     private final Map<UUID, Integer> pendingLuckModifier   = new ConcurrentHashMap<>();
+    /** ★체력·정신 소모 메시지 지연 큐★ — STATE_UPDATE(공격받음 등)로 생긴 vital 변화 안내를 ★관련 서술이 나온 뒤★
+     *  출력하려고 모아둔다(주사위 결과처럼). applyStateUpdate가 적립 → 서술 전달 후 flushPendingVitalMsgs가 배출. */
+    private final Map<UUID, java.util.List<String>> pendingVitalMsgs = new ConcurrentHashMap<>();
     private final Map<UUID, List<OracleChoice>> pendingOracleChoices = new ConcurrentHashMap<>();
     private final Map<UUID, String> pendingSaintTrait = new ConcurrentHashMap<>();
     private final Map<UUID, String> pendingAreaScanInput = new ConcurrentHashMap<>(); // UUID → traitId
@@ -2607,6 +2610,9 @@ public class TRPGGameManager {
             JsonObject inlineDice = (player != null && player.isOnline()) ? ai.parseDiceTag(raw) : null;
             if (inlineDice != null) deliverNarrativeWithInlineDice(player, raw, inlineDice);
             else deliverNarrative(player, raw);
+            // ★체력·정신 소모 안내는 관련 서술(공격받았다 등) '뒤'에 출력★(요청): 서술을 배달(큐 적재)한 직후
+            //   플러시 예약 → runAfterDelivery로 서술이 다 나온 뒤 대상별로 배출된다(주사위 결과와 동일한 순서).
+            flushPendingVitalMsgs();
 
             // 4-B. ★방송(PA) — GM이 <BROADCAST>로 '진짜 방송'이라 판정했을 때만★ 같은 건물 인원에게 결정적 전달(이 응답 턴에 재생).
             //   판단은 GM이 한다 → '방송을 끄고 말한다'류 오판 없음. from 비면 발신자(anchor) 표시명.
@@ -3137,8 +3143,23 @@ public class TRPGGameManager {
         if (p == null || !p.isOnline()) return;
 
         String sign = scaledDelta > 0 ? "+" : "-";
-        p.sendMessage(color + label + " " + sign + Math.abs(scaledDelta)
-            + " §7(남은 " + label + " " + scaledAfter + "/100)");
+        // ★서술 뒤 출력★(요청): 여기서 바로 보내지 않고 큐에 적립 → 관련 GM 서술(공격받았다 등)이 전달된 뒤
+        //   flushPendingVitalMsgs가 배출한다(주사위 결과가 서술 뒤에 나오는 것과 동일한 순서).
+        pendingVitalMsgs.computeIfAbsent(pd.uuid, k -> new java.util.ArrayList<>())
+            .add(color + label + " " + sign + Math.abs(scaledDelta) + " §7(남은 " + label + " " + scaledAfter + "/100)");
+    }
+
+    /** 적립된 체력·정신 소모 안내를 각 대상의 ★서술 전달이 끝난 뒤★ 출력한다(주사위처럼 순서 보장). */
+    private void flushPendingVitalMsgs() {
+        if (pendingVitalMsgs.isEmpty()) return;
+        for (UUID uuid : new java.util.ArrayList<>(pendingVitalMsgs.keySet())) {
+            java.util.List<String> msgs = pendingVitalMsgs.remove(uuid);
+            if (msgs == null || msgs.isEmpty()) continue;
+            Player p = Bukkit.getPlayer(uuid);
+            if (p == null || !p.isOnline()) continue;
+            final java.util.List<String> fmsgs = msgs;
+            narrativeDelivery.runAfterDelivery(p, () -> { if (p.isOnline()) for (String m : fmsgs) p.sendMessage(m); });
+        }
     }
 
     // ──────────────────────────────────────────────────────────────
