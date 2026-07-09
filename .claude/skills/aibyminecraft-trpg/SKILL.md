@@ -110,6 +110,15 @@ description: >-
   무기력 냉소→휴식 갈망하나 버팀). sephirahPersonaBlock(roomNumber,era)이 era로 [1~4]/[5~8]를 골라 주입.
   ★모든 행 9필드 유지★(sephirahPersonaBlock가 s[8]까지 접근 — 필드 수 어긋나면 AIOOBE). 캐논 대사 참조본 기반이니
   ★"단일 목소리"로 되돌리지 말 것★.
+- **★시련(Ordeal)·세피라 코어 억제 세부설정(ProjectMoonLore)★**: 나무위키 참조본 기반. ★색별 정체·세피라별 코어 컨셉은 캐논 고정★.
+  · ORDEAL_TIER[4]{시각,강도설명}(여명TETH<정오HE<어스름WAW<자정ALEPH) + ORDEAL_COLOR[6]{색,정체·전술,대응·약점} —
+    녹빛=고철로봇(물리물량)·핏빛=살점광대(자원잠식·폭발)·자색=외계존재(낙하즉사·안정도붕괴)·호박색=벌레떼(증식)·
+    쪽빛=뒷골목청소부(인간형정예)·백색=사도(WAW+·종말급). 피해속성 빨강물리/하양정신/검정혼재/창백체력비례.
+    ordealDetailBlock(roomNumber)이 스테이지 비례로 시각 편향+백색은 자정20%만, 색×시각 상세 주입(structureBlock ORDEAL).
+  · SEPHIRAH_CORE[10]{코어경보,폭주양상,TRPG진압과제} — ★SEPHIRAH와 인덱스 공유★(같은 순서·길이). 말쿠트=명령셔플·
+    예소드=정보차단(모자이크)·호드=능력치약화·네짜흐=회복봉쇄·티페리트=연쇄폭주·게부라=붉은안개(인간형결투)·
+    헤세드=피해룰렛·비나=조율자(인간형결투)·호크마=시간정지·케테르=근원(최종전용,평소 추첨 제외).
+    sephirahCoreBlock(roomNumber,era)이 케테르 제외 1명 골라 상세 주입(structureBlock SEPHIRAH). ★캐논 컨셉 임의변경 금지.★
 - **★구조 우선(일반 생성기, 스테이지 3+)★**: 예전 typeFirstDirective는 entity.type을 ★랜덤 고정★했으나, 이제
   ScenarioArchetypes.worldRulesBlock가 3+에서 ★첫 후보를 world_rules 구조로 고정★(basic=1~2는 후보 제시 유지)하고,
   typeFirstDirective(GdamGenerator)는 "entity.type을 그 구조에서 도출(먼저 정하지 마라)"로 바뀜. 사용자 지시=
