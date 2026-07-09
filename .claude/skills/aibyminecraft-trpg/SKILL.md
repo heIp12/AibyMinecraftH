@@ -104,6 +104,12 @@ description: >-
   예외로 원본기반 변형 허용)·시련(Ordeal)·세피라억제·접대(주최/★손님=관점역전★/기타)·거울던전·도시사건. 에라도 가중
   (pickEra: 로보토미48%>라오루32%>림버스20%). 헤지 '추가 사건'(드물게/매번은아님) 문구 제거(0% 발화 원인). directive()
   0.5)에 구조 준수 규칙. ★"환상체 관리로만"으로 되돌리지 말 것.★
+- **★세피라 성격·말투 = 시대별 이원화(ProjectMoonLore.SEPHIRAH)★**: 각 행 ★9필드★ — [0]표기, [1~4]로보토미
+  (부서/성격/말투/예시), [5~8]라오루 지정사서(층/성격/말투/예시). 같은 인물이나 ★로보토미 붕괴를 겪고 라오루에선
+  대체로 단단·성숙★(예: 말쿠트 밝은 존댓말 안내역→반말 팀리더, 티페리트 오만 쌍둥이 하대→합쳐진 츤데레, 네짜흐
+  무기력 냉소→휴식 갈망하나 버팀). sephirahPersonaBlock(roomNumber,era)이 era로 [1~4]/[5~8]를 골라 주입.
+  ★모든 행 9필드 유지★(sephirahPersonaBlock가 s[8]까지 접근 — 필드 수 어긋나면 AIOOBE). 캐논 대사 참조본 기반이니
+  ★"단일 목소리"로 되돌리지 말 것★.
 - **★구조 우선(일반 생성기, 스테이지 3+)★**: 예전 typeFirstDirective는 entity.type을 ★랜덤 고정★했으나, 이제
   ScenarioArchetypes.worldRulesBlock가 3+에서 ★첫 후보를 world_rules 구조로 고정★(basic=1~2는 후보 제시 유지)하고,
   typeFirstDirective(GdamGenerator)는 "entity.type을 그 구조에서 도출(먼저 정하지 마라)"로 바뀜. 사용자 지시=
