@@ -60,6 +60,15 @@ description: >-
   ★모델별 형식 변형 주의★ — 제미나이 등은 `<STATE_UPDATE {json}>` ★단일 태그★(닫는 태그 없이 여는 태그에 JSON 내장)로 내
   parseTag(`<STATE_UPDATE>`…`</STATE_UPDATE>`)가 못 잡아 적용도·제거도 안 돼 누출됐다. parseStateUpdate에 parseEmbeddedJsonTag
   폴백(단일태그 JSON 추출→상태 적용) + stripTags에 단일태그·잘림 정규식 3종 추가로 해결. ★새 태그 파서 만들 때 이 변형(단일 `<TAG {json}>`)도 함께 처리.★
+  ★GPT 변형(da0a3df·e8f5218)★: GPT는 `</ZONE_UPDATE>` ★홀로 닫힘★ + `<STATE_UPDATE>` 래퍼 없는 ★벌거벗은 상태 델타 JSON★
+  (`{"player":..,"hp_change":..,"timeline_change":..}`)을 냈다. 원인=태그 문법 2분열의 ★모델 평균화★: 상태계열(STATE_UPDATE·
+  ITEM_GRANT·ITEM_USE·DICE·BROADCAST)=쌍 태그+JSON 본문 vs 위치·신호계열(ZONE_UPDATE·SPAWN·COMM·THREAT·BLOCK_MOVE·BUSY·DUR…
+  ~20개)=self-closing+속성. 모델이 ZONE_UPDATE를 STATE_UPDATE처럼 쌍+JSON으로 흉내 내며 두 스키마 필드 병합. 해결 2겹:
+  ①엔진 방어(stripTags에 `<ZONE_UPDATE>…</ZONE_UPDATE>`쌍+단독닫힘+자기닫힘 제거 정규식 2줄 + 시그니처키(hp_change·san_change·
+  timeline_change) 벌거벗은 JSON 제거; parseStateUpdate에 parseNakedStateJson 폴백) ②프롬프트 강화(PromptBuilder: STATE_UPDATE
+  예시 옆 문법 대조 경고 + ZONE_UPDATE 절 전용 금지 블록+실제 오류 예시). ★형식 통일(전 태그 JSON본문화)은 20+파서 재작성이라
+  기각 — 태그 분리는 필드 수 기준 적합 설계. 방어+프롬프트가 최적점.★ ★stripTags의 self-closing 태그 정규식 `<TAG [^/]*/?>`는
+  ★TAG 뒤 공백 필수★라 무속성 변형(`<TAG>`·`</TAG>`)을 못 지운다 — 누출 방어엔 `</?TAG\b[^>]*>` 형태를 쓸 것.★
 - **★계정명(pd.name)은 프롬프트에 절대 금지★**(서버·로그·메타화면 전용): AI로 가는 모든 문자열은
   gmDisplayName()(=charName→직업→"이름 모를 인물") 또는 resolveDisplayName()만 쓴다. 안전 경로(검증됨):
   buildTurnInput(폴백도 익명)·buildEntityLog·buildFullEvalLog/buildCampaignEvalLog(resolveDisplayName)·GM
