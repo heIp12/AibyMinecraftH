@@ -100,6 +100,9 @@ public class TRPGGameManager {
     /** ★#254 인라인 주사위★ — 행동마다 미리 굴려둔 능력치별 판정값. computePreRollNote가 채우고 showInlineDice가 소비. 플레이어별 {stat→value(1~20), stat+"_crit"→±1}. */
     private final java.util.Map<java.util.UUID, JsonObject> preRolledDice = new java.util.concurrent.ConcurrentHashMap<>();
 
+    /** ★#254 후속★ 플레이어별 마지막 표시한 '내 차례' 문자열 — 바뀔 때만 점수판 재빌드(stale 방지·깜빡임 방지). */
+    private final java.util.Map<java.util.UUID, String> lastTurnLine = new java.util.concurrent.ConcurrentHashMap<>();
+
     // ──────────────────────────────────────────────────────────────
     //  매니저 참조
     // ──────────────────────────────────────────────────────────────
@@ -559,6 +562,24 @@ public class TRPGGameManager {
             if (++allIncapTicks >= ALL_INCAP_TICKS_REQ && AUTO_BADEND_ENABLED && currentPhase != Phase.GAMEOVER)
                 onBadEnding("전원 행동불능 — 회복 가망 없음");
         }, 200L, 200L); // 10초마다(전원 무력화 또는 장시간 무행동일 때만 실제로 동작)
+        startTurnStatusSync();
+    }
+
+    /** ★'내 차례' 점수판 상시 동기화(1초)★ — turnStatusLine이 이벤트 사이에 stale해져 '내 턴이 온 게 점수판에
+     *  안 뜨던' 문제(#254 후속). ★해당 문자열이 바뀔 때만★ 그 플레이어 점수판을 재빌드 → 깜빡임 없이 항상 최신.
+     *  (지도 든 상태면 refreshScoreboard가 지도 범례를 우선 유지한다.) */
+    private void startTurnStatusSync() {
+        plugin.getServer().getScheduler().runTaskTimer(plugin, () -> {
+            if (!isActive()) return;
+            if (currentPhase != Phase.DAILY && currentPhase != Phase.HORROR) return;
+            for (PlayerData pd : state.getAllPlayers()) {
+                if (pd == null || pd.isDead || !spawnedPlayers.contains(pd.uuid)) continue;
+                Player p = Bukkit.getPlayer(pd.uuid);
+                if (p == null || !p.isOnline()) continue;
+                String cur = state.isDailyPhase() ? "" : scoreMan.turnStatusFor(pd); // 일상엔 턴줄 없음(빈값)
+                if (!cur.equals(lastTurnLine.get(pd.uuid))) { lastTurnLine.put(pd.uuid, cur); refreshScoreboard(p); }
+            }
+        }, 20L, 20L); // 1초마다 변화 감지(바뀔 때만 재빌드)
     }
 
     /**
