@@ -19,6 +19,12 @@ description: >-
    `python .claude/skills/aibyminecraft-trpg/tools/bracecheck.py <file>` → `OK 0/0/0` 이어야 함.
    - Java에서 정규식-무관하므로 신뢰. **주의**: HTML 안의 JS 정규식 리터럴(`/\(([^)]*)\)/` 등)은
      오탐(MISMATCH)을 낼 수 있음 → 그 줄이 편집 대상이 아니고 아래 node --check가 통과하면 무시.
+   - **★사각지대: 텍스트 블록 64KB 한도★** — bracecheck가 `OK`여도 ★단일 String 상수(텍스트 블록 `"""…"""`)가
+     UTF-8 65535바이트를 넘으면 컴파일 실패★("constant string too long"). 한글은 3바이트/자라 ~21800자에서 걸린다.
+     GM 프롬프트(PromptBuilder의 `GM_SYSTEM_BASE_*`)에 ★한글을 추가하면 반드시 블록별 바이트를 재라★:
+     `python3 -c "import re;… len(block.encode('utf-8'))"` (각 `"""…"""` < 65535). 넘으면 그 블록을 헤더 경계에서
+     둘로 쪼개(`_1A`/`_1B`) ★런타임★ `String.join`에 추가한다(컴파일타임 `+`·`final` 상수 연결은 여전히 단일 상수라 안 됨).
+     조립 결과가 분할 전과 바이트 동일한지 파이썬으로 확인. (이 한도는 BASE_2·BASE_1에서 두 번 걸렸다.)
 2. **JS 문법** (log-viewer.html 수정 시): `<script>` 추출 후 `node --check`. → node가 최종 판정.
 3. **크로미엄 렌더** (뷰어 동작 검증): 헤드리스로 로그 주입해 실제 결과 확인.
    - 편의 도구: `python .claude/skills/aibyminecraft-trpg/tools/viewer_verify.py --viewer AiByMinecraft/src/main/resources/log-viewer.html --log <a.jsonl> [--scenario <s.json>] [--probe <probe.js>]`
@@ -56,6 +62,19 @@ description: >-
   cost_san·sacrifice cost를 [0,5]로 클램프(표시·실차감 동기화). ★‘풀 100’·cost 10~20으로 되돌리지 말 것.★
 - **메타 노출 금지**: 계정명·영문 아이템 id(smartphone 등)·내부 스키마 용어(role_id/zone_id)를
   플레이어 서술·로그에 노출 금지. 표시명은 charName(직업), 아이템은 한국어명.
+- **★내부 태그 누출 방지(AiManager.stripTags·parseStateUpdate)★**: GM 태그(STATE_UPDATE 등)는 서술·히스토리에서 반드시 제거.
+  ★모델별 형식 변형 주의★ — 제미나이 등은 `<STATE_UPDATE {json}>` ★단일 태그★(닫는 태그 없이 여는 태그에 JSON 내장)로 내
+  parseTag(`<STATE_UPDATE>`…`</STATE_UPDATE>`)가 못 잡아 적용도·제거도 안 돼 누출됐다. parseStateUpdate에 parseEmbeddedJsonTag
+  폴백(단일태그 JSON 추출→상태 적용) + stripTags에 단일태그·잘림 정규식 3종 추가로 해결. ★새 태그 파서 만들 때 이 변형(단일 `<TAG {json}>`)도 함께 처리.★
+  ★GPT 변형(da0a3df·e8f5218)★: GPT는 `</ZONE_UPDATE>` ★홀로 닫힘★ + `<STATE_UPDATE>` 래퍼 없는 ★벌거벗은 상태 델타 JSON★
+  (`{"player":..,"hp_change":..,"timeline_change":..}`)을 냈다. 원인=태그 문법 2분열의 ★모델 평균화★: 상태계열(STATE_UPDATE·
+  ITEM_GRANT·ITEM_USE·DICE·BROADCAST)=쌍 태그+JSON 본문 vs 위치·신호계열(ZONE_UPDATE·SPAWN·COMM·THREAT·BLOCK_MOVE·BUSY·DUR…
+  ~20개)=self-closing+속성. 모델이 ZONE_UPDATE를 STATE_UPDATE처럼 쌍+JSON으로 흉내 내며 두 스키마 필드 병합. 해결 2겹:
+  ①엔진 방어(stripTags에 `<ZONE_UPDATE>…</ZONE_UPDATE>`쌍+단독닫힘+자기닫힘 제거 정규식 2줄 + 시그니처키(hp_change·san_change·
+  timeline_change) 벌거벗은 JSON 제거; parseStateUpdate에 parseNakedStateJson 폴백) ②프롬프트 강화(PromptBuilder: STATE_UPDATE
+  예시 옆 문법 대조 경고 + ZONE_UPDATE 절 전용 금지 블록+실제 오류 예시). ★형식 통일(전 태그 JSON본문화)은 20+파서 재작성이라
+  기각 — 태그 분리는 필드 수 기준 적합 설계. 방어+프롬프트가 최적점.★ ★stripTags의 self-closing 태그 정규식 `<TAG [^/]*/?>`는
+  ★TAG 뒤 공백 필수★라 무속성 변형(`<TAG>`·`</TAG>`)을 못 지운다 — 누출 방어엔 `</?TAG\b[^>]*>` 형태를 쓸 것.★
 - **★계정명(pd.name)은 프롬프트에 절대 금지★**(서버·로그·메타화면 전용): AI로 가는 모든 문자열은
   gmDisplayName()(=charName→직업→"이름 모를 인물") 또는 resolveDisplayName()만 쓴다. 안전 경로(검증됨):
   buildTurnInput(폴백도 익명)·buildEntityLog·buildFullEvalLog/buildCampaignEvalLog(resolveDisplayName)·GM
@@ -92,6 +111,18 @@ description: >-
   critical 1명에 기본 어미(멍청하군요·살아있냐·~에요/~다에요·~라니까 풀) 주입, 미당첨(70%)이면 모델이 넣은 ending_style 전부
   제거해 등장률을 정확히 맞춘다. ending_style 인물 age는 12~35 클램프(없으면 해시로 16~35). ★`familiar_kind`(정전/친숙 모드)는
   전부 skip — 캐논 캐릭터 원작 말투·나이 존중★. 생성 프롬프트는 "선택 — 시스템이 약 30%로 조절"(GdamGenerator 533).
+  **★restyle 충실도 하드닝(저품질 모델 대비)★**: pass2 `restyleDialogue`가 저가 모델(제미나이 저품질 등)에서 ★지정 어미를 안 지키고 새 변형을
+  창작+전 문장 도배★하던 버그(게부라 ending_style '~라구/~다구' → 실제 '왔냐구/거라구/있으라구'로 의문문까지 '~구' 도배, 단어 망가뜨림).
+  restyle sys에 3중 가드 추가: ①★스펙 명시 어미만·새 어미 창작 금지★(안 맞는 문장은 원형 유지) ②의문·감탄·외침·부름은 원형 유지+단어
+  망가뜨려 도배 금지 ③'자가검수'를 평서문 일부로 완화(전 문장 도배 아님). ★ending_style은 어미를 '얹는' 것이지 새 말투 창작이 아니다.★
+- **★세피라 말투 캐논 강제(생성기 임의창작 덮어씀)★**: 세피라 말투는 `ProjectMoonLore.SEPHIRAH`에 다 지정했는데 생성기가 npc의
+  speech_style·ending_style을 새로 창작해 페르소나가 깨지던 문제(게부라 ending_style '~라구/~다구' 창작→도배). `finalizeNpcSpeech`가
+  familiar_kind면 early-return이라 방치됐음 → ★그 앞에 `applySephirahCanonSpeech(gdam)` 추가★(familiar 여부 무관·이름 매칭).
+  `ProjectMoonLore.canonicalSephirahSpeech(name, library)`가 이름 매칭 시 캐논 [speech_style, ending_style]로 덮어씀.
+  ★핵심: `SEPHIRAH_ENDING`은 '한 가지 변환 규칙'이 캐릭터성인 헤세드(어미 늘임 '~')·비나(예스러운 '~단다/구나/렴')만 채우고,
+  말쿠트·예소드·호드·네짜흐·★티페리트·게부라★·호크마·케테르 같은 ★어조·레지스터형(다양한 어미)은 빈 문자열★ — 단일 어미 강제 시 뭉개져 깨진다.
+  ★값은 반드시 SEPHIRAH 말투와 정합(티페리트를 ~거든/~니까로 넣었다 SEPHIRAH의 ~거야/~니와 불일치라 비움으로 교정)★.
+  `isLibraryEra`(지정사서·도서관·층 신호)로 로보토미/라오루 목소리 선택. 세피라 정식명은 PM에만 나와 오탐 사실상 없음.
   ★'반드시 1명'으로 되돌리지 말 것 — 사용자 지시=30%.★
 - **이름·평범한 신원 공개 규칙(직접 대화 프롬프트)**: NPC 자기 이름·직업·사는 곳은 '진상'도 '중요한 정보'도 아니므로 물으면
   순순히 밝힌다(신비화 금지). 예외=변장·위장·적대 정체은폐 또는 정전상 이름 버린 인물뿐. '초면엔 중요한 걸 안 줌' 규칙과 충돌 아님.
@@ -104,6 +135,25 @@ description: >-
   예외로 원본기반 변형 허용)·시련(Ordeal)·세피라억제·접대(주최/★손님=관점역전★/기타)·거울던전·도시사건. 에라도 가중
   (pickEra: 로보토미48%>라오루32%>림버스20%). 헤지 '추가 사건'(드물게/매번은아님) 문구 제거(0% 발화 원인). directive()
   0.5)에 구조 준수 규칙. ★"환상체 관리로만"으로 되돌리지 말 것.★
+- **★세피라 성격·말투 = 시대별 이원화(ProjectMoonLore.SEPHIRAH)★**: 각 행 ★9필드★ — [0]표기, [1~4]로보토미
+  (부서/성격/말투/예시), [5~8]라오루 지정사서(층/성격/말투/예시). 같은 인물이나 ★로보토미 붕괴를 겪고 라오루에선
+  대체로 단단·성숙★(예: 말쿠트 밝은 존댓말 안내역→반말 팀리더, 티페리트 오만 쌍둥이 하대→합쳐진 츤데레, 네짜흐
+  무기력 냉소→휴식 갈망하나 버팀). sephirahPersonaBlock(roomNumber,era)이 era로 [1~4]/[5~8]를 골라 주입.
+  ★모든 행 9필드 유지★(sephirahPersonaBlock가 s[8]까지 접근 — 필드 수 어긋나면 AIOOBE). 캐논 대사 참조본 기반이니
+  ★"단일 목소리"로 되돌리지 말 것★.
+- **★시련(Ordeal)·세피라 코어 억제 세부설정(ProjectMoonLore)★**: 나무위키 참조본 기반. ★색별 정체·세피라별 코어 컨셉은 캐논 고정★.
+  · ★ORDEALS[18]{색,시각,이름,정체·전술,대응·약점,강도1~5}★ — ★실재 색×시각 조합만★(색×시각 자유격자 아님!).
+    시각강도 여명TETH<정오HE<어스름WAW<자정ALEPH<백색바브(46일 단독). ★핏빛 자정 없음, 쪽빛은 정오만, 백색 자정=발톱★.
+    각 조합 고유 개체·행동(핏빛여명=격리실문 붙어 자원·안정도 갉음/자색정오=낙하 즉사급/쪽빛정오=격리실 난입/녹빛자정=회전레이저/
+    자색자정=4색제단/백색자정=발톱 6명표식 즉사급). ★피해는 AbnormalityCodex와 통일된 치환어로만★: 물리(체력)/정신(정신력)/침식(BLACK)/영혼(PALE·방어무시·치명)
+    — RWBP·빨강하양검정창백 원색 표기 금지, ★'복합·방어무시'라는 이름도 쓰지 말 것(침식·영혼이 정식 명칭)★.
+    ★일차수(6일~/46일 등) 표기 금지★(강도는 여명<정오<어스름<자정<백색 등급으로만).
+    ordealDetailBlock(roomNumber)이 강도필드로 스테이지 비례 선택(백색은 stage5·25%만), 실조합만 주입(structureBlock ORDEAL).
+    ★색×시각 자유조합·개체 임의생성 금지(캐논 고정).★
+  · SEPHIRAH_CORE[10]{코어경보,폭주양상,TRPG진압과제} — ★SEPHIRAH와 인덱스 공유★(같은 순서·길이). 말쿠트=명령셔플·
+    예소드=정보차단(모자이크)·호드=능력치약화·네짜흐=회복봉쇄·티페리트=연쇄폭주·게부라=붉은안개(인간형결투)·
+    헤세드=피해룰렛·비나=조율자(인간형결투)·호크마=시간정지·케테르=근원(최종전용,평소 추첨 제외).
+    sephirahCoreBlock(roomNumber,era)이 케테르 제외 1명 골라 상세 주입(structureBlock SEPHIRAH). ★캐논 컨셉 임의변경 금지.★
 - **★구조 우선(일반 생성기, 스테이지 3+)★**: 예전 typeFirstDirective는 entity.type을 ★랜덤 고정★했으나, 이제
   ScenarioArchetypes.worldRulesBlock가 3+에서 ★첫 후보를 world_rules 구조로 고정★(basic=1~2는 후보 제시 유지)하고,
   typeFirstDirective(GdamGenerator)는 "entity.type을 그 구조에서 도출(먼저 정하지 마라)"로 바뀜. 사용자 지시=
@@ -126,6 +176,11 @@ description: >-
   ⑤성별 가드: 배정 시 `pd.gender=asgn.gender()`는 ★미설정일 때만★(앵커 유지, 3곳: assignRolesAndStart·assignRoles·assignLateJoin).
   ★소프트 앵커★: 상황이 특정 연령대를 요구하면(학교시험→학생·유치원→아동·군부대→성인) 힌트가 그 연령대를 우선, 배역 age_range가
   상황대로 → `applyRoleAge` 클램프로 나이가 그 스테이지만 바뀌고(성별은 유지) 다음 스테이지엔 baseAge로 복귀. 검증: anchor_sim.py
+- **★배역 포지션 다양화(플레이 단조 방지)★**: 앵커는 ★나이·성별·정체성만★ 고정하고 ★시작 위치·우위(정보/장소/관계/자원/지각/전투)는
+  고정하지 말 것★. 안 그러면 같은 플레이어(고정 나이·성별)가 6스테이지 내내 같은 포지션('정보 담당')에 묶여 매판 똑같아진다.
+  두 층에서 교정: ①`buildPlayerAnchorHint`(TRPGGameManager)에 '포지션 고정 금지 — 스테이지마다 어느 앵커가 어떤 포지션을 쥘지 새로 섞어라',
+  ②GdamGenerator '배역 설계 원칙'에 '비대칭 축을 회차마다 굴려라(정보 우위 1명+추격만 반복 금지)+시작 배치 다양화'. 원리: 생성기가 우위를
+  나이·성별과 탈동조화→doPreAssign(나이·성별 매칭)이 시드마다 다른 포지션을 같은 플레이어에 전달. ★우위를 나이·성별·앵커에 고정하지 말 것.★
   (일반=앵커유지·학교=45세→18세 학생·혼합=노장→교사·폴백=순서). ★"배역이 나이·성별을 정한다"로 되돌리지 말 것.★
 - **[완료] 정보 경제 원칙(2축+깊이 게이트)**: ①저해상도 힌트 과다노출 ②정보는 얻기 어렵게+중요정보는 위험
   감수 ③정확 정보=대부분 괴담 쉽게 종결(다회차·강능력 조기종결, 질질끌기 X) ④잘못된 정보=파멸. ★사용자 확정 설계(2축+깊이)★:
@@ -188,7 +243,8 @@ description: >-
 - **아이템 지급 = charName 정규화 필수**(회귀 주의): GM은 `<ITEM_GRANT>`·STATE_UPDATE의 player에 ★charName★을 넣지만(스키마 지시), ItemManager.processGrant는 p.getName()(계정명)·추적은 pd.name(계정명)으로 매칭 → charName≠계정명이라 게임 중 지급이 100% 실패했었다(로그 전수: 런타임 지급 0, 아이템 이벤트 전부 '시작 소지'). onGmResponse ITEM_GRANT 처리에서 findAnyByName으로 계정명 정규화 후 processGrant/noteHeldItem에 넘긴다. GM 대상명(charName)을 계정명 매칭하는 다른 곳도 같은 버그 의심.
 - **영감(SPR) = '지각 해상도'**(중의성 모델 폐기): actorStatGmContext SPR 분기는 7단계 디테일 사다리(1~2 겉모습·3~5 노후탓·6~8 흔적존재·9~11 성질·12~14 형태·15~17 내용·18+ 내용+정체). ★코드 주석은 GM에 안 감★ → 사다리·원칙을 append 문자열에 담아야 함. ★감정·평가 서술 금지★('수상·신경 쓰임·확신') — 물리 사실만, 디테일 수준 자체가 단서(사람은 추론 가능). '해법·이용법'은 어느 영감이든 플레이어 몫. PromptBuilder:226도 동일 모델로 정합.
 - **금지어 위협도 = 유사도 비례**: forbiddenSimilarity(0~1)=포함 1.0(정확)·그 미만 편집거리(levenshtein) 최근접 창. 정확→위협도 즉시 90+파국, 비슷한 말(0.6~)→유사도 비례 상승(파국 아님·조용히). 2글자 금지어는 정확만.
-- **NPC 말투 4메서드 분리**(관리): npcCorePrompt가 npcEndingHabitBlock(①ending_style)·npcPersonalSpeechBlock(②speech_style)·npcFluencyBlock(③intel 폴백) 중 하나 + npcAgeSpeechBlock(④나이별, 항상) 호출. ageRegisterHint 아래 co-locate.
+- **NPC 말투 5메서드 분리**(관리): npcCorePrompt가 npcEndingHabitBlock(①ending_style)·npcPersonalSpeechBlock(②speech_style)·npcFluencyBlock(③intel 폴백) 중 하나 + npcAgeSpeechBlock(④나이별, 항상) + **npcProfanityBlock(⑤욕설·비속어, 항상 얹음)** 호출. ageRegisterHint 아래 co-locate.
+- **⑤ 욕설·비속어 taxonomy(2026-07, #256)**: ①~④ 말투 ★위에 얹는 층★(기본 말투 불변, 감정·상황에서만 배어남). **타입 4종**=①감탄사형(놀람·분노 배출 '씨발/젠장')·②공격/모욕형(상대 겨냥)·③습관형(거친 인물이 옅게)·④위협형(대립·강압). **조건 게이트**=감정 강도(분노·공포·다급)·성격/기질(거칠수록↑, 얌전·예의는 절제)·나이대(청년·청소년 흔함/노년 옛투 '빌어먹을'·'네 이놈'/아동 순화 '바보'·'미워')·상황(적대·사적·친밀 허용 / 손위·공식·진중 절제). 억지·매문장 남발 금지. (원안: verbal 회의만이라 repo 미기록이었음 → 이제 코드+스킬 기록.)
 - **★프롬프트 작업 규약(사용자 상시 지시)★**: (1) 프롬프트(PB:줄 등)를 언급할 땐 ★그 실제 문구도 함께 보여줘라★(사용자가 내용을 알 수 있게). (2) 사용자가 지시한 프롬프트 수정이 ★다른 기존 프롬프트와 충돌하거나 그 프롬프트로 우회·무력화된다면, 그 기존 프롬프트가 무엇인지 원문으로 보여준 뒤★ 처리하라(예: 793만 지우려 했으나 PB:101의 절대금지가 실질 하드코딩이었음 → 101을 먼저 보여주고 완화). 담요식 절대규칙(‘어떤 X도’, ‘절대’, ‘모든 게임’)이 시나리오별 예외를 막고 있는지 항상 점검.
 - **NPC 캐리 = 기본 절제·시나리오 게이트**(하드코딩 완화): 예전 PB:101 ‘어떤 NPC도 대신 해결 안 함’ = 모든 게임 담요 금지 → 시나리오가 의도한 캐리 NPC(role_type ‘열쇠’·true_role 조력자/해결사)도 ‘힌트 늦게 주는 NPC’로 격하되던 문제. PB:101을 ‘기본은 절제, 시나리오가 설계하면 더 깊이·결정적으로 도울 수 있다(플레이어 참여 여지·비노출 유지)’로 완화, 중복 PB:793(‘NPC 해결책 통째 금지’ 재진술) 제거. PB:778(다수 NPC 조율)도 ‘해결책 통째 제공 금지’ 담요 문구 → ‘기본 절제(시나리오 지정 캐리·조력 NPC는 예외)’로 축약·완화 완료. role_type 목록=발생원·방어막·제물·열쇠·피해자(제거결과 축)+적대적공조·시스템부품·잘못된가이드(행동 축), 런타임 주입 buildGmPrompt ~11141.
 - **불가능 행동 차단 = 대안 제시 금지**(스푼피딩 제거): PB:254·312 = ‘불가능·말 안 되는 행동만 막되 한 줄 이유만, 대안(가능한 길)은 제시하지 말고 플레이어가 직접 생각’. 예전 ‘대신 가능한 길을 제시’(스푼피딩)를 양쪽에서 제거 — 힌트 절제 원칙(PB:105)과 정합.

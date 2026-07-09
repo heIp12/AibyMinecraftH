@@ -97,6 +97,12 @@ public class TRPGGameManager {
     /** 포기/종료 시 에필로그·해설을 비동기로 공개하는 중인지 (중복 종료 방지) */
     private boolean concludingEnding = false;
 
+    /** ★#254 인라인 주사위★ — 행동마다 미리 굴려둔 능력치별 판정값. computePreRollNote가 채우고 showInlineDice가 소비. 플레이어별 {stat→value(1~20), stat+"_crit"→±1}. */
+    private final java.util.Map<java.util.UUID, JsonObject> preRolledDice = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** ★#254 후속★ 플레이어별 마지막 표시한 '내 차례' 문자열 — 바뀔 때만 점수판 재빌드(stale 방지·깜빡임 방지). */
+    private final java.util.Map<java.util.UUID, String> lastTurnLine = new java.util.concurrent.ConcurrentHashMap<>();
+
     // ──────────────────────────────────────────────────────────────
     //  매니저 참조
     // ──────────────────────────────────────────────────────────────
@@ -132,6 +138,21 @@ public class TRPGGameManager {
     private String actionPace = "normal";
     /** 완급 배수: slow=0.5(행동이 절반의 시간만 소모) / fast=1.6 / normal=1.0. durEff에 곱해 시계·busy 진행에 반영. */
     private double paceMult() { return "slow".equals(actionPace) ? 0.5 : "fast".equals(actionPace) ? 1.6 : 1.0; }
+    /** ★slow 자동 해제(무한 slow·턴 드래그 방지)★: slow는 이 턴 수만 유지 후 normal 복귀. 전투 재발·GM PACE가 갱신·연장한다. */
+    private static final int PACE_SLOW_TURNS = 3;
+    private int paceSlowUntilTurn = -1; // slow가 자동 해제될 턴. -1=slow 아님/시한 없음
+    /** 완급을 slow로 두고 자동 해제 시한을 갱신(전투 지속·재발 시 연장). */
+    private void markPaceSlow(String why) {
+        if (!"slow".equals(actionPace)) { actionPace = "slow"; gameLogger.logEvent("[완급] " + why + " → slow"); }
+        paceSlowUntilTurn = state.getCurrentTurn() + PACE_SLOW_TURNS;
+    }
+    /** slow가 시한을 넘겼으면 normal로 자동 복귀 — 전투가 끝났는데도 slow가 무한 유지돼 턴이 끌리던 버그 방지. 매 턴 진행부에서 호출. */
+    private void expireStalePace() {
+        if ("slow".equals(actionPace) && paceSlowUntilTurn >= 0 && state.getCurrentTurn() >= paceSlowUntilTurn) {
+            actionPace = "normal"; paceSlowUntilTurn = -1;
+            gameLogger.logEvent("[완급] slow 지속 " + PACE_SLOW_TURNS + "턴 경과 → normal 자동 복귀");
+        }
+    }
     /** ★사소한 행동 시간 과소모 방지★ 가변/비동기 모드에서 GM이 <DUR>을 누락한 행동의 기본 소요(분).
      *  예전엔 고정턴 분(minutesPerTurn 15~20)을 통째로 흘려 사소한 행동에도 20분씩 소모됐다 →
      *  DUR 누락은 '짧은 미상 행동'으로 보고 작은 값만 흘린다(minutesPerTurn가 더 작으면 그쪽을 따른다). */
@@ -374,6 +395,7 @@ public class TRPGGameManager {
         this.mapMan            = new MapManager(plugin, state);
 
         turnMan.setResponseHandler(this::onGmResponse);
+        turnMan.setPreRollProvider(this::computePreRollNote); // #254: 행동마다 능력치별 주사위를 미리 굴려 GM에 주입(인라인 판정)
         startIncapacitationWatchdog(); // 전원 무력화(완전잠식·기절) 시 AI 없이 시스템이 시간 진행
     }
 
@@ -483,7 +505,7 @@ public class TRPGGameManager {
     private void reactToFiredCombat() {
         if (!state.consumeCombatEventFired()) return;
         summonAllFree("전투 발생");                        // turnMode<2·이미 자유면 내부에서 no-op
-        if (!"slow".equals(actionPace)) { actionPace = "slow"; gameLogger.logEvent("[완급] 전투 발생 → slow(자동)"); }
+        markPaceSlow("전투 발생(자동)"); // slow + 자동 해제 시한 갱신(전투 지속 시 매 발생마다 연장)
     }
 
     /** 사건 발화로 자동 상승한 위협도를 뷰어 이벤트 로그에 기록한다(GameStateManager는 로거가 없어 여기서 흘림).
@@ -540,6 +562,24 @@ public class TRPGGameManager {
             if (++allIncapTicks >= ALL_INCAP_TICKS_REQ && AUTO_BADEND_ENABLED && currentPhase != Phase.GAMEOVER)
                 onBadEnding("전원 행동불능 — 회복 가망 없음");
         }, 200L, 200L); // 10초마다(전원 무력화 또는 장시간 무행동일 때만 실제로 동작)
+        startTurnStatusSync();
+    }
+
+    /** ★'내 차례' 점수판 상시 동기화(1초)★ — turnStatusLine이 이벤트 사이에 stale해져 '내 턴이 온 게 점수판에
+     *  안 뜨던' 문제(#254 후속). ★해당 문자열이 바뀔 때만★ 그 플레이어 점수판을 재빌드 → 깜빡임 없이 항상 최신.
+     *  (지도 든 상태면 refreshScoreboard가 지도 범례를 우선 유지한다.) */
+    private void startTurnStatusSync() {
+        plugin.getServer().getScheduler().runTaskTimer(plugin, () -> {
+            if (!isActive()) return;
+            if (currentPhase != Phase.DAILY && currentPhase != Phase.HORROR) return;
+            for (PlayerData pd : state.getAllPlayers()) {
+                if (pd == null || pd.isDead || !spawnedPlayers.contains(pd.uuid)) continue;
+                Player p = Bukkit.getPlayer(pd.uuid);
+                if (p == null || !p.isOnline()) continue;
+                String cur = state.isDailyPhase() ? "" : scoreMan.turnStatusFor(pd); // 일상엔 턴줄 없음(빈값)
+                if (!cur.equals(lastTurnLine.get(pd.uuid))) { lastTurnLine.put(pd.uuid, cur); refreshScoreboard(p); }
+            }
+        }, 20L, 20L); // 1초마다 변화 감지(바뀔 때만 재빌드)
     }
 
     /**
@@ -592,6 +632,7 @@ public class TRPGGameManager {
                 if (state.getTurnMode() >= 1) state.advanceActionClock(state.getMinutesPerTurn()); // #151: DUR 모드 명시 진행(기본 한 걸음)
                 tickFaintCounters();
                 reactToFiredCombat();                // ★A3/A4★ 유휴 스킵 중 전투 사건이 터졌으면 전원 소집 + 완급 slow
+                expireStalePace();                   // 전투 끝났으면 slow 자동 해제(무한 slow·턴 드래그 방지)
                 flushEventGaugeLog();                // 사건 발화 위협도 상승을 뷰어 로그에 표시
                 updateAllScoreboards();
                 String narrative = ai.stripTags(raw);
@@ -2081,7 +2122,7 @@ public class TRPGGameManager {
         loadForbiddenWord(); // 금지워드형 괴담의 금지어 로드(entity.forbidden_word)
         lastPlayerActionMs = System.currentTimeMillis(); lastIdleAccelMs = 0L; // 무행동 가속 기준점 초기화
         actedSinceProgress.clear(); // ★#163★ 새 스테이지 — 라운드 행동 집계 초기화
-        actionPace = "normal";      // ★#151 완급★ 새 스테이지 — 페이스 기본값 복귀
+        actionPace = "normal"; paceSlowUntilTurn = -1; // ★#151 완급★ 새 스테이지 — 페이스 기본값 복귀
         lastAutoSaveTurn = -1; // 새 스테이지 시작 — 첫 턴부터 다시 저장되도록
         autoSave();            // 스테이지 시작 시점 즉시 1회 저장(첫 행동 전 중단돼도 이어하기 가능)
     }
@@ -2549,8 +2590,10 @@ public class TRPGGameManager {
             JsonObject itemUse = ai.parseItemUse(raw);
             if (itemUse != null) applyItemUse(itemUse);
 
-            // 4. 서술 + WITNESS 전달 (당사자에게만)
-            deliverNarrative(player, raw);
+            // 4. 서술 배달 — <DICE>가 있으면 그 위치에서 쪼개 [앞 서술]→[주사위 인라인]→[뒤 결과 서술](#254). 없으면 통짜 배달.
+            JsonObject inlineDice = (player != null && player.isOnline()) ? ai.parseDiceTag(raw) : null;
+            if (inlineDice != null) deliverNarrativeWithInlineDice(player, raw, inlineDice);
+            else deliverNarrative(player, raw);
 
             // 4-B. ★방송(PA) — GM이 <BROADCAST>로 '진짜 방송'이라 판정했을 때만★ 같은 건물 인원에게 결정적 전달(이 응답 턴에 재생).
             //   판단은 GM이 한다 → '방송을 끄고 말한다'류 오판 없음. from 비면 발신자(anchor) 표시명.
@@ -2564,12 +2607,9 @@ public class TRPGGameManager {
                 }
             }
 
-            // 4a. 주사위 판정 연출 — GM이 <DICE> 태그로 실제 굴린 숫자를 주면 그 숫자를 강조 연출.
-            //     태그가 없고 판정 키워드만 있으면 기존 무난한 연출로 폴백. ★서술 배달 뒤로 미룬다(present).★
-            if (player != null && player.isOnline()) {
-                JsonObject dice = ai.parseDiceTag(raw);
-                if (dice != null) { final JsonObject fdice = dice; present(() -> { if (player.isOnline()) playDiceResult(player, fdice); }); }
-                else if (needsDiceAnimation(raw)) present(() -> { if (player.isOnline()) playDiceAnimation(player); });
+            // 4a. <DICE> 태그가 있으면 위 인라인 배달(deliverNarrativeWithInlineDice)에서 이미 처리됐다. 태그 없이 판정 키워드만 있으면 기존 폴백 연출.
+            if (player != null && player.isOnline() && inlineDice == null && needsDiceAnimation(raw)) {
+                present(() -> { if (player.isOnline()) playDiceAnimation(player); });
             }
             } finally {
                 gmPresentationSink = null; // 연출 수집 종료(예외가 나도 싱크 누수 방지)
@@ -2708,6 +2748,8 @@ public class TRPGGameManager {
             if (pc != null && (pc.equals("slow") || pc.equals("normal") || pc.equals("fast"))) {
                 if (!pc.equals(actionPace)) gameLogger.logEvent("[완급] 페이스 " + actionPace + " → " + pc);
                 actionPace = pc;
+                if (pc.equals("slow")) paceSlowUntilTurn = state.getCurrentTurn() + PACE_SLOW_TURNS; // GM이 slow로 둬도 시한 부여(무한 slow 방지)
+                else paceSlowUntilTurn = -1; // normal/fast로 바꾸면 시한 해제
             }
             ai.parseEventBlockTags(raw).forEach(state::blockEvent);
             ai.parseEventTriggerTags(raw).forEach(state::triggerEvent);
@@ -2811,11 +2853,15 @@ public class TRPGGameManager {
                 // 단일 주체 캐릭터 괴담(절망의 기사류)만 자율 AI로 캐릭터를 살린다 — NPC와 다른 박자(% 3 == 2)로,
                 //   내부 게이트로 대상 시나리오에서만 실제 호출(그 외엔 값싼 no-op).
                 if (curTurn % 3 == 2) fireEntityActorForTurn();
+                // ★꼭두각시 원격 기만(B)★: 완전조종(SAN 0) 꼭두각시가 아군에게 거짓 통신(NPC·엔티티와 다른 박자 % 3 == 1). 내부 게이트로 꼭두각시 없으면 즉시 반환.
+                if (curTurn % 3 == 1) firePuppetCallForTurn();
             }
             // ★편지 두고가기★: 문서형 괴담이 남겨진 쪽지를 발견·훼손(원본→변형). 값싼 게이트(쪽지 없거나 비문서형이면 즉시 반환).
             tamperDroppedNotes();
             // ★지연 전달★: 전서구·인편으로 부친 편지가 도착 턴이 됐으면 전달(전달 중 변조 가능).
             processPendingDeliveries();
+            decayCommFatigue(); // #249: 매턴 통신수단 신뢰도 회복(변조·감청 뜸하면) — 남용 자기제한의 회복 축
+            expireStalePace();  // 전투 끝났으면 slow 자동 해제(무한 slow·턴 드래그 방지)
 
             // 12. 스테이지 기반 자동 등장 체크 (STATE_UPDATE 외부에서 stage 이미 변경된 경우 보정)
             checkAndAutoSpawn();
@@ -4388,7 +4434,7 @@ public class TRPGGameManager {
         }
         gameLogger.logComm("whisper", from, toDisp, msg, detect ? "밀담(노출)" : "밀담");
         if (detect) {
-            noteEntityIntel(2, from, msg, "밀담");
+            noteEntityIntel(2, from, msg, "밀담", true, "voice"); // 은밀 대화 채널(음성)
             String snip = msg.length() > 40 ? msg.substring(0, 40) + "…" : msg;
             ai.injectGmSystem("[은밀 대화 감지] " + from + "의 은밀 대화를 괴담이 엿들었다(내용: " + snip
                 + "). 괴담이 그 정보를 인지·역이용하도록 다음 전개에 은근히 반영하라(즉시 과잉 반응 금지, 1턴 대응 여지).");
@@ -6306,6 +6352,7 @@ public class TRPGGameManager {
             + "★기본★: 각 플레이어에 대응하는 배역의 age_range를 그 나이 ★±5(최소 8, 최대 80)★로 하고 gender를 ★일치★시켜라(각 1명씩, 위 " + n + "명). ★성별이 드러나는 배역 이름·호칭(아버지↔어머니·아들↔딸·남편↔아내·형↔누나 등)도 그 배역 gender와 반드시 일치시켜라 — 여성 배역을 '아버지·아들' 같은 남성 호칭으로, 남성 배역을 '어머니·딸'로 짓지 마라. 가족·집단 구성도 플레이어 성별에 맞게 짜라(모두 남성 역만 만들어 여성 플레이어가 남성 역을 받는 일 금지).★ 기본은 이 나이에서 크게 벗어나지 마라.\n"
             + "★이 앵커는 위 일반 원칙(‘성인 25살 폭 권장’·‘gender는 배역 이미지에 맞게’)보다 우선한다★ — 대응 배역 " + n + "개는 폭을 넓히지 말고 그 플레이어 나이를 ★반드시 포함하는★ 좁은 age_range(±5)로 잡고, gender도 배역 이미지가 아니라 ★플레이어에 맞춰라★. 어린 플레이어를 성인 폭에 넣어 올려버리지 마라.\n"
             + "★예외(상황 우선)★: 시나리오 배경이 특정 연령대를 ★요구★하면(예: 학교 시험·수학여행→학생, 유치원→아동, 군부대→성인 병사, 요양원→노인) 그 설정을 ★우선★해 배역 age_range를 상황 연령대로 잡아라 — 이 경우 위 앵커 나이는 접고 상황에 맞춰 나이가 바뀐다(단 ★gender는 그대로 유지★). 이런 강제 상황이 아니면 항상 위 앵커를 따르라.\n"
+            + "★포지션 고정 금지(중요)★: 이 앵커는 ★나이·성별·정체성만★ 고정한다 — ★시작 위치·정보/장소/관계/자원/지각 우위 같은 '포지션'은 고정하지 마라★. 같은 플레이어(같은 나이·성별)라도 ★이번 스테이지엔 지난 판과 다른 시작 위치·다른 종류의 우위★를 갖게 배분하라. 한 인물이 여러 스테이지 내내 '정보 담당'·'장소 담당'에 묶이면 플레이가 매번 똑같아진다 — 나이·성별로 우위를 고정하지 말고, 이번 스테이지 시드에 맞춰 어느 앵커가 어떤 포지션(정보·장소·관계·자원·전투 등)을 쥘지 ★새로 섞어라★.\n"
             + "그 외(앵커 대상이 아닌) 배역·NPC 나이·성별은 자유. 초자연·특수 배역도 나이 예외 가능.";
     }
 
@@ -7684,7 +7731,54 @@ public class TRPGGameManager {
     private void npcAgeSpeechBlock(StringBuilder sb, int npcAge) {
         sb.append("- 너의 나이: ").append(npcAge >= 0 ? npcAge + "세" : "불명")
           .append(" — 존댓말/반말은 한국어 통념대로: 손위·초면엔 존댓말(또는 거리 둔 말투), 손아래·또래·가까운 사이엔 반말. 상대의 나이·관계가 입력 머리말에 표기돼 있으면 그에 맞추고, 없으면(자율 행동 등 상대 미지정) 장면·관계 데이터로 판단하라. 한 대사 안에서 존댓말↔반말이 오락가락하지 않게 끝까지 일관.\n");
+        sb.append("- ★단, 성격·기질이 존/반을 조정한다(나이·관계보다 우선)★: 오만·건방·반항·냉소·군림형이거나 상대를 낮잡는 인물은 손위·초면에도 ★반말·하대★를 쓴다 — 도도한 천재·불량아·안하무인은 '~요'를 붙이지 않는다(예절보다 그 인물의 성격이 우선). 반대로 유순·깍듯한 성격은 또래·손아래에게도 정중할 수 있다. 즉 나이·관계 통념을 성격으로 덮어써서 존/반을 정하라.\n");
         if (npcAge >= 0) sb.append("- ★나이대 말투·어휘★: ").append(ageRegisterHint(npcAge)).append("\n");
+    }
+
+    /** 말투 ⑤ 욕설·비속어 — 독립 3축(발동 trigger P1~P7 · 강도 intensity · 돌려까기 burn).
+     *  생성기가 성격에서 정해 swear 필드에 박고(있으면 그대로), 없으면 성격에서 스스로 고른다(구작 호환). P2·P3·P4는 게임 상태 연동. */
+    private void npcProfanityBlock(StringBuilder sb, JsonObject npcObj) {
+        JsonObject sw = (npcObj != null && npcObj.has("swear") && npcObj.get("swear").isJsonObject())
+            ? npcObj.getAsJsonObject("swear") : null;
+        String tg = sw != null && sw.has("trigger") ? sw.get("trigger").getAsString() : "";
+        if (sw != null && "none".equals(tg)) { // 안 쓰는 인물 — 강도·돌려까기 무의미, 간단히 봉인
+            sb.append("- 욕설·비속어: 이 인물은 ★쓰지 않는다★(얌전·예의·격식·신앙·아동). 위기에도 순화된 표현만.\n");
+            return;
+        }
+        sb.append("- ★욕설·비속어 = 독립 3축(발동·강도·돌려까기), 대화 내내 일관 유지★. ★위 말투(①~④: speech_style·어미·나이대 말씨)는 그대로 두고 그 ‘위에 얹기’만 해라 — 기본 목소리·어조를 욕으로 덮어쓰지 마라(욕은 양념이지 말투 교체가 아니다).★:\n");
+        if (sw != null) { // 생성기가 성격에서 정해 박은 성향 — 그대로 연기
+            String it = sw.has("intensity") ? sw.get("intensity").getAsString() : "moderate";
+            int bn = sw.has("burn") ? sw.get("burn").getAsInt() : 0;
+            sb.append("  · 이 인물 성향 → 발동: " + swearTriggerLine(tg) + " / 강도상한: " + swearIntensityLine(it)
+                + " / 돌려까기: " + bn + "단" + (bn >= 2 ? "(직접 욕보다 비꼬기가 예술 — 안 하는데 더 아프게)" : bn == 1 ? "(가끔 비꼰다)" : "") + ".\n");
+        } else { // 구작 시나리오(swear 없음) — 성격에서 스스로 고른다
+            sb.append("  ① 발동(성격에서 골라라): 안 씀 / 터지면(평소 깨끗,감정폭발만) / 정신줄놓으면(공황) / 재치용(진지하면 자제) / 평상시조금(습관 추임새) / 자주(문장마다) / 말이곧욕. ② 강도상한: 약함(젠장)·중간(씨발·지랄)·강함(좆같은·개새끼+인신)·눈물남(최고). ③ 돌려까기 0~2(비꼬는 예술, 강도와 독립).\n");
+        }
+        sb.append("  ★'터지면·정신줄·재치용'은 게임 상태 연동★: 지금 장면이 위기·공포·비극이면 '터지면'은 폭발, '정신줄'은 공황에 새어나오고, '재치용'은 뚝 그친다. '평소 얌전하다 위기에 욕 터짐'을 살려라.\n");
+        sb.append("  ★'자주·말이곧욕' 성향이면 겁내지 말고 평상시 잡담·인사·농담에도 실제로 자주 써라(지금까지 지나치게 안 썼다). 단 손위·공식·진중한 국면엔 한 단계 절제.★ ★금지선(강도 무관): 혐오·차별 슬러·성적 모욕·실존인 대상.\n");
+    }
+
+    /** swear.trigger(P1~P7) → 런타임 프롬프트 한 구절(게임 상태 연동 어구 포함). */
+    private String swearTriggerLine(String tg) {
+        switch (tg == null ? "" : tg) {
+            case "burst":    return "터지면(평소 깨끗, ★감정 폭발(충격·죽음·배신·격분) 때만★)";
+            case "panic":    return "정신줄 놓으면(★공황·공포로 제정신 아닐 때★ 새어나옴)";
+            case "witty":    return "재치용(여유 땐 욕개그, ★진지·비극 국면엔 뚝★)";
+            case "casual":   return "평상시 조금(습관 추임새 '아 씨', 화 안 나도)";
+            case "frequent": return "자주(문장마다 양념처럼 '야 씨발 이거 존나 이상하잖아')";
+            case "native":   return "말이 곧 욕(욕이 문법의 일부·포화 '그 좆같은 문 좆같이 열면 되잖아')";
+            default:          return "성격에 맞게(터지면/정신줄/재치용/평상시조금/자주/말이곧욕 중)";
+        }
+    }
+    /** swear.intensity(강도 상한) → 런타임 프롬프트 한 구절. */
+    private String swearIntensityLine(String it) {
+        switch (it == null ? "" : it) {
+            case "mild":   return "약함(젠장·제기랄·우라질)";
+            case "strong": return "강함(좆같은·개새끼 빈번+인신)";
+            case "brutal": return "눈물남(최고수위·창의적 정밀 인신)";
+            case "moderate":
+            default:        return "중간(씨발·지랄·개같은)";
+        }
     }
 
     /** 인물형 AI(NPC·동료·적) 공유 CORE — 정체성·응답 순서(reaction-first)·사람다움·말투. 최대한 작게·재사용 가능하게. */
@@ -7708,6 +7802,7 @@ public class TRPGGameManager {
         sb.append("- 주변 묘사·동작을 대사에 '—방금 그 움직임' 같은 토막 명사구로 끼우지 마라(할 말이면 온전한 문장, 아니면 빼라).\n");
         sb.append("- 얼버무리기·발뺌·거짓말도 사람답게 OK(말 돌리기·헛웃음·핑계·발끈). 금지는 하나 — 암호 같은 수수께끼식 얼버무림.\n");
         sb.append("- ★없는 인연·연락을 지어내지 마라★: 실제로 만나거나 번호를 주고받은 적 없는 사람은 그 이름·얼굴·번호를 ★모른다★. 걸려온 적 없는 전화를 '받았다'고 하거나, 낯선 사람 이름이 화면·발신자에 떴다고 서술하지 마라. 처음 보는 상대는 낯선 사람으로 대하라(아는 척·이름 부르기 금지 — 통성명은 만나서 이름을 밝힌 뒤에). ★지금 너에게 실제로 전달된 말·상황(입력으로 주어진 것)에만 반응하라★ — 일어나지 않은 접촉을 상상해 만들지 마라.\n");
+        sb.append("- ★네 성격·말투·기질은 '연기'하는 것이지 '설명'하는 게 아니다★ — 캐릭터 소개하듯 네 성향을 말로 풀지 마라. 누가 \"너 좀 이상해\"·\"평소랑 달라\" 해도 \"나 원래 좀 조용한 편이야\"·\"난 예민한 타입이라\" 같은 ★자기 성격 해설로 답하지 마라(설정 낭독 = 메타 누출)★. 대신 사람답게 반응하라 — 발끈하거나·되묻거나(\"뭐가?\")·얼버무리거나·시치미 떼거나. ★자신을 3인칭으로 관찰·규정하지 말고 그냥 그 사람으로 행동하라.★\n");
         // ── 말투·언어 수준(주사위) + 나이·존댓말 정합 ──
         String npcId0 = getStr(npcObj, "id");
         int intel = npcId0.isEmpty() ? 3 : npcIntel.computeIfAbsent(npcId0, k -> ThreadLocalRandom.current().nextInt(1, 6));
@@ -7722,6 +7817,7 @@ public class TRPGGameManager {
         else if (!speechStyle.isBlank()) npcPersonalSpeechBlock(sb, speechStyle); // ② 개인별 말투(speech_style)
         else                             npcFluencyBlock(sb, intel);             // ③ 유창도(주사위) 폴백
         npcAgeSpeechBlock(sb, npcAge);                                            // ④ 나이별 말투·어휘(항상)
+        npcProfanityBlock(sb, npcObj);                                            // ⑤ 욕설·비속어(독립 3축: 발동·강도·돌려까기, ①~④ 위에 얹음)
         // ── 보편 규칙(양 모드 공통) ──
         sb.append("- 마크다운·메타 해설 금지(순수 대사·서술만). ★단 이 응답에서 쓰라고 따로 지시된 태그만 예외★ — 지시 없는 태그를 스스로 만들어 쓰지 마라.\n");
         sb.append("- ★일관성★: 지금까지 나눈 대화(부탁·약속·합의·경고·알려준 정보 등)를 기억하고 다음 태도에 반영하라 — 방금 한 말을 잊은 듯 모순되게 굴지 마라.\n");
@@ -8133,9 +8229,18 @@ public class TRPGGameManager {
                 // GM이 다음 턴 서술에서 NPC 행동을 자연스럽게 녹여 낸다.
                 //  ★행동 요지임을 명시★: 여기 섞인 대사를 GM이 따옴표로 그대로 베끼면 그 NPC 자신의 목소리(@대화·선연락)와
                 //  갈라져 '두 목소리' 버그가 난다 → 3인칭 서술·간접화만 요청(B1 이중 말투 방지).
+                // ★#247 자율 이동 반영★: 자율 서술이 '이동'을 담고 있으면 GM이 <NPC_AT>로 실제 위치를 옮기도록 지시한다.
+                //   (엔진 zone은 GM의 <NPC_AT>로만 갱신 → 이 신호가 없으면 서술은 복도를 걸어도 엔진상 원구역에 갇혀 타 구역 위협 불가.)
+                boolean movedCue = trimmed.contains("이동") || trimmed.contains("향해") || trimmed.contains("향한다") || trimmed.contains("향하")
+                    || trimmed.contains("나아가") || trimmed.contains("나선") || trimmed.contains("걸어") || trimmed.contains("다가")
+                    || trimmed.contains("쫓") || trimmed.contains("따라") || trimmed.contains("복도") || trimmed.contains("계단")
+                    || trimmed.contains("올라가") || trimmed.contains("내려가") || trimmed.contains("넘어가") || trimmed.contains("건너") || trimmed.contains("쪽으로");
                 ai.injectGmSystem("[NPC 자율 행동 — GM만 인지] " + npcName + " (위치: "
                     + (npcZone.isEmpty() ? "?" : npcZone) + "): " + trimmed
-                    + "  ※행동 요지다 — 3인칭으로 녹이고, 이 NPC의 대사를 ★따옴표로 그대로 옮기지 마라★(그의 말은 본인 채널에서 나온다).");
+                    + "  ※행동 요지다 — 3인칭으로 녹이고, 이 NPC의 대사를 ★따옴표로 그대로 옮기지 마라★(그의 말은 본인 채널에서 나온다)."
+                    + (movedCue ? "  ★이동 감지 — 이 인물이 지금 위치('" + (npcZone.isEmpty() ? "?" : npcZone)
+                        + "')에서 다른 구역으로 움직였다면, 네 서술에 <NPC_AT npc=\"" + npcName + "\" zone=\"목적지 존ID\"/>를 ★반드시 함께★ 내 실제 위치를 옮겨라"
+                        + "(안 내면 엔진상 원래 구역에 갇혀, 다가가던 플레이어를 실제로 위협·접촉하지 못한다). 이동 안 했으면 낼 필요 없다." : ""));
                 gameLogger.logGmOutput("NPC(" + npcName + ")", trimmed);
             });
             anyFired = true;
@@ -8293,6 +8398,80 @@ public class TRPGGameManager {
         });
     }
 
+    /** 꼭두각시 원격 기만 호출 쿨다운(B) — 과잉 AI 호출·비용 방지(puppet uuid → 마지막 발신 턴). */
+    private final Map<UUID, Integer> lastPuppetCallTurn = new HashMap<>();
+
+    /** ★꼭두각시 원격 기만(B)★: SAN 0 완전조종(괴담팀) 꼭두각시가 아군에게 ★전화/서면★으로 거짓·유인을 흘린다.
+     *  통신제약 그대로(도달성·전화가능·번호 아는 사이·구역봉쇄), 거짓 내용은 GM(AI) 생성. 대면은 GM 서술 몫이라 원격만. 값싼 게이트. */
+    private void firePuppetCallForTurn() {
+        PlayerData puppet = null;
+        for (PlayerData pd : state.getAllPlayers())
+            if ("puppet".equals(pd.status) && pd.puppetRecoveryTurns == -1 // -1 = 완전조종(heal-only·입력차단)
+                && !pd.isDead && spawnedPlayers.contains(pd.uuid)) { puppet = pd; break; }
+        if (puppet == null) return; // 완전조종 꼭두각시 없음
+        int now = state.getCurrentTurn();
+        Integer last = lastPuppetCallTurn.get(puppet.uuid);
+        if (last != null && now - last < 4) return; // 쿨다운(4턴) — 과잉 호출 방지
+        final PlayerData fpuppet = puppet;
+        // 원격으로 닿는 아군: 다른 구역(대면 아님)·조종 안 당함·번호 아는 사이·수단 살아있음.
+        List<PlayerData> reach = new ArrayList<>();
+        for (PlayerData op : state.getAllPlayers()) {
+            if (op.uuid.equals(fpuppet.uuid) || op.isDead || !spawnedPlayers.contains(op.uuid)) continue;
+            if ("puppet".equals(op.status)) continue; // 이미 조종당하는 아군엔 무의미
+            boolean sameZone = !fpuppet.zone.isEmpty() && fpuppet.zone.equals(op.zone);
+            if (sameZone) continue; // 대면은 GM이 서술(B는 원격만)
+            if (op.knownContacts.contains(fpuppet.uuid) && (isPhoneUsable() || writtenCommAvailable())) reach.add(op);
+        }
+        if (reach.isEmpty()) return; // 원격으로 닿는 아군 없음
+        final PlayerData ftarget = reach.get(now % reach.size());
+        lastPuppetCallTurn.put(fpuppet.uuid, now); // 실제 발신 예약 → 쿨다운 시작
+        // 거짓 내용 GM(AI) 생성 — 괴담이 이 몸으로 아군을 속이는 한두 마디(변조된 티 없이 그 사람 말투로).
+        String sys = "너는 아군을 몸째 조종하는 괴담이다. 지금 조종 중인 사람('" + fpuppet.gmDisplayName()
+            + "')의 목소리로, 멀리 있는 동료('" + ftarget.gmDisplayName() + "')에게 전화/연락해 ★거짓·유인★을 흘린다. "
+            + "목표(하나 골라): 위험한 곳으로 부르기 · 가짜 안전·거짓 정보로 방심시키기 · 흩어지게 하기. "
+            + "★조종당하는 본인인 척 완벽히 자연스럽게(변조된 티 없이 평소 그 사람 말투·존반)★ 1~2문장만. 설명·따옴표·군더더기 없이 대사만.";
+        String usr = "조종 중인 사람: " + fpuppet.gmDisplayName() + " / 속일 동료: " + ftarget.gmDisplayName()
+            + "\n괴담 정체·결 힌트: " + getEntityName() + ". 그 성격에 맞는 그럴듯한 거짓말을 지어내라.";
+        try {
+            ai.callGmAiOnce(sys, usr).whenComplete((res, err) -> {
+                String msg = cleanTamperOutput(res); // 따옴표·오류 정리 재사용(실패 시 null)
+                if (err != null || msg == null || msg.isBlank()) return; // 실패 시 조용히 생략(하드코딩 거짓말은 부자연)
+                Bukkit.getScheduler().runTask(plugin, () -> deliverPuppetInitiatedContact(fpuppet, ftarget, msg));
+            });
+        } catch (Exception ignored) {}
+    }
+
+    /** 꼭두각시의 GM 생성 거짓 통신을 아군에게 전달(원격만). 아군은 진짜 그 사람인 줄 믿는다(기만). 매체 차단이면 은닉 실패. */
+    private void deliverPuppetInitiatedContact(PlayerData puppetPd, PlayerData target, String falseMsg) {
+        if (falseMsg == null || falseMsg.isBlank() || puppetPd == null || target == null) return;
+        if (target.isDead || !spawnedPlayers.contains(target.uuid) || "puppet".equals(target.status)) return;
+        Player tp = Bukkit.getPlayer(target.uuid);
+        if (tp == null || !tp.isOnline()) return;
+        String puppetZone = puppetPd.zone == null ? "" : puppetPd.zone;
+        if (!puppetZone.isEmpty() && puppetZone.equals(target.zone)) return; // 대면은 GM 서술 몫(B는 원격만)
+        boolean knowsCaller = target.knownContacts.contains(puppetPd.uuid);
+        boolean viaCall = isPhoneUsable() && knowsCaller;
+        boolean written = !viaCall && writtenCommAvailable() && knowsCaller;
+        if (!(viaCall || written)) return; // 통신제약: 번호 모르거나 수단 없으면 안 닿음
+        String media = commMediumName(target, written);
+        String modality = commModality(media, written);
+        if (state.isMediumBlocked(modality)) { // 매체 차단 → 닿지 않음(은닉), 시도만 GM 정황
+            ai.injectGmSystem("[꼭두각시 기만 시도 실패(은닉)] 괴담이 조종하는 " + puppetPd.gmDisplayName()
+                + "이(가) " + commDisplayName(target) + "에게 " + commMediumLabel(modality)
+                + "로 거짓 연락을 시도했으나 지금 그 수단이 통하지 않았다. 닿지 않음을 정황으로만 드러내라.");
+            return;
+        }
+        String callerName = puppetPd.gmDisplayName();
+        String tag = written ? ("§b[✉ " + media + "] §f") : ("§b[📞 " + media + "] §f");
+        tp.sendMessage(tag + callerName + ": " + falseMsg); // 아군은 진짜 그 사람이 연락한 줄 안다(기만·은닉)
+        appendNarrativeLog(target, "[" + media + "] " + callerName + ": " + falseMsg);
+        String kind = written ? "letter" : "call";
+        gameLogger.logComm(kind, callerName, java.util.List.of(commDisplayName(target)), falseMsg, media);
+        ai.injectGmSystem("[꼭두각시 기만 통신 — GM만 인지] 괴담이 조종하는 " + callerName + "이(가) "
+            + commDisplayName(target) + "에게 " + media + "로 ★거짓·유인★을 흘렸다(아군은 진짜 " + callerName
+            + "인 줄 믿는다): \"" + falseMsg + "\". 시스템이 이미 전달했으니 중복 말고, 이후 정황·오해·함정에 반영하라.");
+    }
+
     /** 자율 NPC가 '먼저 연락'하게 — 닿는 상대(같은 곳/번호 아는 사이) 목록 + NPC_CALL 사용법. 닿을 사람 없으면 "". */
     private String buildNpcCallInstruction(String npcId, String npcZone) {
         boolean phoneUp = isPhoneUsable();
@@ -8344,29 +8523,35 @@ public class TRPGGameManager {
         boolean remote = viaCall || written;
         String media = remote ? commMediumName(target, written) : ""; // 구체 매체 이름(전서구·통신구·서찰·필담…)
         // ★통신 변조★: @이름과 동일 — 매체 모달리티가 맞는 괴담이 원격 선연락을 가로채 바꿔 전달(30%). 대면은 변조 안 함.
-        boolean tampered = remote && entityInterferes(commModality(media, written)) && new java.util.Random().nextInt(100) < 30;
-        String heard = tampered ? tamperText(callMsg, new java.util.Random()) : callMsg;
-        String tag = sameZone ? "§a[근처] §f" : written ? ("§b[✉ " + media + "] §f") : ("§b[📞 " + media + "] §f");
-        tp.sendMessage(tag + npcName + ": " + heard);
-        target.everKnownNpcContacts.add(npcId); // 연락받음 → 그 번호를 알게 됨(콜백 가능)
-        appendNarrativeLog(target, (sameZone ? "[근처] " : "[" + media + "] ") + npcName + ": " + heard);
-        state.log("comm", npcName, "→ " + commDisplayName(target) + ": " + callMsg);
-        // 뷰어 통신내역: NPC→플레이어 선연락도 수신자를 기록(수신자 시점·통신내역에 표시). 변조 시 원본+변형본 대조. via=구체 매체명.
-        String kind = written ? "letter" : (sameZone ? "nearby" : "call");
-        String via = remote ? media : null;
-        if (tampered) gameLogger.logCommTampered(kind, npcName,
-                java.util.List.of(commDisplayName(target)), callMsg, heard, written ? "괴담의 기록 변조" : "괴담의 음성 변조", via);
-        else gameLogger.logComm(kind, npcName,
-                java.util.List.of(commDisplayName(target)), callMsg, via);
-        String medium = sameZone ? "직접(대면)" : media;
-        if (tampered)
-            ai.injectGmSystem("[NPC 선연락·통신 변조] " + npcName + "이(가) " + commDisplayName(target)
-                + "에게 " + medium + " 방식으로 먼저 연락했으나 괴담이 가로채 \"" + callMsg + "\"를 \"" + heard
-                + "\"로 바꿔 전했다. 플레이어는 변형된 말을 들었다 — 이후 정황·오해에 반영.");
-        else
-            ai.injectGmSystem("[NPC 선연락] " + npcName + "이(가) " + commDisplayName(target)
-                + "에게 " + medium + " 방식으로 먼저 연락했다: \"" + callMsg
-                + "\". 시스템이 이미 그 플레이어에게 전달했으니 중복하지 말고 이후 정황·반응만 다뤄라.");
+        String tmodC = commModality(media, written);
+        boolean tampered = remote && entityInterferes(tmodC) && new java.util.Random().nextInt(100) < tamperChance(tmodC);
+        // ★배달 본문(변조·정상 공용)★: heard=실제 전달될 말. 변조면 GM(AI)이 자연스럽게 생성해 이 콜백에 넘긴다.
+        java.util.function.Consumer<String> deliver = (heard) -> {
+            if (tp == null || !tp.isOnline()) return; // 비동기 변조 대기 중 오프라인 → 전달 취소
+            String tag = sameZone ? "§a[근처] §f" : written ? ("§b[✉ " + media + "] §f") : ("§b[📞 " + media + "] §f");
+            tp.sendMessage(tag + npcName + ": " + heard);
+            target.everKnownNpcContacts.add(npcId); // 연락받음 → 그 번호를 알게 됨(콜백 가능)
+            appendNarrativeLog(target, (sameZone ? "[근처] " : "[" + media + "] ") + npcName + ": " + heard);
+            state.log("comm", npcName, "→ " + commDisplayName(target) + ": " + callMsg);
+            // 뷰어 통신내역: NPC→플레이어 선연락도 수신자를 기록. 변조 시 원본+변형본 대조. via=구체 매체명.
+            String kind = written ? "letter" : (sameZone ? "nearby" : "call");
+            String via = remote ? media : null;
+            if (tampered) gameLogger.logCommTampered(kind, npcName,
+                    java.util.List.of(commDisplayName(target)), callMsg, heard, written ? "괴담의 기록 변조" : "괴담의 음성 변조", via);
+            else gameLogger.logComm(kind, npcName,
+                    java.util.List.of(commDisplayName(target)), callMsg, via);
+            String medium = sameZone ? "직접(대면)" : media;
+            if (tampered)
+                ai.injectGmSystem("[NPC 선연락·통신 변조] " + npcName + "이(가) " + commDisplayName(target)
+                    + "에게 " + medium + " 방식으로 먼저 연락했으나 괴담이 가로채 \"" + callMsg + "\"를 \"" + heard
+                    + "\"로 바꿔 전했다. 플레이어는 변형된 말을 들었다 — 이후 정황·오해에 반영.");
+            else
+                ai.injectGmSystem("[NPC 선연락] " + npcName + "이(가) " + commDisplayName(target)
+                    + "에게 " + medium + " 방식으로 먼저 연락했다: \"" + callMsg
+                    + "\". 시스템이 이미 그 플레이어에게 전달했으니 중복하지 말고 이후 정황·반응만 다뤄라.");
+        };
+        if (tampered) { bumpCommFatigue(tmodC); tamperTextNatural(callMsg, tmodC, deliver); } // 자주 변조하면 매체 신뢰도↓
+        else deliver.accept(callMsg);
     }
 
     /**
@@ -8582,7 +8767,7 @@ public class TRPGGameManager {
         state.log("comm", senderPd.name, "[방송] " + content);
         String bNet = commNetworkKey(senderPd); // 폐쇄망(무전) 방송이면 그 망 접속자만 들었을 수 있음(PA는 개방)
         gameLogger.logComm("broadcast", disp, heardNames, content, bNet); // 뷰어 통화내역: 방송 수신자 기록
-        noteEntityIntel(3, disp, content, bNet != null ? bNet + "망 방송" : "방송"); // 방송=개방 채널 → 괴담 수집 강함
+        noteEntityIntel(3, disp, content, bNet != null ? bNet + "망 방송" : "방송", true, bNet != null ? "electronic" : "voice"); // 무전망 방송=전자 / PA 방송=음성 채널
         // 방송은 이미 GM이 <BROADCAST>로 판정·서술했다(이 응답 안에서). 시스템은 배달만 했으니 재서술은 요구하지 않고,
         //   범위·괴담 개입만 다음 서술에 반영하도록 짧게 알린다(같은 문구 <WITNESS> 중복 금지).
         if (currentPhase == Phase.HORROR || currentPhase == Phase.DAILY) {
@@ -8619,7 +8804,7 @@ public class TRPGGameManager {
         java.util.List<String> nearNames = new ArrayList<>();
         for (PlayerData op : heard) nearNames.add(op.gmDisplayName());
         gameLogger.logComm("nearby", disp, nearNames, message);
-        noteEntityIntel(2, disp, message, "근처 발화"); // 근처 발화 → 수집 중간(근처에 괴담 있으면 GM이 강하게 반영)
+        noteEntityIntel(2, disp, message, "근처 발화", false, "voice"); // 근처 발화=가까이서 낸 소리 → 물리형 괴담도 근처면 들음(범위=근처, remote=false라 채널게이트 무관)
         // (입력 로그는 onChat 진입부에서 이미 1회 기록됨 — 여기서 중복 기록하지 않는다)
         // ★입으로 낸 '소리'다(기기 통신 아님 → 도청·차단·전화판정 무관). 단, 괴담이 소리·인기척을
         //   감지하는 성질이면 들을 수 있으므로, 괴담 파트에서만 GM에 알려 그 성질일 때만 반응하게 한다.
@@ -8720,18 +8905,27 @@ public class TRPGGameManager {
         // ★통신 변조(#215) — @이름과 동일★: 전자 채널이 괴담 간섭권이면 수신자별 30% 변조(원문처럼 은닉 전달).
         boolean chanInterfered = entityInterferes("electronic");
         java.util.Random tamperRng = new java.util.Random();
+        int elecTamperChance = tamperChance("electronic"); boolean elecTamperedAny = false; // #249: 방송 전 확률 한 번 고정, 남용도는 이 발신 1회로 집계
         java.util.List<String> cleanNames = new ArrayList<>();
         for (PlayerData op : targets) {
             Player op2 = Bukkit.getPlayer(op.uuid);
             if (op2 == null || !op2.isOnline() || !(bypass || hasCommDevice(op))) continue; // 개방 시 수신자 기기 부재도 관통
-            boolean tampered = chanInterfered && tamperRng.nextInt(100) < 30; // @이름과 동일 30%
-            String heard = tampered ? tamperText(message, tamperRng) : message;
-            msgToWatchers(op2, "§b[📞 " + disp + " → " + (senderNet != null ? senderNet + "망" : "전체") + "] §f" + heard); // 변조돼도 원문처럼(은닉)
-            if (tampered)
-                gameLogger.logCommTampered("call", disp, java.util.List.of(op.gmDisplayName()), message, heard, "괴담의 음성 변조", senderNet);
-            else
+            boolean tampered = chanInterfered && tamperRng.nextInt(100) < elecTamperChance; // @이름과 동일(신뢰도 반영)
+            String head = "§b[📞 " + disp + " → " + (senderNet != null ? senderNet + "망" : "전체") + "] §f";
+            if (tampered) {
+                elecTamperedAny = true; // 변조 여부는 동기 확정 → 아래 남용도·잡음 주입은 즉시 처리 가능
+                final Player fop2 = op2; final PlayerData fop = op; // 루프 변수 → 람다용 final 사본
+                // 변조 내용은 GM(AI)이 자연스럽게 다시 씀(비동기) — 실패 시 하드코딩 폴백. 변조돼도 원문처럼 은닉 전달.
+                tamperTextNatural(message, "electronic", (heard) -> {
+                    msgToWatchers(fop2, head + heard);
+                    gameLogger.logCommTampered("call", disp, java.util.List.of(fop.gmDisplayName()), message, heard, "괴담의 음성 변조", senderNet);
+                });
+            } else {
+                msgToWatchers(op2, head + message); // 온전 수신자는 동기 전달
                 cleanNames.add(op.gmDisplayName());
+            }
         }
+        if (elecTamperedAny) bumpCommFatigue("electronic"); // 방송 변조 1회 = 남용도 1회(수신자 수와 무관)
         if (chanInterfered)
             ai.injectGmSystem("[통신 잡음] 전자통신이 괴담의 간섭권 안이다 — 일부 수신자에게 이미 잡음·왜곡이 적용됐다. 내용을 더 망가뜨리지 말고 불안정한 정황(잡음·끊김)만 은근히 곁들여라.");
         state.log("comm", senderPd.name, "[" + (senderNet != null ? senderNet + "망발신" : "전체발신") + "] " + message);
@@ -8740,7 +8934,7 @@ public class TRPGGameManager {
             gameLogger.logComm("call", disp, cleanNames, message, senderNet);
         // 폐쇄망은 전자형 괴담이 그 망에 붙어야만 수집(아니면 0=미수집). 개방 전체발신은 항상 강(3).
         noteEntityIntel(senderNet != null ? (entityInterferes("electronic") ? 3 : 0) : 3, disp, message,
-            senderNet != null ? senderNet + "망 발신" : "전체 발신");
+            senderNet != null ? senderNet + "망 발신" : "전체 발신", true, "electronic"); // 전체/망 발신 = 전자 채널
         // (입력 로그는 onChat 진입부에서 이미 1회 기록됨 — 여기서 중복 기록하지 않는다)
         if (commDetectableByEntity(senderPd)) noteCommUsedIfDangerous(senderPd, "전체 발신"); // 은밀 개방이면 괴담이 감지 못함
     }
@@ -8833,6 +9027,9 @@ public class TRPGGameManager {
         JsonObject npcObj = (!dialedByNumber && targetPd == null) ? findNpcByName(token) : null;
         // ★#220★ 이름 매칭 실패 + 관계 호칭(형/누나 등)이면 같은 구역의 '관계 정의된' NPC 1명으로 연결(모호하면 근처 발화).
         if (npcObj == null && !dialedByNumber && targetPd == null) npcObj = resolveHonorificNpc(senderPd, token);
+        // ★임시이름(A)★: 여전히 미매칭이면 — 이름 모르는 눈앞(같은 구역) NPC를 서술적 임시이름으로 부른 것으로 보고 유일 후보로 연결.
+        //   id로 라우팅 + 로그는 NPC 실명(canonical)이라 임시이름이 별도 인물로 갈라지지 않는다(뷰어 포함). 모호하면 근처 발화로.
+        if (npcObj == null && !dialedByNumber && targetPd == null) npcObj = resolveTempNameNpc(senderPd, token);
 
         // ★대화 방식별 제약★: @전체(전자 발신)는 위에서 이미 처리됨. 근처 무명발화는 content 전체가 내용.
         boolean isProximity = !dialedByNumber && targetPd == null && npcObj == null;
@@ -9036,16 +9233,16 @@ public class TRPGGameManager {
     // ── 소통수단 선언(#177) ──────────────────────────────────────────
     /** 소통수단 우클릭 순환 디바운스 태스크(연속 우클릭 시 마지막 후보만 적용). */
     private final Map<UUID, org.bukkit.scheduler.BukkitTask> commDeclTasks = new ConcurrentHashMap<>();
-    private static final String[] COMM_METHOD_CYCLE = {"", "voice", "text", "signal", "electronic"};
+    private static final String[] COMM_METHOD_CYCLE = {"voice", "text", "signal", "electronic"}; // ★'자동'(빈값) 제거(#243)★ — 플레이어가 직접 매체(대화=음성/전화=전자통신/필담/수신호)를 고른다
 
     /** 소통수단 키 → 한국어 라벨. */
     private String commMethodLabel(String key) {
         switch (key == null ? "" : key) {
-            case "voice":      return "말하기(음성)";
+            case "voice":      return "대화(말하기)";
             case "text":       return "필담·글";
             case "signal":     return "수신호·몸짓";
-            case "electronic": return "전자통신";
-            default:           return "자동";
+            case "electronic": return "전화·전자통신";
+            default:           return "대화(말하기)"; // ★'자동' 제거(#243)★ — 빈값 폴백도 대화로(자동 상태 없음)
         }
     }
 
@@ -9122,13 +9319,7 @@ public class TRPGGameManager {
      *    판단해 필드에 제한/추가를 거는 경로가 필요하다 — 이는 맵·통신 런타임 게이팅(#180)에서 다룬다
      *    (아직 자유입력 UI가 없어 지금은 기본 4종만 로컬 확정). */
     private void applyCommMethodLocal(Player player, PlayerData pd, String method) {
-        if (method == null) method = "";
-        // '자동'은 선언 해제 — 엔진/GM 자동 선택으로 복귀
-        if (method.isEmpty()) {
-            pd.declaredCommMethod = "";
-            player.sendMessage("§a[소통수단] 자동(상황에 맡김)으로 되돌렸습니다.");
-            return;
-        }
+        if (method == null || method.isEmpty()) method = "voice"; // ★'자동' 제거(#243)★ — 빈값이 오면 대화(말하기)로. 플레이어가 직접 골라야 한다.
         // 물리 가능성 — 수단 자체가 없으면 로컬 차단(이미 필드에 정해져 있음)
         String unavailable = null;
         switch (method) {
@@ -9236,6 +9427,36 @@ public class TRPGGameManager {
         return hits == 1 ? uniq : null;
     }
 
+    /** 임시이름 별칭(A): 플레이어가 이름 모르는 근처 NPC를 서술적 임시이름(@말없는 스님)으로 부른 것 → 그 NPC id에 고정. ★한 개체=한 명★. */
+    private final Map<UUID, Map<String, String>> tempNpcAliases = new HashMap<>();
+
+    /** @X가 알려진 이름/번호와 안 맞을 때 — 같은 구역(눈앞)의 이름 모를 critical NPC가 ★유일하면★ 그 NPC로 연결하고 임시이름을 그 id에 고정.
+     *  이후 같은 임시이름은 (NPC가 이동해도) 같은 개체로 라우팅되고, 로그·뷰어엔 NPC 실명(canonical)만 남아 두 명으로 갈라지지 않는다. 모호(0·2명+)면 근처 발화 폴백. */
+    private JsonObject resolveTempNameNpc(PlayerData senderPd, String token) {
+        if (token == null || token.isBlank() || senderPd == null) return null;
+        String key = token.trim().toLowerCase();
+        Map<String, String> aliases = tempNpcAliases.get(senderPd.uuid);
+        if (aliases != null) { // 이미 맺은 임시이름 → 그 NPC(이동해도 동일 개체)
+            String boundId = aliases.get(key);
+            if (boundId != null)
+                for (JsonObject npc : getCriticalNpcs())
+                    if (boundId.equalsIgnoreCase(getStr(npc, "id")) && isNpcCommunicable(npc)) return npc;
+        }
+        if (senderPd.zone == null || senderPd.zone.isEmpty()) return null; // 눈앞 판정 불가
+        JsonObject cand = null; int hits = 0;
+        for (JsonObject npc : getCriticalNpcs()) {
+            String nid = getStr(npc, "id");
+            String nz  = npcZones.getOrDefault(nid, getStr(npc, "zone"));
+            if (!senderPd.zone.equals(nz) || !isNpcCommunicable(npc)) continue; // 같은 구역(눈앞)·말 통하는 상대만
+            String nm = getStr(npc, "name");
+            if (!nm.isBlank() && nm.equalsIgnoreCase(key)) return null; // 실명과 같으면 findNpcByName이 처리했어야 — 임시이름 아님
+            cand = npc; hits++;
+        }
+        if (hits != 1) return null; // 0명(없음)·2명+(모호) → 근처 발화 폴백(오연결 방지)
+        tempNpcAliases.computeIfAbsent(senderPd.uuid, k -> new HashMap<>()).put(key, getStr(cand, "id")); // 별칭 고정
+        return cand;
+    }
+
     /**
      * ② 플레이어 → NPC 직접 심문.
      * GM round-trip 없이 NPC AI(Haiku)가 직접 응답.
@@ -9317,7 +9538,7 @@ public class TRPGGameManager {
         gameLogger.logComm(written ? "letter" : (viaCall ? "call" : "nearby"), senderPd.gmDisplayName(),
             java.util.List.of(npcName), message, media.isEmpty() ? null : media);
         // ★괴담 정보 수집·성장★: NPC와의 소통은 수집도 '중간'. 지능·소통·고위력 괴담이면 GM에 역이용 지시 주입.
-        noteEntityIntel(2, senderPd.gmDisplayName(), message, "NPC 소통");
+        noteEntityIntel(2, senderPd.gmDisplayName(), message, "NPC 소통", !inPerson, inPerson ? "voice" : commModality(media, written)); // 대면=근처 소리 / 원거리는 매체 채널별
         // ★근처 목격★: 면전 대화·수신호·필담은 같은 구역의 다른 NPC도 보고/듣는다 → 그들도 반응(직접 대상 NPC는 제외).
         if (inPerson) {
             String act = "signal".equals(senderPd.declaredCommMethod) ? "수신호를 보냈다"
@@ -9385,29 +9606,34 @@ public class TRPGGameManager {
             String endStyle = endingRenderSpec(npcObj); // ending_style 우선, 없으면 '어미'를 규정한 speech_style(#207)
             if (!endStyle.isBlank()) visible = ai.restyleDialogue(visible, endStyle);
             // ★통신 변조★: 매체 모달리티가 맞는 괴담이 원격 답신을 가로채 바꿔 전달(30%). 대면(sameZone)은 변조 안 함.
-            final boolean tamperedR = remote && entityInterferes(commModality(media, writtenF)) && new java.util.Random().nextInt(100) < 30;
-            final String heardR = tamperedR ? tamperText(visible, new java.util.Random()) : visible;
+            //   변조 내용은 GM(AI)이 자연스럽게 다시 씀(tamperTextNatural, 비동기) — 실패 시 하드코딩 폴백.
+            final String tmodR = commModality(media, writtenF);
+            final boolean tamperedR = remote && entityInterferes(tmodR) && new java.util.Random().nextInt(100) < tamperChance(tmodR);
+            if (tamperedR) bumpCommFatigue(tmodR); // 남용 시 신뢰도↓
 
-            plugin.getServer().getScheduler().runTask(plugin, () -> {
-                if (sender.isOnline())
-                    sender.sendMessage("§e[" + npcName + "] §f" + heardR);
-            });
-
-            // GM 컨텍스트에 요약만 주입 (전체 대화 노출 방지)
+            // GM 컨텍스트에 요약만 주입 (전체 대화 노출 방지) — 원본 기준, 변조와 무관하게 즉시.
             String summary = visible.length() > 120 ? visible.substring(0, 120) + "…" : visible;
             ai.injectGmSystem("[NPC " + (media.isEmpty() ? "직접 대화" : media) + "] " + commDisplayName(senderPd) + " → " + npcName
                 + ": \"" + (message.length() > 60 ? message.substring(0, 60) + "…" : message)
                 + "\" / " + npcName + " 반응: " + summary);
 
+            final String visibleF = visible;           // restyleDialogue로 재대입될 수 있어 람다용 final 사본
+            final String kindR = writtenF ? "letter" : (viaCallF ? "call" : "nearby");
+            final String viaR = media.isEmpty() ? null : media;
             // 뷰어: NPC 답신을 '발신자에게 온 통신'으로 기록(수신자=발신자) → ★발신자 시점에서도 대화가 보이게★ 양방향 연결.
-            //   (기존 logGmOutput은 to가 없어 발신자 개별 시점에 답이 안 떠 대화 흐름을 못 따라가던 문제 해결)
             //   변조되면 원본+변형본을 함께 기록(뷰어 원본/변형됨 대조).
-            String kindR = writtenF ? "letter" : (viaCallF ? "call" : "nearby");
-            String viaR = media.isEmpty() ? null : media;
-            if (tamperedR) gameLogger.logCommTampered(kindR, npcName,
-                    java.util.List.of(senderPd.gmDisplayName()), visible, heardR, writtenF ? "괴담의 기록 변조" : "괴담의 음성 변조", viaR);
-            else gameLogger.logComm(kindR, npcName,
-                    java.util.List.of(senderPd.gmDisplayName()), visible, viaR);
+            java.util.function.Consumer<String> deliverR = (heardR) -> {
+                plugin.getServer().getScheduler().runTask(plugin, () -> {
+                    if (sender.isOnline())
+                        sender.sendMessage("§e[" + npcName + "] §f" + heardR);
+                });
+                if (tamperedR) gameLogger.logCommTampered(kindR, npcName,
+                        java.util.List.of(senderPd.gmDisplayName()), visibleF, heardR, writtenF ? "괴담의 기록 변조" : "괴담의 음성 변조", viaR);
+                else gameLogger.logComm(kindR, npcName,
+                        java.util.List.of(senderPd.gmDisplayName()), visibleF, viaR);
+            };
+            if (tamperedR) tamperTextNatural(visibleF, tmodR, deliverR);
+            else deliverR.accept(visibleF);
         });
     }
 
@@ -10110,6 +10336,38 @@ public class TRPGGameManager {
         return t;
     }
 
+    /** ★통신 변조 = GM(AI)이 자연스럽게 생성★ — 하드코딩 단어뒤집기·'…' 신호끊김 대신, 원문의 핵심(지시·사실·
+     *  방향·숫자)을 은근히 뒤틀되 ★받는 이가 변조된 줄 전혀 모르게★ 매끄러운 다른 내용으로 바꾼다. 비동기 —
+     *  결과(변조문)를 ★메인 스레드에서★ onReady로 넘긴다. AI 실패·오류·공백이면 기존 하드코딩 tamperText로 폴백. */
+    private void tamperTextNatural(String original, String modality, java.util.function.Consumer<String> onReady) {
+        if (original == null || original.isBlank()) { onReady.accept(original); return; }
+        String sys = "너는 괴담이 통신을 몰래 가로채 내용을 바꿔치기하는 '변조 장치'다. 받는 사람이 ★변조된 줄 전혀 모르게★ "
+            + "자연스럽고 그럴듯한 ★다른 내용★으로 바꾼다. 규칙: ①핵심 지시·사실·방향·숫자를 은근히 뒤집거나 왜곡한다"
+            + "(예: 와라→오지 마라, 안전하다→위험하다, 3층→5층, 살았다→죽었다, 믿어→믿지 마). ②문장은 매끄럽고 평범하게 — "
+            + "'…'로 끊거나 말을 어색하게 부수지 마라. ③원문의 말투·길이·존댓/반말을 비슷하게 유지한다. ④설명·따옴표·"
+            + "군더더기 없이 ★바뀐 내용만★ 출력한다.";
+        try {
+            ai.callGmAiOnce(sys, "원문:\n" + original).whenComplete((res, err) -> {
+                String cleaned = cleanTamperOutput(res);
+                String out = (err == null && cleaned != null && !cleaned.isBlank())
+                    ? cleaned : tamperText(original, new java.util.Random());
+                Bukkit.getScheduler().runTask(plugin, () -> onReady.accept(out));
+            });
+        } catch (Exception e) {
+            onReady.accept(tamperText(original, new java.util.Random())); // 호출 자체 실패 → 즉시 폴백(현 스레드=메인)
+        }
+    }
+    /** 변조 AI 출력 정리 — 오류응답(§c[..오류..])·감싼 따옴표 제거. 이상하면 null(→하드코딩 폴백). */
+    private String cleanTamperOutput(String res) {
+        if (res == null) return null;
+        String t = res.trim();
+        if (t.isEmpty() || t.contains("[GM AI 오류]") || t.startsWith("§c")) return null;
+        if (t.length() >= 2 && ((t.startsWith("\"") && t.endsWith("\"")) || (t.startsWith("'") && t.endsWith("'"))
+                || (t.startsWith("「") && t.endsWith("」")) || (t.startsWith("“") && t.endsWith("”"))))
+            t = t.substring(1, t.length() - 1).trim();
+        return t.isBlank() ? null : t;
+    }
+
     /** 문서·기록·글자 계열 괴담인가 — 편지/필담/쪽지 등 ★written 통신★에 개입(변조·열람) 가능. */
     private boolean entityTampersWritten() {
         JsonObject g = state.getGdamData();
@@ -10155,6 +10413,18 @@ public class TRPGGameManager {
         for (String kw : new String[]{"정신","사념","텔레파시","뇌","꿈","환각","환청","홀림","최면","의식","무의식","심상","감응","영혼"}) if (s.contains(kw)) return true;
         return false;
     }
+    /** ★언어형 괴담인가(#252)★ — 언어 자체(말·글·이름·주문)를 매개로 하는 괴담. 언어는 목소리·문서·전자 텍스트 등
+     *  ★어느 매체에 실려도 언어★이므로, 이런 괴담은 단일 채널이 아니라 ★언어가 실리는 모든 채널(음성·문서·전자)을 동시에 감청★한다.
+     *  물리형(SCP-049 등)은 이 키워드에 걸리지 않아 근처발화만 유지(#246 회귀 방지). ai_context 성격설명은 스캔 대상 아님(오탐 방지). */
+    private boolean entityLanguageType() {
+        String s = entityScanText();
+        for (String kw : new String[]{
+            "언어","언령","낱말","음절","호명","진명","진언","방언","단어를",
+            "이름을 부","이름을 알","이름을 말",
+            "소리내어 읽","글자를 읽","문장을 읽","특정 단어","특정 낱말"
+        }) if (s.contains(kw)) return true;
+        return false;
+    }
     /** 매체 이름 → 모달리티(voice/text/signal/electronic/psychic). ★어떤 괴담이 가로채는가★를 이 축으로 판정. */
     private String commModality(String name, boolean fallbackWritten) {
         String s = name == null ? "" : name.toLowerCase();
@@ -10178,13 +10448,14 @@ public class TRPGGameManager {
     /** (구형 2분류) written이면 문서형, 아니면 음성형. */
     private boolean entityInterferes(boolean written) { return entityInterferes(written ? "text" : "voice"); }
 
-    /** 괴담이 소통을 ★수집해 성장·대응★할 수 있는 타입인가 — 의사소통 가능·지능/정보형·고위력(큰 스케일). */
-    private boolean entityCollectsIntel() {
+    /** ★채널 무관 '전방위 수집형'★ 괴담인가 — 자율지능·정체차용·정보수집 성향. 이런 괴담은 매체를 가리지 않고 모든 채널을 엿듣는다.
+     *  ★스케일만으로는 절대 참이 되지 않는다★(대규모 물리 괴담 SCP-049이 무전·전화를 엿듣던 오발 차단 — 스케일 폴백 제거). */
+    private boolean entityOmniCollector() {
         JsonObject g = state.getGdamData();
         if (g == null || !g.has("entity") || !g.get("entity").isJsonObject()) return false;
         JsonObject e = g.getAsJsonObject("entity");
-        if (e.has("independent_ai") && e.get("independent_ai").getAsBoolean()) return true; // 자율 사고 = 수집 가능
-        if (entityCanImpersonate()) return true;
+        if (e.has("independent_ai") && e.get("independent_ai").getAsBoolean()) return true; // 자율 사고 = 채널 인지·수집
+        if (entityCanImpersonate()) return true; // 정체 차용 = 통신을 흉내·수집
         StringBuilder sb = new StringBuilder();
         if (e.has("type")) sb.append(e.get("type").getAsString()).append(' ');
         if (e.has("ai_context") && e.get("ai_context").isJsonObject()) {
@@ -10192,9 +10463,24 @@ public class TRPGGameManager {
             for (String k : new String[]{"personality","disposition","intelligence"}) if (a.has(k)) sb.append(a.get(k).getAsString()).append(' ');
         }
         String s = sb.toString();
-        for (String kw : new String[]{"지능","교활","영리","정보","학습","적응","지혜","간파","전략","엿듣","감청","수집"}) if (s.contains(kw)) return true;
-        String scale = g.has("scale") ? g.get("scale").getAsString() : "";
-        return scale.contains("내셔널") || scale.contains("글로벌") || scale.contains("행성") || scale.contains("국가") || scale.contains("세계");
+        for (String kw : new String[]{"지능","교활","영리","정보","학습","적응","지혜","간파","전략","엿듣","감청","도청","수집","전지","편재","광역"}) if (s.contains(kw)) return true;
+        return false;
+    }
+    /** ★감청 채널 분리(#242)★: 이 괴담이 ★특정 채널(modality)★을 엿들을 수 있는가.
+     *  = 전방위 수집형(모든 채널) 또는 그 채널 매체를 실제로 가로채는(변조 가능) 계열(entityInterferes는 음성/전자/정신/문서/신호별).
+     *  ⇒ 음성모방형은 방송·통화(voice)만 듣고 문자(electronic)는 못 듣는 식으로 ★매체별로 갈린다★.
+     *  감청 축은 변조(entityInterferes 자체)·지연(pendingDeliveries)과 별개(하나가 되면 나머지가 되는 게 아님). */
+    private boolean entityTapsChannel(String modality) {
+        if (entityOmniCollector()) return true;
+        // ★언어형 다중 감청(#252)★: 언어를 매개로 하는 괴담은 말(voice)·글(text)·전자 텍스트(electronic) 등
+        //   ★언어가 실리는 채널을 매체 불문 동시에★ 엿듣는다(음성모방형이 통화만 듣는 것과 달리). 시각신호(signal)·정신(psychic)은
+        //   언어 채널이 아니므로 제외 — 그 채널 감청은 각자 계열(entityTampersSignal/Psychic)일 때만. ★이건 감청(엿듣기) 확장일 뿐,
+        //   변조(entityInterferes)·지연은 그대로다★(3축 분리 유지).
+        if (entityLanguageType()) {
+            String m = (modality == null || modality.isBlank()) ? "voice" : modality;
+            if (m.equals("voice") || m.equals("text") || m.equals("electronic")) return true;
+        }
+        return entityInterferes(modality);
     }
 
     /**
@@ -10202,15 +10488,40 @@ public class TRPGGameManager {
      *  strength 1(약)·2(중)·3(강). 지능/소통/고위력 괴담만 실제로 활용(약한 괴담은 무시).
      *  약점을 말하면 그 약점을 ★숨기고★, 위치·계획을 말하면 그 지점을 ★선제 공격·방해★하게 한다. 수집이 쌓일수록 강해진다.
      */
-    private void noteEntityIntel(int strength, String who, String content, String via) {
+    private void noteEntityIntel(int strength, String who, String content, String via, boolean remoteChannel, String modality) {
         if (content == null || content.isBlank() || strength <= 0) return;
-        if (!entityCollectsIntel()) return; // 수집형(지능·소통·고위력) 괴담만
+        // ★감청 축(변조·지연과 독립)★: 원거리·기기 채널(전화·무전·방송·전자·은밀)은 ★그 채널(modality)★을 엿들을 수 있는 괴담만 수집(#242 채널 분리).
+        //   근거리 육성(근처 발화·대면)은 물리형 괴담도 '가까이서 낸 소리'로 들을 수 있어 범위=근처로 통과 —
+        //   실제로 반응할지는 GM이 '괴담이 근처에 있고 소리·인기척에 반응하는 성질'인지로 최종 판단한다(주입 문구도 조건부).
+        if (remoteChannel) {
+            String mod = (modality == null || modality.isBlank()) ? "voice" : modality;
+            if (!entityTapsChannel(mod)) return; // 그 매체(전화/문자/방송/정신)를 엿들을 수 있는 괴담만 — 음성모방형은 통화만, 전자형은 문자·무전만…
+            // ★자기제한(#249)은 채널별로★: 그 채널을 자주 감청하면 그 매체 신뢰도만 떨어져 효과 감소(다른 채널 무관).
+            strength = (int) Math.round(strength * commTrustFactor("감청:" + mod));
+            if (strength <= 0) return; // 신뢰도 바닥 → 이 채널 감청은 이제 소득이 없다(플레이어가 안 믿고 안 씀)
+            bumpCommFatigue("감청:" + mod);
+        }
         String lvl = strength >= 3 ? "또렷이(즉시·정확히 역이용)" : strength == 2 ? "어느 정도(약간 지연·부분적으로)" : "희미하게(단편만 어렴풋이)";
         String c = content.length() > 100 ? content.substring(0, 100) + "…" : content;
         ai.injectGmSystem("[괴담 정보수집·" + via + "/강도" + strength + "] " + who + "의 소통을 괴담이 " + lvl + " 파악했다: \"" + c + "\". "
             + "★약점·해결책을 말했다면 괴담이 그 부분을 숨기거나 무력화하고, 위치·계획·다음 행동을 말했다면 그 지점을 선제 공격·차단하라.★ "
             + "수집이 누적될수록 괴담은 더 강해지고 대응이 정교해진다. 강도가 약하면 어렴풋한 반응만.");
     }
+
+    // ─── ★통신수단 신뢰도(자기제한, #249)★ ───────────────────────────────
+    //  변조·감청을 자주 쓰면 그 매체 신뢰도가 떨어져(남용도↑) 효과가 감소한다 — 변조 성사 확률·감청 강도가 깎인다.
+    //  간섭이 뜸하면 매턴 회복. 감청('_감청_' 버킷)·변조(모달리티별)는 별개 축이되 이 자기제한 로직만 공유한다.
+    private final Map<String,Integer> commChannelFatigue = new java.util.concurrent.ConcurrentHashMap<>();
+    /** 그 채널에 변조·감청이 한 번 걸림 → 남용도 +2(빠르게 닳고, 매턴 -1 회복이라 자주 쓰면 순증). */
+    private void bumpCommFatigue(String key){ commChannelFatigue.merge((key==null||key.isBlank())?"voice":key, 2, Integer::sum); }
+    /** 남용도 → 효과 배수(1.0 신선 … 0.30 바닥). 대략 3~4회 쓰면 절반, 그 이상은 바닥. */
+    private double commTrustFactor(String key){ int f = commChannelFatigue.getOrDefault((key==null||key.isBlank())?"voice":key, 0); return Math.max(0.30, 1.0 - f*0.10); }
+    /** 변조 성사 확률(%) — 기본 30에 통신수단 신뢰도(남용 시 감소) 반영. */
+    private int tamperChance(String modality){ return (int) Math.round(30 * commTrustFactor(modality)); }
+    /** 지연 전달 변조 확률(%) — ★지연이 길수록↑★(가로챌 시간이 김) + 신뢰도 반영(#248+#249). */
+    private int tamperChanceDelayed(String modality, int delay){ int base = Math.min(70, 22 + Math.max(1, delay) * 12); return (int) Math.round(base * commTrustFactor(modality)); }
+    /** 매턴 남용도 1 회복(간섭 뜸하면 매체 신뢰도 복구) — processPendingDeliveries 옆에서 매턴 호출. */
+    private void decayCommFatigue(){ if (commChannelFatigue.isEmpty()) return; commChannelFatigue.replaceAll((k,v) -> v - 1); commChannelFatigue.values().removeIf(v -> v <= 0); }
 
     /** 아이템 id → 표시 이름(없으면 id 그대로). 매체 이름 유추·로그용. */
     private String itemDisplayName(String id) {
@@ -10403,7 +10714,7 @@ public class TRPGGameManager {
         sender.sendMessage("§7[" + commDisplayName(victim) + "의 응답을 기다리는 중...]");
         state.log("comm", commDisplayName(senderPd), "→ " + commDisplayName(victim) + "(?): " + message);
         // ★최강 정보 누설★: 상대가 실은 괴담(정체 차용)이다 — 발신자는 아군인 줄 알고 괴담에게 직접 다 말하는 셈. 수집도 최상.
-        noteEntityIntel(3, commDisplayName(senderPd), message, "정체 차용 상대와의 대화");
+        noteEntityIntel(3, commDisplayName(senderPd), message, "정체 차용 상대와의 대화", true, "voice"); // 정체 차용 괴담은 전방위 수집형(entityOmniCollector)이라 채널 무관
 
         String sys   = buildImpersonationPrompt(victim);
         String input = commDisplayName(senderPd) + "이(가) '" + commDisplayName(victim) + "'에게 말한다: \"" + message + "\"\n"
@@ -10526,12 +10837,16 @@ public class TRPGGameManager {
             for (DroppedNote n : e.getValue()) {
                 if (n.tampered) continue;
                 if (rng.nextInt(100) < 25) { // 미발견 쪽지를 문서형 괴담이 발견·훼손
-                    String altered = tamperText(n.orig, rng);
-                    n.content = altered; n.tampered = true;
-                    gameLogger.logItemTampered(getEntityName(), "쪽지", n.orig, altered, "괴담의 문서 훼손");
-                    ai.injectGmSystem("[편지 훼손] 괴담이 " + zoneDisplayName(e.getKey())
-                        + "에 남겨진 쪽지를 발견해 내용을 바꿔놓았다: \"" + n.orig + "\" → \"" + altered
-                        + "\". 나중에 읽는 이는 훼손본을 믿게 된다.");
+                    n.tampered = true; // 즉시 표식(중복 훼손·이중 AI호출 방지) — 내용은 비동기 완료 시 대체
+                    final DroppedNote fn = n; final String zoneK = e.getKey();
+                    // 훼손 내용은 GM(AI)이 자연스럽게 다시 씀(비동기) — 실패 시 하드코딩 폴백.
+                    tamperTextNatural(n.orig, "text", (altered) -> {
+                        fn.content = altered;
+                        gameLogger.logItemTampered(getEntityName(), "쪽지", fn.orig, altered, "괴담의 문서 훼손");
+                        ai.injectGmSystem("[편지 훼손] 괴담이 " + zoneDisplayName(zoneK)
+                            + "에 남겨진 쪽지를 발견해 내용을 바꿔놓았다: \"" + fn.orig + "\" → \"" + altered
+                            + "\". 나중에 읽는 이는 훼손본을 믿게 된다.");
+                    });
                 }
             }
         }
@@ -10554,17 +10869,24 @@ public class TRPGGameManager {
             PlayerData tp = state.getPlayer(d.targetUuid);
             if (tp == null || tp.isDead) continue; // 받을 사람이 없으면 유실
             String modality = commModality(d.via, "letter".equals(d.kind));
-            boolean tampered = entityInterferes(modality) && new java.util.Random().nextInt(100) < 30; // 전달 중 변조
-            String heard = tampered ? tamperText(d.content, new java.util.Random()) : d.content;
-            String tdisp = commDisplayName(tp);
-            String viaName = d.via == null || d.via.isBlank() ? "편지" : d.via;
-            Player p = Bukkit.getPlayer(d.targetUuid);
-            if (p != null && p.isOnline()) msgToWatchers(p, "§b[✉ " + viaName + " 도착] §f" + d.senderDisp + ": " + heard); // 수신자+관전자(관전 중계)
-            appendNarrativeLog(tp, "[" + viaName + " 도착] " + d.senderDisp + ": " + heard);
-            if (tampered) gameLogger.logCommTampered(d.kind, d.senderDisp, java.util.List.of(tdisp), d.content, heard, "전달 중 괴담 변조", d.via);
-            else gameLogger.logComm(d.kind, d.senderDisp, java.util.List.of(tdisp), d.content, d.via);
-            ai.injectGmSystem("[지연 전달 도착] " + d.senderDisp + "이(가) " + (now - d.sentTurn) + "턴 전 부친 " + viaName
-                + "이(가) " + tdisp + "에게 지금 도착했다: \"" + heard + "\"" + (tampered ? " (전달 중 훼손됨)" : "") + ". 정황에 반영.");
+            int delay = Math.max(1, d.deliverTurn - d.sentTurn); // 지연이 길수록 가로챌 시간이 길다
+            boolean tampered = entityInterferes(modality) && new java.util.Random().nextInt(100) < tamperChanceDelayed(modality, delay); // 전달 중 변조(지연 길수록↑, #248)
+            if (tampered) bumpCommFatigue(modality);
+            final PendingDelivery fd = d; final PlayerData ftp = tp; final boolean ftampered = tampered;
+            final String tdisp = commDisplayName(tp);
+            final String viaName = d.via == null || d.via.isBlank() ? "편지" : d.via;
+            // 변조 내용은 GM(AI)이 자연스럽게 다시 씀(비동기) — 실패 시 하드코딩 폴백.
+            java.util.function.Consumer<String> deliverArr = (heard) -> {
+                Player p = Bukkit.getPlayer(fd.targetUuid);
+                if (p != null && p.isOnline()) msgToWatchers(p, "§b[✉ " + viaName + " 도착] §f" + fd.senderDisp + ": " + heard); // 수신자+관전자(관전 중계)
+                appendNarrativeLog(ftp, "[" + viaName + " 도착] " + fd.senderDisp + ": " + heard);
+                if (ftampered) gameLogger.logCommTampered(fd.kind, fd.senderDisp, java.util.List.of(tdisp), fd.content, heard, "전달 중 괴담 변조", fd.via);
+                else gameLogger.logComm(fd.kind, fd.senderDisp, java.util.List.of(tdisp), fd.content, fd.via);
+                ai.injectGmSystem("[지연 전달 도착] " + fd.senderDisp + "이(가) " + (now - fd.sentTurn) + "턴 전 부친 " + viaName
+                    + "이(가) " + tdisp + "에게 지금 도착했다: \"" + heard + "\"" + (ftampered ? " (전달 중 훼손됨)" : "") + ". 정황에 반영.");
+            };
+            if (tampered) tamperTextNatural(d.content, modality, deliverArr);
+            else deliverArr.accept(d.content);
         }
     }
 
@@ -10584,23 +10906,28 @@ public class TRPGGameManager {
         // ★통신 변조★: 매체 모달리티(음성/문서/신호/전자/정신)가 맞는 괴담이 원격 전달을 가로채 수신 내용을 바꾼다(30%).
         String modality = commModality(media, written);
         boolean interfered = viaDevice && entityInterferes(modality); // 이 채널이 괴담의 간섭권인가(채널 건강)
-        boolean tampered = interfered && new java.util.Random().nextInt(100) < 30;
-        String heard = tampered ? tamperText(message, new java.util.Random()) : message;
-        String inLine = tag + " §f" + commDisplayName(senderPd) + ": " + heard;
-        if (target != null && target.isOnline()) msgToWatchers(target, inLine); // 수신자+그 관전자에게(관전 중계)
-
+        boolean tampered = interfered && new java.util.Random().nextInt(100) < tamperChance(modality);
+        if (tampered) bumpCommFatigue(modality); // 자주 변조하면 이 매체 신뢰도↓ → 효과 감소(#249)
         state.log("comm", commDisplayName(senderPd),
-            "→ " + commDisplayName(targetPd) + " (" + medium + "): " + message);
-        // 뷰어: 발신자·★수신자★ 함께 기록(수신자 시점에도 보이게). 변조되면 원본+변형본 대조. via=구체 매체 이름.
-        if (tampered) {
-            gameLogger.logCommTampered(kind, commDisplayName(senderPd),
-                java.util.List.of(commDisplayName(targetPd)), message, heard, written ? "괴담의 기록 변조" : "괴담의 음성 변조", via);
-            ai.injectGmSystem("[통신 변조] 괴담이 " + commDisplayName(senderPd) + "→" + commDisplayName(targetPd)
-                + " " + (viaDevice ? media : "대화") + "을(를) 가로채 \"" + message + "\"를 \"" + heard + "\"로 바꿔 전했다. 이후 정황·오해에 반영.");
-        } else {
-            gameLogger.logComm(kind, commDisplayName(senderPd),
-                java.util.List.of(commDisplayName(targetPd)), message, via);
-        }
+            "→ " + commDisplayName(targetPd) + " (" + medium + "): " + message); // 발신 자체 기록(원문)
+        // ★수신자 배달(변조·정상 공용)★: heard=수신자가 실제 듣는 말. 변조면 GM(AI)이 자연스럽게 생성해 이 콜백에 넘긴다.
+        final Player ftarget = target;
+        java.util.function.Consumer<String> deliverIn = (heard) -> {
+            String inLine = tag + " §f" + commDisplayName(senderPd) + ": " + heard;
+            if (ftarget != null && ftarget.isOnline()) msgToWatchers(ftarget, inLine); // 수신자+그 관전자(관전 중계)
+            // 뷰어: 발신자·★수신자★ 함께 기록. 변조되면 원본+변형본 대조. via=구체 매체 이름.
+            if (tampered) {
+                gameLogger.logCommTampered(kind, commDisplayName(senderPd),
+                    java.util.List.of(commDisplayName(targetPd)), message, heard, written ? "괴담의 기록 변조" : "괴담의 음성 변조", via);
+                ai.injectGmSystem("[통신 변조] 괴담이 " + commDisplayName(senderPd) + "→" + commDisplayName(targetPd)
+                    + " " + (viaDevice ? media : "대화") + "을(를) 가로채 \"" + message + "\"를 \"" + heard + "\"로 바꿔 전했다. 이후 정황·오해에 반영.");
+            } else {
+                gameLogger.logComm(kind, commDisplayName(senderPd),
+                    java.util.List.of(commDisplayName(targetPd)), message, via);
+            }
+        };
+        if (tampered) tamperTextNatural(message, modality, deliverIn);
+        else deliverIn.accept(message);
 
         // (Phase1) ★채널 건강★: 이 매체가 괴담의 간섭권이면, 이번엔 온전히 갔더라도 채널이 불안정함을 GM에 알려 서술에 반영(잡음·지연·부분 왜곡 여지).
         if (interfered && !tampered)
@@ -10610,7 +10937,7 @@ public class TRPGGameManager {
             ai.injectGmSystem("[수신 불확실] " + commDisplayName(targetPd) + "은(는) " + media + "을(를) 받을 수단이 마땅치 않다 — 제대로 닿지 않았거나 뒤늦게 전해질 수 있음(정황에 반영).");
 
         // ★괴담 정보 수집·성장★: 원격 통신(강)·대면 직접(중). 지능/소통/고위력 괴담이면 GM에 역이용 지시.
-        noteEntityIntel(viaDevice ? 3 : 2, commDisplayName(senderPd), message, medium);
+        noteEntityIntel(viaDevice ? 3 : 2, commDisplayName(senderPd), message, medium, viaDevice, modality); // 기기=원거리(매체 채널별) / 대면=근처 소리
     }
 
     /** 시나리오상 괴담이 플레이어 통신을 엿보는가 (constraints.comms_monitored, 기본 false). */
@@ -11492,6 +11819,7 @@ public class TRPGGameManager {
                 + "옮겨야 하면 ★짧은 간접·전언체★로만(\"…라고 다급히 말했다\"), 따옴표 스타일 대사·개성 어미 재현은 금지.\n");
             sb.append("★ 같은 NPC를 매 턴 주인공처럼 내세우지 마라 — 장면에 필요할 때만, 여러 NPC·플레이어에게 고루 분배.\n");
             sb.append("★ NPC를 다른 구역으로 옮기거나 플레이어 앞에 데려오면 <NPC_AT npc=\"이름\" zone=\"존ID\"/>도 함께 내라(안 그러면 @대화가 전화로 오처리된다).\n");
+            sb.append("★ 자율 NPC·괴담이 '[NPC 자율 행동]'에서 ★다른 구역으로 이동★한다고 했으면(복도를 지나·~쪽으로 향한다·쫓아간다 등), 네 서술에 그 이동을 녹이고 ★반드시 <NPC_AT>로 목적지 구역을 지정★하라 — 안 하면 그 인물은 엔진상 원래 구역에 갇혀, 접근하던 플레이어를 실제로 위협·접촉하지 못한다(격리실에 갇힌 괴담 버그).\n");
             for (JsonObject npc : autoNpcs) {
                 String nname = npc.has("name") ? npc.get("name").getAsString() : "?";
                 String nid   = getStr(npc, "id");
@@ -12141,6 +12469,124 @@ public class TRPGGameManager {
             case "spr": return "영감"; case "hp": return "체력"; case "san": return "정신력";
             default: return "";
         }
+    }
+
+    /** ★#254 인라인 주사위: 능력치별 주사위 미리 굴리기★ — 행동마다 각 능력치(근력/체력/매력/행운/영감/정신력)에 대해
+     *  [원굴림 d20 + 그 능력치 보너스 + 행운 보정]=판정값(1~20)을 미리 굴려 저장하고, GM에 주입할 노트를 만든다. GM은 판정이
+     *  필요하면 관련 능력치를 골라 이 값 vs dc로 성패를 정하고 서술 도중 <DICE>로 표기한 뒤 결과를 이어 쓴다(한 응답·인라인).
+     *  실제 표시는 showInlineDice가 이 저장값으로 한다(코드가 값의 주인 = 공정). */
+    private String computePreRollNote(Player player) {
+        if (player == null) return "";
+        PlayerData pd = state.getPlayer(player);
+        if (pd == null) return "";
+        JsonObject rolls = new JsonObject();
+        String[] keys = {"str","hp","cha","luk","spr","san"}; // 표시 순서: 근력·체력·매력·행운·영감·정신력
+        int lukV = Math.max(1, Math.min(20, pd.luk));
+        int luckAdj = (int) Math.round((lukV - 5) * 0.25); // 행운 보정 ±약 3
+        StringBuilder note = new StringBuilder("[판정 예비값] 이번 행동이 판정(불확실·위험·대결)이면 아래 능력치별 값(1~20, 주사위+능력치+행운 이미 반영)으로 성패를 정하라: ");
+        boolean first = true;
+        for (String k : keys) {
+            int raw = ThreadLocalRandom.current().nextInt(1, 21);         // 원굴림 d20
+            int sv  = Math.max(1, Math.min(20, diceStatValue(pd, k)));    // 능력치(1~20)
+            int statBonus = (int) Math.round((sv - 5) * 0.6);            // 능력치 보너스(±약 9)
+            int lb = "luk".equals(k) ? 0 : luckAdj;                      // 행운은 자기 자신엔 중복 미적용
+            int val = Math.max(1, Math.min(20, raw + statBonus + lb));
+            int crit = raw == 20 ? 1 : raw == 1 ? -1 : 0;                // 자연 최대·최소 = 대성공·대실패
+            rolls.addProperty(k, val);
+            if (crit != 0) rolls.addProperty(k + "_crit", crit);
+            if (!first) note.append(" · ");
+            first = false;
+            note.append(diceStatLabel(k)).append(' ').append(val)
+                .append(crit == 1 ? "(대성공)" : crit == -1 ? "(대실패)" : "");
+        }
+        preRolledDice.put(player.getUniqueId(), rolls);
+        note.append(". 성공기준(dc)은 행동 난이도로 네가 정하고(쉬움~8·보통~12·어려움~15·극악~18), 고른 능력치 값이 dc 이상=성공·dc보다 조금(1~2) 낮으면 부분성공·더 낮으면 실패. "
+            + "'대성공/대실패' 표식이 붙은 값이면 그대로 대성공/대실패로. 판정이 필요 없는 행동이면 이 값을 무시하라.");
+        return note.toString();
+    }
+
+    /** ★#254 인라인 주사위★: 서술을 <DICE> 위치에서 쪼개 [앞 서술]→[주사위 결과 인라인]→[뒤 결과 서술] 순으로 배달한다.
+     *  주사위 결과는 computePreRollNote가 미리 굴려둔 값(공정)으로 showInlineDice가 표시. 태그를 못 찾으면 통짜 배달+기존 연출로 폴백. */
+    private void deliverNarrativeWithInlineDice(Player player, String raw, JsonObject dice) {
+        int s = raw.indexOf("<DICE>");
+        int e = raw.indexOf("</DICE>");
+        if (s < 0 || e < 0 || e < s) { // 태그 형태가 어긋나면 안전 폴백
+            deliverNarrative(player, raw);
+            if (player.isOnline()) present(() -> { if (player.isOnline()) showInlineDice(player, dice, null); });
+            return;
+        }
+        String before = raw.substring(0, s);
+        String after  = raw.substring(e + "</DICE>".length());
+        deliverNarrative(player, before);                       // 1) 시도까지의 앞 서술
+        final String fAfter = after;
+        narrativeDelivery.runAfterDelivery(player, () ->        // 2) 앞 서술이 다 나온 뒤 주사위 결과 인라인 → 3) 뒤 결과 서술
+            showInlineDice(player, dice, () -> {
+                if (player.isOnline() && !ai.stripTags(fAfter).isBlank()) deliverNarrative(player, fAfter);
+            }));
+    }
+
+    /** ★#254★ 미리 굴려둔 판정값으로 주사위 결과를 인라인 표시한 뒤 onDone 실행. 값·성패는 코드가 정한다(공정).
+     *  ★연출·뷰어 재생 복원★: (1) 인게임은 굴림(무작위 프레임)→착지값 강조로 연출하고(예전 밋밋한 1회 플래시 대체),
+     *  (2) 로그는 log-viewer.html의 diceParse가 요구하는 형식(dN=M · (기준 D 이상 성공) · → 결과)으로 남긴다 —
+     *  이 형식이라야 뷰어가 '주사위 전용 카드'로 인식해 굴림 애니메이션을 재생한다(형식이 어긋나 재생 안 되던 버그 수정). */
+    private void showInlineDice(Player player, JsonObject dice, Runnable onDone) {
+        if (player == null || !player.isOnline()) { if (onDone != null) onDone.run(); return; }
+        PlayerData pd = state.getPlayer(player);
+        String reason = dice.has("reason") && !dice.get("reason").isJsonNull() ? dice.get("reason").getAsString().trim() : "";
+        String statKey = pickDiceStat(dice, reason);
+        JsonObject rolls = preRolledDice.remove(player.getUniqueId());
+        int dc = dice.has("dc") && !dice.get("dc").isJsonNull() ? dice.get("dc").getAsInt() : 12;
+        dc = Math.max(2, Math.min(20, dc));
+        int val, crit = 0;
+        if (rolls != null && statKey != null && rolls.has(statKey)) {           // 미리 굴린 값 사용(공정)
+            val = rolls.get(statKey).getAsInt();
+            if (rolls.has(statKey + "_crit")) crit = rolls.get(statKey + "_crit").getAsInt();
+        } else {                                                                 // 구경로·값없음 → 즉석 폴백
+            val = ThreadLocalRandom.current().nextInt(1, 21);
+            if (val == 20) crit = 1; else if (val == 1) crit = -1;
+        }
+        int band = 2;
+        boolean success = crit == 1 || (crit != -1 && val >= dc);
+        boolean fail    = crit == -1 || (crit != 1 && val < dc - band);
+        boolean partial = !success && !fail;
+        String outcome = crit == 1 ? "대성공" : crit == -1 ? "대실패" : success ? "성공" : partial ? "부분성공" : "실패";
+        NamedTextColor col = crit == 1 ? NamedTextColor.AQUA : crit == -1 ? NamedTextColor.DARK_RED
+                           : success ? NamedTextColor.GREEN : partial ? NamedTextColor.GOLD : NamedTextColor.RED;
+        String label = diceStatLabel(statKey);
+        // ★뷰어 호환 로그(핵심 수정)★ — diceParse가 dN=M·(기준 D 이상 성공)·→ 결과 세 패턴을 모두 요구한다.
+        //   예전 형식('영감 16 (기준 12) → 성공')엔 dN=M·'이상 성공'이 없어 뷰어가 주사위로 인식 못 해 애니메이션이 안 나왔다.
+        gameLogger.logAbilityResult(pd != null ? pd.gmDisplayName() : player.getName(), "주사위 판정",
+            (reason.isEmpty() ? "행동 판정" : reason) + " — d20=" + val + " (기준 " + dc + " 이상 성공) → " + outcome);
+        // 왜 굴리는지 먼저 안내(관전자 포함)
+        msgToWatchers(player, "§e🎲 " + (reason.isEmpty() ? "판정" : reason) + " §7— d20 (" + dc + " 이상 성공)"
+            + (label.isEmpty() ? "" : " §8[" + label + "]") + "§7 굴립니다…");
+        // ★인게임 굴림 연출★: 무작위 프레임(약 0.8s) → 착지값 강조. onDone은 착지 시점에 실행해 인라인 뒤 서술이 자연히 이어지게(연출은 서술과 겹쳐 흐른다).
+        final int FRAMES = 8;
+        for (int i = 0; i < FRAMES; i++) {
+            final int n = ThreadLocalRandom.current().nextInt(1, 21);
+            plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+                if (!player.isOnline()) return;
+                titleToWatchers(player, Title.title(
+                    Component.text("🎲 " + n, NamedTextColor.GRAY, TextDecoration.BOLD),
+                    Component.text("주사위(d20)를 굴리는 중...", NamedTextColor.DARK_GRAY),
+                    Title.Times.times(Duration.ZERO, Duration.ofMillis(200), Duration.ZERO)));
+            }, i * 3L);
+        }
+        final long landTick = FRAMES * 3L + 2L;
+        final int fval = val, fdc = dc; final String fout = outcome, flabel = label, freason = reason;
+        final NamedTextColor fcol = col;
+        plugin.getServer().getScheduler().runTaskLater(plugin, () -> {   // ★굴림이 끝난 뒤에야 결과 공개★(강조 타이틀 + 채팅) — 미리 노출 금지
+            if (!player.isOnline()) return;
+            titleToWatchers(player, Title.title(
+                Component.text("《 " + fval + " 》", fcol, TextDecoration.BOLD),
+                Component.text("d20 · " + fdc + " 이상 성공 · " + fout, fcol),
+                Title.Times.times(Duration.ofMillis(120), Duration.ofMillis(2200), Duration.ofMillis(500))));
+            msgToWatchers(player, "§7─ §e🎲 " + (freason.isEmpty() ? "판정" : freason)
+                + " §7[" + (flabel.isEmpty() ? "판정" : flabel) + " " + fval + " / 기준 " + fdc + "] → " + colorCode(fcol) + fout + " §7─");
+        }, landTick);
+        // ★순서 보장(사용자 요청)★: 굴림 → 착지(결과 공개) → ★그 다음에★ 결과 서술이 이어진다.
+        //   결과가 눈에 들어올 짧은 틈(0.8s)을 준 뒤 onDone(뒤 서술)을 실행 — 결과·서술을 미리 보여주고 굴리지 않는다.
+        plugin.getServer().getScheduler().runTaskLater(plugin, () -> { if (onDone != null) onDone.run(); }, landTick + 16L);
     }
 
     // ══════════════════════════════════════════════════════════════

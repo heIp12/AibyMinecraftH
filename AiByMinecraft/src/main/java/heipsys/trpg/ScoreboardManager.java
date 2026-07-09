@@ -100,6 +100,9 @@ public class ScoreboardManager {
         return "§a▶ 지금 행동할 수 있습니다";
     }
 
+    /** ★#254 후속★ 현재 '내 차례' 표시 문자열(변화 감지용 — 바뀔 때만 스코어보드 재빌드해 깜빡임 방지). */
+    public String turnStatusFor(PlayerData pd) { return turnStatusLine(pd); }
+
     /** 위치 라벨: "존이름" 또는 "존이름§7[세부위치]" */
     private String resolveLocationLabel(PlayerData pd) {
         String zoneName = resolveZoneName(pd.zone);

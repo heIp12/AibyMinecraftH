@@ -102,6 +102,8 @@
   .ev.k-private{border-left-color:#8f9bb0}
   .ev.k-thought{border-left-color:#9b8fc4;background:#1c1a24;opacity:.92} .ev.k-thought .body .ln{font-style:italic;color:#bcb4da}
   .ev.k-thought .badge{background:#9b8fc4;color:#1c1a24}
+  .ev .thought-inline{font-style:italic;color:#9b8fc4;opacity:.92;font-size:12px;margin-bottom:4px;padding-left:6px;border-left:2px solid #6a5f8c} /* #245 병합된 속마음 줄 */
+  .ev .thought-inline .ti-txt{color:#bcb4da}
   .ev.k-vital{border-left-color:var(--vital);background:#2a1820}
   .ev.k-ability .badge{background:var(--ability);color:#2a0f0f}
   .ev.k-vital .badge{background:var(--vital);color:#2a0f14}
@@ -248,9 +250,9 @@ function normalize(ev){
     else if(cat==="GM입력"){kind=kind||"gm_input";actor=actor||who;}
     else if(cat.startsWith("GM→")){let x=cat.slice(3);
       if(isGlobal(x)||x.startsWith("능력방송")){kind=kind||"broadcast";actor=actor||"GM";}
-      else if(x.startsWith("NPC")){kind=kind||"npc";const m=x.match(/\(([^)]*)\)/);if(m)actor=actor||m[1];const a=x.indexOf("→");if(a>=0)target=x.slice(a+1);}
+      else if(x.startsWith("NPC")){kind=kind||"npc";const a=x.indexOf("→");const np=a>=0?x.slice(0,a):x;if(a>=0)target=x.slice(a+1);const m=np.match(/\((.*)\)/);if(m)actor=actor||m[1].trim();} // ★중첩 괄호 이름(SCP-049(치료자)) 보존★: →대상 분리 후 greedy로 마지막 ')'까지 — [^)]*는 첫 ')'에서 잘려 이름 truncate
       else{kind=kind||"gm";actor=actor||"GM";target=x;}}
-    else if(cat.startsWith("NPC")){kind=kind||"npc";const m=cat.match(/\(([^)]*)\)/);if(m)actor=actor||m[1];const a=cat.indexOf("→");if(a>=0)target=cat.slice(a+1);}
+    else if(cat.startsWith("NPC")){kind=kind||"npc";const a=cat.indexOf("→");const np=a>=0?cat.slice(0,a):cat;if(a>=0)target=cat.slice(a+1);const m=np.match(/\((.*)\)/);if(m)actor=actor||m[1].trim();} // 중첩 괄호 이름 보존(위와 동일)
     else if(cat.startsWith("능력")){kind=kind||"ability";actor=actor||who; const am=cat.match(/^능력\(([^)]*)\)/); if(am&&!ability)ability=am[1].trim();} // .txt: 능력명은 카테고리 '능력(이름)'에 있음 → 사용횟수 집계용으로 추출
     else if(cat.startsWith("주사위")){kind=kind||"ability";actor=actor||who; if(!ability)ability="주사위 판정";} // 구형 [주사위 판정] 단독 카테고리 → 주사위 카드로
     else if(cat==="통신"){
@@ -553,11 +555,13 @@ function abilActHtml(e){
   const t=(e.text||"").trim(); const msg=(!t||t==="발동")?"능력을 발동했습니다":esc(t);
   return `<div class="ev k-ability abil-act${me}${other}"><div class="top">${timeHtml(e)}<span class="badge">✨ ${esc(e.ability||"능력")}</span>${det}${who}${toStr}<span class="act-msg">${msg}</span></div></div>`;
 }
+// ★#245★ 병합된 서술 카드 상단의 '속마음(생각)' 줄 — 환상체·NPC 생각을 서술과 한 비트로 얹는다(흐린 보라 이탤릭).
+function thoughtLineHtml(e){ return e._thought?`<div class="ln thought-inline">💭 <span class="ti-txt">${esc(e._thought)}</span></div>`:""; }
 function evHtml(e){
   const dd=diceParse(e); if(dd)return diceCardHtml(e,dd);      // 주사위 → 전용 카드(굴림·반짝·색 공개)
   const cc=choiceParse(e); if(cc)return choiceCardHtml(e,cc);  // 선택지 → 전용 카드(전부 출력 후 ❯ 반짝)
   if(abilAct(e))return abilActHtml(e);                         // 능력 발동 → ★한 줄★(요청)
-  const h=headHtml(e); const body=bodyHtmlOf(e);
+  const h=headHtml(e); const body=thoughtLineHtml(e)+bodyHtmlOf(e); // 병합된 생각(_thought)이 있으면 본문 맨 위에 속마음 줄
   if(COMPACT_KINDS.has(e.kind)&&e.text&&!e.orig&&!/\n/.test(e.text)){ // 한 줄짜리 메타 → 인라인 컴팩트
     return `<div class="${h.cls} compact">${h.top.slice(0,-6)}<span class="cbody">${esc(e.text)}</span></div></div>`;
   }
@@ -566,6 +570,7 @@ function evHtml(e){
 function contHead(e){return `<div class="top cont">${timeHtml(e)}<span class="badge">${esc(badgeFor(e))}</span></div>`;}
 function evHtmlSplit(e){
   if(e.orig) return evHtml(e); // 변형 대조는 통째로
+  if(e._thought) return evHtml(e); // ★#245★ 생각 병합 카드는 쪼개지 말고 한 비트(속마음+서술)로 — evHtml이 상단에 속마음 줄
   const blocks=parseBody(e.text);
   if(!blocks.some(b=>b.type==="say"||b.type==="bc")) return evHtml(e); // 분리할 대사·방송 없으면 그대로
   const h=headHtml(e); const out=[]; let buf=[]; let headUsed=false;
@@ -620,7 +625,7 @@ function filtered(){
   const onlyComm=document.getElementById("onlyComm")?.checked;
   const onlyVital=document.getElementById("onlyVital")?.checked;
   const showVerbose=document.getElementById("verbose")?.checked;
-  return EVENTS.filter(e=>{
+  const out=EVENTS.filter(e=>{
     if(e.hidden)return false; // 통신 카드로 접힌 중복 @입력(요청: 입력·통화 이중 표시 제거)
     if(!visibleTo(e,curVP))return false;
     if(onlyAbil&&e.kind!=="ability")return false;
@@ -630,6 +635,17 @@ function filtered(){
     if(q){const hay=(e.actor+" "+e.to.join(" ")+" "+e.ability+" "+e.text+" "+(e.orig||"")+" "+(e.item||"")+" "+e.cat).toLowerCase();if(!hay.includes(q))return false;}
     return true;
   });
+  // ★#245 생각·서술 병합★: 같은 인물의 💭생각(thought) 바로 뒤에 그 인물의 서술(npc/gm)이 오면 두 카드로
+  //  쪼개지 말고 ★한 비트★로 — 서술 카드 위에 '속마음' 줄을 얹는다(환상체 SCP-049처럼 매 비트 생각+서술이
+  //  갈라져 보이던 문제). ★이 시점에서 둘 다 보일 때만★ 병합되므로(플레이어 시점엔 생각이 애초에 visibleTo
+  //  false라 목록에 없음) 생각이 플레이어 서술로 새지 않는다. 공유 EVENTS를 건드리지 않게 얕은 복제로만 얹는다.
+  const merged=[];
+  for(let i=0;i<out.length;i++){ const e=out[i], nx=out[i+1];
+    if(e.kind==="thought" && nx && (nx.kind==="npc"||nx.kind==="gm") && canon(nx.actor)===canon(e.actor) && e.text){
+      merged.push(Object.assign({},nx,{_thought:e.text})); i++; } // 생각을 다음 서술에 얹고 생각 카드는 소비
+    else merged.push(e);
+  }
+  return merged;
 }
 function toolbarHtml(list){
   const q=(document.getElementById("q")?.value||"");

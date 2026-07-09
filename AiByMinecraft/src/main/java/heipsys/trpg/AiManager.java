@@ -93,7 +93,7 @@ public class AiManager {
     // ★#231 진단 계측★ — accInTok(총 입력)을 3갈래로 분해(이번 가동만, 영구저장·UsageStat 불변).
     //   40% 초과의 정체(캐시쓰기 churn=TTL만료·단발게임 / 출력 길이 / 미캐시 호출)를 실플레이 1회로 드러낸다.
     private final LongAdder   accCacheRead  = new LongAdder(); // 캐시 읽기 입력 토큰(0.1× 단가)
-    private final LongAdder   accCacheWrite = new LongAdder(); // 캐시 생성 입력 토큰(1.25× 단가 = 읽기의 12.5배)
+    private final LongAdder   accCacheWrite = new LongAdder(); // 캐시 생성 입력 토큰(1h TTL=2× 단가 = 읽기 0.1×의 20배)
     private final DoubleAdder accCostOut    = new DoubleAdder(); // 출력 토큰 비용(USD) — 입력/출력 비중 분해용
     private volatile UsageStat sessionStart = new UsageStat(0, 0, 0, 0.0);
     private volatile UsageStat stageStart   = new UsageStat(0, 0, 0, 0.0);
@@ -338,8 +338,8 @@ public class AiManager {
     /**
      * 시간당 예상 비용(USD) — ★실측 정합 추정★. ★인원수에 비례★(행동마다 GM 호출 → 사람이 많을수록 턴↑).
      * 예전 추정(턴당 입력 8000·캐싱/생성비 무시)은 실측의 1/3~1/4로 심하게 과소했다. 이제 세 축을 모두 반영:
-     *  ① GM 시스템 프롬프트(GM_SYSTEM_BASE ~139KB ≈ ★3만 토큰★, 캐시 대상)를 매 턴 재투입 — TRPG는 턴 간격이
-     *     캐시 TTL(5분)을 자주 넘겨 ★절반가량 캐시 만료(HIT~0.45)★로 전액 재과금된다(핵심 비용).
+     *  ① GM 시스템 프롬프트(GM_SYSTEM_BASE ~139KB ≈ ★3만 토큰★, 캐시 대상)를 매 턴 재투입 — 캐시 TTL이 1시간으로 늘었지만
+     *     단발게임·턴 간격으로 ★절반가량 캐시 만료(HIT~0.5)★ 시 ★캐시쓰기 2×★로 재적재된다(핵심 비용, 실측 집계와 동단가).
      *  ② 매 턴 새 입력(누적 히스토리·상태·행동)은 캐시 안 됨(정가).
      *  ③ 시나리오 생성(.gdam): 스테이지 진입마다 대형 호출(1회 ~$0.4@Opus). 시간당 ~1.2회로 amortize.
      */
@@ -347,9 +347,10 @@ public class AiManager {
         double[] gmP  = modelPriceUsd(nominalModel(q));
         double[] auxP = modelPriceUsd(nominalModel(Quality.LOW)); // 괴담/NPC/보조 = 저품질(mini) 모델
         final int TURNS = 15 * Math.max(1, players);   // 시간당 GM 턴 — 1인 ~15
-        // ① 시스템 프롬프트(캐시): HIT면 0.1× 읽기, MISS면 정가 재적재(캐시쓰기 1.25×를 정가 1.0×로 근사)
-        final int SYS = 30000; final double HIT = 0.45;
-        double sysInPerTurn = SYS * (HIT * 0.1 + (1 - HIT) * 1.0);
+        // ① 시스템 프롬프트(캐시): HIT면 0.1× 읽기, MISS면 ★캐시쓰기 2×(1h TTL)★로 재적재 — 실측 집계(accumulateUsage)와 동일 단가로 정정.
+        //   (예전 1.0× 근사는 캐시쓰기 과소계상 → 예측이 실측보다 ~40% 낮던 원인. 1h TTL이라도 단발게임·턴 간격으로 절반가량 만료.)
+        final int SYS = 30000; final double HIT = 0.5;
+        double sysInPerTurn = SYS * (HIT * 0.1 + (1 - HIT) * 2.0);
         // ② 매 턴 새 입력(정가) + 출력
         final int FRESH_IN = 9000, GM_OUT = 1000;
         double gm  = TURNS * ((sysInPerTurn + FRESH_IN) * gmP[0] + GM_OUT * gmP[1]) / 1_000_000.0;
@@ -431,7 +432,7 @@ public class AiManager {
     }
 
     /** ★#231 진단★ 이번 가동 비용 구성 분해 — 순수입력/캐시읽기/캐시쓰기/출력 + 비용 비중 + 캐시 히트율.
-     *  캐시히트 낮음 = 캐시쓰기(1.25×) churn(TTL만료·단발게임) / 출력 비중 높음 = 서술 과다. 실플레이 1회로 40% 초과 원인 규명. */
+     *  캐시히트 낮음 = 캐시쓰기(1h TTL=2×) churn(TTL만료·단발게임) / 출력 비중 높음 = 서술 과다. 실플레이 1회로 40% 초과 원인 규명. */
     public java.util.List<String> usageDiagLines() {
         java.util.List<String> out = new java.util.ArrayList<>();
         if (accCalls.sum() == 0) return out;
@@ -443,9 +444,9 @@ public class AiManager {
         int outPct = cTot > 0 ? (int) Math.round(cOut * 100.0 / cTot) : 0;
         out.add("§8 ");
         out.add("§6§lAI 비용 구성 §7(이번가동 · " + accCalls.sum() + "호출)");
-        out.add("§7입력  §f순수 " + fmtTok(fresh) + " §8│ §a캐시읽기 " + fmtTok(cr) + "§8(0.1×) §8│ §c캐시쓰기 " + fmtTok(cw) + "§8(1.25×)");
+        out.add("§7입력  §f순수 " + fmtTok(fresh) + " §8│ §a캐시읽기 " + fmtTok(cr) + "§8(0.1×) §8│ §c캐시쓰기 " + fmtTok(cw) + "§8(2×·1h TTL)");
         out.add("§7출력  §f" + fmtTok(ot) + " §8(5× 단가)  §8│ §7비중 §f입력 " + (100 - outPct) + "% §8/ §f출력 " + outPct + "%");
-        out.add("§7캐시  §f히트 " + hitPct + "% §8(낮을수록 재생성 1.25× churn=TTL만료·단발게임)");
+        out.add("§7캐시  §f히트 " + hitPct + "% §8(낮을수록 재생성 2× churn=TTL만료·단발게임)");
         return out;
     }
     private static String fmtTok(long t) {
@@ -485,10 +486,13 @@ public class AiManager {
                     }
                 }
             }
-            // 캐시 읽기 0.1×, 캐시 생성 1.25×(claude), 그 외 정가
+            // 캐시 읽기 0.1×(TTL 무관), 캐시 생성(쓰기) 단가: 5분 TTL=1.25× / ★1시간 TTL=2×★.
+            //   ★이 플러그인은 system·히스토리 프리픽스에 ttl="1h"를 쓴다(send() 1169·1190)★ → 모든 캐시 생성이 2×다.
+            //   예전엔 1.25×로 계산해 실비를 ~20% 과소 집계(실측 $56 vs 표시 ~$44)했다 → 2×로 정정.
+            //   (TTL을 5분으로 되돌리면 이 상수도 1.25로 되돌릴 것.)
             double cost = (in * price[0]
                          + cacheRead * price[0] * 0.1
-                         + cacheWrite * price[0] * 1.25
+                         + cacheWrite * price[0] * 2.0
                          + out * price[1]) / 1_000_000.0;
             accCalls.increment();
             accInTok.add(in + cacheRead + cacheWrite);
@@ -668,10 +672,11 @@ public class AiManager {
         try {
             String sys = "너는 '대사 말투 변환기'다. 아래 [원본 대사]의 ★내용·정보·의미·감정·문장 수·괄호 지문(예: (문을 밀며))·줄바꿈·문장부호는 조금도 바꾸지 말고★, "
                 + "오직 ★문장을 맺는 말투(어미)★만 [스타일]대로 고쳐라.\n"
+                + "★대원칙: [스타일]에 ★명시된 어미만★ 그대로 써라 — 거기 없는 새 어미·변형을 ★지어내지 마라★(예: 스타일이 '~라구/~다구'면 '~냐구·~자구·~구' 같은 변형을 창작 금지). 지정 어미가 자연스럽게 안 붙는 문장은 ★원형을 그대로 지켜라★(억지 변형 금지). 새 말투를 창작하는 게 아니라 '있는 어미만 골라 얹는' 작업이다.\n"
                 + "규칙: ①정보·설명·인사·감탄사를 새로 더하거나 빼지 마라(길이·문장 수 유지). 질문은 질문으로·대답은 대답으로 구조를 유지하라. ②반말/존댓말의 방향은 원본 그대로 두고 그 위에 지정 어미만 얹어라. "
-                + "③괄호 지문과 태그처럼 보이는 부분은 손대지 마라. ④억지로 모든 문장을 비틀어 어색해지면 핵심 문장에만 자연스럽게 적용하라. "
+                + "③괄호 지문과 태그처럼 보이는 부분은 손대지 마라. ④★어미가 문법상 안 맞는 문장은 억지로 비틀지 마라★ — 의문('왔어?')·감탄·짧은 외침('비켜!'·'뭐야?')·부름은 원래 형태를 지키고, 지정 어미는 그게 자연스럽게 붙는 평서문에만 얹어라. ★단어를 망가뜨리며(예: '왔냐'→'왔냐구') 모든 문장을 같은 소리로 도배하면 사람이 아니라 고장 난 기계처럼 들린다 — 절대 그러지 마라★. 억지로 다 비틀어 어색하면 핵심 평서문에만 적용하라. "
                 + "⑤★감정 강도별 조절★: 평상시엔 말투를 또렷이 살리되 긴장·짜증이면 약간 완화하고, 공포·패닉·울음처럼 원본이 이미 흐트러지거나 짧게 끊긴 문장은 그 흐트러짐을 살려 최소한(핵심 어미 흔적만)으로 적용하라 — 고정 어미를 억지로 덧씌워 감정을 납작하게 만들지 마라(격한 순간엔 캐릭터 어미가 약해지는 게 자연스럽다). "
-                + "★마무리 자가검수★: 내보내기 전에, 표준 어미(~요/~다/~어/~습니다)로 밋밋하게 끝난 문장이 남았으면 지정 어미로 고쳐 마무리하라(단 ⑤의 격한 감정 예외는 존중). "
+                + "★마무리 자가검수★: 내보내기 전에, 표준 평서형 어미(~요/~다/~어/~습니다)로 밋밋하게 끝난 ★평서문★이 남았으면 지정 어미로 살려 개성이 드러나게 하라 — 단 ④의 의문·감탄·외침·부름과 ⑤의 격한 감정 문장은 원형을 존중하라(★전 문장 도배가 목적이 아니라 '이 인물다움'이 드러나면 충분★). "
                 + "출력은 ★변환된 대사 본문만★(따옴표·머리말·해설·목록 금지).\n"
                 + "[스타일] " + styleSpec;
             List<JsonObject> m = List.of(msg("user", "[원본 대사]\n" + dialogue));
@@ -855,7 +860,42 @@ public class AiManager {
     // ======================================================
 
     public JsonObject parseStateUpdate(String response) {
-        return parseTag(response, "<STATE_UPDATE>", "</STATE_UPDATE>");
+        JsonObject o = parseTag(response, "<STATE_UPDATE>", "</STATE_UPDATE>");
+        if (o != null) return o;
+        // ★폴백1★: 일부 모델(제미나이 등)이 <STATE_UPDATE {json}> ★단일 태그★(닫는 태그 없이 여는 태그에 JSON 내장)로 낸다.
+        //   이 형식은 위 parseTag(<STATE_UPDATE>…</STATE_UPDATE>)가 못 잡아 상태 적용도·서술 제거도 안 돼 태그가 그대로 누출됐다.
+        //   여기서 내장 JSON을 뽑아 실제로 적용되게 하고, stripTags도 이 형식을 함께 제거한다.
+        o = parseEmbeddedJsonTag(response, "STATE_UPDATE");
+        if (o != null) return o;
+        // ★폴백2★: 태그 없이 '벌거벗은' 상태 델타 JSON만 낸 경우(GPT 등) — 시그니처 키로 식별해 적용.
+        return parseNakedStateJson(response);
+    }
+
+    /** 태그(&lt;STATE_UPDATE&gt;) 래퍼 없이 서술에 흘러나온 상태 델타 JSON을 시그니처 키(hp_change·san_change·
+     *  timeline_change)로 식별해 추출. 일부 모델(GPT)이 &lt;STATE_UPDATE&gt; 래퍼 없이 {"player":..,"hp_change":..}만
+     *  내보내 상태 적용도 안 되고 서술로 그대로 누출되던 것을 잡는다. stripTags도 같은 형식을 함께 지운다. */
+    private JsonObject parseNakedStateJson(String text) {
+        if (text == null) return null;
+        if (text.indexOf("hp_change") < 0 && text.indexOf("san_change") < 0 && text.indexOf("timeline_change") < 0) return null;
+        try {
+            java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("(?s)\\{[^{}]*\"(?:hp_change|san_change|timeline_change)\"[^{}]*\\}")
+                .matcher(text);
+            if (m.find()) return gson.fromJson(m.group(), JsonObject.class);
+        } catch (Exception ignore) {}
+        return null;
+    }
+
+    /** &lt;TAG {json}&gt; 형태(닫는 태그 없이 여는 태그 안에 JSON 오브젝트 내장)에서 첫 JSON 오브젝트를 추출. 없으면 null. */
+    private JsonObject parseEmbeddedJsonTag(String text, String tag) {
+        if (text == null || text.indexOf(tag) < 0) return null;
+        try {
+            java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("(?is)<\\s*" + tag + "\\b[^{]*(\\{[\\s\\S]*?\\})\\s*>")
+                .matcher(text);
+            if (m.find()) return gson.fromJson(m.group(1).trim(), JsonObject.class);
+        } catch (Exception ignore) {}
+        return null;
     }
 
     public JsonObject parseItemGrant(String response) {
@@ -887,6 +927,15 @@ public class AiManager {
             .replaceAll("(?i)<(thought|thinking)>[\\s\\S]*$", "")
             .replaceAll("(?i)</?(thought|thinking)>", "")
             .replaceAll("<STATE_UPDATE>[\\s\\S]*?</STATE_UPDATE>", "")
+            // ★단일/속성형 <STATE_UPDATE {json}> (닫는 태그 없이 여는 태그에 JSON 내장 — 제미나이 등)도 제거.★
+            //   parseStateUpdate가 이 형식을 파싱해 상태는 적용하되, 서술·히스토리엔 태그가 남지 않게 여기서 지운다(누출 버그 수정).
+            .replaceAll("(?i)<STATE_UPDATE\\b[^{]*\\{[\\s\\S]*?\\}\\s*>", "")   // <STATE_UPDATE {json}>
+            .replaceAll("(?i)<STATE_UPDATE\\b[\\s\\S]*?</STATE_UPDATE>", "")    // 속성 붙은 쌍 <STATE_UPDATE ...>…</STATE_UPDATE>
+            .replaceAll("(?i)<STATE_UPDATE\\b[\\s\\S]*$", "")                   // 여는 태그만 남고 미완성/잘림
+            // ★태그 없는 '벌거벗은' 상태 델타 JSON 제거(GPT 등)★: <STATE_UPDATE> 래퍼 없이 {"player":..,"hp_change":..}만
+            //   흘려 상태 적용도 안 되고 서술로 누출되던 것. 시그니처 키(hp_change·san_change·timeline_change)로 식별 —
+            //   실제 서술엔 이 영문 스키마 키가 나올 수 없어 오탐 없음. parseNakedStateJson이 같은 형식을 파싱해 상태는 적용한다.
+            .replaceAll("(?s)\\{[^{}]*\"(?:hp_change|san_change|timeline_change)\"[^{}]*\\}", "")
             .replaceAll("<ITEM_GRANT>[\\s\\S]*?</ITEM_GRANT>", "")
             .replaceAll("<ITEM_USE>[\\s\\S]*?</ITEM_USE>", "")
             .replaceAll("(?i)<DROP_NOTE[^>]*>[\\s\\S]*?</DROP_NOTE>", "") // 쪽지 두고가기 태그(속성·여러 줄 내용) 서술 누출 차단 — parseDropNoteTags가 raw에서 이미 소비
@@ -896,7 +945,8 @@ public class AiManager {
             .replaceAll("<CLEAR>[\\s\\S]*?</CLEAR>", "")
             .replaceAll("<WITNESS[^>]*>[\\s\\S]*?</WITNESS>", "")
             .replaceAll("<NPC_CALL[^>]*>[\\s\\S]*?</NPC_CALL>", "")
-            .replaceAll("<NPC_LEARN[^>]*>[\\s\\S]*?</NPC_LEARN>", "")
+            .replaceAll("(?i)<NPC_LEARN[^>]*>[\\s\\S]*?</NPC_LEARN[^>]*>", "") // 여는·닫는 태그 모두 유연: <NPC_LEARNING>…</NPC_LEARNING>(-ING 변형)도 제거 — 닫는 태그가 literal </NPC_LEARN>이라 -ING이 안 잡혀 서술로 누출되던 버그
+            .replaceAll("(?i)<NPC_LEARN[^>]*>[\\s\\S]*$", "")                 // 닫는 태그 누락·잘림 대비(응답 말미 미완성 태그)
             .replaceAll("<TRUST[^>]*>[\\s\\S]*?</TRUST>", "")
             .replaceAll("<SPAWN[^/]*/?>", "")
             .replaceAll("<COMM [^/]*/?>", "")
@@ -905,7 +955,11 @@ public class AiManager {
             .replaceAll("<CONTACT_CHANGE [^/]*/?>", "")
             .replaceAll("<IMPERSONATE [^/]*/?>", "")
             .replaceAll("<IMPERSONATE_END [^/]*/?>", "")
-            .replaceAll("<ZONE_UPDATE [^/]*/?>", "")
+            // ★ZONE_UPDATE 누출 방어★: 정규 형식은 <ZONE_UPDATE player=".." zone=".." spot=".."/> (자기닫힘·속성)뿐이나,
+            //   일부 모델(GPT 등)이 <ZONE_UPDATE>{json}</ZONE_UPDATE> 쌍·<ZONE_UPDATE> 단독·</ZONE_UPDATE> 홀로 닫힘으로 낸다.
+            //   기존 "<ZONE_UPDATE [^/]*/?>"는 ZONE_UPDATE 뒤 ★공백 필수★라 이 변형들을 못 지워 서술로 누출됐다.
+            .replaceAll("(?is)<ZONE_UPDATE\\b[^>]*>[\\s\\S]*?</ZONE_UPDATE\\s*>", "") // 쌍(속성·JSON 본문 무관)
+            .replaceAll("(?i)</?ZONE_UPDATE\\b[^>]*>", "")                            // 남은 단독 여는/닫는·자기닫힘 태그
             .replaceAll("<NPC_AT [^/]*/?>", "")
             .replaceAll("<BUSY [^/]*/?>", "")
             .replaceAll("<BLOCK_MOVE [^/]*/?>", "")
