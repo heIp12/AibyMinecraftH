@@ -104,8 +104,9 @@ description: >-
   speech_style·ending_style을 새로 창작해 페르소나가 깨지던 문제(게부라 ending_style '~라구/~다구' 창작→도배). `finalizeNpcSpeech`가
   familiar_kind면 early-return이라 방치됐음 → ★그 앞에 `applySephirahCanonSpeech(gdam)` 추가★(familiar 여부 무관·이름 매칭).
   `ProjectMoonLore.canonicalSephirahSpeech(name, library)`가 이름 매칭 시 캐논 [speech_style, ending_style]로 덮어씀.
-  ★핵심: `SEPHIRAH_ENDING`은 '단일 시그니처 어미'가 캐릭터성인 티페리트(~거든/~니까)·헤세드(~어~)·비나(~단다)만 채우고,
-  게부라·예소드·호드·네짜흐·말쿠트·호크마·케테르 같은 ★어조·레지스터형은 빈 문자열★ — 단일 어미 강제 시 다양한 어미가 뭉개져 깨진다★.
+  ★핵심: `SEPHIRAH_ENDING`은 '한 가지 변환 규칙'이 캐릭터성인 헤세드(어미 늘임 '~')·비나(예스러운 '~단다/구나/렴')만 채우고,
+  말쿠트·예소드·호드·네짜흐·★티페리트·게부라★·호크마·케테르 같은 ★어조·레지스터형(다양한 어미)은 빈 문자열★ — 단일 어미 강제 시 뭉개져 깨진다.
+  ★값은 반드시 SEPHIRAH 말투와 정합(티페리트를 ~거든/~니까로 넣었다 SEPHIRAH의 ~거야/~니와 불일치라 비움으로 교정)★.
   `isLibraryEra`(지정사서·도서관·층 신호)로 로보토미/라오루 목소리 선택. 세피라 정식명은 PM에만 나와 오탐 사실상 없음.
   ★'반드시 1명'으로 되돌리지 말 것 — 사용자 지시=30%.★
 - **이름·평범한 신원 공개 규칙(직접 대화 프롬프트)**: NPC 자기 이름·직업·사는 곳은 '진상'도 '중요한 정보'도 아니므로 물으면
