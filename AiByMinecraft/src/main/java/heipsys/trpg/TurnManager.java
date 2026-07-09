@@ -27,6 +27,9 @@ public class TurnManager {
     /** GM AI 응답 콜백 (TRPGGameManager에서 등록) */
     private Consumer<GmResponse> responseHandler;
 
+    /** ★행동마다 미리 굴려둔 능력치별 판정값 노트★ 제공자(TRPGGameManager 등록) — turnInput 머리에 얹어 GM이 판정 결과를 알고 서술을 이어 쓰게(#254). */
+    private java.util.function.Function<Player, String> preRollProvider;
+
     public record GmResponse(Player player, String rawText) {}
 
     public TurnManager(GameStateManager state, AiManager ai) {
@@ -36,6 +39,10 @@ public class TurnManager {
 
     public void setResponseHandler(Consumer<GmResponse> handler) {
         this.responseHandler = handler;
+    }
+
+    public void setPreRollProvider(java.util.function.Function<Player, String> provider) {
+        this.preRollProvider = provider;
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -75,6 +82,11 @@ public class TurnManager {
 
         String turnInput = state.buildTurnInput(player, message);
         if (turnCtx != null && !turnCtx.isEmpty()) turnInput = turnCtx + "\n\n" + turnInput;
+        // ★미리 굴려둔 능력치별 판정값★을 turnInput 머리에 얹는다 — GM이 판정 순간에 이 값으로 성패를 정해 서술을 이어 쓰게(#254 인라인 주사위).
+        if (preRollProvider != null) {
+            String pr = preRollProvider.apply(player);
+            if (pr != null && !pr.isEmpty()) turnInput = pr + "\n\n" + turnInput;
+        }
 
         CompletableFuture<Void> future = ai.callGmAi(gmSystemPrompt, turnInput)
             .thenAccept(response -> {

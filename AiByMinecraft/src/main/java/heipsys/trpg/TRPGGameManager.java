@@ -97,6 +97,9 @@ public class TRPGGameManager {
     /** 포기/종료 시 에필로그·해설을 비동기로 공개하는 중인지 (중복 종료 방지) */
     private boolean concludingEnding = false;
 
+    /** ★#254 인라인 주사위★ — 행동마다 미리 굴려둔 능력치별 판정값. computePreRollNote가 채우고 showInlineDice가 소비. 플레이어별 {stat→value(1~20), stat+"_crit"→±1}. */
+    private final java.util.Map<java.util.UUID, JsonObject> preRolledDice = new java.util.concurrent.ConcurrentHashMap<>();
+
     // ──────────────────────────────────────────────────────────────
     //  매니저 참조
     // ──────────────────────────────────────────────────────────────
@@ -389,6 +392,7 @@ public class TRPGGameManager {
         this.mapMan            = new MapManager(plugin, state);
 
         turnMan.setResponseHandler(this::onGmResponse);
+        turnMan.setPreRollProvider(this::computePreRollNote); // #254: 행동마다 능력치별 주사위를 미리 굴려 GM에 주입(인라인 판정)
         startIncapacitationWatchdog(); // 전원 무력화(완전잠식·기절) 시 AI 없이 시스템이 시간 진행
     }
 
@@ -2565,8 +2569,10 @@ public class TRPGGameManager {
             JsonObject itemUse = ai.parseItemUse(raw);
             if (itemUse != null) applyItemUse(itemUse);
 
-            // 4. 서술 + WITNESS 전달 (당사자에게만)
-            deliverNarrative(player, raw);
+            // 4. 서술 배달 — <DICE>가 있으면 그 위치에서 쪼개 [앞 서술]→[주사위 인라인]→[뒤 결과 서술](#254). 없으면 통짜 배달.
+            JsonObject inlineDice = (player != null && player.isOnline()) ? ai.parseDiceTag(raw) : null;
+            if (inlineDice != null) deliverNarrativeWithInlineDice(player, raw, inlineDice);
+            else deliverNarrative(player, raw);
 
             // 4-B. ★방송(PA) — GM이 <BROADCAST>로 '진짜 방송'이라 판정했을 때만★ 같은 건물 인원에게 결정적 전달(이 응답 턴에 재생).
             //   판단은 GM이 한다 → '방송을 끄고 말한다'류 오판 없음. from 비면 발신자(anchor) 표시명.
@@ -2580,12 +2586,9 @@ public class TRPGGameManager {
                 }
             }
 
-            // 4a. 주사위 판정 연출 — GM이 <DICE> 태그로 실제 굴린 숫자를 주면 그 숫자를 강조 연출.
-            //     태그가 없고 판정 키워드만 있으면 기존 무난한 연출로 폴백. ★서술 배달 뒤로 미룬다(present).★
-            if (player != null && player.isOnline()) {
-                JsonObject dice = ai.parseDiceTag(raw);
-                if (dice != null) { final JsonObject fdice = dice; present(() -> { if (player.isOnline()) playDiceResult(player, fdice); }); }
-                else if (needsDiceAnimation(raw)) present(() -> { if (player.isOnline()) playDiceAnimation(player); });
+            // 4a. <DICE> 태그가 있으면 위 인라인 배달(deliverNarrativeWithInlineDice)에서 이미 처리됐다. 태그 없이 판정 키워드만 있으면 기존 폴백 연출.
+            if (player != null && player.isOnline() && inlineDice == null && needsDiceAnimation(raw)) {
+                present(() -> { if (player.isOnline()) playDiceAnimation(player); });
             }
             } finally {
                 gmPresentationSink = null; // 연출 수집 종료(예외가 나도 싱크 누수 방지)
@@ -12228,6 +12231,96 @@ public class TRPGGameManager {
             case "spr": return "영감"; case "hp": return "체력"; case "san": return "정신력";
             default: return "";
         }
+    }
+
+    /** ★#254 인라인 주사위: 능력치별 주사위 미리 굴리기★ — 행동마다 각 능력치(근력/체력/매력/행운/영감/정신력)에 대해
+     *  [원굴림 d20 + 그 능력치 보너스 + 행운 보정]=판정값(1~20)을 미리 굴려 저장하고, GM에 주입할 노트를 만든다. GM은 판정이
+     *  필요하면 관련 능력치를 골라 이 값 vs dc로 성패를 정하고 서술 도중 <DICE>로 표기한 뒤 결과를 이어 쓴다(한 응답·인라인).
+     *  실제 표시는 showInlineDice가 이 저장값으로 한다(코드가 값의 주인 = 공정). */
+    private String computePreRollNote(Player player) {
+        if (player == null) return "";
+        PlayerData pd = state.getPlayer(player);
+        if (pd == null) return "";
+        JsonObject rolls = new JsonObject();
+        String[] keys = {"str","hp","cha","luk","spr","san"}; // 표시 순서: 근력·체력·매력·행운·영감·정신력
+        int lukV = Math.max(1, Math.min(20, pd.luk));
+        int luckAdj = (int) Math.round((lukV - 5) * 0.25); // 행운 보정 ±약 3
+        StringBuilder note = new StringBuilder("[판정 예비값] 이번 행동이 판정(불확실·위험·대결)이면 아래 능력치별 값(1~20, 주사위+능력치+행운 이미 반영)으로 성패를 정하라: ");
+        boolean first = true;
+        for (String k : keys) {
+            int raw = ThreadLocalRandom.current().nextInt(1, 21);         // 원굴림 d20
+            int sv  = Math.max(1, Math.min(20, diceStatValue(pd, k)));    // 능력치(1~20)
+            int statBonus = (int) Math.round((sv - 5) * 0.6);            // 능력치 보너스(±약 9)
+            int lb = "luk".equals(k) ? 0 : luckAdj;                      // 행운은 자기 자신엔 중복 미적용
+            int val = Math.max(1, Math.min(20, raw + statBonus + lb));
+            int crit = raw == 20 ? 1 : raw == 1 ? -1 : 0;                // 자연 최대·최소 = 대성공·대실패
+            rolls.addProperty(k, val);
+            if (crit != 0) rolls.addProperty(k + "_crit", crit);
+            if (!first) note.append(" · ");
+            first = false;
+            note.append(diceStatLabel(k)).append(' ').append(val)
+                .append(crit == 1 ? "(대성공)" : crit == -1 ? "(대실패)" : "");
+        }
+        preRolledDice.put(player.getUniqueId(), rolls);
+        note.append(". 성공기준(dc)은 행동 난이도로 네가 정하고(쉬움~8·보통~12·어려움~15·극악~18), 고른 능력치 값이 dc 이상=성공·dc보다 조금(1~2) 낮으면 부분성공·더 낮으면 실패. "
+            + "'대성공/대실패' 표식이 붙은 값이면 그대로 대성공/대실패로. 판정이 필요 없는 행동이면 이 값을 무시하라.");
+        return note.toString();
+    }
+
+    /** ★#254 인라인 주사위★: 서술을 <DICE> 위치에서 쪼개 [앞 서술]→[주사위 결과 인라인]→[뒤 결과 서술] 순으로 배달한다.
+     *  주사위 결과는 computePreRollNote가 미리 굴려둔 값(공정)으로 showInlineDice가 표시. 태그를 못 찾으면 통짜 배달+기존 연출로 폴백. */
+    private void deliverNarrativeWithInlineDice(Player player, String raw, JsonObject dice) {
+        int s = raw.indexOf("<DICE>");
+        int e = raw.indexOf("</DICE>");
+        if (s < 0 || e < 0 || e < s) { // 태그 형태가 어긋나면 안전 폴백
+            deliverNarrative(player, raw);
+            if (player.isOnline()) present(() -> { if (player.isOnline()) showInlineDice(player, dice, null); });
+            return;
+        }
+        String before = raw.substring(0, s);
+        String after  = raw.substring(e + "</DICE>".length());
+        deliverNarrative(player, before);                       // 1) 시도까지의 앞 서술
+        final String fAfter = after;
+        narrativeDelivery.runAfterDelivery(player, () ->        // 2) 앞 서술이 다 나온 뒤 주사위 결과 인라인 → 3) 뒤 결과 서술
+            showInlineDice(player, dice, () -> {
+                if (player.isOnline() && !ai.stripTags(fAfter).isBlank()) deliverNarrative(player, fAfter);
+            }));
+    }
+
+    /** ★#254★ 미리 굴려둔 판정값으로 주사위 결과를 인라인 표시(채팅 한 줄 + 짧은 타이틀 플래시)한 뒤 onDone 실행. 값·성패는 코드가 정한다(공정). */
+    private void showInlineDice(Player player, JsonObject dice, Runnable onDone) {
+        if (player == null || !player.isOnline()) { if (onDone != null) onDone.run(); return; }
+        PlayerData pd = state.getPlayer(player);
+        String reason = dice.has("reason") && !dice.get("reason").isJsonNull() ? dice.get("reason").getAsString().trim() : "";
+        String statKey = pickDiceStat(dice, reason);
+        JsonObject rolls = preRolledDice.remove(player.getUniqueId());
+        int dc = dice.has("dc") && !dice.get("dc").isJsonNull() ? dice.get("dc").getAsInt() : 12;
+        dc = Math.max(2, Math.min(20, dc));
+        int val, crit = 0;
+        if (rolls != null && statKey != null && rolls.has(statKey)) {           // 미리 굴린 값 사용(공정)
+            val = rolls.get(statKey).getAsInt();
+            if (rolls.has(statKey + "_crit")) crit = rolls.get(statKey + "_crit").getAsInt();
+        } else {                                                                 // 구경로·값없음 → 즉석 폴백
+            val = ThreadLocalRandom.current().nextInt(1, 21);
+            if (val == 20) crit = 1; else if (val == 1) crit = -1;
+        }
+        int band = 2;
+        boolean success = crit == 1 || (crit != -1 && val >= dc);
+        boolean fail    = crit == -1 || (crit != 1 && val < dc - band);
+        boolean partial = !success && !fail;
+        String outcome = crit == 1 ? "대성공" : crit == -1 ? "대실패" : success ? "성공" : partial ? "부분성공" : "실패";
+        NamedTextColor col = crit == 1 ? NamedTextColor.AQUA : crit == -1 ? NamedTextColor.DARK_RED
+                           : success ? NamedTextColor.GREEN : partial ? NamedTextColor.GOLD : NamedTextColor.RED;
+        String label = diceStatLabel(statKey);
+        msgToWatchers(player, "§7─ §e🎲 " + (reason.isEmpty() ? "판정" : reason)
+            + " §7[" + (label.isEmpty() ? "판정" : label) + " " + val + " / 기준 " + dc + "] → " + colorCode(col) + outcome + " §7─");
+        titleToWatchers(player, Title.title(
+            Component.text("🎲 " + val, col, TextDecoration.BOLD),
+            Component.text((label.isEmpty() ? "" : label + " · ") + "기준 " + dc + " · " + outcome, col),
+            Title.Times.times(Duration.ofMillis(150), Duration.ofMillis(1400), Duration.ofMillis(300))));
+        gameLogger.logAbilityResult(pd != null ? pd.gmDisplayName() : player.getName(), "주사위 판정",
+            (reason.isEmpty() ? "행동 판정" : reason) + " — " + (label.isEmpty() ? "" : label + " ") + val + " (기준 " + dc + ") → " + outcome);
+        plugin.getServer().getScheduler().runTaskLater(plugin, () -> { if (onDone != null) onDone.run(); }, 30L); // 플래시 잠깐 뒤 결과 서술 이어감(~1.5s)
     }
 
     // ══════════════════════════════════════════════════════════════
