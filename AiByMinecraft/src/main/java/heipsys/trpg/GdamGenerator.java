@@ -1792,13 +1792,48 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
     //  저장 / 로드 (AES-256-GCM)
     // ──────────────────────────────────────────────────────────────
 
+    /** ★프로젝트 문 세피라 NPC 말투 캐논 강제★ — 생성기가 세피라(게부라·비나 등)의 speech_style·ending_style을 임의 창작해
+     *  페르소나가 깨지던 것 수정(게부라 ending_style '~라구/~다구' → '왔냐구/거라구' 도배 사례). 이름이 세피라와 일치하면
+     *  ProjectMoonLore 캐논으로 덮어쓴다. ★게부라 등 어조·레지스터형은 ending_style을 비워 생성기가 지어낸 단일 어미 도배를 해제★.
+     *  familiar 여부와 무관하게(이름 매칭) 동작 — 세피라 정식 이름은 프로젝트 문 시나리오에만 나와 오탐이 사실상 없다. */
+    private void applySephirahCanonSpeech(JsonObject gdam) {
+        try {
+            if (gdam == null || !gdam.has("npcs") || !gdam.get("npcs").isJsonArray()) return;
+            boolean library = isLibraryEra(gdam);
+            int n = 0;
+            for (JsonElement el : gdam.getAsJsonArray("npcs")) {
+                if (el == null || !el.isJsonObject()) continue;
+                JsonObject npc = el.getAsJsonObject();
+                String name = (npc.has("name") && !npc.get("name").isJsonNull()) ? npc.get("name").getAsString() : "";
+                String[] canon = ProjectMoonLore.canonicalSephirahSpeech(name, library);
+                if (canon == null) continue;
+                npc.addProperty("speech_style", canon[0]);
+                npc.addProperty("ending_style", canon[1]);   // 레지스터형이면 "" → 생성기가 지어낸 단일 어미 해제
+                n++;
+            }
+            if (n > 0) logger.info("[gdam] 세피라 말투 캐논 강제 " + n + "명(" + (library ? "라오루" : "로보토미") + ")");
+        } catch (Exception ignore) {}
+    }
+
+    /** 프로젝트 문 라오루(도서관·지정사서 시대) 판정 — 세피라 speech_style 목소리(LoR vs 로보토미) 선택용 휴리스틱. */
+    private boolean isLibraryEra(JsonObject gdam) {
+        String s = gdam.toString();
+        boolean lib  = s.contains("지정사서") || s.contains("도서관") || s.contains("의 층") || s.contains("라오루") || s.contains("루이나");
+        boolean lobo = s.contains("격리실") || s.contains("로보토미") || s.contains("관리자님") || s.contains("환상체 관리");
+        if (lib && !lobo) return true;
+        if (lobo && !lib) return false;
+        return lib;   // 애매하면 라오루 우선(세피라가 지정사서로 나오는 맥락이 흔함)
+    }
+
     /** 생성 후처리(백스톱): 개성 종결어미(ending_style) 인물의 ★등장 여부를 코드가 30%로 정한다★(D1) —
      *  당첨(30%)이면 0명일 때 critical 1명에 기본 어미 부여(있으면 그대로), 미당첨(70%)이면 모델이 넣은 개성
      *  어미를 모두 제거해 등장률을 정확히 맞춘다. 등장하는 인물의 age는 12~35로 맞춘다(D2). ★친숙(정전)
      *  모드는 원작 말투·나이 존중해 건드리지 않는다★(캐논 캐릭터 어미는 30% 제한 밖). */
     private void finalizeNpcSpeech(JsonObject gdam) {
         try {
-            if (gdam == null || gdam.has("familiar_kind")) return;            // 정전 캐릭터 원작 충실 — 손대지 않음
+            if (gdam == null) return;
+            applySephirahCanonSpeech(gdam);                                   // ★PM 세피라 말투 캐논 강제(이름 매칭, familiar 여부 무관)★ — 생성기 임의창작 덮어씀
+            if (gdam.has("familiar_kind")) return;            // 정전 캐릭터 원작 충실 — 이하 30% 개성어미 로직은 손대지 않음
             if (!gdam.has("npcs") || !gdam.get("npcs").isJsonArray()) return;
             JsonArray npcs = gdam.getAsJsonArray("npcs");
             boolean appear = java.util.concurrent.ThreadLocalRandom.current().nextInt(100) < 30; // ★하드코딩 30%: 개성 어미 인물 등장 여부★
