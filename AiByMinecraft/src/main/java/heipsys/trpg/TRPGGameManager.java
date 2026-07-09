@@ -10185,6 +10185,18 @@ public class TRPGGameManager {
         for (String kw : new String[]{"정신","사념","텔레파시","뇌","꿈","환각","환청","홀림","최면","의식","무의식","심상","감응","영혼"}) if (s.contains(kw)) return true;
         return false;
     }
+    /** ★언어형 괴담인가(#252)★ — 언어 자체(말·글·이름·주문)를 매개로 하는 괴담. 언어는 목소리·문서·전자 텍스트 등
+     *  ★어느 매체에 실려도 언어★이므로, 이런 괴담은 단일 채널이 아니라 ★언어가 실리는 모든 채널(음성·문서·전자)을 동시에 감청★한다.
+     *  물리형(SCP-049 등)은 이 키워드에 걸리지 않아 근처발화만 유지(#246 회귀 방지). ai_context 성격설명은 스캔 대상 아님(오탐 방지). */
+    private boolean entityLanguageType() {
+        String s = entityScanText();
+        for (String kw : new String[]{
+            "언어","언령","낱말","음절","호명","진명","진언","방언","단어를",
+            "이름을 부","이름을 알","이름을 말",
+            "소리내어 읽","글자를 읽","문장을 읽","특정 단어","특정 낱말"
+        }) if (s.contains(kw)) return true;
+        return false;
+    }
     /** 매체 이름 → 모달리티(voice/text/signal/electronic/psychic). ★어떤 괴담이 가로채는가★를 이 축으로 판정. */
     private String commModality(String name, boolean fallbackWritten) {
         String s = name == null ? "" : name.toLowerCase();
@@ -10231,7 +10243,16 @@ public class TRPGGameManager {
      *  ⇒ 음성모방형은 방송·통화(voice)만 듣고 문자(electronic)는 못 듣는 식으로 ★매체별로 갈린다★.
      *  감청 축은 변조(entityInterferes 자체)·지연(pendingDeliveries)과 별개(하나가 되면 나머지가 되는 게 아님). */
     private boolean entityTapsChannel(String modality) {
-        return entityOmniCollector() || entityInterferes(modality);
+        if (entityOmniCollector()) return true;
+        // ★언어형 다중 감청(#252)★: 언어를 매개로 하는 괴담은 말(voice)·글(text)·전자 텍스트(electronic) 등
+        //   ★언어가 실리는 채널을 매체 불문 동시에★ 엿듣는다(음성모방형이 통화만 듣는 것과 달리). 시각신호(signal)·정신(psychic)은
+        //   언어 채널이 아니므로 제외 — 그 채널 감청은 각자 계열(entityTampersSignal/Psychic)일 때만. ★이건 감청(엿듣기) 확장일 뿐,
+        //   변조(entityInterferes)·지연은 그대로다★(3축 분리 유지).
+        if (entityLanguageType()) {
+            String m = (modality == null || modality.isBlank()) ? "voice" : modality;
+            if (m.equals("voice") || m.equals("text") || m.equals("electronic")) return true;
+        }
+        return entityInterferes(modality);
     }
 
     /**
