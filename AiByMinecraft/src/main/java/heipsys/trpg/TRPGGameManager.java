@@ -12565,8 +12565,27 @@ public class TRPGGameManager {
         deliverNarrative(player, before);                       // 1) 시도까지의 앞 서술
         final String fAfter = after;
         narrativeDelivery.runAfterDelivery(player, () ->        // 2) 앞 서술이 다 나온 뒤 주사위 결과 인라인 → 3) 뒤 결과 서술
-            showInlineDice(player, dice, () -> {
-                if (player.isOnline() && !ai.stripTags(fAfter).isBlank()) deliverNarrative(player, fAfter);
+            showInlineDice(player, dice, outcome -> {
+                if (player.isOnline() && !ai.stripTags(fAfter).isBlank()) deliverNarrative(player, fAfter); // GM이 결과를 이어 썼음
+                else if (player.isOnline()) followUpDiceResult(player, dice, outcome); // ★결과 서술 없음 → 자동 후속★(주사위만 굴리고 방치 방지)
+            }));
+    }
+
+    /** ★판정 결과 자동 후속 서술★: GM이 <DICE>만 내고 결과 서술을 안 붙이면(2단계 의도·저품질 모델), 그 판정 결과로
+     *  장면에서 ★실제로 무슨 일이 일어났는지★ 곧바로 이어서 서술시킨다. 예전엔 '실패/성공'만 뜨고 아무 전개도 없이
+     *  플레이어가 방치돼(두 턴 내리 주사위만 굴림), '행동 전달 좀…' 같은 요청이 나왔다. */
+    private void followUpDiceResult(Player player, JsonObject dice, String outcome) {
+        PlayerData pd = player != null ? state.getPlayer(player) : null;
+        if (pd == null || !player.isOnline()) return;
+        String reason = dice.has("reason") && !dice.get("reason").isJsonNull() ? dice.get("reason").getAsString().trim() : "";
+        String who = pd.gmDisplayName();
+        String sys = "직전 행동의 판정 결과가 나왔다 — " + (reason.isEmpty() ? "판정" : reason) + " → ★" + (outcome == null || outcome.isBlank() ? "판정" : outcome) + "★. "
+            + "이 결과로 " + who + "의 장면에서 ★실제로 무슨 일이 일어났는지★ 2~4문장으로 이어서 서술하라(주사위만 굴리고 끝내지 마라). "
+            + "성공·대성공이면 그 행동이 표적·상황에 ★실제 유효타·진전★으로 반영되고(적을 흘려보내지 마라), 실패·부분성공이면 ★구체적 대가·전개★를 보여라. "
+            + "★새 <DICE>는 내지 마라(이미 굴렸다)★ — 이 판정 결과에 맞는 서술만. 다른 위치 플레이어의 장면은 끌어오지 마라.";
+        ai.callGmAiOnce(gmSystemPrompt, sys).thenAccept(resp ->
+            plugin.getServer().getScheduler().runTask(plugin, () -> {
+                if (player.isOnline() && resp != null && !ai.stripTags(resp).isBlank()) deliverNarrative(player, resp);
             }));
     }
 
@@ -12574,8 +12593,8 @@ public class TRPGGameManager {
      *  ★연출·뷰어 재생 복원★: (1) 인게임은 굴림(무작위 프레임)→착지값 강조로 연출하고(예전 밋밋한 1회 플래시 대체),
      *  (2) 로그는 log-viewer.html의 diceParse가 요구하는 형식(dN=M · (기준 D 이상 성공) · → 결과)으로 남긴다 —
      *  이 형식이라야 뷰어가 '주사위 전용 카드'로 인식해 굴림 애니메이션을 재생한다(형식이 어긋나 재생 안 되던 버그 수정). */
-    private void showInlineDice(Player player, JsonObject dice, Runnable onDone) {
-        if (player == null || !player.isOnline()) { if (onDone != null) onDone.run(); return; }
+    private void showInlineDice(Player player, JsonObject dice, java.util.function.Consumer<String> onDone) {
+        if (player == null || !player.isOnline()) { if (onDone != null) onDone.accept(""); return; }
         PlayerData pd = state.getPlayer(player);
         String reason = dice.has("reason") && !dice.get("reason").isJsonNull() ? dice.get("reason").getAsString().trim() : "";
         String statKey = pickDiceStat(dice, reason);
@@ -12635,7 +12654,7 @@ public class TRPGGameManager {
         }, landTick);
         // ★순서 보장(사용자 요청)★: 굴림 → 착지(결과 공개) → ★그 다음에★ 결과 서술이 이어진다.
         //   결과가 눈에 들어올 짧은 틈(0.8s)을 준 뒤 onDone(뒤 서술)을 실행 — 결과·서술을 미리 보여주고 굴리지 않는다.
-        plugin.getServer().getScheduler().runTaskLater(plugin, () -> { if (onDone != null) onDone.run(); }, landTick + 16L);
+        plugin.getServer().getScheduler().runTaskLater(plugin, () -> { if (onDone != null) onDone.accept(fout); }, landTick + 16L);
     }
 
     // ══════════════════════════════════════════════════════════════
