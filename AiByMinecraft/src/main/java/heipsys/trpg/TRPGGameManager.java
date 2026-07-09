@@ -2370,6 +2370,10 @@ public class TRPGGameManager {
             return;
         }
 
+        // ★관전 중계(입력)★: 관전자가 '대상이 무엇을 해서 이 상황이 됐는지' 알 수 있게, 이 행동 입력 원문을 그 대상의
+        //   관전자에게 보여준다(@통신은 각 통신 핸들러가 이미 관전 중계하므로 여기선 그 외 행동만). 대상 본인엔 안 보냄.
+        relayInputToSpectators(player, pd, message);
+
         // ★이동 중(#190)★: 취소·정지어('멈춰' 등)면 처리 대기와 무관하게 언제든 그 자리에서 멈춘다.
         if (pd.isTraveling() && (isCancelWord(message) || isStopWord(message))) {
             pd.travelPath.clear(); pd.travelDest = "";
@@ -6728,6 +6732,17 @@ public class TRPGGameManager {
             if (isWatching(sp, target)) narrativeDelivery.deliver(sp, text);
         }
     }
+
+    /** ★관전 중계(입력)★: 대상이 방금 입력한 행동 원문을 그 대상을 관전 중인 사람에게 즉시 보여준다(무엇을 해서 이
+     *  상황이 됐는지 파악용). 타자기 없이 한 줄로. 대상 본인엔 안 보냄(이미 자기 입력). */
+    private void relayInputToSpectators(Player actor, PlayerData pd, String input) {
+        if (actor == null || input == null || input.isBlank()) return;
+        String disp = (pd != null) ? pd.gmDisplayName() : actor.getName();
+        for (Player sp : Bukkit.getOnlinePlayers()) {
+            if (sp.getGameMode() != GameMode.SPECTATOR || sp.getUniqueId().equals(actor.getUniqueId())) continue;
+            if (isWatching(sp, actor)) sp.sendMessage("§8[" + disp + " 행동] §7" + input);
+        }
+    }
     private void deliverNarrative(Player actor, String raw) {
         String narrative = ai.stripTags(raw);
         if (!narrative.isBlank() && actor != null && actor.isOnline()) {
@@ -8000,6 +8015,26 @@ public class TRPGGameManager {
         if (!roleType.isBlank())
             sb.append("숨은 역할(절대 발설 금지, 행동으로만 드러냄): ").append(roleType)
               .append(getStr(npcObj, "true_role").isBlank() ? "" : " — " + getStr(npcObj, "true_role")).append("\n");
+        // ★괴담 편(하수인·공범·적대적공조) 정렬 명시★: 저품질 NPC AI가 '괴담 편' 하수인을 플레이어에게 친절히 설명하며
+        //   ★괴담의 약점·수법을 알려주는(=플레이어 편처럼 구는)★ 오작동 방지(제보: 잭이 '함정 깔면 피에르 흐름 꼬임'을 그대로 알려줌).
+        String alignLow = (roleType + " " + getStr(npcObj, "true_role")).toLowerCase();
+        boolean servesEntity = alignLow.contains("적대") || alignLow.contains("공조") || alignLow.contains("하수인")
+            || alignLow.contains("공범") || alignLow.contains("앞잡이") || alignLow.contains("광신") || alignLow.contains("섬기")
+            || alignLow.contains("추종") || alignLow.contains("수하") || alignLow.contains("괴담편") || alignLow.contains("괴담 편") || alignLow.contains("잘못된");
+        // ★플레이어 편 조력자 정렬 명시(적대 블록의 대칭)★: 저품질 NPC AI가 조력자를 '답은 이미 네 안에 있다'式 수수께끼로
+        //   여러 턴 되풀이해(제보: 비나가 홍차 해법을 쥐고도 수수께끼만 반복 → 62회 발화 패딩·드래그) 도움 요청을 겉돌게 만드는 오작동 방지.
+        boolean helpsPlayers = !servesEntity && (alignLow.contains("조력") || alignLow.contains("협력") || alignLow.contains("동료")
+            || alignLow.contains("안내") || alignLow.contains("구원") || alignLow.contains("보호") || alignLow.contains("치유")
+            || alignLow.contains("치료") || alignLow.contains("인도") || alignLow.contains("조언") || alignLow.contains("길잡이") || alignLow.contains("아군"));
+        if (servesEntity)
+            sb.append("★너의 진짜 편은 괴담(과 그 무리)이다 — 플레이어 편이 아니다★. 겉으론 협조·대화하는 척해도 목적은 괴담을 지키고 "
+                + "플레이어를 방해·오도하는 것이다. ★괴담의 약점·수법·해결법을 플레이어에게 절대 알려주지 마라★(들키면 얼버무리거나 틀린 "
+                + "방향으로 유도). 플레이어가 괴담을 위협하면 몸으로 막고 방해하라. 친절한 설명·솔직한 정보 제공 금지 — 겉만 사람 좋게, 속은 괴담의 편.\n");
+        else if (helpsPlayers)
+            sb.append("★너는 플레이어 편(조력자)이다 — 해결을 실제로 도와라★. 플레이어가 네가 아는 해법·수단(도구·치유·동행 등)의 실행을 "
+                + "직접 부탁하면, 수수께끼나 '답은 이미 네 눈앞에 있다'式 되풀이로 미루지 말고 그 자리에서 실제로 협력하라 — 가진 것을 내주거나, "
+                + "함께 실행하거나, 필요한 조건을 ★분명한 한 문장★으로 짚어준다. 망설일 이유(위험·대가·아직 안 갖춰진 조건)가 있으면 딱 한 번 "
+                + "그 이유를 대되, 같은 회피성 힌트를 여러 턴 반복하지 마라. 도움을 청받고도 계속 겉도는 건 진행을 늘어지게 하는 드래그다.\n");
         // 인간관계 — 데이터 + 짧은 태도(상세 변조 지침은 각 모드에서)
         String npcSelfId = getStr(npcObj, "id");
         JsonObject gdamRel = state.getGdamData();
@@ -9024,6 +9059,15 @@ public class TRPGGameManager {
         return false;
     }
 
+    /** ★발신 실패 환불★: 실제로 닿지 않은 발신(잘못된 번호·자기 자신·매체 차단·빈 메시지 등)은 한 턴 발신 횟수에서
+     *  되돌린다 — 실패한 발신 때문에 재시도가 막히지 않게(제보). commRateLimitBlocks가 미리 +1 해둔 것을 취소한다. */
+    private void refundCommUse(Player sender) {
+        if (sender == null) return;
+        UUID id = sender.getUniqueId();
+        Integer u = commUsesThisTurn.get(id);
+        if (u != null && u > 0) commUsesThisTurn.put(id, u - 1);
+    }
+
     /** ★#220 관계 호칭 주소어★ — 친족·관계로 부르는 말(이름이 아님). 이 말로 근처 NPC를 부르면 관계로 연결한다. */
     private static final java.util.Set<String> HONORIFIC_ADDRESS_TERMS = java.util.Set.of(
         "형","형님","형아","누나","누님","오빠","오라버니","언니","동생","막내",
@@ -9073,6 +9117,16 @@ public class TRPGGameManager {
             return;
         }
 
+        // ★@근처/@대화/@주변 = 근처에 소리내어 말하기(명시 키워드, 바 '@ 메시지'와 동일)★ — 제보: '@대화'를 근처 대화
+        //   명령으로 쳤는데 '대화'가 대상 이름으로 잘못 해석돼 "@이름 메시지" 안내가 떴다. '@대화'(붙임)만 키워드로
+        //   보고, '@ 대화 좀…'(띄움)은 그대로 근처 발화 내용으로 둔다(그 단어를 말하려는 것).
+        boolean atAttached = raw.length() > 1 && raw.charAt(1) != ' ';
+        if (atAttached && (token.equals("근처") || token.equals("대화") || token.equals("주변"))) {
+            if (message.isEmpty()) { sender.sendMessage("§c사용법: §f@대화 메시지§7 (근처에 소리내어 말하기) · §f@이름 메시지 · §f@전체 메시지"); return; }
+            proximityBroadcast(sender, senderPd, message); // 키워드 뒤 내용만 발화
+            return;
+        }
+
         // 대상 식별: 숫자면 연락처 번호로 다이얼, 아니면 이름
         boolean dialedByNumber = token.matches("\\d{3,5}");
         PlayerData targetPd = dialedByNumber ? findByContactId(token) : findByName(token);
@@ -9102,6 +9156,7 @@ public class TRPGGameManager {
             ai.injectGmSystem("[통신 미도달(은닉)] " + senderPd.gmDisplayName() + "이(가) " + commMediumLabel(intendedMedium)
                 + "(으)로 전하려 했으나 지금 그 수단이 통하지 않는다(괴담·상황). 발신자는 모른 채 보냈다고 여긴다 — "
                 + "상대에게 닿지 않았음을 정황·결과로만 드러내고, '차단됐다'고 시스템이 미리 알렸다는 티를 내지 마라.");
+            refundCommUse(sender); // 매체 차단으로 실제 미도달 → 횟수 환불(다른 수단 재시도 가능하게)
             sender.sendMessage("§7[전송 중...]");
             return;
         }
@@ -9115,23 +9170,25 @@ public class TRPGGameManager {
         if (dialedByNumber && targetPd == null) {
             JsonObject npcByNum = findNpcByContactNumber(token);
             if (npcByNum != null) {
-                if (message.isEmpty()) { sender.sendMessage("§c사용법: @번호 메시지"); return; }
+                if (message.isEmpty()) { refundCommUse(sender); sender.sendMessage("§c사용법: @번호 메시지"); return; }
                 String nid = getStr(npcByNum, "id");
                 if (!nid.isEmpty()) senderPd.everKnownNpcContacts.add(nid); // 올바른 번호 입력 = 번호를 안다
                 handleNpcDirectComm(sender, senderPd, npcByNum, message);
                 return;
             }
+            refundCommUse(sender); // 잘못된 번호 = 미발신 → 횟수 환불
             sender.sendMessage("§c연결되지 않는 번호입니다. §7(존재하지 않는 번호)");
             return;
         }
         // NPC 대상
         if (targetPd == null && npcObj != null) {
-            if (message.isEmpty()) { sender.sendMessage("§c사용법: @이름 메시지"); return; }
+            if (message.isEmpty()) { refundCommUse(sender); sender.sendMessage("§c사용법: @이름 메시지"); return; }
             handleNpcDirectComm(sender, senderPd, npcObj, message);
             return;
         }
-        if (message.isEmpty()) { sender.sendMessage("§c사용법: @이름(또는 번호) 메시지"); return; }
+        if (message.isEmpty()) { refundCommUse(sender); sender.sendMessage("§c사용법: @이름(또는 번호) 메시지"); return; }
         if (targetPd.uuid.equals(sender.getUniqueId())) {
+            refundCommUse(sender); // 자기 자신 = 미발신 → 환불
             sender.sendMessage("§c자기 자신에게 통신할 수 없습니다.");
             return;
         }
