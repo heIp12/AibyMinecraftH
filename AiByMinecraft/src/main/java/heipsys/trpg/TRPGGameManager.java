@@ -9107,6 +9107,16 @@ public class TRPGGameManager {
             return;
         }
 
+        // ★@근처/@대화/@주변 = 근처에 소리내어 말하기(명시 키워드, 바 '@ 메시지'와 동일)★ — 제보: '@대화'를 근처 대화
+        //   명령으로 쳤는데 '대화'가 대상 이름으로 잘못 해석돼 "@이름 메시지" 안내가 떴다. '@대화'(붙임)만 키워드로
+        //   보고, '@ 대화 좀…'(띄움)은 그대로 근처 발화 내용으로 둔다(그 단어를 말하려는 것).
+        boolean atAttached = raw.length() > 1 && raw.charAt(1) != ' ';
+        if (atAttached && (token.equals("근처") || token.equals("대화") || token.equals("주변"))) {
+            if (message.isEmpty()) { sender.sendMessage("§c사용법: §f@대화 메시지§7 (근처에 소리내어 말하기) · §f@이름 메시지 · §f@전체 메시지"); return; }
+            proximityBroadcast(sender, senderPd, message); // 키워드 뒤 내용만 발화
+            return;
+        }
+
         // 대상 식별: 숫자면 연락처 번호로 다이얼, 아니면 이름
         boolean dialedByNumber = token.matches("\\d{3,5}");
         PlayerData targetPd = dialedByNumber ? findByContactId(token) : findByName(token);
