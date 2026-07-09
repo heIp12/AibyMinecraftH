@@ -175,6 +175,10 @@ public class TRPGGameManager {
     /** 행운 능력으로 무장한 판정 보정 — ★다음 실제 판정(주사위)까지 유지★되고 playDiceResult가 굴림 시 1회 소비(#176).
      *  예전엔 행동 처리 시점에 소비돼, 판정 없이 서술만 된 행동에서 보정이 증발했다. */
     private final Map<UUID, Integer> pendingLuckModifier   = new ConcurrentHashMap<>();
+    /** ★결정타 클리어 지연 매듭★: <DICE>+<CLEAR> 동시 응답에서 가드가 미뤄둔 클리어 태그를 배역별로 보관 →
+     *  그 판정이 성공하면 시스템이 그 자리(같은 배역 문맥)에서 onClearEnding으로 매듭짓는다. 비동기 멀티플레이라
+     *  '다음 응답'이 다른 구역의 딴 플레이어 턴으로 새어 종결을 놓치던 버그(제보) 방지. 실패·부분성공이면 폐기. */
+    private final Map<UUID, JsonObject> pendingDecisiveClear = new ConcurrentHashMap<>();
     /** ★체력·정신 소모 메시지 지연 큐★ — STATE_UPDATE(공격받음 등)로 생긴 vital 변화 안내를 ★관련 서술이 나온 뒤★
      *  출력하려고 모아둔다(주사위 결과처럼). applyStateUpdate가 적립 → 서술 전달 후 flushPendingVitalMsgs가 배출. */
     private final Map<UUID, java.util.List<String>> pendingVitalMsgs = new ConcurrentHashMap<>();
@@ -902,6 +906,7 @@ public class TRPGGameManager {
         pendingPrayerInput.clear();
         pendingOracleInput.clear();
         pendingLuckModifier.clear();
+        pendingDecisiveClear.clear(); // 미뤄둔 결정타 클리어 — 스테이지/재도전/종료 리셋 시 잔류(다음 판 오발) 방지
         pendingHops.clear(); lastHopTurn.clear(); // 이동 홉 추적(#190) — 스테이지/재도전 리셋 시 남으면 다음 판에서 오복귀·홉 스킵 유발
         noHopeStreak = 0; allIncapTicks = 0; // 자동 배드엔딩(#2) 누적 — 리셋 시 초기화
         lastLimitedCommTurn.clear(); commUsesThisTurn.clear(); // 통신 발신 제약(한 턴 2회) 기록 초기화
@@ -1022,6 +1027,7 @@ public class TRPGGameManager {
         pendingPrayerInput.clear();
         pendingOracleInput.clear();
         pendingLuckModifier.clear();
+        pendingDecisiveClear.clear(); // 미뤄둔 결정타 클리어 — 스테이지/재도전/종료 리셋 시 잔류(다음 판 오발) 방지
         pendingHops.clear(); lastHopTurn.clear(); // 이동 홉 추적(#190) — 스테이지/재도전 리셋 시 남으면 다음 판에서 오복귀·홉 스킵 유발
         noHopeStreak = 0; allIncapTicks = 0; // 자동 배드엔딩(#2) 누적 — 리셋 시 초기화
         lastLimitedCommTurn.clear(); commUsesThisTurn.clear(); // 통신 발신 제약(한 턴 2회) 기록 초기화
@@ -1124,6 +1130,7 @@ public class TRPGGameManager {
         pendingPrayerInput.clear();
         pendingOracleInput.clear();
         pendingLuckModifier.clear();
+        pendingDecisiveClear.clear(); // 미뤄둔 결정타 클리어 — 스테이지/재도전/종료 리셋 시 잔류(다음 판 오발) 방지
         pendingHops.clear(); lastHopTurn.clear(); // 이동 홉 추적(#190) — 스테이지/재도전 리셋 시 남으면 다음 판에서 오복귀·홉 스킵 유발
         noHopeStreak = 0; allIncapTicks = 0; // 자동 배드엔딩(#2) 누적 — 리셋 시 초기화
         lastLimitedCommTurn.clear(); commUsesThisTurn.clear(); // 통신 발신 제약(한 턴 2회) 기록 초기화
@@ -2549,10 +2556,15 @@ public class TRPGGameManager {
                 //    return되면서 주사위(2470)가 아예 안 굴러가고 무판정 즉시 종료 — '주사위가 끝에 굴러 영향 없음'의 실체.)
                 //   → 굴림을 먼저 하고, ★성공한 다음 응답에서만★ CLEAR로 매듭짓게 유도한다.
                 if (clearTag != null && ai.parseDiceTag(raw) != null) {
-                    ai.injectGmSystem("[판정 먼저] 시나리오를 끝내는 결정적 행동은 <DICE>로 먼저 굴려 결과가 나온 뒤에만 끝낼 수 있다. "
-                        + "이번 판정이 ★성공★이면 다음 응답에서 <CLEAR>로 매듭짓고, 실패·부분성공이면 대가·전개를 주고 아직 끝내지 마라. "
-                        + "같은 응답에 <DICE>와 <CLEAR>를 함께 내지 마라(굴림이 무시된다).");
-                    clearTag = null; // 이 턴은 클리어 보류 — 아래로 흘러 <DICE> 굴림을 실제로 수행한다.
+                    // ★핵심 수정★: 예전엔 clearTag를 버리고 "다음 응답에서 CLEAR"만 지시했다 — 그런데 비동기 멀티플레이라
+                    //   '다음 응답'이 다른 구역의 딴 플레이어 턴으로 새어 GM이 종결을 놓쳤다(제보: 조기 종료 불발).
+                    //   → GM이 이미 정한 클리어 태그를 배역별로 stash해 두고, 이 판정이 ★성공★하면 시스템이 그 자리에서
+                    //     자동으로 매듭짓는다(completeDeferredClear/followUpDiceResult). 실패·부분성공이면 폐기.
+                    if (player != null) pendingDecisiveClear.put(player.getUniqueId(), clearTag);
+                    ai.injectGmSystem("[판정 먼저] 시나리오를 끝내는 결정적 행동은 <DICE>로 먼저 굴렸다 — 같은 응답에 <DICE>와 <CLEAR>를 "
+                        + "함께 내지 마라(굴림이 무시된다). 이 판정이 성공이면 ★그 결과로 실제 무슨 일이 벌어졌는지 서술만★ 이어서 하라"
+                        + "(종결 처리는 시스템이 이어서 한다), 실패·부분성공이면 대가·전개를 주고 끝내지 마라.");
+                    clearTag = null; // 이 턴은 클리어 보류 — 아래로 흘러 <DICE> 굴림을 실제로 수행하고, 성공 시 stash가 매듭짓는다.
                 }
                 if (clearTag != null) {
                     String grade = clearTag.has("grade") ? clearTag.get("grade").getAsString() : "C";
@@ -11734,7 +11746,8 @@ public class TRPGGameManager {
                 String collapse = getStr(wr, "collapse_condition");
                 if (!collapse.isBlank())
                     sb.append("- 규칙 붕괴 조건(해결 클리어): ").append(collapse)
-                      .append(" — 충족되면 괴담이 소멸한다. 달성 시 해결판정 <CLEAR>를 출력하라.\n");
+                      .append(" — 충족되면 괴담이 소멸한다. ★파티원 중 한 명이라도 이 조건을 실제로 달성하면 즉시 해결판정 <CLEAR>를 출력하라"
+                            + " — 나머지 인원의 합류·같은 행동 반복·'모두 마무리'를 기다리며 미루지 말고, 딴 구역의 다른 행동으로 넘어가 종결을 놓치지 마라.\n");
                 String dep = getStr(wr, "npc_dependency");
                 if ("low".equalsIgnoreCase(dep))
                     sb.append("- NPC 의존도 낮음: NPC를 제거하면 규칙이 멈춰 종료될 수 있으나 '편법'이다(낮은 등급). 규칙 자체를 깨면 높은 등급.\n");
@@ -12654,8 +12667,11 @@ public class TRPGGameManager {
         final String fAfter = after;
         narrativeDelivery.runAfterDelivery(player, () ->        // 2) 앞 서술이 다 나온 뒤 주사위 결과 인라인 → 3) 뒤 결과 서술
             showInlineDice(player, dice, outcome -> {
-                if (player.isOnline() && !ai.stripTags(fAfter).isBlank()) deliverNarrative(player, fAfter); // GM이 결과를 이어 썼음
-                else if (player.isOnline()) followUpDiceResult(player, dice, outcome); // ★결과 서술 없음 → 자동 후속★(주사위만 굴리고 방치 방지)
+                if (player.isOnline() && !ai.stripTags(fAfter).isBlank()) {
+                    deliverNarrative(player, fAfter);          // GM이 결과를 이어 썼음
+                    completeDeferredClear(player, outcome);    // ★미뤄둔 결정타 클리어를 이 판정 성공 시 그 자리에서 매듭
+                } else if (player.isOnline())
+                    followUpDiceResult(player, dice, outcome); // ★결과 서술 없음 → 자동 후속★(주사위만 굴리고 방치 방지; 미뤄둔 클리어도 여기서 처리)
             }));
     }
 
@@ -12665,16 +12681,57 @@ public class TRPGGameManager {
     private void followUpDiceResult(Player player, JsonObject dice, String outcome) {
         PlayerData pd = player != null ? state.getPlayer(player) : null;
         if (pd == null || !player.isOnline()) return;
+        // ★미뤄둔 결정타 클리어★: 이 판정이 성공이면 원 GM이 정한 클리어 태그를 꺼내(1회성) 결과 서술 뒤 매듭짓는다.
+        //   (실패·부분성공이면 stash는 폐기되고, 아래 서술은 대가·전개로 흐른다.)
+        JsonObject deferredClear = takeDeferredClearOnSuccess(player, outcome);
         String reason = dice.has("reason") && !dice.get("reason").isJsonNull() ? dice.get("reason").getAsString().trim() : "";
         String who = pd.gmDisplayName();
         String sys = "직전 행동의 판정 결과가 나왔다 — " + (reason.isEmpty() ? "판정" : reason) + " → ★" + (outcome == null || outcome.isBlank() ? "판정" : outcome) + "★. "
             + "이 결과로 " + who + "의 장면에서 ★실제로 무슨 일이 일어났는지★ 2~4문장으로 이어서 서술하라(주사위만 굴리고 끝내지 마라). "
             + "성공·대성공이면 그 행동이 표적·상황에 ★실제 유효타·진전★으로 반영되고(적을 흘려보내지 마라), 실패·부분성공이면 ★구체적 대가·전개★를 보여라. "
-            + "★새 <DICE>는 내지 마라(이미 굴렸다)★ — 이 판정 결과에 맞는 서술만. 다른 위치 플레이어의 장면은 끌어오지 마라.";
+            + "★새 <DICE>는 내지 마라(이미 굴렸다)★ — 이 판정 결과에 맞는 서술만. 다른 위치 플레이어의 장면은 끌어오지 마라."
+            + (deferredClear != null ? " 이 성공으로 상황이 ★실제로 해결·종결★되었다 — 그 매듭이 드러나게 서술하라(종료 처리는 시스템이 이어서 한다). <CLEAR>는 직접 내지 마라." : "");
         ai.callGmAiOnce(gmSystemPrompt, sys).thenAccept(resp ->
             plugin.getServer().getScheduler().runTask(plugin, () -> {
                 if (player.isOnline() && resp != null && !ai.stripTags(resp).isBlank()) deliverNarrative(player, resp);
+                if (deferredClear != null) applyClearTag(player, deferredClear); // 결과 서술 뒤 시스템이 매듭
             }));
+    }
+
+    /** deliverNarrativeWithInlineDice의 '결과 서술 있음' 분기용: 미뤄둔 결정타 클리어를 이 판정 성공 시 곧바로 매듭(true),
+     *  아니면 폐기하고 false. (결과 서술은 이미 전달됐으니 여기선 매듭만 한다.) */
+    private boolean completeDeferredClear(Player player, String outcome) {
+        JsonObject c = takeDeferredClearOnSuccess(player, outcome);
+        if (c == null) return false;
+        applyClearTag(player, c);
+        return true;
+    }
+
+    /** pendingDecisiveClear에서 배역의 미뤄둔 클리어를 꺼낸다(1회성 remove) — 판정이 성공(성공/대성공)이고 HORROR 국면이면
+     *  그 태그를, 아니면(부분성공·실패·비호러) null을 반환한다. 어느 쪽이든 stash는 소비된다. */
+    private JsonObject takeDeferredClearOnSuccess(Player player, String outcome) {
+        if (player == null) return null;
+        JsonObject c = pendingDecisiveClear.remove(player.getUniqueId());
+        if (c == null) return null;
+        boolean success = "성공".equals(outcome) || "대성공".equals(outcome); // 부분성공·실패·대실패는 종결 아님
+        return (success && currentPhase == Phase.HORROR) ? c : null;
+    }
+
+    /** 원 GM이 정한 클리어 태그(grade/reason/resolved/by)로 엔딩을 매듭짓는다 — onGmResponse의 클리어 처리와 동일 규칙
+     *  (위협도 등급 상한·resolved 추론). 결과 서술이 다 나온 뒤(runAfterDelivery) onClearEnding을 호출해 순서를 보존한다. */
+    private void applyClearTag(Player player, JsonObject clearTag) {
+        if (clearTag == null || currentPhase != Phase.HORROR) return;
+        String grade = clearTag.has("grade") ? clearTag.get("grade").getAsString() : "C";
+        String capG = capGradeByThreat(grade);
+        if (!capG.equals(grade)) { gameLogger.logEvent("위협도 " + state.getThreat() + " → 클리어 등급 상한 " + grade + "→" + capG); grade = capG; }
+        String reason = clearTag.has("reason") ? clearTag.get("reason").getAsString() : "";
+        String by = clearTag.has("by") && !clearTag.get("by").isJsonNull() ? clearTag.get("by").getAsString().trim() : "";
+        boolean resolved = clearTag.has("resolved") ? clearTag.get("resolved").getAsBoolean() : gradeIdx(grade) >= gradeIdx("B");
+        final String fg = grade, fr = reason, fby = by; final boolean fres = resolved;
+        if (player != null && player.isOnline())
+            narrativeDelivery.runAfterDelivery(player, () -> onClearEnding(fg, fr, fres, fby));
+        else
+            onClearEnding(fg, fr, fres, fby);
     }
 
     /** ★#254★ 미리 굴려둔 판정값으로 주사위 결과를 인라인 표시한 뒤 onDone 실행. 값·성패는 코드가 정한다(공정).
