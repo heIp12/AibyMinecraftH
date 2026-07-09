@@ -64,11 +64,16 @@ public class AiManager {
     //  모델 선택
     // ======================================================
 
-    /** GM AI 품질 등급. 저품질=Haiku / 중품질=Sonnet / 고품질=Opus. */
-    public enum Quality { LOW, MEDIUM, HIGH }
+    /** GM AI 품질 등급. 저품질=Haiku / 중품질=Sonnet / 고품질=Opus / 효율=적응형(평시 Sonnet, 절정만 Opus). */
+    public enum Quality { LOW, MEDIUM, HIGH, EFFICIENT }
 
     /** 게임 시작 시 선택되는 GM AI 품질 (기본: 중품질). */
     private volatile Quality gmQuality = Quality.MEDIUM;
+
+    /** ★효율(적응형) 모드★: GM 모델을 현재 위협도로 자동 격상 — 평시=Sonnet(바닥), 절정(≥임계)=Opus. 게임이 위협도 공급자를 꽂아준다. */
+    private volatile java.util.function.IntSupplier threatSupplier = () -> 0;
+    private static final int EFFICIENT_PEAK_THREAT = 70; // 이 이상이면 절정(위험 밴드)으로 보고 Opus 격상 — 위협도는 전투·사망·사건으로 오르는 난이도 프록시
+    public void setThreatSupplier(java.util.function.IntSupplier s) { if (s != null) threatSupplier = s; }
 
     // 등급별 모델 오버라이드 (config; 비우면 자동 탐지 → 하드코딩 폴백)
     private String highModelOverride = null, mediumModelOverride = null, lowModelOverride = null;
@@ -523,9 +528,11 @@ public class AiManager {
         //   그래서 저/중/고 등급은 살리되 ★GM 바닥은 mini★ — 저=mini(플레이 가능선), 중=Sonnet(권장 기본), 고=Opus(복합·고난도).
         //   저품질 세션은 mini로 굴러가고(방호벽: 교착차단·태그누출·지오검증 프롬프트가 받쳐줌), 나노는 GM에 안 쓴다.
         return switch (gmQuality) {
-            case HIGH -> highModel();
-            case LOW  -> miniModel();   // ★floor=mini★ (claude=Haiku 4.5 / openai=gpt-5-mini) — nano로 안 내려간다
-            default   -> sonnetModel(); // MEDIUM
+            case HIGH      -> highModel();
+            case LOW       -> miniModel();   // ★floor=mini★ (claude=Haiku 4.5 / openai=gpt-5-mini) — nano로 안 내려간다
+            // ★효율(적응형)★: 평시엔 Sonnet(바닥·게임 제대로 굴러가는 선), 위협도 절정(전투·클라이맥스)에만 Opus로 격상 → 최대 절약.
+            case EFFICIENT -> threatSupplier.getAsInt() >= EFFICIENT_PEAK_THREAT ? highModel() : sonnetModel();
+            default        -> sonnetModel(); // MEDIUM
         };
     }
 
