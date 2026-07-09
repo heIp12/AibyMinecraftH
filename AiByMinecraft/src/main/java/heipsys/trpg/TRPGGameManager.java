@@ -11688,6 +11688,10 @@ public class TRPGGameManager {
         sb.append("room(현재 스테이지 번호): ").append(room).append("\n");
         if (gdam.has("entity")) {
             sb.append("괴담 존재: ").append(gdam.getAsJsonObject("entity").get("name").getAsString()).append("\n");
+            sb.append("★ 괴담 위치 일관성(다중구역 동시생성 금지): '하나의 몸'으로 나타나는 괴담은 ★한 시점에 한 구역에만★ 실체화한다. "
+                + "서로 다른 구역의 플레이어에게 같은 괴담이 ★동시에★ 몸을 드러내게 서술하지 마라(한 괴담이 여러 곳에 복제되는 버그). "
+                + "괴담이 이동하면 그 위치를 유지·추적하고, NPC로 등록된 괴담이면 <NPC_AT>로 갱신하라. "
+                + "편재·환경형·정신형(어디에나 스며들거나 지각을 왜곡하는 유형)만 여러 곳에서 동시에 감지·현현할 수 있다.\n");
         }
 
         // ★ 규모(scale) 기반 위협 보정 — 규모가 클수록 괴담의 위력·치명성·영향 범위를 확연히 높여라.
@@ -11965,6 +11969,7 @@ public class TRPGGameManager {
             sb.append("★ 같은 NPC를 매 턴 주인공처럼 내세우지 마라 — 장면에 필요할 때만, 여러 NPC·플레이어에게 고루 분배.\n");
             sb.append("★ NPC를 다른 구역으로 옮기거나 플레이어 앞에 데려오면 <NPC_AT npc=\"이름\" zone=\"존ID\"/>도 함께 내라(안 그러면 @대화가 전화로 오처리된다).\n");
             sb.append("★ 자율 NPC·괴담이 '[NPC 자율 행동]'에서 ★다른 구역으로 이동★한다고 했으면(복도를 지나·~쪽으로 향한다·쫓아간다 등), 네 서술에 그 이동을 녹이고 ★반드시 <NPC_AT>로 목적지 구역을 지정★하라 — 안 하면 그 인물은 엔진상 원래 구역에 갇혀, 접근하던 플레이어를 실제로 위협·접촉하지 못한다(격리실에 갇힌 괴담 버그).\n");
+            sb.append("★★ 아래 각 인물의 '현위치'는 ★엔진이 확정한 사실★이다 — 그대로 신뢰하고 따르라. 확정 위치와 다른 구역에 그 인물을 등장시키거나 동시에 두 곳에 나타나게 서술하지 마라. 위치를 옮겼으면 반드시 <NPC_AT>로 갱신해야 다음 턴에도 위치가 일관된다.\n");
             for (JsonObject npc : autoNpcs) {
                 String nname = npc.has("name") ? npc.get("name").getAsString() : "?";
                 String nid   = getStr(npc, "id");
