@@ -7733,15 +7733,50 @@ public class TRPGGameManager {
         if (npcAge >= 0) sb.append("- ★나이대 말투·어휘★: ").append(ageRegisterHint(npcAge)).append("\n");
     }
 
-    /** 말투 ⑤ 욕설·비속어(강도 게이지 0~3·타입별) — ①~④ 말투 위에 얹는 층. 성격이 상시 빈도(게이지)를 정하고 상황이 그 위에 가산. */
-    private void npcProfanityBlock(StringBuilder sb) {
-        sb.append("- ★욕설·비속어 = 성격이 정하는 '강도 게이지'(상시 빈도)를 먼저 잡고 상황을 그 위에 가산★. 인물 설명·성격·나이로 0~3 중 하나를 골라 ★대화 내내 일관되게★ 유지하라:\n");
-        sb.append("  · 0 안 씀: 얌전·예의·격식·신앙심·아동 — 욕이 입에서 안 나온다.\n");
-        sb.append("  · 1 드묾: 평범한 사람 — 평소엔 안 쓰다가 분노·공포·다급함이 확 셀 때만 튀어나온다.\n");
-        sb.append("  · 2 잦음: 툭툭 내뱉는 사람 — ★화나지 않아도★ 평상시 대사에 추임새·강조로 섞는다('아 진짜 존나 춥네', '거 참 좆같네'). 짜증·감탄에 자연히 붙는다.\n");
-        sb.append("  · 3 입에 달고 삶: 거칠거나 건들거리는 사람 — ★일상 잡담·인사·농담 어디든 능글맞게 습관처럼 늘 깔린다★('왔냐 새끼야', '그거 존나 웃기지 않냐'). 안 나오는 게 오히려 어색하다.\n");
-        sb.append("  ★타입(게이지·상황에 맞게 골라라)★: ①습관·추임새형(2~3: 뜻 없는 입버릇 '씨'·'존나'·'새끼야') ②감탄사형(놀람·분노 배출 '씨발'·'젠장'·'아 씨') ③능글·농담형(친한 사이 장난스레 '이 미친놈아 ㅋㅋ') ④공격·모욕·위협형(갈등·대립에 상대 겨냥).\n");
-        sb.append("  ★규율★: 강도는 성격이 정한다 — 0·1 인물을 억지로 욕하게 하지 말되, ★2·3 인물은 겁내지 말고 실제로 자주 써라(지금까지 지나치게 안 썼다).★ 손위 앞·공식석상·진중한 국면에선 2~3도 한 단계 절제. 나이=청년·청소년 흔함, 노년은 옛 투('빌어먹을'·'네 이놈'), 아동은 순한 말('바보'·'미워')만.\n");
+    /** 말투 ⑤ 욕설·비속어 — 독립 3축(발동 trigger P1~P7 · 강도 intensity · 돌려까기 burn).
+     *  생성기가 성격에서 정해 swear 필드에 박고(있으면 그대로), 없으면 성격에서 스스로 고른다(구작 호환). P2·P3·P4는 게임 상태 연동. */
+    private void npcProfanityBlock(StringBuilder sb, JsonObject npcObj) {
+        JsonObject sw = (npcObj != null && npcObj.has("swear") && npcObj.get("swear").isJsonObject())
+            ? npcObj.getAsJsonObject("swear") : null;
+        String tg = sw != null && sw.has("trigger") ? sw.get("trigger").getAsString() : "";
+        if (sw != null && "none".equals(tg)) { // 안 쓰는 인물 — 강도·돌려까기 무의미, 간단히 봉인
+            sb.append("- 욕설·비속어: 이 인물은 ★쓰지 않는다★(얌전·예의·격식·신앙·아동). 위기에도 순화된 표현만.\n");
+            return;
+        }
+        sb.append("- ★욕설·비속어 = 독립 3축(발동·강도·돌려까기). 대화 내내 일관 유지★:\n");
+        if (sw != null) { // 생성기가 성격에서 정해 박은 성향 — 그대로 연기
+            String it = sw.has("intensity") ? sw.get("intensity").getAsString() : "moderate";
+            int bn = sw.has("burn") ? sw.get("burn").getAsInt() : 0;
+            sb.append("  · 이 인물 성향 → 발동: " + swearTriggerLine(tg) + " / 강도상한: " + swearIntensityLine(it)
+                + " / 돌려까기: " + bn + "단" + (bn >= 2 ? "(직접 욕보다 비꼬기가 예술 — 안 하는데 더 아프게)" : bn == 1 ? "(가끔 비꼰다)" : "") + ".\n");
+        } else { // 구작 시나리오(swear 없음) — 성격에서 스스로 고른다
+            sb.append("  ① 발동(성격에서 골라라): 안 씀 / 터지면(평소 깨끗,감정폭발만) / 정신줄놓으면(공황) / 재치용(진지하면 자제) / 평상시조금(습관 추임새) / 자주(문장마다) / 말이곧욕. ② 강도상한: 약함(젠장)·중간(씨발·지랄)·강함(좆같은·개새끼+인신)·눈물남(최고). ③ 돌려까기 0~2(비꼬는 예술, 강도와 독립).\n");
+        }
+        sb.append("  ★'터지면·정신줄·재치용'은 게임 상태 연동★: 지금 장면이 위기·공포·비극이면 '터지면'은 폭발, '정신줄'은 공황에 새어나오고, '재치용'은 뚝 그친다. '평소 얌전하다 위기에 욕 터짐'을 살려라.\n");
+        sb.append("  ★'자주·말이곧욕' 성향이면 겁내지 말고 평상시 잡담·인사·농담에도 실제로 자주 써라(지금까지 지나치게 안 썼다). 단 손위·공식·진중한 국면엔 한 단계 절제.★ ★금지선(강도 무관): 혐오·차별 슬러·성적 모욕·실존인 대상.\n");
+    }
+
+    /** swear.trigger(P1~P7) → 런타임 프롬프트 한 구절(게임 상태 연동 어구 포함). */
+    private String swearTriggerLine(String tg) {
+        switch (tg == null ? "" : tg) {
+            case "burst":    return "터지면(평소 깨끗, ★감정 폭발(충격·죽음·배신·격분) 때만★)";
+            case "panic":    return "정신줄 놓으면(★공황·공포로 제정신 아닐 때★ 새어나옴)";
+            case "witty":    return "재치용(여유 땐 욕개그, ★진지·비극 국면엔 뚝★)";
+            case "casual":   return "평상시 조금(습관 추임새 '아 씨', 화 안 나도)";
+            case "frequent": return "자주(문장마다 양념처럼 '야 씨발 이거 존나 이상하잖아')";
+            case "native":   return "말이 곧 욕(욕이 문법의 일부·포화 '그 좆같은 문 좆같이 열면 되잖아')";
+            default:          return "성격에 맞게(터지면/정신줄/재치용/평상시조금/자주/말이곧욕 중)";
+        }
+    }
+    /** swear.intensity(강도 상한) → 런타임 프롬프트 한 구절. */
+    private String swearIntensityLine(String it) {
+        switch (it == null ? "" : it) {
+            case "mild":   return "약함(젠장·제기랄·우라질)";
+            case "strong": return "강함(좆같은·개새끼 빈번+인신)";
+            case "brutal": return "눈물남(최고수위·창의적 정밀 인신)";
+            case "moderate":
+            default:        return "중간(씨발·지랄·개같은)";
+        }
     }
 
     /** 인물형 AI(NPC·동료·적) 공유 CORE — 정체성·응답 순서(reaction-first)·사람다움·말투. 최대한 작게·재사용 가능하게. */
@@ -7779,7 +7814,7 @@ public class TRPGGameManager {
         else if (!speechStyle.isBlank()) npcPersonalSpeechBlock(sb, speechStyle); // ② 개인별 말투(speech_style)
         else                             npcFluencyBlock(sb, intel);             // ③ 유창도(주사위) 폴백
         npcAgeSpeechBlock(sb, npcAge);                                            // ④ 나이별 말투·어휘(항상)
-        npcProfanityBlock(sb);                                                    // ⑤ 욕설·비속어(조건부·타입별, ①~④ 위에 얹음)
+        npcProfanityBlock(sb, npcObj);                                            // ⑤ 욕설·비속어(독립 3축: 발동·강도·돌려까기, ①~④ 위에 얹음)
         // ── 보편 규칙(양 모드 공통) ──
         sb.append("- 마크다운·메타 해설 금지(순수 대사·서술만). ★단 이 응답에서 쓰라고 따로 지시된 태그만 예외★ — 지시 없는 태그를 스스로 만들어 쓰지 마라.\n");
         sb.append("- ★일관성★: 지금까지 나눈 대화(부탁·약속·합의·경고·알려준 정보 등)를 기억하고 다음 태도에 반영하라 — 방금 한 말을 잊은 듯 모순되게 굴지 마라.\n");
