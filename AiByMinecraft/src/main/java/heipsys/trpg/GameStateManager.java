@@ -339,20 +339,21 @@ public class GameStateManager {
     // ──────────────────────────────────────────────────────────────
     //  괴담 세력 게이지 접근/조정 (위협도·분노도)
     // ──────────────────────────────────────────────────────────────
-    public int    getThreat()      { return threat; }
-    public int    getAnger()       { return anger; }
-    public String getAngerTarget() { return angerTarget; }
-    /** 위협도 가감(0~100 클램프). 반환=적용 후 값. */
-    public int adjustThreat(int delta) { threat = Math.max(0, Math.min(100, threat + delta)); return threat; }
-    /** 분노도 가감(0~100 클램프). target이 비어있지 않으면 표적 갱신, 0으로 떨어지면 표적 해제. */
-    public int adjustAnger(int delta, String target) {
+    public synchronized int    getThreat()      { return threat; }
+    public synchronized int    getAnger()       { return anger; }
+    public synchronized String getAngerTarget() { return angerTarget; }
+    /** 위협도 가감(0~100 클램프). 반환=적용 후 값. ★synchronized★ — 비동기 턴들이 동시에 조정할 때 읽기-수정-쓰기 경합으로
+     *  갱신이 유실돼 표기가 비단조로 요동치던(예: +15→75인데 곧 +20→60) 문제 방지. */
+    public synchronized int adjustThreat(int delta) { threat = Math.max(0, Math.min(100, threat + delta)); return threat; }
+    /** 분노도 가감(0~100 클램프). target이 비어있지 않으면 표적 갱신, 0으로 떨어지면 표적 해제. ★synchronized★(위협도와 동일 경합 방지). */
+    public synchronized int adjustAnger(int delta, String target) {
         anger = Math.max(0, Math.min(100, anger + delta));
         if (target != null && !target.isBlank()) angerTarget = target;
         if (anger <= 0) angerTarget = "";
         return anger;
     }
-    public void setThreat(int v) { threat = Math.max(0, Math.min(100, v)); }
-    public void setAnger(int v)  { anger  = Math.max(0, Math.min(100, v)); if (anger <= 0) angerTarget = ""; }
+    public synchronized void setThreat(int v) { threat = Math.max(0, Math.min(100, v)); }
+    public synchronized void setAnger(int v)  { anger  = Math.max(0, Math.min(100, v)); if (anger <= 0) angerTarget = ""; }
     /** 통신 변조 스위치(GM <COMM_TAMPER>): 0=auto / 1=강제ON / -1=강제OFF. */
     public int  getCommTamperMode()      { return commTamperMode; }
     public void setCommTamperMode(int m) { commTamperMode = (m > 0) ? 1 : (m < 0) ? -1 : 0; }
@@ -643,6 +644,10 @@ public class GameStateManager {
             lastFiredEventLabel = label; // 상태창 '최근' 패널용(짧은 사건 이름)
             boolean evEnd    = ev.has("is_end") && ev.get("is_end").getAsBoolean();
             boolean evCombat = ev.has("combat") && !ev.get("combat").isJsonNull() && ev.get("combat").getAsBoolean();
+            // ★이중 종료 방지(good 우선)★: 이미 종료 사건이 하나 발화됐으면 다른 종료 사건은 무시한다(중복 '끝' 표기 방지).
+            //   main_events가 시각·배열 순으로 처리되어 ★먼저(이른 시각) 뜬 결말★이 남는다 — 화해/생존(개입 보상 E_GOOD 02:30)은
+            //   대개 파국·타임아웃(E_END 04:00)보다 이른 시각이라 자연히 좋은 결말이 우선한다. (firedEvents엔 이미 등록돼 재시도 안 함.)
+            if (evEnd && endEventFired) continue;
             if (evEnd) {
                 endEventFired = true;
                 timelineStage = getMaxStage(); // CODE-17: 종료 사건 → 최고 단계(가변)

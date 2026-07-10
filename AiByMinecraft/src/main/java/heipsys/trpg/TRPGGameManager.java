@@ -12521,16 +12521,24 @@ public class TRPGGameManager {
         if (zone == null || zone.isBlank()) return null;
         JsonObject gdam = state.getGdamData();
         if (gdam == null || !gdam.has("zones")) return zone; // 구역 정보 없으면 검증 불가 — 그대로
-        String byName = null;
+        String raw = zone.trim();
+        String stripped = raw.startsWith("zone_") ? raw.substring(5) : raw; // "zone_뒷간" 접두어 오남용 관대 처리
+        String byName = null, byContains = null;
         for (JsonElement el : gdam.getAsJsonArray("zones")) {
             if (!el.isJsonObject()) continue;
             JsonObject z = el.getAsJsonObject();
             String id = z.has("zone_id") ? z.get("zone_id").getAsString() : "";
-            if (zone.equals(id)) return id;                                     // 유효한 zone_id
+            if (raw.equals(id)) return id;                                      // 유효한 zone_id
+            String idStrip = id.startsWith("zone_") ? id.substring(5) : id;
+            if (stripped.equals(id) || stripped.equals(idStrip)) return id;     // 접두어만 어긋난 경우
             String nm = z.has("name") ? z.get("name").getAsString() : "";
-            if (!nm.isBlank() && nm.equals(zone)) byName = id;                  // GM이 표시명을 넣음 → 그 id로
+            if (!nm.isBlank() && (nm.equals(raw) || nm.equals(stripped))) byName = id; // 표시명 일치
+            // ★근사 매칭(#1)★: GM이 "안채 마당"·"뒷간 앞"처럼 구역명을 품은 세부장소를 zone에 넣으면 그 구역으로 흡수
+            //   (없는 zone으로 이동 실패시키지 않는다). 단 확실할 때만 — 짧은 구역명이 다른 구역에 우연히 안 걸리게 3자+에서만.
+            if (byContains == null && !nm.isBlank() && nm.length() >= 2
+                && (raw.contains(nm) || (idStrip.length() >= 2 && raw.contains(idStrip)))) byContains = id;
         }
-        return byName;                                                          // 이름 매칭 id 또는 null(무효)
+        return byName != null ? byName : byContains;                            // 이름>근사 매칭 id, 없으면 null(무효)
     }
 
     private void openCommChannel(String nameA, String nameB) {
