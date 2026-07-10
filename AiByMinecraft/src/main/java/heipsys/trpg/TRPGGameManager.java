@@ -9451,16 +9451,26 @@ public class TRPGGameManager {
             heard.add(op);
         }
         if (heard.isEmpty()) sender.sendMessage("§8(근처에 들을 사람이 없습니다.)");
-        for (PlayerData op : heard) {
-            Player op2 = Bukkit.getPlayer(op.uuid);
-            if (op2 != null && op2.isOnline()) msgToWatchers(op2, "§e[근처] §f" + disp + ": " + message); // 수신자+그 관전자에게(관전 중계)
-            exchangeContacts(senderPd, op); // 대면 성공 → 서로 번호를 알게 됨
-        }
-        state.log("comm", senderPd.name, "[근처] " + message);
         // 뷰어: 근처 발화는 ★들은 사람 전원(같은 구역)을 수신자로★ 기록 → 그들 시점에도 보이게
         java.util.List<String> nearNames = new ArrayList<>();
         for (PlayerData op : heard) nearNames.add(op.gmDisplayName());
-        gameLogger.logComm("nearby", disp, nearNames, message);
+        state.log("comm", senderPd.name, "[근처] " + message); // 발신 원문 기록
+        // ★근처 음성 변조★: 음성에 크게 연관된 괴담이 활성 국면이면 근처 발화도 가로챈다 — 강하면 조용한 눈앞까지, 약하면 외침만.
+        //   변조면 듣는 이들에게만 다르게 들리고(발신자는 원문 그대로 봄, #216) 저급 AI가 자연스럽게 다시 쓴다(비동기).
+        java.util.function.Consumer<String> deliverHeard = (spoken) -> {
+            for (PlayerData op : heard) {
+                Player op2 = Bukkit.getPlayer(op.uuid);
+                if (op2 != null && op2.isOnline()) msgToWatchers(op2, "§e[근처] §f" + disp + ": " + spoken); // 수신자+관전자
+                exchangeContacts(senderPd, op); // 대면 성공 → 서로 번호를 알게 됨
+            }
+            if (!spoken.equals(message)) {
+                gameLogger.logCommTampered("nearby", disp, nearNames, message, spoken, "괴담의 음성 변조", null);
+                ai.injectGmSystem("[근처 음성 변조] 괴담이 " + disp + "의 근처 발화를 가로채 듣는 이들에게 \"" + message
+                    + "\"를 \"" + spoken + "\"로 다르게 들리게 했다(발신자 본인은 자기 말이 그대로 나간 줄 안다). 이후 오해·정황에 반영.");
+            } else gameLogger.logComm("nearby", disp, nearNames, message);
+        };
+        if (!heard.isEmpty() && nearbyVoiceTampered(message)) tamperTextNatural(message, "voice", deliverHeard);
+        else deliverHeard.accept(message);
         noteEntityIntel(2, disp, message, "근처 발화", false, "voice"); // 근처 발화=가까이서 낸 소리 → 물리형 괴담도 근처면 들음(범위=근처, remote=false라 채널게이트 무관)
         // (입력 로그는 onChat 진입부에서 이미 1회 기록됨 — 여기서 중복 기록하지 않는다)
         // ★입으로 낸 '소리'다(기기 통신 아님 → 도청·차단·전화판정 무관). 단, 괴담이 소리·인기척을
@@ -11156,7 +11166,9 @@ public class TRPGGameManager {
     /** 신호·시각형 괴담인가 — 지켜보는·응시·거울·그림자·눈 계열. 수신호·봉화 등 ★시각 신호★에 개입. */
     private boolean entityTampersSignal() {
         String s = entityScanText();
-        for (String kw : new String[]{"시각","응시","지켜보","바라보","시선","거울","그림자","관찰","목격","눈알","눈동자","보는 것"}) if (s.contains(kw)) return true;
+        // ★수신호(몸짓) 변조★: ①시각형(수신호를 보고 왜곡) 또는 ②사람 조종형(신호를 내는/받는 사람을 조종해 뒤틈).
+        for (String kw : new String[]{"시각","응시","지켜보","바라보","시선","거울","그림자","관찰","목격","눈알","눈동자","보는 것",
+            "조종","꼭두각시","괴뢰","빙의","홀림","현혹","지배","부린다","인형","조종당","실을 당","마리오네트"}) if (s.contains(kw)) return true;
         return false;
     }
     /** 전자·전파형 괴담인가 — 전파·전자·디지털·해킹·감청·회로 계열. 무전·이메일·인트라넷·모스 등 ★전자 채널★에 개입. */
@@ -11253,6 +11265,23 @@ public class TRPGGameManager {
     }
     /** (구형 2분류) written이면 문서형, 아니면 음성형. */
     private boolean entityInterferes(boolean written) { return entityInterferes(written ? "text" : "voice"); }
+
+    /** ★음성 변조 세기★: 강한 괴담(대규모 또는 절정 위협)은 눈앞의 조용한 음성까지, 약하면 멀리 퍼지는 발화(외침)만 가로챈다. */
+    private boolean entityVoiceReachClose() {
+        return scaleOrdinal() >= 2 || state.getThreat() >= 70; // 내셔널급 이상 또는 절정 위협 → 근접 조용한 음성도
+    }
+    /** 발화가 '멀리 퍼지는' 큰 소리(외침·고함)인가 — 약한 음성 괴담은 이런 발화만 가로챌 수 있다. */
+    private boolean isLoudDeclared(String msg) {
+        if (msg == null) return false;
+        for (String kw : new String[]{"소리쳐","소리 질","소리질","외치","외쳐","고함","질러","고래고래","악을 쓰"}) if (msg.contains(kw)) return true;
+        return false;
+    }
+    /** ★근처(대면) 음성이 변조되는가★: 음성에 크게 연관된 괴담(entityInterferes voice)이 활성 국면(entityCommActive)일 때 —
+     *  강하면 눈앞 조용한 음성까지, 약하면 '소리친다' 등 멀리 퍼지는 발화만. 전자·편지·방송(원격)은 이 게이트와 무관(그쪽은 entityInterferes만). */
+    private boolean nearbyVoiceTampered(String message) {
+        if (!entityInterferes("voice") || !entityCommActive()) return false;
+        return entityVoiceReachClose() || isLoudDeclared(message);
+    }
 
     /** ★채널 무관 '전방위 수집형'★ 괴담인가 — 자율지능·정체차용·정보수집 성향. 이런 괴담은 매체를 가리지 않고 모든 채널을 엿듣는다.
      *  ★스케일만으로는 절대 참이 되지 않는다★(대규모 물리 괴담 SCP-049이 무전·전화를 엿듣던 오발 차단 — 스케일 폴백 제거). */
@@ -11711,7 +11740,9 @@ public class TRPGGameManager {
         Player target = Bukkit.getPlayer(targetPd.uuid);
         // ★통신 변조★: 매체 모달리티(음성/문서/신호/전자/정신)가 맞는 괴담이 원격 전달을 가로채 수신 내용을 바꾼다(30%).
         String modality = commModality(media, written);
-        boolean interfered = viaDevice && entityInterferes(modality); // 이 채널이 괴담의 간섭권인가(채널 건강)
+        // ★근처(대면) 음성 변조★: 음성에 크게 연관된 괴담은 눈앞 대화도 가로챈다 — 강하면 조용한 음성까지, 약하면 외침만(nearbyVoiceTampered).
+        boolean nearbyVoice = !viaDevice && !written && "voice".equals(modality) && nearbyVoiceTampered(message);
+        boolean interfered = (viaDevice && entityInterferes(modality)) || nearbyVoice; // 원격 채널 간섭권 or 근처 음성 변조
         boolean tampered = interfered && entityCommActive() && new java.util.Random().nextInt(100) < tamperChance(modality); // + 활성 국면 게이트(GM 스위치/위협도)
         if (tampered) bumpCommFatigue(modality); // 자주 변조하면 이 매체 신뢰도↓ → 효과 감소(#249)
         state.log("comm", commDisplayName(senderPd),
@@ -11736,7 +11767,7 @@ public class TRPGGameManager {
         else deliverIn.accept(message);
 
         // (Phase1) ★채널 건강★: 이 매체가 괴담의 간섭권이면, 이번엔 온전히 갔더라도 채널이 불안정함을 GM에 알려 서술에 반영(잡음·지연·부분 왜곡 여지).
-        if (interfered && !tampered)
+        if (viaDevice && interfered && !tampered) // 근처 음성엔 '채널'이 없으니 원격 기기 채널에만 안내
             ai.injectGmSystem("[통신 채널 불안정] " + media + " 채널이 괴담의 간섭권 안이다 — 잡음·지연·부분 왜곡이 생길 수 있음을 은근히 반영(이번 내용 자체는 온전히 전달됨).");
         // (Phase1) ★수신처 매체★: 상대가 그 매체로 받을 수단이 없으면 온전히 닿지 않았을 수 있음을 GM에 귀띔(전화는 상대도 전화가 있어야 성립).
         if (viaDevice && !hasMediumOfModality(targetPd, modality))
