@@ -62,6 +62,7 @@ description: >-
 - **trpg/AiManager.java**: AI 호출(callGmAi/callGmAiOnce/callNpcAi/callAssistant), 태그 파싱(parseTag/parseDiceTag/…), injectGmSystem.
 - **trpg/DialogManager.java**: Paper Dialog UI(시작설정·유형선택·기록·지도·소통수단 등).
 - **trpg/MapManager.java**: 구역/약도(zones·area·connections·distances), MapView 렌더(시점별 visitedZones 게이팅), knownAreaNames/sameArea.
+  ★지도 3형태★: 방문분(자동 그림) / 부분(`<MAP_GRANT player area="대분류"|zones="a,b">`→pd.mapRevealedZones, resolveGrantZones로 id·표시명·대분류 해석) / 전체(범위없는 `<MAP_GRANT>`→pd.hasFullMap). visibleZones/visibleAreas=방문 ∪ mapRevealedZones. **mapAvailable()**(constraints.map_available 기본true) false면 시작약도·MAP_GRANT·/trpg map 전부 무효(지도 없는 세계).
 - **trpg/GameLogger.java**: 이중 로그(.txt + .events.jsonl) — logVital/logItem/logComm/logMove/logAbilityResult/section.
 - **trpg/model/PlayerData.java**: 스탯(hp[]/san[]/str/cha/luk/spr, 1~20 스케일 5=평균), status, 소통수단 선언, zone/visitedZones.
 - **ChatListener.java**: 채팅·우클릭(정보/기록/지도/통신기기)·드롭/설치 차단.

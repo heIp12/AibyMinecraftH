@@ -132,6 +132,8 @@ public class PlayerData {
     public Set<String> visitedZones = new HashSet<>();
     /** 전체 지도를 입수했는지 (true면 약도에 모든 zone 표시) */
     public boolean hasFullMap = false;
+    /** ★부분 지도★ 방문하지 않았어도 스토리(MAP_GRANT area/zones)에서 지도로 공개된 zone 집합. 약도엔 방문분 ∪ 이 집합이 드러난다. */
+    public Set<String> mapRevealedZones = new HashSet<>();
 
     /** ★이동 뒤집기(#190)★ 남은 경로 홉 큐(현재 zone 제외, 목적지 포함). 비어있지 않으면 '이동 중' — 매 턴 1홉씩 전진. */
     public java.util.List<String> travelPath = new java.util.ArrayList<>();
@@ -286,6 +288,7 @@ public class PlayerData {
         travelPath.clear(); travelDest = ""; // 이동 중 상태도 초기화(#190)
         busyUntilMin = 0; actionStartMin = 0; currentActionText = ""; // ★#151 Stage B★ busy(행동 중) 상태도 초기화(새 스테이지)
         hasFullMap = false;
+        mapRevealedZones.clear();
     }
 
     public String getStatsSummary() {

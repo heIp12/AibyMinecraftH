@@ -463,6 +463,7 @@ type 값 규칙: "written_book"=책/일기/문서류, "paper"=쪽지/메모, "ma
   * 영역형/고립형(특정 공간을 못 벗어나는 괴담) → false. 예: 동창회 캠프인데 폭우로 도로 유실·고립, 산장이 눈에 갇힘, 결계·안개로 출구 소실.
   * 추적형·확산형 → true(이탈 가능하나 멈추면 위험).
 - outside_contact: 외부(경찰·가족·구조)의 도움이 닿는가. 고립형이면 false(외부와 단절).
+- map_available: 이 무대에 '지도·안내도'라는 물건이 존재할 수 있는가. ★기본 true★(대부분의 건물·시설·마을엔 약도가 있다). ★false는 특수한 경우에만★ — 끝없이 바뀌는 미궁·이세계·백룸, 측량이 불가능한 안개/꿈 공간, 지도라는 개념이 없는 원시·초자연 무대 등. false면 시작 약도 자동지급도, 스토리 중 지도 입수(MAP_GRANT)도 모두 막히고 플레이어는 발로 뛰어 길을 익혀야 한다(탐색 난이도↑). 단순히 '지도를 아직 안 줬다'가 아니라 '지도가 존재할 수 없는 세계'일 때만 false.
 - phone_usable: ★구역 간 원격 통신(전화·무전·인터컴 등 — 시설 내부 통신 포함)이 작동하는가★ = 떨어져 있는 동료·NPC와 기기로 연락이 닿는가.
   * ★혼동 주의★: '외부 휴대폰만 안 됨'과 '모든 원격 통신 두절'은 다르다. 무대에 무전·인터컴·관내 방송이 살아 있으면 phone_usable=true로 두고, 외부와의 단절은 outside_contact=false로만 표현하라(notes에 "외부 휴대폰 불통, 내부 무전·인터컴만 작동"처럼 적어라). 지하 격리시설·건물처럼 내부 통신망이 도는 무대는 대개 true다.
   * phone_usable=false는 ★정말로 구역 간 원격 연락이 전부 끊긴 경우에만★ — 전파 차단으로 무전도 불가, 시대상 통신수단 부재(과거), 괴담이 모든 통신을 죽임 등. 이때 NPC도 떨어진 플레이어에게 연락이 닿지 않는다.
@@ -637,6 +638,7 @@ critical NPC는 한자리 고정이 아니다 — 메인/사이드 사건에 참
     "phone_usable": true,
     "outside_contact": true,
     "can_leave_scene": true,
+    "map_available": true,         // 지도·안내도가 존재할 수 있는 무대인가(기본 true). 미궁·이세계·백룸 등 지도 자체가 불가능한 곳만 false.
     "comms_monitored": false,
     "comms_dangerous": false,
     "noninterference": false,      // ★자동 해결형(비개입형)★이면 true — 플레이어가 개입하지 않고 관찰·생존해야 하는 유형.
@@ -1517,7 +1519,7 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
         //    이전엔 코어 한 번에 zones·npcs·clues까지 다 받아 8192토큰에서 잘려 매번 파싱 실패했다 → 둘로 분할.
         String structPrompt = head
             + "위 스키마에서 ★entity, world_rules(core/details/loophole/collapse_condition/npc_dependency), "
-            + "constraints(era/phone_usable/outside_contact/can_leave_scene/comms_monitored/comms_dangerous/noninterference/gated_zones/written_comm/postal/silence_required/comm_media/notes), "
+            + "constraints(era/phone_usable/outside_contact/can_leave_scene/map_available/comms_monitored/comms_dangerous/noninterference/gated_zones/written_comm/postal/silence_required/comm_media/notes), "
             + "timeline(단계별 start_time/end_time/main_events 포함)★ 만 하나의 JSON 객체로 생성하라.\n"
             + "이 네 가지 최상위 필드만 출력하고 zones·npcs·roles·key_items 등 다른 필드는 절대 포함하지 마라."
             + ScenarioArchetypes.worldRulesBlock(roomNumber, conceptTypeHint) // 외부화·샘플링: 세계 규칙 후보 소수(1~2스테이지 기본만) + 운영 유형 고정 반영

@@ -2989,14 +2989,25 @@ public class TRPGGameManager {
                     bmp.sendMessage("§c[이동 저지] " + (bm[1] == null || bm[1].isEmpty() ? "무언가가 앞을 막아섭니다." : bm[1]));
             }
 
-            // 5d-2. 지도 입수(전체 공개) — 플레이어가 스토리에서 지도를 구함
-            ai.parseMapGrantTags(raw).forEach(pName -> {
-                PlayerData mp = findAnyByName(pName);
-                if (mp == null) return;
-                Player mpp = Bukkit.getPlayer(mp.uuid);
-                if (mpp != null && mpp.isOnline()) mapMan.grantFullMap(mpp);
-                else mp.hasFullMap = true;
-            });
+            // 5d-2. 지도 입수(전체 또는 부분 공개) — 플레이어가 스토리에서 지도(전체/일부)를 구함.
+            //   area="대분류"/zones="a,b,c" 속성이 있으면 그 구역만(부분 지도), 없으면 전체 입수. 지도 없는 세계(map_available=false)면 통째로 무시.
+            if (mapMan.mapAvailable()) {
+                for (String[] g : ai.parseMapGrantTags(raw)) {
+                    PlayerData mp = findAnyByName(g[0]);
+                    if (mp == null) continue;
+                    Player mpp = Bukkit.getPlayer(mp.uuid);
+                    boolean online = mpp != null && mpp.isOnline();
+                    boolean partial = !g[1].isEmpty() || !g[2].isEmpty();
+                    if (partial) {
+                        java.util.List<String> zoneIds = mapMan.resolveGrantZones(g[1], g[2]);
+                        if (online) mapMan.grantPartialMap(mpp, zoneIds);
+                        else mp.mapRevealedZones.addAll(zoneIds);
+                    } else {
+                        if (online) mapMan.grantFullMap(mpp);
+                        else mp.hasFullMap = true;
+                    }
+                }
+            }
 
             // 5d-3. ★쪽지 두고가기(#211)★: 플레이어가 '장소에 쪽지를 쓴다/둔다'고 선언하면 GM이 <DROP_NOTE>로 실물 쪽지를
             //   그 구역에 남긴다(그곳에 오는 사람·괴담이 발견). @통신으로 부치는 건 통신일 뿐 실물이 아니다 — 장소에 둘 때만 실물.
@@ -12654,6 +12665,8 @@ public class TRPGGameManager {
             if (c.has("phone_usable") && !c.get("phone_usable").getAsBoolean())
                 sb.append("- 통신기기 불능: 전화·무전 등이 작동하지 않는다(신호 없음/시대상 부재). 기기 통신에 의존하지 마라.\n"
                     + "- 번호 미보유 연락 시도: 연락 대상 번호를 모르더라도 시도 자체를 허용하라. 단, 상황상 연결 불가 사유(인프라 마비·신호 차단·대상 도달 불가)가 있으면 '연결 실패 + 우회 단서(다른 경로 안내)'로 처리할 수 있다. 시도를 막지도, 성공을 강제하지도 마라.\n");
+            if (c.has("map_available") && !c.get("map_available").getAsBoolean())
+                sb.append("- 지도 없는 세계 ★: 이곳엔 안내도·약도·지도라 할 물건이 없다(미궁·이세계·시대상 부재·측량 불가 등). 플레이어는 스스로 길을 익힐 뿐, 전체 배치를 담은 지도를 손에 넣을 수 없다 — ★<MAP_GRANT>를 출력하지 마라★. 길은 직접 걸어 보고 물어서만 알게 된다.\n");
             if (c.has("comms_monitored") && c.get("comms_monitored").getAsBoolean())
                 sb.append("- 도청 ★: 괴담은 기기 통신(통화·무전·메시지)뿐 아니라 ★대면 대화도 엿들을 수 있다 — 같은 zone 대면이 자동 안전채널이 아니다.\n"
                     + "  ★안전한 전달은 '그 괴담의 감지 양식으로 인지할 수 없는 수단'일 때만 성립한다. 예: 청각·통신 기반 괴담에게는 종이에 글/그림으로 적어 보여주기·수신호가 안전(소리를 내지 않으므로). 반면 시야·전지(全知)·빙의형 괴담은 그런 시각적 수단도 인지한다. seed의 괴담 감지 양식(청각/시각/통신/전지/접촉 등)에 따라 어떤 채널이 안전한지 GM이 판정하라 — 무엇이든 자동 안전이 아니다. 플레이어가 '도청 대비 수단(필담·암호·차폐)'을 쓰면, 그 수단이 해당 괴담 양식 밖일 때만 효과를 인정한다.\n"
