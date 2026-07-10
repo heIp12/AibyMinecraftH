@@ -258,10 +258,16 @@ public class TRPGGameManager {
     private final Map<UUID, String[]> pendingHops = new ConcurrentHashMap<>();
     /** uuid → 마지막으로 홉을 전진시킨 턴번호(같은 턴 이중 전진 방지). */
     private final Map<UUID, Integer> lastHopTurn = new ConcurrentHashMap<>();
-    /** ★통신 발신 제약★: uuid → 지정통신·@전체·필담·수신호를 마지막으로 쓴 턴(횟수 카운트 기준 턴). */
-    private final Map<UUID, Integer> lastLimitedCommTurn = new ConcurrentHashMap<>();
-    /** ★한 턴 발신 횟수★: uuid → 위 '그 턴'에 발신한 횟수(지정통신 @이름·@번호·NPC와 @전체 합산, 한 턴 2회까지). */
-    private final Map<UUID, Integer> commUsesThisTurn = new ConcurrentHashMap<>();
+    /** ★통신 발신 제약(클래스별)★: uuid → 이 카운트가 속한 턴(턴 바뀌면 리셋). */
+    private final Map<UUID, Integer> commLimitTurn = new ConcurrentHashMap<>();
+    /** ★한 턴 발신 횟수★: uuid → 클래스("signal"/"textNear"/"letter"/"remote")별 발신 수. 상한은 클래스마다 다르다
+     *  (수신호 1·면전 필담 2·원격 편지 1·원격 기기 2[@전체 합산]). 근처 음성은 카운트 안 함(자유). */
+    private final Map<UUID, Map<String, Integer>> commUsesByClass = new ConcurrentHashMap<>();
+    /** ★직전 과금 클래스★: uuid → 마지막으로 +1 한 클래스(발신 실패 시 그 클래스만 환불). */
+    private final Map<UUID, String> lastChargeClass = new ConcurrentHashMap<>();
+    /** ★NPC 응답 상한★: 한 턴에 한 플레이어에게 한 NPC가 AI로 응답하는 최대 횟수(2회, 비용 상한). 플레이어uuid→npcId→응답 수. */
+    private final Map<UUID, Integer> npcReplyTurn = new ConcurrentHashMap<>();
+    private final Map<UUID, Map<String, Integer>> npcReplyUses = new ConcurrentHashMap<>();
     /** ★편지 두고가기(dead-drop)★: 구역 id → 그곳에 남겨진 쪽지 목록. 그 구역에 들어온 사람(플레이어/괴담)이 발견한다. */
     private final Map<String, List<DroppedNote>> droppedNotes = new ConcurrentHashMap<>();
     /** 남겨진 쪽지(편지) — 위치에 놓여 발견을 기다린다. 문서형 괴담이 발견하면 훼손(orig→content). */
@@ -919,7 +925,7 @@ public class TRPGGameManager {
         pendingHops.clear(); lastHopTurn.clear(); // 이동 홉 추적(#190) — 스테이지/재도전 리셋 시 남으면 다음 판에서 오복귀·홉 스킵 유발
         groupQueue.clear(); groupFlushScheduled.clear(); activeGroupRound.clear(); groupRoundPendingResponse.clear(); // 단체턴(2a) 라운드 상태 — 리셋 시 잔류하면 다음 판 오발화·팬아웃 오발
         noHopeStreak = 0; allIncapTicks = 0; // 자동 배드엔딩(#2) 누적 — 리셋 시 초기화
-        lastLimitedCommTurn.clear(); commUsesThisTurn.clear(); // 통신 발신 제약(한 턴 2회) 기록 초기화
+        commLimitTurn.clear(); commUsesByClass.clear(); lastChargeClass.clear(); npcReplyTurn.clear(); npcReplyUses.clear(); // 통신 발신·NPC 응답 제약 초기화
         pendingOracleChoices.clear();
         pendingSaintTrait.clear();
         pendingAreaScanInput.clear();
@@ -1041,7 +1047,7 @@ public class TRPGGameManager {
         pendingHops.clear(); lastHopTurn.clear(); // 이동 홉 추적(#190) — 스테이지/재도전 리셋 시 남으면 다음 판에서 오복귀·홉 스킵 유발
         groupQueue.clear(); groupFlushScheduled.clear(); activeGroupRound.clear(); groupRoundPendingResponse.clear(); // 단체턴(2a) 라운드 상태 — 리셋 시 잔류하면 다음 판 오발화·팬아웃 오발
         noHopeStreak = 0; allIncapTicks = 0; // 자동 배드엔딩(#2) 누적 — 리셋 시 초기화
-        lastLimitedCommTurn.clear(); commUsesThisTurn.clear(); // 통신 발신 제약(한 턴 2회) 기록 초기화
+        commLimitTurn.clear(); commUsesByClass.clear(); lastChargeClass.clear(); npcReplyTurn.clear(); npcReplyUses.clear(); // 통신 발신·NPC 응답 제약 초기화
         pendingOracleChoices.clear();
         pendingSaintTrait.clear();
         pendingAreaScanInput.clear();
@@ -1154,7 +1160,7 @@ public class TRPGGameManager {
         pendingHops.clear(); lastHopTurn.clear(); // 이동 홉 추적(#190) — 스테이지/재도전 리셋 시 남으면 다음 판에서 오복귀·홉 스킵 유발
         groupQueue.clear(); groupFlushScheduled.clear(); activeGroupRound.clear(); groupRoundPendingResponse.clear(); // 단체턴(2a) 라운드 상태 — 리셋 시 잔류하면 다음 판 오발화·팬아웃 오발
         noHopeStreak = 0; allIncapTicks = 0; // 자동 배드엔딩(#2) 누적 — 리셋 시 초기화
-        lastLimitedCommTurn.clear(); commUsesThisTurn.clear(); // 통신 발신 제약(한 턴 2회) 기록 초기화
+        commLimitTurn.clear(); commUsesByClass.clear(); lastChargeClass.clear(); npcReplyTurn.clear(); npcReplyUses.clear(); // 통신 발신·NPC 응답 제약 초기화
         pendingOracleChoices.clear();
         pendingSaintTrait.clear();
         pendingAreaScanInput.clear();
@@ -9605,47 +9611,71 @@ public class TRPGGameManager {
         return true;                                             // 지정 대상 없음 = 근처 무지정 발화
     }
 
-    /** ★대화 방식별 제약★: 수신호는 띄어쓰기 빼고 5글자까지(근처·원격 공통 내용 규칙). 막히면 true(발신 취소).
-     *  ★발신 횟수(한 턴 2회)는 원격 통신에만 부과★ — 같은 구역 사람에게 @이름·@말로 말 거는 건 통화가 아니라
-     *  대화라 무료다(nearby=true면 횟수 면제). payload=수신호 글자수 판정용. directed=지정 여부. nearby=대면 여부. */
-    private boolean commMethodLimitBlocks(Player sender, PlayerData senderPd, String payload, boolean directed, boolean nearby) {
+    /** ★대화 방식별 제약★: 수신호는 5글자(근처·원격 공통 내용 규칙) + 한 턴 1회. 막히면 true(발신 취소).
+     *  발신 횟수는 ★클래스별★ — 근처 음성=자유 / 근처 필담=2회 / 원격 편지=1회 / 원격 기기=2회(@전체 합산).
+     *  같은 구역 사람에게 말 거는 건 통화가 아니라 대화라 음성은 무료. payload=수신호 글자수. nearby=대면 여부. */
+    private boolean commMethodLimitBlocks(Player sender, PlayerData senderPd, String payload, boolean nearby) {
         String m = senderPd.declaredCommMethod;
-        if ("signal".equals(m)) {                                // 수신호 5글자 — 매체 내용 규칙(근처든 원격이든)
+        if ("signal".equals(m)) {                                // 수신호: 5글자 + 한 턴 1회(근처 전용)
             String compact = payload == null ? "" : payload.replaceAll("\\s+", "");
             if (compact.length() > 5) {
                 sender.sendMessage("§7(수신호는 띄어쓰기 빼고 5글자까지만 — 지금 " + compact.length() + "자. 짧게 줄이세요.)");
                 return true;
             }
+            return commRateLimitBlocks(sender, "signal", 1, "§7(수신호는 한 턴에 한 번만 보낼 수 있습니다.)");
         }
-        if (nearby) return false;                                // ★근처 대면(음성·필담·수신호)은 발신 횟수 면제 — 대화★
-        boolean textSig = "text".equals(m) || "signal".equals(m);
-        if (!textSig && !directed) return false;                 // (방어) 근처 무지정 음성 — 보통 nearby로 이미 면제
-        return commRateLimitBlocks(sender);                      // 원격 지정 발신/필담 → 한 턴 2회(@전체와 공용 카운터)
+        if (nearby) {
+            if ("text".equals(m))                                // 면전 필담: 한 턴 2회
+                return commRateLimitBlocks(sender, "textNear", 2, "§7(필담은 한 턴에 두 번까지입니다.)");
+            return false;                                        // 근처 음성(그냥 말하기): 자유
+        }
+        // 원격: 전화 안 되고 서면만 가능한 세계=편지(1회) / 그 외=기기(2회, @전체 합산)
+        if (!isPhoneUsable() && writtenCommAvailable())
+            return commRateLimitBlocks(sender, "letter", 1, "§7(편지·인편은 한 턴에 한 번만 보낼 수 있습니다.)");
+        return commRateLimitBlocks(sender, "remote", 2, "§7(연락은 한 턴에 두 번까지만 할 수 있습니다.)");
     }
 
-    /** ★한 턴 통신 발신 횟수 제한★: 지정 통신(@이름·@번호·NPC)과 @전체를 ★합산해 한 턴 2회까지★.
-     *  초과면 true(발신 취소). 턴이 바뀌면 마지막 사용 턴이 달라 자동으로 0부터 다시 센다. */
-    private boolean commRateLimitBlocks(Player sender) {
+    /** ★클래스별 한 턴 발신 횟수 제한★: cls("signal"/"textNear"/"letter"/"remote")별로 cap회까지. 초과면 true(발신 취소).
+     *  턴이 바뀌면 카운트를 리셋한다. 클래스마다 상한이 달라(수신호 1·면전 필담 2·원격 편지 1·원격 기기 2[@전체 합산]). */
+    private boolean commRateLimitBlocks(Player sender, String cls, int cap, String denyMsg) {
         int turn = state.getCurrentTurn();
         UUID id = sender.getUniqueId();
-        Integer lastTurn = lastLimitedCommTurn.get(id);
-        int uses = (lastTurn != null && lastTurn == turn) ? commUsesThisTurn.getOrDefault(id, 0) : 0;
-        if (uses >= 2) {
-            sender.sendMessage("§7(연락은 한 턴에 두 번까지만 할 수 있습니다.)");
-            return true;
+        if (!Integer.valueOf(turn).equals(commLimitTurn.get(id))) { // 새 턴 → 이 uuid의 클래스별 카운트 초기화
+            commLimitTurn.put(id, turn);
+            commUsesByClass.remove(id);
         }
-        lastLimitedCommTurn.put(id, turn);
-        commUsesThisTurn.put(id, uses + 1);
+        Map<String, Integer> uses = commUsesByClass.computeIfAbsent(id, k -> new ConcurrentHashMap<>());
+        int u = uses.getOrDefault(cls, 0);
+        if (u >= cap) { sender.sendMessage(denyMsg); return true; }
+        uses.put(cls, u + 1);
+        lastChargeClass.put(id, cls); // 환불 대상(refundCommUse)
         return false;
     }
 
-    /** ★발신 실패 환불★: 실제로 닿지 않은 발신(잘못된 번호·자기 자신·매체 차단·빈 메시지 등)은 한 턴 발신 횟수에서
-     *  되돌린다 — 실패한 발신 때문에 재시도가 막히지 않게(제보). commRateLimitBlocks가 미리 +1 해둔 것을 취소한다. */
+    /** ★발신 실패 환불★: 직전 과금 클래스(lastChargeClass)를 되돌린다 — 실패한 발신이 재시도를 막지 않게.
+     *  근처 무료 발신 등 과금이 없었으면 no-op(핸들러 진입 시 lastChargeClass를 비워 스테일 방지). */
     private void refundCommUse(Player sender) {
         if (sender == null) return;
         UUID id = sender.getUniqueId();
-        Integer u = commUsesThisTurn.get(id);
-        if (u != null && u > 0) commUsesThisTurn.put(id, u - 1);
+        String cls = lastChargeClass.remove(id);
+        if (cls == null) return;
+        Map<String, Integer> uses = commUsesByClass.get(id);
+        if (uses != null) { Integer u = uses.get(cls); if (u != null && u > 0) uses.put(cls, u - 1); }
+    }
+
+    /** ★NPC 응답 상한(비용)★: 한 턴에 한 플레이어에게 한 NPC가 AI로 응답하는 최대 횟수(2회). 초과면 true(응답 생략). */
+    private boolean npcReplyLimitBlocks(Player player, String npcId) {
+        int turn = state.getCurrentTurn();
+        UUID id = player.getUniqueId();
+        if (!Integer.valueOf(turn).equals(npcReplyTurn.get(id))) { // 새 턴 → 리셋
+            npcReplyTurn.put(id, turn);
+            npcReplyUses.remove(id);
+        }
+        Map<String, Integer> uses = npcReplyUses.computeIfAbsent(id, k -> new ConcurrentHashMap<>());
+        int u = uses.getOrDefault(npcId, 0);
+        if (u >= 2) return true;
+        uses.put(npcId, u + 1);
+        return false;
     }
 
     /** ★#220 관계 호칭 주소어★ — 친족·관계로 부르는 말(이름이 아님). 이 말로 근처 NPC를 부르면 관계로 연결한다. */
@@ -9676,6 +9706,7 @@ public class TRPGGameManager {
     }
 
     private void handleDirectComm(Player sender, PlayerData senderPd, String raw) {
+        lastChargeClass.remove(sender.getUniqueId()); // ★환불 스테일 방지★: 이번 발신에서 실제 과금한 클래스만 환불되게
         String content = raw.substring(1).trim(); // '@' 제거
         if (content.isEmpty()) {
             sender.sendMessage("§c사용법: §f@이름/@번호 메시지§7 · §f@전체 메시지§7(아는 번호 전원) · §f@ 메시지§7(근처에 말하기)");
@@ -9692,7 +9723,7 @@ public class TRPGGameManager {
         // @전체 → 내가 아는 번호의 모든 사람에게 발신
         if (token.equals("전체") || token.equalsIgnoreCase("all")) {
             if (message.isEmpty()) { sender.sendMessage("§c사용법: @전체 메시지"); return; }
-            if (commRateLimitBlocks(sender)) return; // ★한 턴 2회 제한에 @전체도 1회로 합산(#215)
+            if (commRateLimitBlocks(sender, "remote", 2, "§7(연락은 한 턴에 두 번까지만 할 수 있습니다.)")) return; // ★원격 발신 2회에 @전체 합산(#215)
             broadcastToKnownContacts(sender, senderPd, message);
             return;
         }
@@ -9729,7 +9760,7 @@ public class TRPGGameManager {
         boolean isProximity = !dialedByNumber && targetPd == null && npcObj == null;
         String limitPayload = isProximity ? content : message;
         boolean nearbyDirected = directedTargetNearby(senderPd, targetPd, npcObj, dialedByNumber, sender);
-        if (commMethodLimitBlocks(sender, senderPd, limitPayload, !isProximity, nearbyDirected)) return;
+        if (commMethodLimitBlocks(sender, senderPd, limitPayload, nearbyDirected)) return;
 
         // ★매체별 차단(#180)★: 이 발신이 쓰려는 매체가 괴담·사건으로 막혔으면 취소(다른 수단 유도).
         String intendedMedium = senderPd.declaredCommMethod;
@@ -9838,6 +9869,9 @@ public class TRPGGameManager {
                     + turns + "턴 — 전달 중 사고·훼손 가능)");
                 gameLogger.logItem("item", commDisplayName(senderPd),
                     "편지 발송 (→" + commDisplayName(targetPd) + "): " + notePreview(message), cvia + " 발송");
+                ai.injectGmSystem("[편지 발송] " + commDisplayName(senderPd) + "이(가) " + commDisplayName(targetPd)
+                    + "에게 " + cvia + "(으)로 글을 부쳤다 — ★어떻게 보냈는지(" + cvia + "에 맞게: 전서구를 날림·인편/심부름꾼에게 맡김·우편에 부침 등)를 "
+                    + "상황에 어울리게 서술에 짧게 담아라★. 도착까지 " + turns + "턴가량(전달 중 사고·훼손·변조 여지).");
                 exchangeContacts(senderPd, targetPd);
                 return;
             }
@@ -10268,6 +10302,9 @@ public class TRPGGameManager {
             + " · 상대의 설득력·존재감: " + chaControlNote(senderPd)
             + " · 너와의 관계: " + ((relLabel.isBlank() ? "모르는 사이(낯선 상대)" : relLabel) + trustPhrase(npcTrustOf(npcId, senderPd.uuid.toString())))
             + "] " + message;
+
+        // ★NPC 응답 상한(비용)★: 한 턴에 한 플레이어에게 이 NPC는 최대 2회만 AI로 응답한다(초과 시 생략 — 다음 턴에 리셋).
+        if (npcReplyLimitBlocks(sender, npcId)) { sender.sendMessage("§7[" + npcName + "] …지금은 더 대꾸하지 않는다."); return; }
 
         sender.sendMessage((viaCall ? "§7[📞→ " : written ? "§7[✉→ " : "§7[→ ") + npcName + "] §f" + message);
 
