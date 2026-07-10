@@ -447,7 +447,8 @@ public class PlayerData {
         StringBuilder sb = new StringBuilder();
         sb.append(gmDisplayName())
           .append("[").append(roleId.isEmpty() ? "?" : roleId)
-          .append(" ").append(age).append("세 ").append(job).append("]")
+          .append(" ").append(age).append("세 ")
+          .append(gender == null || gender.isEmpty() ? "" : gender + " ").append(job).append("]")
           .append(" HP").append(hp[0]).append("/").append(hp[1])
           .append(" SAN").append(san[0]).append("/").append(san[1])
           .append(" STR").append(str)

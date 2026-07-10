@@ -1066,12 +1066,17 @@ public class GameStateManager {
             boolean isAction = "action".equals(e.type);
             // 같은 구역에서 ★소리 내어 말한 것(@근처 발화)★도 NPC가 듣는다 — 행동만 보고 말은 못 듣던 공백 보완.
             boolean isSpeech = "comm".equals(e.type) && e.content != null && e.content.startsWith("[근처]");
-            if (!isAction && !isSpeech) continue;
+            // ★확정된 결과★(판정·서술로 실제 일어난 일)도 NPC가 목격한다 — 행동 '시도'만 보고 그 결과(제압 성공 등)를
+            //   못 봐서 "정말 했냐"며 목격 사실을 의심하던 공백 보완(저품질 NPC 헛소리 방지).
+            boolean isResult = "result".equals(e.type);
+            if (!isAction && !isSpeech && !isResult) continue;
             PlayerData pd = playerOf(e.player);
             if (pd == null || !zoneFilter.equals(pd.zone)) continue;
             if (isSpeech) {
                 String said = e.content.substring("[근처]".length()).trim();
                 lines.add("[" + resolveDisplayName(e.player) + " 말함] " + said);
+            } else if (isResult) {
+                lines.add("[확정 사실 — 네 눈앞에서 실제로 일어남] " + e.content);
             } else {
                 lines.add("[" + resolveDisplayName(e.player) + "] " + e.content);
             }

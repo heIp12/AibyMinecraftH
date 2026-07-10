@@ -95,6 +95,13 @@ description: >-
   등장인물명단(charName)·능력 injectGmSystem(gmDisplayName). 평가는 프롬프트엔 gmDisplayName 보내고
   parseEvaluation이 grades/growth 키를 epd.name으로 ★정규화★해 보상 귀속을 유지(다운스트림 계정명 키 불변).
   새 프롬프트 작성 시 pd.name/actor.getName()/player.getName() 직접 삽입 금지.
+- **★NPC 인지 = 행동+발화+결과★**: `buildEntityLog(limit,zone)`는 같은 구역 `action`(행동시도)+`comm[근처]`(발화)+
+  **`result`(확정 결과)**만 NPC에 보인다. 능력 판정 결과는 `deliverNarrative`가 `state.log("result",…)`로 남겨야 근처 NPC가
+  목격한다(안 남기면 NPC가 실제 능력결과를 "헛소리"로 부정 — 저품질 함정). npcCorePrompt에 ★목격사실 부정금지 + 자기 신체결함
+  임의생성 금지('고글 파손' 류)★ 가드 있음. 뷰어 `visibleTo`는 `kind==="ability"`를 **overt만** 같은구역 노출(은밀 감지·정보능력은
+  시전자 전용) — `logAbilityResult(…,overt=true)`는 주사위·물리 판정·행동불능만.
+- **★성별 인식★**: pd.gender/npcs[].gender를 프롬프트에 실제 주입해야 대명사·호칭이 안 뒤섞인다 — GM 등장인물명단(rosterGenderTag),
+  toTurnLine, npcCorePrompt(자기 성별), handleNpcDirectComm 머리말(상대 성별)에 주입. npcs[]에도 gender 필수(생성기 스키마).
 - **스포일러 금지**: 미발견 구역·괴담 정체/약점 사전 노출 금지(지도 다이얼로그·프롤로그 등).
 - **뷰어 시점 가시성 = "실제로 닿은 것만"**: `visibleTo` — 본인/지목수신(to)/system은 표시,
   근처·방송은 같은 구역만, '전체(전역)'는 플레이어만(NPC 미표시). GM/시스템 안내방송은 플레이어 전원.

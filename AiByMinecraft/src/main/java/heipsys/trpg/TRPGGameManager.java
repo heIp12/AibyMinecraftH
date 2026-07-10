@@ -3925,7 +3925,7 @@ public class TRPGGameManager {
         if (stun > 0) {
             stunTurns.merge(pd.uuid, stun, Math::max); // 행동불능 강제(입력 차단)
             if (p != null && p.isOnline()) p.sendMessage("§c[대가] 다음 " + stun + "턴간 스스로 행동할 수 없습니다.");
-            gameLogger.logAbilityResult(commDisplayName(pd), td.name, "대가: 행동불능 " + stun + "턴");
+            gameLogger.logAbilityResult(commDisplayName(pd), td.name, "대가: 행동불능 " + stun + "턴", true); // overt=쓰러짐이 눈에 보임
         }
         StringBuilder sb = new StringBuilder("[능력 대가] " + commDisplayName(pd) + "의 '" + td.name + "' 발동 대가");
         sb.append(cost.isEmpty() ? "가 발생했다. " : ": " + cost + ". ");
@@ -4419,6 +4419,14 @@ public class TRPGGameManager {
     private static String oneLineTrim(String s, int max) {
         String t = oneLine(s);
         return t.length() <= max ? t : t.substring(0, Math.max(0, max)) + "…";
+    }
+
+    /** GM 등장인물 명단용 성별·나이 태그. 남성/여성만 "(성별[·N세])"로, '미상'·빈값은 ""(성별 확정 서술을 유도하지 않음). age<0이면 생략. */
+    private static String rosterGenderTag(String gender, int age) {
+        String g = gender == null ? "" : gender.trim();
+        boolean known = g.equals("남성") || g.equals("여성");
+        if (!known) return "";
+        return "(" + g + (age >= 0 ? "·" + age + "세" : "") + ")";
     }
 
     /** 시나리오 개요 캐시 초기화 — 새 스테이지/세션/로드 시 호출(다음 사용 때 현재 시나리오로 재생성). */
@@ -7267,6 +7275,14 @@ public class TRPGGameManager {
             if (apd != null) {
                 appendNarrativeLog(apd, narrative);
                 extractAndStoreInfo(narrative, apd);
+                // ★행동 결과를 같은 구역 NPC 인지 피드에 '확정 사실'로 남긴다★ — NPC가 행동 '시도'만 보고 그 결과(제압·구조
+                //   성공 등)를 못 봐 "정말 했냐"며 목격 자체를 의심하던 공백 보완(저품질 NPC 헛소리 방지). 발화 전용이던
+                //   목격창(notifyLocalWitnesses)을 '행위'로도 확장해, 같은 구역 NPC가 다음 서술에서 그 일에 반응하게 한다.
+                String resultDigest = oneLineTrim(narrative, 140);
+                if (!resultDigest.isBlank()) {
+                    state.log("result", apd.name, apd.gmDisplayName() + ": " + resultDigest);
+                    notifyLocalWitnesses(apd, resultDigest, "행동해 그 결과가 눈앞에 드러났다", null);
+                }
             }
         }
         // ★원거리 WITNESS 게이트★: 저품질 GM이 먼 구역 동료에게까지 '작은 행동'을 WITNESS로 뿌려
@@ -8390,7 +8406,12 @@ public class TRPGGameManager {
     private String npcCorePrompt(JsonObject npcObj) {
         String name = npcObj.has("name") ? npcObj.get("name").getAsString() : "NPC";
         StringBuilder sb = new StringBuilder();
-        sb.append("너는 살아있는 사람 '").append(name).append("'다 — 정보 안내기가 아니라 감정·사정·성격이 있는 인물이다.\n\n");
+        sb.append("너는 살아있는 사람 '").append(name).append("'다 — 정보 안내기가 아니라 감정·사정·성격이 있는 인물이다.\n");
+        String npcGender = npcObj.has("gender") && !npcObj.get("gender").isJsonNull() ? npcObj.get("gender").getAsString() : "";
+        if (npcGender.equals("남성") || npcGender.equals("여성"))
+            sb.append("★너의 성별: ").append(npcGender)
+              .append("★ — 네 말투·자기 지칭·상대가 너를 부르는 호칭이 이 성별과 어긋나지 않게 하라(남성이면 '형·오빠·아저씨', 여성이면 '누나·언니·아주머니'로 불린다).\n");
+        sb.append("\n");
         // ── 응답 순서(RESPONSE PRIORITY): reaction-first. '하지 마라' 나열 대신 '사람이 대화하는 법'을 순서로 준다. ──
         sb.append("[응답 순서 — 말하기 전에 이 순서로 반응하라. 이 목록 자체는 절대 출력하지 마라]\n");
         sb.append("1) ★반응 먼저(reaction-first)★: 상대가 방금 한 말·행동에 사람으로서 즉각 반응한다. (\"여보세요?\"→\"네?\" / \"전화받아\"→\"어? 왜, 무슨 일인데?\") 곧장 설명·훈수·단서부터 꺼내지 마라.\n");
@@ -8408,6 +8429,9 @@ public class TRPGGameManager {
         sb.append("- 얼버무리기·발뺌·거짓말도 사람답게 OK(말 돌리기·헛웃음·핑계·발끈). 금지는 하나 — 암호 같은 수수께끼식 얼버무림.\n");
         sb.append("- ★없는 인연·연락을 지어내지 마라★: 실제로 만나거나 번호를 주고받은 적 없는 사람은 그 이름·얼굴·번호를 ★모른다★. 걸려온 적 없는 전화를 '받았다'고 하거나, 낯선 사람 이름이 화면·발신자에 떴다고 서술하지 마라. 처음 보는 상대는 낯선 사람으로 대하라(아는 척·이름 부르기 금지 — 통성명은 만나서 이름을 밝힌 뒤에). ★지금 너에게 실제로 전달된 말·상황(입력으로 주어진 것)에만 반응하라★ — 일어나지 않은 접촉을 상상해 만들지 마라.\n");
         sb.append("- ★네가 알 리 없는 걸 아는 척하지 마라(전지 금지)★: 너는 (a)원래 아는 것(위 knowledge·설정), (b)네가 ★직접 그 자리에서 목격한 것★, (c)누가 ★네게 직접 말해주거나 통신으로 알려준 것★ — 이 셋만 안다. 상대가 ★다른 곳에서 혼자 겪거나 발견한 일(찾은 쪽지·본 것·다녀온 장소)★은 ★네게 전해지지 않았으면 모른다★ — 먼저 아는 척 꺼내거나 '그 ○○ 이상했지?'처럼 넘겨짚지 마라(전달 경로가 없으면 모르는 게 정상). 궁금하면 물어라. 이건 정직/거짓말 성향과 무관한 '인지 한계'다.\n");
+        sb.append("- ★네 몸·감각·장비 상태를 스스로 지어내 고정하지 마라★ — 캐릭터 데이터·시스템이 준 상태(부상·기절·홀림 등)만 연기한다. "
+            + "'고글이 망가져 안 보인다'·'다리를 다쳐 못 움직인다' 같은 ★새 신체 결함을 네가 임의로 만들어★ 매 턴 되뇌며 아무것도 못 하는 핑계로 삼지 마라(저품질 함정). "
+            + "정말 그런 일이 있었으면 시스템·GM이 상태로 알려준다 — 없으면 너는 멀쩡하다.\n");
         sb.append("- ★네 성격·말투·기질은 '연기'하는 것이지 '설명'하는 게 아니다★ — 캐릭터 소개하듯 네 성향을 말로 풀지 마라. 누가 \"너 좀 이상해\"·\"평소랑 달라\" 해도 \"나 원래 좀 조용한 편이야\"·\"난 예민한 타입이라\" 같은 ★자기 성격 해설로 답하지 마라(설정 낭독 = 메타 누출)★. 대신 사람답게 반응하라 — 발끈하거나·되묻거나(\"뭐가?\")·얼버무리거나·시치미 떼거나. ★자신을 3인칭으로 관찰·규정하지 말고 그냥 그 사람으로 행동하라.★\n");
         // ── 말투·언어 수준(주사위) + 나이·존댓말 정합 ──
         String npcId0 = getStr(npcObj, "id");
@@ -8428,7 +8452,10 @@ public class TRPGGameManager {
         sb.append("- 마크다운·메타 해설 금지(순수 대사·서술만). ★단 이 응답에서 쓰라고 따로 지시된 태그만 예외★ — 지시 없는 태그를 스스로 만들어 쓰지 마라.\n");
         sb.append("- ★일관성★: 지금까지 나눈 대화(부탁·약속·합의·경고·알려준 정보 등)를 기억하고 다음 태도에 반영하라 — 방금 한 말을 잊은 듯 모순되게 굴지 마라.\n");
         sb.append("- 입력(행동 로그·말 걸기)이 비거나 부족해도 '정보를 달라'고 묻지 마라(너는 시스템 도구가 아니다). 그럴 땐 네 성격·목적대로 자율 행동하라.\n");
-        sb.append("- 플레이어의 스탯·특성·GM 판정 내역은 모른다 — 겉으로 드러난 행동만 인지한다.\n\n");
+        sb.append("- 플레이어의 스탯·특성·주사위 수치 같은 ★뒤편 판정 내역★은 모른다 — 겉으로 드러난 행동만 인지한다.\n");
+        sb.append("- ★단, 행동 로그·장면 입력에 적힌 남의 행동과 '[확정 사실]'로 표시된 결과는 네 눈앞에서 실제로 일어난 일이다★ — "
+            + "\"정말 한 거 맞아?\"·\"장난이지?\"·\"헛소리\"라며 목격한 사실을 부정·의심하지 마라. 그 일은 정말 일어났으니 사람답게 반응하라(놀람·감탄·안도·공포·감사 등). "
+            + "의심해도 되는 건 ★멀리서 말·통신으로만 전해 들은 주장★뿐이다(그건 네 성향대로 믿거나 의심하라).\n\n");
         return sb.toString();
     }
 
@@ -10324,6 +10351,7 @@ public class TRPGGameManager {
             : "[지금 " + (remote ? "네 주변에서" : "이곳에서") + " 일어나는 일(네가 직접 보고 들은 것)]\n" + sceneLog + "\n\n";
         String userMsg   = situation + "[" + senderPd.gmDisplayName() + (viaCall ? ("이/가 " + media + "로 말한다") : written ? ("이/가 " + media + "로 전한다") : "이/가 말한다")
             + " · 상대 나이: " + senderPd.age + "세"
+            + " · 상대 성별: " + (senderPd.gender == null || senderPd.gender.isEmpty() ? "불명" : senderPd.gender) // 성별에 맞는 호칭(형/오빠·누나/언니, 아저씨/아주머니)용
             + " · 상대의 설득력·존재감: " + chaControlNote(senderPd)
             + " · 너와의 관계: " + ((relLabel.isBlank() ? "모르는 사이(낯선 상대)" : relLabel) + trustPhrase(npcTrustOf(npcId, senderPd.uuid.toString())))
             + "] " + message;
@@ -12599,19 +12627,26 @@ public class TRPGGameManager {
             if (rp.charName == null || rp.charName.isEmpty()) continue;
             roster.append("  · ").append(rp.charName);
             if (rp.job != null && !rp.job.isEmpty()) roster.append(" — ").append(rp.job);
+            String rg = rosterGenderTag(rp.gender, rp.age); // ★성별·나이★ — 대명사·호칭 일관성용
+            if (!rg.isEmpty()) roster.append(" ").append(rg);
             roster.append("\n");
         }
         if (gdam.has("npcs") && gdam.get("npcs").isJsonArray()) {
             for (JsonElement el : gdam.getAsJsonArray("npcs")) {
                 if (!el.isJsonObject()) continue;
                 String nm = getStr(el.getAsJsonObject(), "name");
-                if (!nm.isBlank()) roster.append("  · ").append(nm).append(" (NPC)\n");
+                if (nm.isBlank()) continue;
+                roster.append("  · ").append(nm).append(" (NPC)");
+                String ng = rosterGenderTag(getStr(el.getAsJsonObject(), "gender"), -1);
+                if (!ng.isEmpty()) roster.append(" ").append(ng);
+                roster.append("\n");
             }
         }
         if (roster.length() > 0) {
             sb.append("\n## 등장인물 이름 고정 (★표기 절대 불변)\n");
             sb.append("아래 인물들은 게임 내내 ★정확히 이 글자 그대로★ 칭하라. 한 번 쓴 이름을 다른 철자·이형 표기로 바꾸지 마라"
                 + "(예: '정해린'을 '정혜린'으로 쓰지 말 것). 같은 인물에게 새 이름을 임의로 지어 붙이지도 마라.\n");
+            sb.append("★성별 표기가 있는 인물은 그 성별에 맞는 대명사·호칭을 ★일관되게★ 쓰라(그/그녀, 사내/여자, 아저씨/아주머니, 형·오빠/누나·언니 등) — 이름만 보고 성별을 넘겨짚어 뒤섞지 마라. '미상'·표기 없음은 성별 확정 서술을 피하고 이름·호칭으로만 지칭하라.\n");
             sb.append(roster);
         }
 
@@ -13393,7 +13428,7 @@ public class TRPGGameManager {
         // ★로그/실시간 뷰어·재현 충실도★: 코드가 정한 판정을 기록(주사위·스탯보정·성공기준·결과) — 인게임에 뜨던 판정이 로그엔 없던 공백 보완.
         gameLogger.logAbilityResult(dpd != null ? dpd.gmDisplayName() : player.getName(), "주사위 판정",
             (reason.isEmpty() ? "행동 판정" : reason) + " — d" + max + "=" + roll + modNote
-            + " (기준 " + effDc + " 이상 성공) → " + outcome);
+            + " (기준 " + effDc + " 이상 성공) → " + outcome, true); // overt=겉으로 드러난 물리 판정 → 같은 구역 목격
         // ★#209 굴림 먼저 → 보정 하나씩 가산★
         // 1) '굴리는 중' 연출(약 1.5초, d{max} 무작위) — 3틱 간격.
         final int FRAMES = 10;
@@ -13684,7 +13719,7 @@ public class TRPGGameManager {
         // ★뷰어 호환 로그(핵심 수정)★ — diceParse가 dN=M·(기준 D 이상 성공)·→ 결과 세 패턴을 모두 요구한다.
         //   예전 형식('영감 16 (기준 12) → 성공')엔 dN=M·'이상 성공'이 없어 뷰어가 주사위로 인식 못 해 애니메이션이 안 나왔다.
         gameLogger.logAbilityResult(pd != null ? pd.gmDisplayName() : player.getName(), "주사위 판정",
-            (reason.isEmpty() ? "행동 판정" : reason) + " — d20=" + val + " (기준 " + dc + " 이상 성공) → " + outcome);
+            (reason.isEmpty() ? "행동 판정" : reason) + " — d20=" + val + " (기준 " + dc + " 이상 성공) → " + outcome, true); // overt
         // 왜 굴리는지 먼저 안내(관전자 포함) — ★행동 텍스트는 여기 한 번만★(결과 줄엔 반복하지 않는다). d20·기준·능력치 표기는 결과 줄로 미뤄 짧게.
         msgToWatchers(player, "§e🎲 " + (reason.isEmpty() ? "판정" : reason) + " §7— 굴립니다…");
         // ★인게임 굴림 연출★: 무작위 프레임(약 0.8s) → 착지값 강조. onDone은 착지 시점에 실행해 인라인 뒤 서술이 자연히 이어지게(연출은 서술과 겹쳐 흐른다).
@@ -13725,7 +13760,7 @@ public class TRPGGameManager {
             final String ltierDisp = lroll >= 7 ? "압도적!" : lroll >= 5 ? "큰 행운" : lroll >= 3 ? "행운" : "미약한 행운";
             final NamedTextColor lcol = lroll >= 7 ? NamedTextColor.AQUA : NamedTextColor.LIGHT_PURPLE; // 7=압도적은 대성공색
             gameLogger.logAbilityResult(pd != null ? pd.gmDisplayName() : player.getName(), "행운 판정",
-                "행운 추가판정 — d7=" + lroll + " (기준 1 이상 성공) → " + ltier); // 뷰어 diceParse 호환(dN=M·기준·→한토큰)
+                "행운 추가판정 — d7=" + lroll + " (기준 1 이상 성공) → " + ltier, true); // 뷰어 diceParse 호환(dN=M·기준·→한토큰) · overt
             plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
                 if (!player.isOnline()) return;
                 titleToWatchers(player, Title.title(

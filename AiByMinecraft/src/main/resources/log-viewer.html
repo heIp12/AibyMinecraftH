@@ -294,7 +294,7 @@ function normalize(ev){
   actor=canon(actor); to=to.map(canon);
   if(kind==="assign")bodyText=(/등장/.test(text)?"배역 등장: ":"배역 배정: ")+(actor||"?"); // 계정→role_id·zone_id 메타 제거 + 표시명으로
   return {seq:ev.seq||0,t:ev.t||"",gt:ev.gt||"",kind,actor,to,ability,detail:ev.detail||"",phase:ev.phase||"",cause:ev.cause||"",
-          text:bodyText,cat,orig:ev.orig||"",via:viaName,item:ev.item||"",note:ev.note||"",zone,remove,
+          text:bodyText,cat,orig:ev.orig||"",via:viaName,item:ev.item||"",note:ev.note||"",zone,remove,overt:!!ev.overt,
           hpAfter,hpMax,sanAfter,sanMax,hpDelta,sanDelta};
 }
 // 특정 인물의 seq 시점 구역(마지막 이동 기준). 이동 기록이 없으면 null(불명).
@@ -312,6 +312,8 @@ function visibleTo(e,vp){
     const az=zoneAtSeq(e.actor,e.seq||0), vz=zoneAtSeq(vp,e.seq||0); return az!=null&&vz!=null&&az===vz;
   }
   if(e.kind==="nearby"){ const az=zoneAtSeq(e.actor,e.seq||0), vz=zoneAtSeq(vp,e.seq||0); return az!=null&&vz!=null&&az===vz; } // 근처(면전)는 같은 구역만
+  if(e.kind==="ability"){ // ★겉으로 드러난(overt) 물리 능력·판정만★ 같은 구역이 목격. 은밀한 감지·정보 능력(overt 아님)은 시전자 전용.
+    if(!e.overt)return false; const az=zoneAtSeq(e.actor,e.seq||0), vz=zoneAtSeq(vp,e.seq||0); return az!=null&&vz!=null&&az===vz; }
   return false; }
 function buildViewpoints(){ const m=new Map();
   for(const e of EVENTS){ if(e.kind==="alias"||e.kind==="timeline")continue; for(const c of [e.actor,...e.to])if(isPerson(c))m.set(c,(m.get(c)||0)+1); }

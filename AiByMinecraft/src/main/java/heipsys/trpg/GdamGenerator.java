@@ -305,6 +305,7 @@ harm/defeat가 모두 "불가"인 순수 비물리 괴담도 가능하나 ★남
   예) 한국 배경 → "김유진", "박철수" / 일본 배경 → "다나카 하나코", "스즈키 켄지"
   예) 서양 배경 → "존 스미스", "에밀리 클라크" / 조선시대 → "홍길동", "이몽룡"
 - gender: "남성" 또는 "여성" 또는 "미상" 중 하나. 배역 이미지에 맞게 선택.
+- ★npcs[]에도 각 NPC에 gender를 반드시 넣어라★("남성"/"여성"/"미상"). 이름·배역 이미지에 맞게 — 엔진이 이 값으로 대명사·호칭(그/그녀, 형/누나 등)을 일관되게 쓴다. 없으면 모델이 이름만으로 성별을 넘겨짚어 뒤섞인다. 정체 은폐가 필요한 인물만 "미상".
 
 ## job_pool / age_range 설계 원칙 ★
 - job_pool은 반드시 5~8개 항목으로 작성한다 (2~3개는 절대 금지)
@@ -723,8 +724,8 @@ critical NPC는 한자리 고정이 아니다 — 메인/사이드 사건에 참
   ],
   "zones": [{"zone_id":"zone_A","name":"","area":"","accessible_by":[],"exclusive":false,"connections":["zone_B"]}],
   "npcs": [
-    {"id":"npc_A","name":"","zone":"zone_A","critical":false,"role_type":"무관","age":45},
-    {"id":"npc_B","name":"","zone":"zone_B","critical":true,"role_type":"방어막","age":29,"true_role":"","personality":"","motivation":"","honesty":"방어형","swear":{"trigger":"casual","intensity":"moderate","burn":0},"speech_style":"","knowledge":[],
+    {"id":"npc_A","name":"","zone":"zone_A","critical":false,"role_type":"무관","age":45,"gender":"남성"},
+    {"id":"npc_B","name":"","zone":"zone_B","critical":true,"role_type":"방어막","age":29,"gender":"여성","true_role":"","personality":"","motivation":"","honesty":"방어형","swear":{"trigger":"casual","intensity":"moderate","burn":0},"speech_style":"","knowledge":[],
      "schedule":[{"goal":"","time":"E1 이후 1턴","action":"","will":"강함"},{"goal":"","time":"반응","condition":"정체를 의심받으면","action":"","will":"상황"}]}
   ],
   "key_items": [
