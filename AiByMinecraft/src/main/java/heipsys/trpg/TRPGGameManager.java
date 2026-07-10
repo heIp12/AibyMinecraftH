@@ -3926,6 +3926,7 @@ public class TRPGGameManager {
             case AI_QUERY      -> activateAiQuery(player, pd, td);
             case CHOICE_ACTION -> activateChoiceAction(player, pd, td);
             case LUCK_ROLL     -> activateLuckRoll(player, pd, td);
+            case TEMP_BUFF     -> activateTempBuff(player, pd, td);
             case SHOW_PROGRESS -> activateShowProgress(player, pd, td);
             case GM_DIRECTIVE  -> activateGmDirective(player, pd, td);
             case AREA_SCAN     -> activateAreaScan(player, pd, td);
@@ -3958,6 +3959,20 @@ public class TRPGGameManager {
             case GROUP_REWIND  -> activateGroupRewind(player, pd, td);
             default            -> player.sendMessage("§7이 특성은 상시(패시브)로 적용됩니다.");
         }
+    }
+
+    /** ★일시 능력치 버프 특성(temp_buff)★ — 몇 턴간 지정 스탯을 올린다(집중·각성·비약 등). 세션 종료 시 휘발.
+     *  buff_stat(1근력·2매력·3행운·4영감·5체력·6정신) · buff_amount(±1~5) · buff_turns(1~10). */
+    private void activateTempBuff(Player player, PlayerData pd, TraitData td) {
+        int idx = td.param("buff_stat", 1);
+        String stat = switch (idx) { case 2 -> "cha"; case 3 -> "luk"; case 4 -> "spr"; case 5 -> "hp"; case 6 -> "san"; default -> "str"; };
+        int amount = td.param("buff_amount", 2);
+        amount = Math.max(-5, Math.min(5, amount == 0 ? 2 : amount));
+        int turns  = Math.max(1, Math.min(10, td.param("buff_turns", 3)));
+        applyTempStatBuff(pd, stat, amount, turns);   // 라이브 스탯 반영 + 스코어보드(지속시간·양) + 로그
+        ai.injectGmSystem("[능력 발동] " + pd.gmDisplayName() + "이(가) '" + td.name + "'으로 " + turns + "턴간 "
+            + diceStatLabel(stat) + "이(가) " + (amount > 0 ? "강해졌다" : "약해졌다") + ". 그 변화를 다음 서술에 자연스럽게 반영하라.");
+        applyTraitUsed(pd, td.id, state.getCurrentTurn());
     }
 
     private void activateInstantClear(Player player, PlayerData pd, TraitData td) {
@@ -13165,8 +13180,11 @@ public class TRPGGameManager {
         //   luk<5: 대신 (5-luk)×10% '불운 조짐'(모든 행동에 사소한 악재).
         if (lukV >= 5) {
             if (ThreadLocalRandom.current().nextInt(100) < lukV * 3) {
-                rolls.addProperty("luck_reroll", ThreadLocalRandom.current().nextInt(1, 21)); // 🍀 연출용 행운 주사위값
-                note.append(" [행운 판정 예고] 이 행동이 ★판정(주사위)★이면 행운이 한 번 더 따른다 — ★성공이면 성과를 한 뼘 더 강화, 실패면 입는 피해·대가를 눈에 띄게 줄여★ 서술하라(치명타가 스치는 상처로). [행운!] 표기.");
+                int luckDie = ThreadLocalRandom.current().nextInt(1, 8);   // ★행운 추가판정 = d7(1~7) 고정★
+                rolls.addProperty("luck_reroll", luckDie);
+                String tier = luckDie >= 7 ? "압도적(추가 대성공)" : luckDie >= 5 ? "큰 행운" : luckDie >= 3 ? "행운" : "미약한 행운";
+                note.append(" [행운 추가판정 d7=" + luckDie + " → " + tier + "] 이 행동이 ★판정(주사위)일 때만★ 반영하라 — 행운 크기에 비례해 성공이면 성과를 더 키우고 실패면 피해·대가를 더 줄여라(미약=살짝·행운=뚜렷이·큰 행운=크게). "
+                    + "★7=압도적: 추가 대성공 — 압도적 성공 + 피해 전혀 없음★. ★네 판정이 대성공인데 이것도 7이면 '말도 안 되는 시너지'로 극적으로 서술★. [행운!] 표기.");
             }
             if (ThreadLocalRandom.current().nextInt(100) < lukV)
                 note.append(" [행운 조짐] 이 행동이 ★판정 없이 풀리는 종류★면 뜻밖의 행운을 하나 곁들여도 좋다 — ★어떤 유용한 우연이든★: 뜻밖의 쓸모있는 물건을 발견·획득(치료약·열쇠·도구 등), 닫힌 문의 우회로·지름길, 단서의 '위치'가 눈에 띔 등. ★단 핵심 퍼즐 해법·괴담 약점은 주지 마라(운은 길을 열 뿐, 답은 플레이어 몫 — 영감과 다르다).★ 발동 시 [행운!]으로 한 줄 표기.");
@@ -13326,17 +13344,20 @@ public class TRPGGameManager {
         // ★행운 추가굴림 연출·로그(#luck B1)★ — 프리롤이 luck_reroll을 심었으면 메인 착지 뒤에 🍀 행운 주사위를 한 번 더 보여준다.
         //   실제 기계효과(성공 강화/실패 피해 감소)는 GM이 [행운 판정 예고] 지시대로 이번 응답에 반영한다 — 여기선 연출·뷰어 로그만.
         if (rolls != null && rolls.has("luck_reroll")) {
+            final int lroll = Math.max(1, Math.min(7, rolls.get("luck_reroll").getAsInt())); // d7(1~7)
             final boolean lwin = success || partial;
-            final int lroll = rolls.get("luck_reroll").getAsInt();
+            final String ltier    = lroll >= 7 ? "압도적" : lroll >= 5 ? "큰행운" : lroll >= 3 ? "행운" : "미약한행운"; // 뷰어 한토큰
+            final String ltierDisp = lroll >= 7 ? "압도적!" : lroll >= 5 ? "큰 행운" : lroll >= 3 ? "행운" : "미약한 행운";
+            final NamedTextColor lcol = lroll >= 7 ? NamedTextColor.AQUA : NamedTextColor.LIGHT_PURPLE; // 7=압도적은 대성공색
             gameLogger.logAbilityResult(pd != null ? pd.gmDisplayName() : player.getName(), "행운 판정",
-                "행운이 따라준다 — d20=" + lroll + " (기준 10 이상 성공) → " + (lwin ? "성과강화" : "피해감소")); // 뷰어 diceParse 호환(dN=M·기준·→한토큰)
+                "행운 추가판정 — d7=" + lroll + " (기준 1 이상 성공) → " + ltier); // 뷰어 diceParse 호환(dN=M·기준·→한토큰)
             plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
                 if (!player.isOnline()) return;
                 titleToWatchers(player, Title.title(
-                    Component.text("🍀 " + lroll, NamedTextColor.LIGHT_PURPLE, TextDecoration.BOLD),
-                    Component.text("행운 판정 · " + (lwin ? "성과 강화" : "피해 감소"), NamedTextColor.LIGHT_PURPLE),
+                    Component.text("🍀 " + lroll, lcol, TextDecoration.BOLD),
+                    Component.text("행운 추가판정 · " + ltierDisp + (lwin ? " (성과 강화)" : " (피해 감소)"), lcol),
                     Title.Times.times(Duration.ofMillis(120), Duration.ofMillis(1800), Duration.ofMillis(400))));
-                msgToWatchers(player, "§d🍀 §7[행운 판정] → " + (lwin ? "§a성과 강화" : "§a피해 감소"));
+                msgToWatchers(player, "§d🍀 §7[행운 추가판정 d7=" + lroll + "] → " + colorCode(lcol) + ltierDisp);
             }, landTick + 10L);
         }
         // ★순서 보장(사용자 요청)★: 굴림 → 착지(결과 공개) → ★그 다음에★ 결과 서술이 이어진다.

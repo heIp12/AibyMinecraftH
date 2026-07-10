@@ -47,6 +47,9 @@ public class SystemTraitRegistry {
         SACRIFICE("sacrifice", true,
             "발동 시 HP 또는 SAN을 소모해 강력한 효과를 얻는다. 효과 내용은 effect 텍스트로 표현한다(예: 일시적 스탯 급등, 봉인 해제, 저주 전이 등).",
             "cost=소모량(1~20), use_san=소모 대상(0=HP소모 기본값, 1=SAN소모), scale=혜택 크기(1=소, 2=중, 3=대)"),
+        TEMP_BUFF("temp_buff", true,
+            "발동 시 몇 턴간 지정 능력치를 올린다(집중·각성·비약·의식 등). 세션(스테이지)이 끝나면 사라진다. 주사위·이동 등 모든 판정에 즉시 반영된다.",
+            "buff_stat=대상 능력치(1=근력·2=매력·3=행운·4=영감·5=체력·6=정신력), buff_amount=증감(1~5, 음수=일시 약화 대가), buff_turns=지속 턴(1~10)"),
         LINK_ALLY("link_ally", true,
             "발동 시 다른 플레이어의 위치·상태를 감각으로 파악하거나 소통 수단을 발견한다. depth에 따라 얻는 정보 수준이 달라진다.",
             "uses=횟수(1~2), depth=감지 깊이(1=생존·대략 위치 확인 [즉시 표시], 2=상태 파악·소통 실마리 [AI 서술], 3=소통 경로 발견 포함 [AI 서술])"),
@@ -671,6 +674,9 @@ public class SystemTraitRegistry {
             case CHOICE_ACTION    -> td.param("choices", 3) >= 4 ? 10 : 3;
             case AI_QUERY         -> td.param("info", 1) >= 3 ? (uses >= 2 ? 10 : 5) : 3;
             case SACRIFICE        -> { int sc = td.param("scale", 2); yield sc >= 3 ? 10 : sc == 2 ? 5 : 1; }
+            case TEMP_BUFF        -> { int amt = Math.abs(td.param("buff_amount", 2)), tn = td.param("buff_turns", 3);
+                                       yield (amt >= 4 || tn >= 8) ? 5 : (amt >= 2 && tn >= 3) ? 3 : 1; } // 큰·장기 버프=A · 보통=B · 소=C
+
             case PASSIVE_TRIGGER  -> { int it = td.param("intensity", 2), fq = td.param("trigger_freq", 2);
                                        yield it >= 3 ? (fq >= 3 ? 10 : 5) : it >= 2 ? 3 : 1; }
             case GM_DIRECTIVE     -> 5;
@@ -723,7 +729,7 @@ public class SystemTraitRegistry {
     /** 코스트가 예산을 넘을 때 가장 강한 파라미터를 1 낮춘다. 더 낮출 게 없으면 false. */
     private static boolean reduceOneParam(TraitData td) {
         if (td.effectParams == null || td.effectParams.isEmpty()) return false;
-        String[] order = {"choices","scale","power","scope","depth","intensity","range","trigger_freq","turns","count","direction","info","uses"};
+        String[] order = {"choices","scale","power","scope","depth","intensity","range","trigger_freq","buff_amount","buff_turns","turns","count","direction","info","uses"};
         for (String k : order) {
             Integer v = td.effectParams.get(k);
             int min = switch (k) { case "choices", "scale" -> 2; case "info", "direction" -> 0; default -> 1; };
