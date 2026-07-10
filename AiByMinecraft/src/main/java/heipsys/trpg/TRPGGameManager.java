@@ -9546,15 +9546,22 @@ public class TRPGGameManager {
             return;
         }
 
-        // 대상 식별: 숫자면 연락처 번호로 다이얼, 아니면 이름
-        boolean dialedByNumber = token.matches("\\d{3,5}");
-        PlayerData targetPd = dialedByNumber ? findByContactId(token) : findByName(token);
-        JsonObject npcObj = (!dialedByNumber && targetPd == null) ? findNpcByName(token) : null;
-        // ★#220★ 이름 매칭 실패 + 관계 호칭(형/누나 등)이면 같은 구역의 '관계 정의된' NPC 1명으로 연결(모호하면 근처 발화).
-        if (npcObj == null && !dialedByNumber && targetPd == null) npcObj = resolveHonorificNpc(senderPd, token);
-        // ★임시이름(A)★: 여전히 미매칭이면 — 이름 모르는 눈앞(같은 구역) NPC를 서술적 임시이름으로 부른 것으로 보고 유일 후보로 연결.
-        //   id로 라우팅 + 로그는 NPC 실명(canonical)이라 임시이름이 별도 인물로 갈라지지 않는다(뷰어 포함). 모호하면 근처 발화로.
-        if (npcObj == null && !dialedByNumber && targetPd == null) npcObj = resolveTempNameNpc(senderPd, token);
+        // 대상 식별: 숫자면 연락처 번호로 다이얼, 아니면 이름.
+        //   ★'@ 메시지'(공백=근처 발화)는 대상 매칭을 하지 않는다★ — 첫 단어를 대상(임시이름·번호 등)으로 오인해
+        //   메시지 앞부분을 잘라먹던 버그(제보: "@ 왜죠? 자세히…"→"자세히…"만 전달). '@이름'(붙임)일 때만 대상 지정.
+        boolean dialedByNumber = false;
+        PlayerData targetPd = null;
+        JsonObject npcObj = null;
+        if (atAttached) {
+            dialedByNumber = token.matches("\\d{3,5}");
+            targetPd = dialedByNumber ? findByContactId(token) : findByName(token);
+            npcObj = (!dialedByNumber && targetPd == null) ? findNpcByName(token) : null;
+            // ★#220★ 이름 매칭 실패 + 관계 호칭(형/누나 등)이면 같은 구역의 '관계 정의된' NPC 1명으로 연결(모호하면 근처 발화).
+            if (npcObj == null && !dialedByNumber && targetPd == null) npcObj = resolveHonorificNpc(senderPd, token);
+            // ★임시이름(A)★: 여전히 미매칭이면 — 이름 모르는 눈앞(같은 구역) NPC를 서술적 임시이름으로 부른 것으로 보고 유일 후보로 연결.
+            //   id로 라우팅 + 로그는 NPC 실명(canonical)이라 임시이름이 별도 인물로 갈라지지 않는다(뷰어 포함). 모호하면 근처 발화로.
+            if (npcObj == null && !dialedByNumber && targetPd == null) npcObj = resolveTempNameNpc(senderPd, token);
+        }
 
         // ★대화 방식별 제약★: @전체(전자 발신)는 위에서 이미 처리됨. 근처 무명발화는 content 전체가 내용.
         boolean isProximity = !dialedByNumber && targetPd == null && npcObj == null;
@@ -13063,9 +13070,9 @@ public class TRPGGameManager {
             synchronized (dpd.keyFacts) {
                 if (!dpd.keyFacts.isEmpty()) { if (known.length() > 0) known.append(" / "); known.append("밝혀낸 사실: ").append(String.join("; ", dpd.keyFacts)); }
             }
-            ai.injectGmSystem("[영감 통찰] 이 인물이 통찰로 진실에 다가간다. ★지금 아는 정보만★ 엮어 한 걸음 나아간 결론을 서술로 보여줘라"
+            ai.injectGmSystem("[영감 통찰] 이 인물이 통찰로 진실에 다가간다. ★지금 아는 정보만★ 엮어 한 걸음 나아간 ★연결·실마리★(어디와 어디가 이어지는지·무엇을 다시 볼지)를 서술로 보여줘라 — ★단정적 결론·정답 선언은 하지 마라(잇는 것까지만, 판단·결론은 플레이어 몫).★"
                 + (known.length() > 0 ? (" (아는 것 — " + known + ")") : " (아직 아는 정보가 적으니 부분적·잠정적 실마리만)")
-                + ". ★아직 발견 못 한 비밀·정답은 누설 금지★ — 모르는 것은 결론에 넣지 마라. " + (success ? "정보가 충분하면 더 확실·구체적으로." : "부분성공이니 조심스러운 한 조각만."));
+                + ". ★아직 발견 못 한 비밀·정답은 누설 금지★ — 모르는 것은 넣지 마라. " + (success ? "정보가 충분하면 더 또렷한 연결로." : "부분성공이니 조심스러운 한 조각만."));
         }
         // ★로그/실시간 뷰어·재현 충실도★: 코드가 정한 판정을 기록(주사위·스탯보정·성공기준·결과) — 인게임에 뜨던 판정이 로그엔 없던 공백 보완.
         gameLogger.logAbilityResult(dpd != null ? dpd.gmDisplayName() : player.getName(), "주사위 판정",
