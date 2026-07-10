@@ -5223,6 +5223,23 @@ public class TRPGGameManager {
         return v != null && (v.contains("사망") || v.contains("퇴장") || v.contains("소멸"));
     }
 
+    /** ★#266★ 종결 상태 때문에 '말·연락에 응답할 수 없는' NPC면 플레이어에게 보일 사유 한 줄(아니면 null).
+     *  ★사망·소멸·기절·봉인만★ 막는다 — 제압·구속은 결박됐어도 ★의식이 있어 심문·대화가 되므로 응답 허용★(부재인
+     *  퇴장·격퇴는 이 함수가 아니라 위치·연락 도달 판정이 막는다). 죽은 자·기절한 자가 멀쩡히 대답하던 문제 차단. */
+    private String npcUnresponsiveReason(JsonObject npc) {
+        if (npc == null) return null;
+        java.util.Map<String,String> m = state.getNpcDispositions();
+        if (m.isEmpty()) return null;
+        String nm = getStr(npc, "name"), id = getStr(npc, "id");
+        String v = (nm != null && !nm.isBlank()) ? m.get(nm.trim()) : null;
+        if (v == null && id != null && !id.isBlank()) v = m.get(canonicalNpcName(id));
+        if (v == null) return null;
+        if (v.contains("사망") || v.contains("소멸")) return "이미 숨이 끊긴 뒤라 아무 대답도 돌아오지 않는다.";
+        if (v.contains("기절")) return "정신을 잃고 쓰러진 채라 아무 반응이 없다.";
+        if (v.contains("봉인")) return "봉인된 채라 말이 닿지 않는다.";
+        return null; // 제압·구속·격퇴·퇴장 등은 여기서 막지 않는다(의식 있음 / 부재는 위치·연락 판정 소관)
+    }
+
     /** GM 응답의 <TEMP_STAT>를 소비해 임시 스탯 버프를 부여한다(약물·일시 효과). 플레이어 비노출(stripTags가 제거). */
     private void applyTempStatTags(String raw) {
         if (raw == null || raw.isEmpty()) return;
@@ -10134,6 +10151,13 @@ public class TRPGGameManager {
         // 말이 통하지 않는 상대(시신·혼수·함구·비소통 존재 등)는 @로 대화·호출할 수 없다.
         if (!isNpcCommunicable(npcObj)) {
             sender.sendMessage("§7[" + npcName + "] 아무 반응이 없다. 말을 걸 수 있는 상대가 아니다.");
+            return;
+        }
+        // ★#266★ 플레이 중 사망·기절·봉인된 NPC는 응답 불가 — 죽은/쓰러진 자가 멀쩡히 대답하지 않게 한다.
+        //   (제압·구속은 의식이 있어 심문·대화 허용. 부재인 퇴장·격퇴는 아래 위치·연락 도달 판정이 막는다.)
+        String noReply = npcUnresponsiveReason(npcObj);
+        if (noReply != null) {
+            sender.sendMessage("§7[" + npcName + "] " + noReply);
             return;
         }
 
