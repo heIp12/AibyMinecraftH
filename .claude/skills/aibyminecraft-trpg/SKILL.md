@@ -256,9 +256,27 @@ description: >-
 - **꼭두각시 상태머신**(TRPGGameManager 턴루프 ~8931 + san_change ~2271): puppetRecoveryTurns(>0 관전
   /-1 완전조종 heal전용/0 중간), puppetTotalTurns(누적→상한 시 강제완전회복), puppetGraceTurns(회복 직후
   재조종 유예 — 낮은 SAN이어도 재조종 트리거 차단). 정상복귀 시 total 리셋.
-- **통신 변조 게이트**: entityInterferes(modality)=entityTampers{Voice,Written,Signal,Electronic,Psychic}
-  (엔티티 name/type/rules/ai_context 키워드 매칭 — '소리·울림' 광의어는 오탐하니 좁게). tamperText는 핵심어·
-  숫자 뒤집기 우선, 없으면 신호끊김(…). 물리형 괴담이 통신 변조하면 게이트 오탐 의심.
+- **통신 변조 3축(누가/언제/어떻게)**: ①★누가(모달리티)★ entityInterferes(modality) = entity.comm_interference 선언
+  우선 + 키워드 폴백 entityTampers{Voice,Written,Signal,Electronic,Psychic}('소리·울림' 광의어 오탐 주의). ②★언제★
+  entityCommActive() = HORROR + commTamperMode(GM `<COMM_TAMPER on/off>` 1/-1) / auto(0)=감청형(comms_monitored)
+  처음부터·그 외 threat≥40. ③★어떻게★ tamperTextNatural = ★저급 티어(ai.callAssistantOnce)★로 자연스럽게 다시 씀
+  (하드코딩 tamperText는 폴백만) — 시스템 프롬프트 규칙 '서로 아는·확인 가능한 부분은 그대로, 수신자가 모를 핵심 하나만
+  비튼다'(그럴듯+은밀, 발각은 면대면 재확인 등 외부 모순으로만=#712). 발신자는 원문 그대로(#216).
+- **매체별 변조 방식(★비용 기준으로 분리★, 63c2af7 기계 음성변조는 revert)**: ①기기·원격=시스템 기계 변조(tamperTextNatural
+  저급). ②★면전 음성=GM 서술 영역★ — 엔진은 근처 음성을 글자 그대로 안 바꾼다(리치 텍스트+GM이 장면 서술+수신자가 원문
+  이미 봄 → 기계 스왑 부적합). 음성·인지형 강한 괴담은 '분명 그렇게 들었는데…' 왜곡·오인을 ★서술로★(PromptBuilder 710 ②:
+  강=눈앞 조용한 말·약=외침만, 단어교체 금지·의심/오인만). ③★수신호=값싼 기계 변조★.
+- **수신호 변조 = tamperSignalCheap**: 5자 수신호 → callAssistantOnce(저급)로 '5자 이내 반대 뜻'(초간단 프롬프트, 실패·
+  과길이면 원문). 게이트 entityTampersSignal(시각형 + ★사람 조종형★ 조종·꼭두각시·빙의·홀림…) && entityCommActive() &&
+  tamperChance("signal"). 배선: deliverDirectMessage sigTamper(!viaDevice && declaredCommMethod=="signal") → 로그
+  "괴담의 신호 변조"·bumpCommFatigue("signal"). ★근거: 음성은 GM 서술이 싸지만 5자 수신호는 기계 변조가 더 싸고 깔끔(사용자 판단).
+- **통신 발신 제한 = 클래스별**(단일 2회 카운터 폐기): commRateLimitBlocks(sender, cls, cap, msg) + commUsesByClass.
+  수신호"signal"1(+5글자) · 면전 필담"textNear"2 · 원격 편지"letter"1 · 원격 기기"remote"2(@전체 합산). 근처 음성=무료
+  (카운트 안 함). 환불은 lastChargeClass(직전 과금 클래스만, handleDirectComm 진입 시 초기화). directedTargetNearby로
+  근처/원격 선판정(플레이어 같은구역·NPC 위치불명/같은구역/최근조우=대면). 원격 편지는 GM에 전달방법(전서구·인편·우편) 서술 주입.
+- **NPC 응답 상한(비용)**: npcReplyLimitBlocks — 한 턴에 한 플레이어에게 한 NPC가 AI 응답 ★최대 2회★(초과 시 callNpcAi
+  생략, "…더 대꾸하지 않는다"). npcReplyTurn/npcReplyUses(플레이어uuid→npcId→수), 턴 바뀌면 리셋. 근처 음성 무제한 발화의
+  NPC AI 폭주 방지. ★단체턴 리셋 3블록(922/1044/1157 부근)에 commLimitTurn·commUsesByClass·lastChargeClass·npcReply* 포함.
 - **소통수단(#177)**: 기본 4종은 GM 호출 없이 필드로 즉시 판정(applyCommMethodLocal). 새 수단 GM 판정은 #180.
 - **비용 기법 현황(참조본 zip 대조 결론)**: 우리는 이미 프롬프트 캐싱(시스템+히스토리 프리픽스 cache_control·1h TTL)·적응형 effort(output_config)·모델 티어·자동탐지·JsonSalvage(절단JSON 로컬복구, HEAD)를 갖춰 Claude 기준 참조본과 동등 이상. 참조본의 절감은 저가 제공사(MiMo/Cerebras) 전환+reasoning suffix가 실체 — Claude엔 무의미. 다중프로바이더는 열면 `AICraft.java` 한 곳(providerFor/modelName/applyReasoningEffort). ★비용 아닌 품질 갭★: 참조본은 히스토리 system-role을 Claude GM에 `[시스템 지침]`으로 전달, 우리는 Claude 경로에서 드롭(AiManager send Claude 분기) — 필요 시 REF 1766-1781 병합루프 이식.
 - **#231 비용 진단(실측 $17 vs 예측 $12, 40% 초과)**: ★구조는 정상★ — send()(AiManager 1111~)은 system 블록에 ★무조건★ cache_control(1h TTL), GM/NPC/entity 멀티턴은 cacheHistory=true로 마지막 메시지 프리픽스 캐싱. 단가(accumulateUsage 445): 캐시읽기 0.1× · ★캐시쓰기 1.25×(=읽기의 12.5배)★ · 출력 5×(입력 대비). ★중복 규칙 통합은 실효 없음★(베이스 캐시됨, 10줄/842줄≈0.1%). 유력 정체: (1)★캐시쓰기 churn★=1h TTL 만료(느린 인간 턴·세션 중단)·단발게임마다 40K 베이스 1.25× 재생성 / (2)출력 길이(5× 단가, GM 서술 과다) / (3)미캐시 단발호출. ★계측 추가(이번가동 전용, 영구저장·UsageStat 불변)★: accCacheRead/accCacheWrite/accCostOut + `usageDiagLines()` → /trpg status에 순수입력/캐시읽기/캐시쓰기/출력·비용비중·캐시히트% 표시. ★실플레이 1회 후 /trpg status로 정체 규명★(히트% 낮으면 churn / 출력비중 높으면 서술 트림 / 순수입력 크면 미캐시). luckSaves처럼 dead-code 아님 — send 경로 확인됨.
