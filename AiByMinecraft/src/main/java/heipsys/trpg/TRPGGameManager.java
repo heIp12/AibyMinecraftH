@@ -7355,6 +7355,8 @@ public class TRPGGameManager {
         String task = "아래 TRPG 서술에서 ★기록할 가치가 있는 새 정보(단서)★만 뽑아줘.\n"
             + "포함(진짜 단서만): 사건·괴담·인물·장소에 대해 ★새로 알게 된 사실★, NPC가 말한 의미 있는 내용,\n"
             + "  수수께끼·모순·위화감(이상 징후), 해결의 실마리.\n"
+            + "★#11 출처 구분: NPC·소문·전언에서 나온 말은 사실로 단정하지 말고 '누가 ~라고 말했다/주장했다'로 ★출처를 붙여★ 기록하라\n"
+            + "  — 거짓·오해·변조일 수 있으니 직접 보고 확인한 사실과 구분한다(NPC 거짓말을 '확정 사실'로 굳히지 않게).\n"
             + "★제외(절대 기록 금지): 분위기·감각 묘사, 이동, ★이미 아는 것(내 소지품의 위치·촉감·외형 등 자명한 상태)★,\n"
             + "  결과 없는 일상 동작, 감정 표현만 있는 문장.\n"
             + "  나쁜 예 ✗: '출입증이 목에 걸려 있다' / '태블릿이 팔에 눌려 있다' / '목소리가 조금 멀게 들린다' (단순 묘사)\n"
@@ -9011,6 +9013,7 @@ public class TRPGGameManager {
         if (gdam == null || !gdam.has("entity") || !gdam.get("entity").isJsonObject()) return;
         JsonObject entity = gdam.getAsJsonObject("entity");
         if (!isCharacterfulSingleEntity(entity)) return;       // 그 외 괴담은 GM이 직접 서술(추가 호출 없음)
+        if (isNpcDisabled(entity)) return;                     // ★#9★ 제압·봉인·격퇴·사망·소멸로 종결된 괴담은 자율 행동 금지(NPC_STATE는 괴담에도 적용 — 프롬프트 약속 이행, CLEAR 전이라도 재행동 차단)
         String ezone = getStr(entity, "zone");                 // 없으면 편재(전역)
         if (!entityCanReachAnyPlayer(ezone)) return;           // 닿는 플레이어 없으면 호출 생략(비용 절약)
         String log = state.buildEntityLog(4, ezone);
@@ -9775,6 +9778,11 @@ public class TRPGGameManager {
             else if (targetPd != null) intendedMedium = (!senderPd.zone.isEmpty() && senderPd.zone.equals(targetPd.zone)) ? "voice" : "electronic";
             else if (dialedByNumber) intendedMedium = "electronic";                                     // 번호 다이얼 = 원격
             // NPC 이름 통신+선언 없음 → 매체 불명확 → 차단 판정 생략(GM 서술로 처리)
+        }
+        // ★#5★ 원격 전송은 ★실제 전송될 매체★로 차단 검사한다 — 원격이면 선언(voice/signal/text)이 아니라 전화(electronic)/서면(text).
+        //   (voice 선언 원격전화가 electronic 차단을 통과하거나, signal/text 선언이 원격에서 전화 경로로 새던 분리 방지.)
+        if (!isProximity && !nearbyDirected) {
+            intendedMedium = isPhoneUsable() ? "electronic" : (writtenCommAvailable() ? "text" : "electronic");
         }
         if (!intendedMedium.isEmpty() && state.isMediumBlocked(intendedMedium)) {
             // ★스포 금지 + '사용한 것처럼'★: 차단됐다고 미리 알리지 않는다(괴담이 막는다는 노출). 보낸 것처럼
@@ -12157,6 +12165,10 @@ public class TRPGGameManager {
             || pd.zone == null || pd.zone.isBlank() || pd.isTraveling()) {
             p.sendMessage("§7지금은 이동할 수 없습니다."); return;
         }
+        // ★#7★ 비동기 busy(행동 수행 중)면 이동 시작 거부 — 예전엔 busy를 무시하고 위치만 옮긴 뒤 handleAction이 거부돼 '서술 없는 순간이동'이 났다.
+        if (state.getTurnMode() >= 2 && !state.isDailyPhase() && pd.isBusy(state.getClockMinutes())) {
+            p.sendMessage("§8(아직 진행 중인 행동이 끝나지 않아 이동할 수 없습니다.)"); return;
+        }
         java.util.List<String> path = mapMan.shortestZonePath(pd.zone, dest, passableKnownZones(pd));
         if (path.isEmpty()) { p.sendMessage("§7그곳으로 가는 길을 알지 못합니다."); return; }
         pd.travelPath = new java.util.ArrayList<>(path);
@@ -12172,6 +12184,7 @@ public class TRPGGameManager {
         if (pd.isDead || !"normal".equals(pd.status) || animalForm.contains(pd.uuid)) { p.sendMessage("§7지금은 이동할 수 없습니다."); return; }
         if (pd.zone == null || pd.zone.isBlank()) { p.sendMessage("§7아직 현재 위치가 정해지지 않았습니다."); return; }
         if (pd.isTraveling()) { p.sendMessage("§7이미 이동 중입니다(멈추려면 '멈춰'라고 입력)."); return; }
+        if (state.getTurnMode() >= 2 && !state.isDailyPhase() && pd.isBusy(state.getClockMinutes())) { p.sendMessage("§8(행동 중이라 지금은 이동할 수 없습니다.)"); return; } // ★#7★ busy 중 선택기 열기 차단
         java.util.Set<String> allowed = passableKnownZones(pd); // 잠긴 통과불가 구역은 경로에서 제외(RISK9)
         java.util.List<String[]> dests = new java.util.ArrayList<>();
         JsonObject gdam = state.getGdamData();
