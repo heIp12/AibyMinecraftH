@@ -13573,7 +13573,8 @@ public class TRPGGameManager {
             int val = Math.max(1, Math.min(20, raw + statBonus + lb));
             int crit = raw == 20 ? 1 : raw == 1 ? -1 : 0;                // 자연 최대·최소 = 대성공·대실패
             rolls.addProperty(k, val);
-            if (lb != 0) rolls.addProperty(k + "_luck", lb);            // ★표시 분해용★ 행운 보정분 — 성패는 val로, 표시는 '능력치+행운'으로 쪼갠다
+            rolls.addProperty(k + "_base", raw);                        // ★표시 분해용★ 자연굴림(주사위값) — 주사위·능력치·행운을 각각 보여주기 위해 저장
+            if (lb != 0) rolls.addProperty(k + "_luck", lb);            // ★표시 분해용★ 행운 보정분 — 성패는 val로, 표시는 '주사위+능력치+행운'으로 쪼갠다
             if (crit != 0) rolls.addProperty(k + "_crit", crit);
             if (!first) note.append(" · ");
             first = false;
@@ -13716,10 +13717,21 @@ public class TRPGGameManager {
         NamedTextColor col = crit == 1 ? NamedTextColor.AQUA : crit == -1 ? NamedTextColor.DARK_RED
                            : success ? NamedTextColor.GREEN : partial ? NamedTextColor.GOLD : NamedTextColor.RED;
         String label = diceStatLabel(statKey);
-        // ★뷰어 호환 로그(핵심 수정)★ — diceParse가 dN=M·(기준 D 이상 성공)·→ 결과 세 패턴을 모두 요구한다.
-        //   예전 형식('영감 16 (기준 12) → 성공')엔 dN=M·'이상 성공'이 없어 뷰어가 주사위로 인식 못 해 애니메이션이 안 나왔다.
+        // ★분해 표기(주사위·능력치·행운 각각)★: 미리 굴린 base(자연굴림)·luck(행운 보정분)를 꺼내 능력치분=val-base-luck로 나눈다.
+        //   전엔 주사위+능력치가 한 덩어리(fstat)로 합쳐 보였다 → 셋으로 분리. 뷰어 diceSteps도 (기본 N +X라벨 +Y행운)를 단계 연출한다.
+        int luckPart = (rolls != null && statKey != null && rolls.has(statKey + "_luck")) ? rolls.get(statKey + "_luck").getAsInt() : 0;
+        int basePart = (rolls != null && statKey != null && rolls.has(statKey + "_base")) ? rolls.get(statKey + "_base").getAsInt() : -1;
+        int statPart = basePart >= 0 ? (val - basePart - luckPart) : 0; // 능력치(영감 등) 보너스분(상·하한 클램프 흡수)
+        String modNote = "";
+        if (basePart >= 0 && crit == 0) { // 대성공/대실패·구경로는 자연값만(보정 무의미) — 나머지만 분해
+            StringBuilder ms = new StringBuilder(" (기본 " + basePart);
+            if (statPart != 0 && !label.isEmpty()) ms.append(' ').append(statPart > 0 ? "+" : "").append(statPart).append(label);
+            if (luckPart != 0) ms.append(' ').append(luckPart > 0 ? "+" : "").append(luckPart).append("행운");
+            modNote = ms.append(')').toString();
+        }
+        // ★뷰어 호환 로그★ — diceParse가 dN=M·(기준 D 이상 성공)·→ 결과 세 패턴을 요구. modNote(기본+보정)까지 넣어 뷰어가 주사위/능력치/행운을 단계로 나눠 연출한다.
         gameLogger.logAbilityResult(pd != null ? pd.gmDisplayName() : player.getName(), "주사위 판정",
-            (reason.isEmpty() ? "행동 판정" : reason) + " — d20=" + val + " (기준 " + dc + " 이상 성공) → " + outcome, true); // overt
+            (reason.isEmpty() ? "행동 판정" : reason) + " — d20=" + val + modNote + " (기준 " + dc + " 이상 성공) → " + outcome, true); // overt
         // 왜 굴리는지 먼저 안내(관전자 포함) — ★행동 텍스트는 여기 한 번만★(결과 줄엔 반복하지 않는다). d20·기준·능력치 표기는 결과 줄로 미뤄 짧게.
         msgToWatchers(player, "§e🎲 " + (reason.isEmpty() ? "판정" : reason) + " §7— 굴립니다…");
         // ★인게임 굴림 연출★: 무작위 프레임(약 0.8s) → 착지값 강조. onDone은 착지 시점에 실행해 인라인 뒤 서술이 자연히 이어지게(연출은 서술과 겹쳐 흐른다).
@@ -13735,8 +13747,7 @@ public class TRPGGameManager {
             }, i * 3L);
         }
         final long landTick = FRAMES * 3L + 2L;
-        int luckPart = (rolls != null && statKey != null && rolls.has(statKey + "_luck")) ? rolls.get(statKey + "_luck").getAsInt() : 0;
-        final int fval = val, fdc = dc, fstat = val - luckPart, fluck = luckPart; // 표시: 능력치분(fstat) + 행운분(fluck) = 판정값(fval)
+        final int fval = val, fdc = dc, fbase = basePart, fstatp = statPart, fluck = luckPart, fcritv = crit; // 표시 분해: 주사위(fbase)+능력치(fstatp)+행운(fluck)=판정값(fval)
         final String fout = outcome, flabel = label, freason = reason;
         final NamedTextColor fcol = col;
         plugin.getServer().getScheduler().runTaskLater(plugin, () -> {   // ★굴림이 끝난 뒤에야 결과 공개★(강조 타이틀 + 채팅) — 미리 노출 금지
@@ -13747,8 +13758,15 @@ public class TRPGGameManager {
                 Title.Times.times(Duration.ofMillis(120), Duration.ofMillis(2200), Duration.ofMillis(500))));
             // ★압축 결과 표기(요청)★: 행동 텍스트(freason)는 위 '굴립니다' 줄에 이미 나왔으니 반복하지 않고,
             //   [능력치(+행운 보정) / 기준] → 결과 만 짧게 — 긴 서술 반복·어중간한 줄바꿈 제거.
-            String statDisp = (flabel.isEmpty() ? "판정" : flabel) + " " + fstat
-                + (fluck > 0 ? " §7+행운 " + fluck : fluck < 0 ? " §7-행운 " + (-fluck) : "");
+            String statDisp;
+            if (fbase >= 0 && fcritv == 0) { // ★주사위·능력치·행운 각각 표기★(합쳐 보이던 문제 수정)
+                statDisp = "주사위 " + fbase
+                    + (fstatp != 0 && !flabel.isEmpty() ? " §7" + (fstatp > 0 ? "+" : "") + fstatp + " " + flabel + "§f" : "")
+                    + (fluck != 0 ? " §7" + (fluck > 0 ? "+행운 " : "-행운 ") + Math.abs(fluck) + "§f" : "")
+                    + " §7= §f" + fval;
+            } else { // 대성공/대실패·구경로: 자연값만(보정 무의미)
+                statDisp = (flabel.isEmpty() ? "판정" : flabel) + " " + fval;
+            }
             msgToWatchers(player, "§e🎲 §7[§f" + statDisp + " §7/ 기준 " + fdc + "§7] → " + colorCode(fcol) + fout);
         }, landTick);
         // ★행운 추가굴림 연출·로그(#luck B1)★ — 프리롤이 luck_reroll을 심었으면 메인 착지 뒤에 🍀 행운 주사위를 한 번 더 보여준다.
