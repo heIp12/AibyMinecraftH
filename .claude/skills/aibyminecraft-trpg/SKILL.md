@@ -331,3 +331,12 @@ description: >-
   통신 변조) 반복 → 설계-시 선언으로 근원 해결. comms_dangerous(사용=위험)·comms_monitored(감청)와는 별개 축.
 - **★GdamGenerator 텍스트블록이 한도 근접(60KB/65.5KB)★**: GDAM_SYSTEM_PROMPT_2에 스키마 필드 추가 시 여유 ~5.5KB뿐.
   더 늘리면 3분할 필요(64KB UTF-8 상수 한도). 추가 전 위 텍스트블록 크기 스크립트로 확인할 것.
+- **통신 변조 = 3층 (내용 GM / 채널 comm_interference / ★언제=GM 스위치+엔진 폴백★)**: entityCommActive()가 '언제'를
+  게이트 — currentPhase==HORROR 필수 + commTamperMode(<COMM_TAMPER on/off>, GameStateManager durable): 1=강제ON·
+  -1=강제OFF·0=auto. auto면 감청테마(isCommsMonitored)=처음부터 / 그 외=threat≥40(중반 escalation). ★설계 근거★:
+  변조를 한 번 들키면 플레이어가 통신 전체 불신→'연락두절 게임' 붕괴. 그래서 유능 GM은 극적 시점에만 켜고, 약모델은
+  태그 미사용→auto 폴백(모델티어 판별 불필요). ★변조 결정 6곳 전부 && entityCommActive() 필수★(9145·9564·10298 원격,
+  11580 dropnote, 11619 지연, 11655 직접). 새 변조 경로 추가 시 이 게이트 빠뜨리지 말 것.
+- **declaredCommMethod 기본=voice(#243)**: resetToBase가 ""로 비우면 '자동' 부활→soundDangerous 시 필담 고정('연락이
+  계속 문자로'). 필드기본·resetToBase 둘 다 "voice"여야 함(빈값 금지). resolveInPersonWritten: voice=음성·text=필담·
+  빈값=soundDangerous면 자동필담.

@@ -2827,6 +2827,12 @@ public class TRPGGameManager {
             applyTempStatTags(raw);
             // 2d. ★#266 NPC 종결 상태★ 태그 소비(제압·결박·봉인·격퇴·사망·퇴장/해제) — durable 저장, 매 턴 GM 문맥 재주입.
             applyNpcStateTags(raw);
+            // 2e. ★통신 변조 스위치★ — GM이 극적 시점에 괴담의 통신 변조를 켜고 끈다(<COMM_TAMPER on/off>). 미설정이면 auto(엔진 규칙).
+            String tamperSw = ai.parseCommTamperTag(raw);
+            if (tamperSw != null) {
+                state.setCommTamperMode("on".equals(tamperSw) ? 1 : -1);
+                gameLogger.logEvent("통신 변조 스위치 — GM " + ("on".equals(tamperSw) ? "ON(괴담이 통신을 가로채기 시작)" : "OFF(변조 중단)"));
+            }
 
             // 3. ITEM_GRANT 파싱 및 처리 + heldItemIds 추적
             JsonObject itemGrant = ai.parseItemGrant(raw);
@@ -9136,7 +9142,7 @@ public class TRPGGameManager {
         String media = remote ? commMediumName(target, written) : ""; // 구체 매체 이름(전서구·통신구·서찰·필담…)
         // ★통신 변조★: @이름과 동일 — 매체 모달리티가 맞는 괴담이 원격 선연락을 가로채 바꿔 전달(30%). 대면은 변조 안 함.
         String tmodC = commModality(media, written);
-        boolean tampered = remote && entityInterferes(tmodC) && new java.util.Random().nextInt(100) < tamperChance(tmodC);
+        boolean tampered = remote && entityInterferes(tmodC) && entityCommActive() && new java.util.Random().nextInt(100) < tamperChance(tmodC);
         // ★배달 본문(변조·정상 공용)★: heard=실제 전달될 말. 변조면 GM(AI)이 자연스럽게 생성해 이 콜백에 넘긴다.
         java.util.function.Consumer<String> deliver = (heard) -> {
             if (tp == null || !tp.isOnline()) return; // 비동기 변조 대기 중 오프라인 → 전달 취소
@@ -9555,7 +9561,7 @@ public class TRPGGameManager {
         for (PlayerData op : targets) {
             Player op2 = Bukkit.getPlayer(op.uuid);
             if (op2 == null || !op2.isOnline() || !(bypass || hasCommDevice(op))) continue; // 개방 시 수신자 기기 부재도 관통
-            boolean tampered = chanInterfered && tamperRng.nextInt(100) < elecTamperChance; // @이름과 동일(신뢰도 반영)
+            boolean tampered = chanInterfered && entityCommActive() && tamperRng.nextInt(100) < elecTamperChance; // @이름과 동일(신뢰도 반영) + 활성 국면 게이트
             String head = "§b[📞 " + disp + " → " + (senderNet != null ? senderNet + "망" : "전체") + "] §f";
             if (tampered) {
                 elecTamperedAny = true; // 변조 여부는 동기 확정 → 아래 남용도·잡음 주입은 즉시 처리 가능
@@ -10289,7 +10295,7 @@ public class TRPGGameManager {
             // ★통신 변조★: 매체 모달리티가 맞는 괴담이 원격 답신을 가로채 바꿔 전달(30%). 대면(sameZone)은 변조 안 함.
             //   변조 내용은 GM(AI)이 자연스럽게 다시 씀(tamperTextNatural, 비동기) — 실패 시 하드코딩 폴백.
             final String tmodR = commModality(media, writtenF);
-            final boolean tamperedR = remote && entityInterferes(tmodR) && new java.util.Random().nextInt(100) < tamperChance(tmodR);
+            final boolean tamperedR = remote && entityInterferes(tmodR) && entityCommActive() && new java.util.Random().nextInt(100) < tamperChance(tmodR);
             if (tamperedR) bumpCommFatigue(tmodR); // 남용 시 신뢰도↓
 
             // GM 컨텍스트에 요약만 주입 (전체 대화 노출 방지) — 원본 기준, 변조와 무관하게 즉시.
@@ -11154,6 +11160,24 @@ public class TRPGGameManager {
         return false; // 배열은 있으나 이 채널은 없음 = 개입 안 함
     }
 
+    /** ★통신 변조 활성 게이트★ — 괴담이 '지금' 통신을 가로챌 국면인가('언제' 축, entityInterferes/comm_interference는 '어느 채널').
+     *  ★설계 의도★: 변조를 한 번이라도 들키면 플레이어가 통신 전체를 불신해 게임이 '연락두절형'으로 붕괴한다(통신 게임플레이
+     *  자체가 사라짐). 그래서:
+     *   - ★통신·감청이 정체인 괴담(comms_monitored)★ → HORROR 진입부터 변조. 이건 스포가 아니라 ★이 시나리오의 전제★
+     *     (정보격리·통신금지형 아키타입 — '통신을 믿지 마라'가 곧 게임의 주제).
+     *   - ★그 외(변조가 부차적)★ → ★위협 격상(threat≥40, '경계' 밴드) 후에야★ 변조. 게임 대부분(초·중반)은 통신을
+     *     믿고 쓰게 두고, 괴담이 강해진 뒤 '통신까지 오염되는' ★후반 escalation★으로만 등장시킨다(초반 스포·조기 불신 방지).
+     *  ※그 위에 #249 남용 신뢰도(commTrustFactor)가 빈도를 더 자기제한한다. */
+    private boolean entityCommActive() {
+        if (currentPhase != Phase.HORROR) return false;     // 일상·프롤로그엔 변조 없음(GM ON이어도 — 아직 괴담과 얽히기 전)
+        int mode = state.getCommTamperMode();
+        if (mode > 0) return true;                           // ★GM이 극적 시점에 <COMM_TAMPER on>으로 켬★ — 위협 무관 즉시 활성
+        if (mode < 0) return false;                          // ★GM이 <COMM_TAMPER off>로 끔★ — 억제(고품질 GM의 극적 통제)
+        // 미설정(auto) = ★약모델 폴백★: GM이 스위치를 안 쓰면 엔진이 자동 판단 — 감청 테마는 처음부터, 그 외는 중반(격상) 후.
+        if (isCommsMonitored()) return true;                 // 통신·감청 테마 괴담: 처음부터(게임의 전제 — 스포 아님)
+        return state.getThreat() >= 40;                      // 그 외(부차적 변조): 위협 격상 후에만 — 후반 escalation
+    }
+
     /** 이 모달리티에 괴담이 개입(엿듣기·변조)할 수 있는가. ★entity.comm_interference 선언이 있으면 그것 우선★,
      *  없으면 타입 키워드 스캔 폴백(전자는 전파형 또는 전자음성이면 음성형도 포함). */
     private boolean entityInterferes(String modality) {
@@ -11553,7 +11577,7 @@ public class TRPGGameManager {
 
     /** 문서형 괴담이 남겨진 쪽지를 발견해 ★훼손★(원본→변형). 뷰어엔 원본/변형됨으로 남는다. 턴마다 호출(값싼 게이트). */
     private void tamperDroppedNotes() {
-        if (droppedNotes.isEmpty() || !entityInterferes("text")) return; // 문서형 괴담만
+        if (droppedNotes.isEmpty() || !entityInterferes("text") || !entityCommActive()) return; // 문서형 괴담만 + 괴담이 실제 활성 국면일 때만
         java.util.Random rng = new java.util.Random();
         for (Map.Entry<String, List<DroppedNote>> e : droppedNotes.entrySet()) {
             for (DroppedNote n : e.getValue()) {
@@ -11592,7 +11616,7 @@ public class TRPGGameManager {
             if (tp == null || tp.isDead) continue; // 받을 사람이 없으면 유실
             String modality = commModality(d.via, "letter".equals(d.kind));
             int delay = Math.max(1, d.deliverTurn - d.sentTurn); // 지연이 길수록 가로챌 시간이 길다
-            boolean tampered = entityInterferes(modality) && new java.util.Random().nextInt(100) < tamperChanceDelayed(modality, delay); // 전달 중 변조(지연 길수록↑, #248)
+            boolean tampered = entityInterferes(modality) && entityCommActive() && new java.util.Random().nextInt(100) < tamperChanceDelayed(modality, delay); // 전달 중 변조(지연 길수록↑, #248)
             if (tampered) bumpCommFatigue(modality);
             final PendingDelivery fd = d; final PlayerData ftp = tp; final boolean ftampered = tampered;
             final String tdisp = commDisplayName(tp);
@@ -11628,7 +11652,7 @@ public class TRPGGameManager {
         // ★통신 변조★: 매체 모달리티(음성/문서/신호/전자/정신)가 맞는 괴담이 원격 전달을 가로채 수신 내용을 바꾼다(30%).
         String modality = commModality(media, written);
         boolean interfered = viaDevice && entityInterferes(modality); // 이 채널이 괴담의 간섭권인가(채널 건강)
-        boolean tampered = interfered && new java.util.Random().nextInt(100) < tamperChance(modality);
+        boolean tampered = interfered && entityCommActive() && new java.util.Random().nextInt(100) < tamperChance(modality); // + 활성 국면 게이트(GM 스위치/위협도)
         if (tampered) bumpCommFatigue(modality); // 자주 변조하면 이 매체 신뢰도↓ → 효과 감소(#249)
         state.log("comm", commDisplayName(senderPd),
             "→ " + commDisplayName(targetPd) + " (" + medium + "): " + message); // 발신 자체 기록(원문)
