@@ -908,6 +908,7 @@ public class TRPGGameManager {
         pendingLuckModifier.clear();
         pendingDecisiveClear.clear(); // 미뤄둔 결정타 클리어 — 스테이지/재도전/종료 리셋 시 잔류(다음 판 오발) 방지
         pendingHops.clear(); lastHopTurn.clear(); // 이동 홉 추적(#190) — 스테이지/재도전 리셋 시 남으면 다음 판에서 오복귀·홉 스킵 유발
+        groupQueue.clear(); groupFlushScheduled.clear(); activeGroupRound.clear(); groupRoundPendingResponse.clear(); // 단체턴(2a) 라운드 상태 — 리셋 시 잔류하면 다음 판 오발화·팬아웃 오발
         noHopeStreak = 0; allIncapTicks = 0; // 자동 배드엔딩(#2) 누적 — 리셋 시 초기화
         lastLimitedCommTurn.clear(); commUsesThisTurn.clear(); // 통신 발신 제약(한 턴 2회) 기록 초기화
         pendingOracleChoices.clear();
@@ -1029,6 +1030,7 @@ public class TRPGGameManager {
         pendingLuckModifier.clear();
         pendingDecisiveClear.clear(); // 미뤄둔 결정타 클리어 — 스테이지/재도전/종료 리셋 시 잔류(다음 판 오발) 방지
         pendingHops.clear(); lastHopTurn.clear(); // 이동 홉 추적(#190) — 스테이지/재도전 리셋 시 남으면 다음 판에서 오복귀·홉 스킵 유발
+        groupQueue.clear(); groupFlushScheduled.clear(); activeGroupRound.clear(); groupRoundPendingResponse.clear(); // 단체턴(2a) 라운드 상태 — 리셋 시 잔류하면 다음 판 오발화·팬아웃 오발
         noHopeStreak = 0; allIncapTicks = 0; // 자동 배드엔딩(#2) 누적 — 리셋 시 초기화
         lastLimitedCommTurn.clear(); commUsesThisTurn.clear(); // 통신 발신 제약(한 턴 2회) 기록 초기화
         pendingOracleChoices.clear();
@@ -1132,6 +1134,7 @@ public class TRPGGameManager {
         pendingLuckModifier.clear();
         pendingDecisiveClear.clear(); // 미뤄둔 결정타 클리어 — 스테이지/재도전/종료 리셋 시 잔류(다음 판 오발) 방지
         pendingHops.clear(); lastHopTurn.clear(); // 이동 홉 추적(#190) — 스테이지/재도전 리셋 시 남으면 다음 판에서 오복귀·홉 스킵 유발
+        groupQueue.clear(); groupFlushScheduled.clear(); activeGroupRound.clear(); groupRoundPendingResponse.clear(); // 단체턴(2a) 라운드 상태 — 리셋 시 잔류하면 다음 판 오발화·팬아웃 오발
         noHopeStreak = 0; allIncapTicks = 0; // 자동 배드엔딩(#2) 누적 — 리셋 시 초기화
         lastLimitedCommTurn.clear(); commUsesThisTurn.clear(); // 통신 발신 제약(한 턴 2회) 기록 초기화
         pendingOracleChoices.clear();
@@ -2440,6 +2443,13 @@ public class TRPGGameManager {
             actionMessage = "[빙의 — " + possessedName + "의 몸으로 행동(본체는 그 자리에 무방비)] " + message;
         }
 
+        // ★단체턴(증분 2a)★: 이미 이번 라운드 행동을 접수했으면 여기서 차단 — 아래 소모성 보정·특성(1회성 remove)이
+        //   거부될 행동에 이중 소비되는 것을 막는다(아래 enqueue 지점보다 앞이어야 함).
+        if (state.isGroupTurn() && groupQueue.containsKey(player.getUniqueId())) {
+            player.sendMessage("§7(이미 행동을 접수했습니다 — 같은 구역 동료를 기다리는 중입니다.)");
+            return;
+        }
+
         // 대기 중인 특성 발동이 있으면 행동에 포함
         String pendingTrait = pendingTraitActivation.remove(player.getUniqueId());
         if (pendingTrait != null) {
@@ -2530,6 +2540,14 @@ public class TRPGGameManager {
         //   이제 GM이 응답에서 <BROADCAST>로 '진짜 방송'이라 판정했을 때만, onGmResponse에서 같은 건물 인원에게 결정적 전달한다.
         //   (그 응답 턴에 재생 — 입력 즉시가 아니라 GM이 판단한 뒤.)
 
+        // ★단체턴(같은 구역 묶음, 증분 2a)★: 같은 구역에 행동가능 동료가 있으면 즉시 GM 호출 대신 라운드 큐에 모아
+        //   전원 제출 또는 타임아웃 시 GM 1회 통합 호출(일관성↑·비용↓). 혼자·위치불명·개별턴이면 아래 기존 경로 그대로(회귀 0).
+        if (state.isGroupTurn() && enqueueGroupAction(player, pd, actionMessage, gmCtx.toString())) {
+            compressor.compressIfNeeded();
+            return;
+        }
+        activeGroupRound.remove(player.getUniqueId()); // 개별 경로 진입 — 지난 단체 라운드 팬아웃 잔재 정리(오발 방지)
+
         // 특성 버튼 관련 단어 처리는 TurnManager가 GM AI로 전달 (gmCtx=소지품·보정 등 GM전용 지시는 로그 미기록)
         boolean accepted = turnMan.handleAction(player, actionMessage, gmSystemPrompt, gmCtx.toString());
         if (!accepted) {
@@ -2541,6 +2559,131 @@ public class TRPGGameManager {
 
         // 컨텍스트 압축 체크
         compressor.compressIfNeeded();
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  단체턴 (같은 구역 묶음, 증분 2a) — 전원 제출/타임아웃 → GM 1회 통합 호출
+    //  ※ 모든 접근은 메인 스레드(handleGameChat=runTask, 스케줄러 태스크, onGmResponse=runTask) — 별도 동기화 불요.
+    // ──────────────────────────────────────────────────────────────
+
+    /** 라운드 대기 큐: uuid → {구역, 행동문, GM전용 지시}. 제출 순서 유지(첫 제출자=대표). 메인 스레드 전용. */
+    private final java.util.LinkedHashMap<UUID, String[]> groupQueue = new java.util.LinkedHashMap<>();
+    /** 타임아웃 플러시가 예약된 구역 — 같은 구역 타이머 중복 예약 방지(플러시·타이머 발화 시 해제). */
+    private final java.util.Set<String> groupFlushScheduled = new java.util.HashSet<>();
+    /** 진행 중 단체 라운드: 대표 uuid → 참여자 uuid 목록(대표 포함). deliverNarrative가 통합 서술을 동료에게 팬아웃할 때 사용.
+     *  인라인 주사위 분할 전달(before/after/후속)까지 팬아웃돼야 하므로 전달 시점에 제거하지 않는다 —
+     *  다음 라운드 put(대표 키 갱신)·개별 경로 진입·리셋 블록에서 정리된다. */
+    private final Map<UUID, java.util.List<UUID>> activeGroupRound = new ConcurrentHashMap<>();
+    /** 라운드 타임아웃(틱) — 첫 제출 후 이 시간이 지나면 모인 만큼만 플러시(전원 제출 시 즉시). 12초. */
+    private static final long GROUP_ROUND_TIMEOUT_TICKS = 20L * 12;
+    /** 단체 라운드 응답 대기 마커(대표 uuid) — onGmResponse가 '단체 응답'과 '개별·능력 응답'을 구분해
+     *  후자에서 팬아웃 멤버십을 정리하게 한다(개인 서술이 옛 동료에게 새는 것 방지). */
+    private final java.util.Set<UUID> groupRoundPendingResponse = ConcurrentHashMap.newKeySet();
+
+    /** 같은 구역에서 이번 라운드 행동을 낼 수 있는 인원(살아 등장·비조종·비변신·비기절·비busy·온라인).
+     *  이 집합이 배리어의 '기다릴 전원'이다 — 여기 못 드는 인물은 기다리지 않는다. */
+    private java.util.List<PlayerData> groupCapableInZone(String zone) {
+        java.util.List<PlayerData> out = new java.util.ArrayList<>();
+        int nowMin = state.getClockMinutes();
+        for (PlayerData p : state.getAllPlayers()) {
+            if (p == null || p.isDead || !spawnedPlayers.contains(p.uuid)) continue;
+            if (!zone.equals(p.zone)) continue;
+            if (p.puppetRecoveryTurns != 0) continue;                                    // 조종·관전 — 입력 불가
+            if (morphTurns.getOrDefault(p.uuid, 0) > 0) continue;                        // 변신 — 전용 경로
+            if (stunTurns.getOrDefault(p.uuid, 0) > 0) continue;                         // 행동불능 — 전용 경로
+            if (state.getTurnMode() >= 2 && !state.isDailyPhase()
+                && nowMin >= 0 && p.isBusy(nowMin)) continue;                            // busy(#151 B) — 이번 라운드 제외
+            Player op = Bukkit.getPlayer(p.uuid);
+            if (op == null || !op.isOnline()) continue;                                  // 오프라인 — 기다리지 않음
+            out.add(p);
+        }
+        return out;
+    }
+
+    /** 단체턴 행동 접수. true=처리했음(큐 적재 또는 처리중 안내 — 즉시 GM 호출 안 함) / false=배치 부적합(혼자·위치불명) → 기존 개별 경로. */
+    private boolean enqueueGroupAction(Player player, PlayerData pd, String actionMessage, String gmCtx) {
+        // 라운드 처리 중(ACTING) — 개별 경로의 handleAction 중복차단과 동일한 안내(여긴 그 검사보다 앞이므로 직접 막는다).
+        if (turnMan.isActing(player)) {
+            player.sendMessage("§7(현재 행동 처리 중입니다. 잠시 기다려주세요.)");
+            return true;
+        }
+        final String zone = pd.zone == null ? "" : pd.zone;
+        if (zone.isEmpty()) return false;                                // 위치 불명 — 개별 경로
+        java.util.List<PlayerData> capable = groupCapableInZone(zone);
+        if (capable.size() <= 1) return false;                           // 이 구역에 혼자 — 배리어 무의미(지연 0, 개별 경로)
+        groupQueue.put(player.getUniqueId(), new String[]{zone, actionMessage, gmCtx});
+        long queued = capable.stream().filter(p -> groupQueue.containsKey(p.uuid)).count();
+        if (queued >= capable.size()) {                                  // 전원 제출 — 즉시 플러시
+            flushGroupZone(zone);
+            return true;
+        }
+        player.sendMessage("§7[행동 접수 — 같은 구역 동료 대기 " + queued + "/" + capable.size() + "… 곧 함께 진행됩니다]");
+        if (groupFlushScheduled.add(zone)) {                             // 이 구역 첫 예약만 — 타이머 중복 방지
+            plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+                groupFlushScheduled.remove(zone);
+                flushGroupZone(zone);                                    // 이미 전원플러시됐으면 큐가 비어 no-op
+            }, GROUP_ROUND_TIMEOUT_TICKS);
+        }
+        return true;
+    }
+
+    /** 한 구역의 대기 행동을 모아 GM 1회 통합 호출. 1명만 남으면 기존 개별 경로 폴백(빈 큐면 no-op — 타이머 지연 발화 안전). */
+    private void flushGroupZone(String zone) {
+        if (currentPhase != Phase.HORROR && currentPhase != Phase.DAILY) { // 국면 밖(종료 뒤 타이머 발화 등) — 큐 폐기
+            groupQueue.entrySet().removeIf(en -> zone.equals(en.getValue()[0]));
+            return;
+        }
+        java.util.List<Player> actors = new java.util.ArrayList<>();
+        java.util.List<String[]> entries = new java.util.ArrayList<>();
+        java.util.Iterator<Map.Entry<UUID, String[]>> it = groupQueue.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry<UUID, String[]> en = it.next();
+            if (!zone.equals(en.getValue()[0])) continue;
+            it.remove();
+            Player p = Bukkit.getPlayer(en.getKey());
+            PlayerData ppd = state.getPlayer(en.getKey());
+            if (p == null || !p.isOnline() || ppd == null || ppd.isDead) continue; // 이탈·사망 — 폐기
+            actors.add(p);
+            entries.add(en.getValue());
+        }
+        if (actors.isEmpty()) return;
+        if (actors.size() == 1) {                                        // 혼자 남음(타임아웃·이탈) — 기존 개별 경로 그대로
+            activeGroupRound.remove(actors.get(0).getUniqueId());
+            if (turnMan.handleAction(actors.get(0), entries.get(0)[1], gmSystemPrompt, entries.get(0)[2]))
+                actors.get(0).sendMessage("§7[행동 전달 중...]");
+            return;
+        }
+        // 통합 입력 조립 + 개별 행동 로그(뷰어 입력 로그는 접수 시 logPlayerInput으로 이미 기록 —
+        //   여기선 TurnManager.handleAction과 동일하게 eventLog·각자 서사로그만 남긴다. handleGroupAction은 다시 안 남김).
+        StringBuilder combined = new StringBuilder("[단체턴 — 같은 구역 동시 행동] 아래 인물들이 같은 장면에서 ★동시에★ 행동한다. "
+            + "하나의 장면으로 함께 서술하되 각자의 행동 결과가 ★모두★ 드러나게 하라(특정 인물 편중·누락 금지). "
+            + "판정·상태·이동 태그(STATE_UPDATE·ZONE_UPDATE 등)는 해당 인물 이름으로 각각 내라.\n");
+        StringBuilder mergedCtx = new StringBuilder();
+        for (int i = 0; i < actors.size(); i++) {
+            PlayerData apd = state.getPlayer(actors.get(i));
+            String disp = apd != null ? apd.gmDisplayName() : actors.get(i).getName();
+            String act = entries.get(i)[1];
+            combined.append("[").append(disp).append("] ").append(act).append("\n");
+            if (apd != null) {
+                state.log("action", apd.name, act);
+                synchronized (apd.narrativeLog) {
+                    apd.narrativeLog.add("[행동▷] " + act);
+                    if (apd.narrativeLog.size() > PlayerData.NARRATIVE_LOG_MAX) apd.narrativeLog.remove(0);
+                }
+            }
+            String ctx = entries.get(i)[2];
+            if (ctx != null && !ctx.isBlank())                           // 각자 GM 전용 지시 — 인물별 헤더로 병합(전역부 중복은 허용·추후 다이어트)
+                mergedCtx.append("[").append(disp).append(" 관련 지시]").append(ctx).append("\n");
+        }
+        if (!turnMan.handleGroupAction(actors, combined.toString(), gmSystemPrompt, mergedCtx.toString())) {
+            for (int i = 0; i < actors.size(); i++)                      // 통합 호출 불가(대표 무효 등) — 개별 폴백
+                turnMan.handleAction(actors.get(i), entries.get(i)[1], gmSystemPrompt, entries.get(i)[2]);
+            return;
+        }
+        activeGroupRound.put(actors.get(0).getUniqueId(),
+            actors.stream().map(Player::getUniqueId).collect(java.util.stream.Collectors.toList()));
+        groupRoundPendingResponse.add(actors.get(0).getUniqueId()); // onGmResponse가 '단체 응답'으로 인지(멤버십 유지)
+        for (Player a : actors) a.sendMessage("§7[단체 행동 전달 중... (" + actors.size() + "명 함께)]");
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -2567,6 +2710,10 @@ public class TRPGGameManager {
 
             String raw = response.rawText();
             Player player = response.player();
+            // ★단체턴(2a)★: 이 응답이 단체 라운드 응답이 아니면(능력·개별 행동 등) 지난 라운드 팬아웃 멤버십을 정리 —
+            //   같은 대표의 ★개인★ 서술이 옛 라운드 동료에게 새는 것 방지. 단체 응답이면 유지(인라인 주사위 분할·후속까지 팬아웃).
+            if (player != null && !groupRoundPendingResponse.remove(player.getUniqueId()))
+                activeGroupRound.remove(player.getUniqueId());
             flushEventGaugeLog(); // 안전망: 고정턴 tickClock·EVENT_TRIGGER 등 per-path 미포함 경로의 위협도 상승도 여기서 표시(버퍼 무한증가 방지)
 
             // 1. 클리어 판정
@@ -6804,6 +6951,29 @@ public class TRPGGameManager {
         //   ★비인접(먼 구역)★엔 GM이 far="true"로 표시한 '멀리 퍼지는 큰 사건'만 닿게 한다(규모 판단은 GM이).
         PlayerData actorPd = actor != null ? state.getPlayer(actor) : null;
         final String actorZone = actorPd != null && actorPd.zone != null ? actorPd.zone : "";
+        // ★단체턴 팬아웃(증분 2a)★: 이 서술이 단체 라운드(같은 구역 묶음)의 통합 장면이면, 함께 행동한 동료에게도
+        //   ★결정적으로★ 전달한다(GM의 <WITNESS> 의존 X — 본문 자체가 참여 전원의 장면이다).
+        //   뷰어 로그(logGmOutput)는 대표 1회만 — 같은 구역 가시성 규칙으로 동료 시점에도 이미 보인다(이중 기록 방지).
+        //   라운드 도중 다른 구역으로 옮겨진 동료(강제이동 등)는 제외(이미 다른 장면). 항목은 여기서 제거하지 않는다 —
+        //   인라인 주사위 분할 전달(before/after/후속)이 모두 팬아웃돼야 하므로, 정리는 다음 라운드 갱신·개별 경로·리셋이 맡는다.
+        java.util.List<UUID> grpMembers = actor != null ? activeGroupRound.get(actor.getUniqueId()) : null;
+        if (grpMembers != null && actor != null) {
+            String grpNarrative = ai.stripTags(raw);
+            if (!grpNarrative.isBlank()) {
+                for (UUID mu : grpMembers) {
+                    if (mu.equals(actor.getUniqueId())) continue;
+                    PlayerData mpd = state.getPlayer(mu);
+                    if (mpd == null || mpd.isDead || !spawnedPlayers.contains(mu)) continue;
+                    if (!actorZone.isEmpty() && !actorZone.equals(mpd.zone)) continue;
+                    Player mp = Bukkit.getPlayer(mu);
+                    if (mp == null || !mp.isOnline()) continue;
+                    narrativeDelivery.deliver(mp, grpNarrative);
+                    relayToSpectators(mp, grpNarrative);
+                    appendNarrativeLog(mpd, grpNarrative);
+                    extractAndStoreInfo(grpNarrative, mpd);
+                }
+            }
+        }
         for (String[] w : ai.parseWitnessTags(raw)) {
             String pName = w[0], witnessText = w[1];
             boolean gmMarkedFar = "1".equals(w[2]); // GM이 '멀리 퍼지는 큰 사건'으로 명시(엔진 단어추측 아님)
