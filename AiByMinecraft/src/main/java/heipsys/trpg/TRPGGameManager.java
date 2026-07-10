@@ -10560,10 +10560,25 @@ public class TRPGGameManager {
         return n.toString();
     }
 
+    /** ★근력(STR)→이동속도 배수★ — str1=0.5(절반) … str5=1.0(평균) … str10=1.4 … 상한 2.0(2배).
+     *  5 미만은 감속, 5 초과는 8%/점 가속(요청). 이동속도(Bukkit)·다홉 예산(홉당 분) 양쪽에 쓴다. */
+    private static float strSpeedFactor(int str) {
+        int s = Math.max(1, Math.min(20, str));
+        return s >= 5 ? Math.min(2.0f, 1.0f + (s - 5) * 0.08f)   // str5=1.0 · str10=1.4 · 상한 2.0
+                      : (float) (0.5 + 0.5 * (s - 1) / 4.0);      // str1=0.5 … str5=1.0
+    }
+
+    /** ★#265 다홉 이동 홉당 분(근력 반영)★ — 근력이 셀수록 같은 홉을 더 빨리 지나 한 턴에 더 멀리 간다.
+     *  기본 5분/홉을 근력 배수로 나눈다(str10=+40%→약 3.6분→반올림 4분, 상한 2배→2.5분→3분). 최소 2분. */
+    private int moveMinutesPerHop(PlayerData pd) {
+        float f = strSpeedFactor(pd == null ? 5 : pd.str);
+        return Math.max(2, Math.round(MOVE_MINUTES_PER_HOP / f));
+    }
+
     /**
-     * ★근력(STR)에 따른 이동속도 물리 반영★ — 근력이 낮으면 걸음이 느려진다(평균 5=정상, 1=절반).
-     * Bukkit 기본 보행속도 0.2f. str<5면 최대 50%까지 감소, str>=5는 정상(요청: 감속만, 가속 없음).
-     * 등장·생존 상태에서만 적용하고, 그 외(미등장·사망)엔 정상으로 되돌린다. 값이 바뀔 때만 set(불필요 패킷 방지).
+     * ★근력(STR)에 따른 이동속도 물리 반영★ — 근력이 낮으면 느리고(평균 5=정상, 1=절반), 높으면 빠르다(8%/점, 상한 2배).
+     * Bukkit 기본 보행속도 0.2f. 등장·생존 상태에서만 적용하고, 그 외(미등장·사망)엔 정상으로 되돌린다. 값이 바뀔 때만 set.
+     * (임시 버프로 근력이 오르내리면 pd.str이 즉시 바뀌므로 이 속도도 applyTempStatBuff/tick에서 함께 갱신된다.)
      */
     private void refreshMoveSpeed(PlayerData pd) {
         if (pd == null) return;
@@ -10571,9 +10586,7 @@ public class TRPGGameManager {
         if (p == null || !p.isOnline()) return;
         float target = 0.2f; // 기본 보행속도
         if (!pd.isDead && spawnedPlayers.contains(pd.uuid)) {
-            int s = Math.max(1, Math.min(20, pd.str));
-            float factor = s >= 5 ? 1.0f : (float) (0.5 + 0.5 * (s - 1) / 4.0); // str1=0.5 … str5=1.0
-            target = 0.2f * factor;
+            target = Math.min(1.0f, 0.2f * strSpeedFactor(pd.str)); // Bukkit setWalkSpeed 상한 1.0 방어
         }
         if (Math.abs(p.getWalkSpeed() - target) > 0.001f) {
             try { p.setWalkSpeed(target); } catch (IllegalArgumentException ignore) {} // 범위 밖 방어
@@ -11687,8 +11700,9 @@ public class TRPGGameManager {
         Integer last = lastHopTurn.get(pd.uuid);
         if (last != null && last == turn) return;                               // 같은 턴 이중 전진 방지
         String destName = pd.travelDest.isEmpty() ? "목적지" : zoneDisplayName(pd.travelDest); // 비워지기 전에 확보
-        int budget = Math.max(MOVE_MINUTES_PER_HOP, state.getMinutesPerTurn());  // 이 턴 이동 시간 예산(분)
-        int maxHops = Math.max(1, budget / MOVE_MINUTES_PER_HOP);                // 최소 1홉 보장(예산이 작아도 한 칸은 간다)
+        int perHop = moveMinutesPerHop(pd);                                     // 홉당 분(근력 셀수록 짧다 → 더 멀리)
+        int budget = Math.max(perHop, state.getMinutesPerTurn());               // 이 턴 이동 시간 예산(분)
+        int maxHops = Math.max(1, budget / perHop);                             // 최소 1홉 보장(예산이 작아도 한 칸은 간다)
         java.util.List<String> hops = new java.util.ArrayList<>();
         String lastPrev = null, lastNext = null;
         for (int i = 0; i < maxHops && pd.isTraveling(); i++) {
