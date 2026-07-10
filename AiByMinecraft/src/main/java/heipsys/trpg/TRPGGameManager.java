@@ -11586,8 +11586,8 @@ public class TRPGGameManager {
         boolean arrived = pd.travelPath.isEmpty();
         String msg = "[이동 중 → " + destName + "] "
             + pd.gmDisplayName() + "이(가) " + zoneDisplayName(hop) + " 구역에 들어섰다"
-            + (arrived ? " — ★도착★. 경유지에서 한눈에 들어온 것을 짧게 요약하고 도착지를 묘사하라."
-                       : ". 지나치며 ★한눈에 들어오는 것만★ 1~2문장으로, 장황하지 않게 서술하라.")
+            + (arrived ? " — ★도착★. 경유지에서 한눈에 들어온 것을 짧게 요약하고 도착지를 묘사하라. ★도착지에 있는 인물(동료·NPC)이 보이면 반드시 언급하라★ — 빈 방인지 누가 있는지가 플레이어에겐 핵심 정보다."
+                       : ". 지나치며 ★한눈에 들어오는 것만★ 1~2문장으로, 장황하지 않게 서술하라(지나치는 구역에 인물이 있으면 스치듯 언급).")
             + " 막아야 할 극적 상황일 때만 <BLOCK_MOVE player=\"" + pd.gmDisplayName() + "\" reason=\"…\"/>."
             + (playerInput == null || playerInput.isBlank() ? "" : " (플레이어 입력 '" + playerInput + "'은 참고만.)");
         turnMan.handleAction(p, msg, gmSystemPrompt);
@@ -11737,12 +11737,48 @@ public class TRPGGameManager {
             if (!present.isEmpty()) {
                 ai.injectGmSystem("[합류] " + moved.gmDisplayName() + "이(가) " + zoneDisplayName(newZone)
                     + "에 들어왔다. 그곳에 있던 " + String.join(", ", present)
-                    + "의 시점에서 이 등장을 다음 서술에 반드시 또렷이 명시하라(누가 왔는지 보이게).");
+                    + "의 시점에서 이 등장을 다음 서술에 반드시 또렷이 명시하라(누가 왔는지 보이게)."
+                    + " (도착 사실 자체는 시스템이 이미 알렸다 — 사실 반복이 아니라 그 순간의 묘사를 하라.)");
             }
             if (!nearby.isEmpty()) {
                 ai.injectGmSystem("[접근] " + moved.gmDisplayName() + "이(가) 인접한 " + zoneDisplayName(newZone)
                     + "으로 다가왔다. " + String.join(", ", nearby)
                     + "의 시점에서 '저 멀리/건너편에서 누군가 움직이는 기척'으로 이 조우를 다음 서술에 거리감 있게 반영하라.");
+            }
+            // ★결정적 조우 알림(엔진)★ — '누가 왔다·갔다·있다'를 GM 재량 서술에만 맡기지 않고 시스템 라인으로 직접 알린다.
+            //   (로그 감사: [합류] 주입에도 도착 장면이 동료에게 8~42% 미전달 — 주입은 '다음 서술'에 실리는데 그 서술이
+            //    다른 플레이어 턴이면 증발 + WITNESS 재량 의존. 방송(#92)·NPC 능동발화와 같은 '사실은 엔진이 보장' 계열.)
+            //   목록은 ★플레이어만★ — NPC는 위장·미지(#260)·미발견 스포 위험이 있어 GM 서술 몫으로 남긴다.
+            Player mvP = Bukkit.getPlayer(moved.uuid);
+            if (mvP != null && mvP.isOnline()) {                          // ① 이동자: 도착 구역에 누가 있는지
+                String hereLine = present.isEmpty()
+                    ? "§7[도착] " + zoneDisplayName(newZone) + " §8— 동료는 보이지 않는다."
+                    : "§7[도착] " + zoneDisplayName(newZone) + " §8— 여기엔 §f" + String.join(", ", present) + "§8이(가) 있다.";
+                mvP.sendMessage(hereLine);
+                msgToWatchers(mvP, hereLine);
+                appendNarrativeLog(moved, present.isEmpty()
+                    ? "[도착] " + zoneDisplayName(newZone) + " — 동료 없음"
+                    : "[도착] " + zoneDisplayName(newZone) + " — " + String.join(", ", present) + " 있음");
+            }
+            for (PlayerData op : state.getAllPlayers()) {                 // ② 도착 구역의 기존 인원: 누가 왔다
+                if (op.uuid.equals(moved.uuid) || op.isDead || !spawnedPlayers.contains(op.uuid) || !newZone.equals(op.zone)) continue;
+                Player opp = Bukkit.getPlayer(op.uuid);
+                if (opp == null || !opp.isOnline()) continue;
+                String inLine = "§7[도착] §f" + moved.gmDisplayName() + "§7이(가) 들어왔다" + (forced ? " §8— 무언가에 떠밀리듯." : ".");
+                opp.sendMessage(inLine);
+                msgToWatchers(opp, inLine);
+            }
+            if (prevZone != null && !prevZone.isEmpty()) {                // ③ 떠난 구역의 인원: 누가 갔다
+                for (PlayerData op : state.getAllPlayers()) {
+                    if (op.uuid.equals(moved.uuid) || op.isDead || !spawnedPlayers.contains(op.uuid) || !prevZone.equals(op.zone)) continue;
+                    Player opp = Bukkit.getPlayer(op.uuid);
+                    if (opp == null || !opp.isOnline()) continue;
+                    // 관찰자가 모르는 구역명은 숨긴다(#165 스포 방지) — 아는 곳이면 행선지가 보인다.
+                    String destShown = op.visitedZones.contains(newZone) ? zoneDisplayName(newZone) + "(으)로" : "다른 곳으로";
+                    String outLine = "§7[이동] §f" + moved.gmDisplayName() + "§7이(가) " + destShown + " 떠났다.";
+                    opp.sendMessage(outLine);
+                    msgToWatchers(opp, outLine);
+                }
             }
             // ★길목 안내★: 이 방에서 갈 수 있는 인접 구역(=보이는 길목)을 GM이 서술로 한 번 짚어 플레이어가
             //   다음에 어디로 갈 수 있는지 알게 한다(길 잃음 방지). 선택기와 같은 기준(같은 realm·비봉쇄·비잠금)만 노출.
