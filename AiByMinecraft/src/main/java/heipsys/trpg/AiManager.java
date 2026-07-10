@@ -962,6 +962,11 @@ public class AiManager {
             .replaceAll("(?i)<STATE_UPDATE\\b[^{]*\\{[\\s\\S]*?\\}\\s*>", "")   // <STATE_UPDATE {json}>
             .replaceAll("(?i)<STATE_UPDATE\\b[\\s\\S]*?</STATE_UPDATE>", "")    // 속성 붙은 쌍 <STATE_UPDATE ...>…</STATE_UPDATE>
             .replaceAll("(?i)<STATE_UPDATE\\b[\\s\\S]*$", "")                   // 여는 태그만 남고 미완성/잘림
+            // ★대괄호·혼합·고아 STATE_UPDATE★: 약한 모델(GPT 등)이 [STATE_UPDATE]…</STATE_UPDATE>(대괄호 여+꺾쇠 닫)·
+            //   [STATE_UPDATE]…[/STATE_UPDATE]·빈 [STATE_UPDATE]로 서술에 누출(실플레이 로그 seq19 실측). 위 꺾쇠 전용 규칙이 못 잡는다.
+            //   여는([·<)~닫는(]·>) 쌍을 본문째 + 남은 고아 태그 제거. (내용 있는 델타 JSON은 parseNakedStateJson이 이미 상태에 적용.)
+            .replaceAll("(?is)[\\[<]\\s*STATE_UPDATE\\b[^\\]>]*[\\]>][\\s\\S]*?[\\[<]\\s*/\\s*STATE_UPDATE\\s*[\\]>]", "")
+            .replaceAll("(?is)[\\[<]\\s*/?\\s*STATE_UPDATE\\b[^\\]>]*[\\]>]", "")
             // ★태그 없는 '벌거벗은' 상태 델타 JSON 제거(GPT 등)★: <STATE_UPDATE> 래퍼 없이 {"player":..,"hp_change":..}만
             //   흘려 상태 적용도 안 되고 서술로 누출되던 것. 시그니처 키(hp_change·san_change·timeline_change)로 식별 —
             //   실제 서술엔 이 영문 스키마 키가 나올 수 없어 오탐 없음. parseNakedStateJson이 같은 형식을 파싱해 상태는 적용한다.
@@ -1033,6 +1038,12 @@ public class AiManager {
             // (3) turnCtx 마커(계정 접두 없이 그대로 누출) — 대괄호로 경계 확정.
             .replaceAll("\\[소지품:[^\\]]*\\]", "")                     // GM 아이템 인지
             .replaceAll("\\[행운 보정[^\\]]*\\]", "")                   // 행운 보정 알림
+            // ★행운 마커는 엔진 소유★: '[행운!]/[큰 행운!]'은 실제 발동 시에만 시스템이 표기한다(d7=showInlineDice 🍀,
+            //   무판정 우연=serendipity 라인). GM이 자유 텍스트로 쓰면 저사양 모델이 판정 없이 남발한다(실플레이 5연발 실측).
+            //   → GM 응답의 이 라벨과 [행운 조짐]/[행운 추가판정]/[불운 조짐] 지시 마커 에코를 전부 제거(우연·성과 서술 자체는 남음).
+            .replaceAll("\\[\\s*(?:큰\\s*)?행운\\s*!\\s*\\]", "")
+            .replaceAll("\\[\\s*행운\\s*(?:조짐|추가판정)[^\\]]*\\]", "")
+            .replaceAll("\\[\\s*불운\\s*조짐[^\\]]*\\]", "")
             .replaceAll("\\[GM 필수:[^\\]]*\\]", "")                    // 아이템 사용 환기
             .replaceAll("\\[같은 구역 동료[^\\]\\n]*\\]?", "")          // 같은 구역 목격자 명단(닫힘/개행 어느 쪽이든)
             .replaceAll("\\[[^\\]\\n]*\\((?:근력|영감)\\s*\\d+\\)[^\\]]*\\]", "") // 스탯 결(신체 열세/둔한 직감 등)

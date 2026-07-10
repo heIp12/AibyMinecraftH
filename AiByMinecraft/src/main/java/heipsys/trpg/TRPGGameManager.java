@@ -99,6 +99,9 @@ public class TRPGGameManager {
 
     /** ★#254 인라인 주사위★ — 행동마다 미리 굴려둔 능력치별 판정값. computePreRollNote가 채우고 showInlineDice가 소비. 플레이어별 {stat→value(1~20), stat+"_crit"→±1}. */
     private final java.util.Map<java.util.UUID, JsonObject> preRolledDice = new java.util.concurrent.ConcurrentHashMap<>();
+    /** ★행운 마커는 엔진 소유★: 이번 턴 무판정 우연(serendipity)이 실제로 굴려진 플레이어 → 서술 배달 뒤 표시할 [행운!] 라인.
+     *  GM이 자유 텍스트로 '[행운!]'을 남발하던 것(저사양 모델)을 stripTags가 지우고, 진짜 발동만 여기로 1회 표기·소비한다. */
+    private final java.util.Map<java.util.UUID, String> pendingSerendipity = new java.util.concurrent.ConcurrentHashMap<>();
 
     /** ★#254 후속★ 플레이어별 마지막 표시한 '내 차례' 문자열 — 바뀔 때만 점수판 재빌드(stale 방지·깜빡임 방지). */
     private final java.util.Map<java.util.UUID, String> lastTurnLine = new java.util.concurrent.ConcurrentHashMap<>();
@@ -2844,6 +2847,15 @@ public class TRPGGameManager {
             // 4a. <DICE> 태그가 있으면 위 인라인 배달(deliverNarrativeWithInlineDice)에서 이미 처리됐다. 태그 없이 판정 키워드만 있으면 기존 폴백 연출.
             if (player != null && player.isOnline() && inlineDice == null && needsDiceAnimation(raw)) {
                 present(() -> { if (player.isOnline()) playDiceAnimation(player); });
+            }
+            // 4c. ★행운 마커(엔진 소유)★: 이번 턴 무판정 우연(serendipity)이 실제로 굴려졌을 때만 [행운!]을 시스템이 표기한다
+            //   (GM 자유 마커는 stripTags가 제거 → 저사양 모델 남발 차단, d7 행운은 showInlineDice가 🍀로 표기). 서술 뒤 1회.
+            if (player != null) {
+                String sMark = pendingSerendipity.remove(player.getUniqueId());
+                if (sMark != null) {
+                    final String mline = sMark;
+                    present(() -> { if (player.isOnline()) { player.sendMessage(mline); msgToWatchers(player, mline); } });
+                }
             }
             } finally {
                 gmPresentationSink = null; // 연출 수집 종료(예외가 나도 싱크 누수 방지)
@@ -13164,6 +13176,7 @@ public class TRPGGameManager {
         if (player == null) return "";
         PlayerData pd = state.getPlayer(player);
         if (pd == null) return "";
+        pendingSerendipity.remove(player.getUniqueId()); // 이번 턴 우연 표기 초기화(이전 턴 잔재 방지) — 아래서 실제 발동 시에만 다시 설정
         JsonObject rolls = new JsonObject();
         String[] keys = {"str","hp","cha","luk","spr","san"}; // 표시 순서: 근력·체력·매력·행운·영감·정신력
         int lukV = Math.max(1, Math.min(20, pd.luk));
@@ -13197,10 +13210,12 @@ public class TRPGGameManager {
                 rolls.addProperty("luck_reroll", luckDie);
                 String tier = luckDie >= 7 ? "압도적(추가 대성공)" : luckDie >= 5 ? "큰 행운" : luckDie >= 3 ? "행운" : "미약한 행운";
                 note.append(" [행운 추가판정 d7=" + luckDie + " → " + tier + "] 이 행동이 ★판정(주사위)일 때만★ 반영하라. ★행운은 별개 축의 '덤'이라 [판정 예비값]이 정한 성패·대성공을 바꾸지 않는다★ — 행운이 높다고 근력·매력 등 다른 주사위를 대성공으로 만들지 마라(스탯 무의미화·이중계산 금지, 행운은 이미 예비값에 반영됨). 정해진 성패는 그대로 두고, 행운 크기에 비례해 성공이면 성과를 더 키우고 실패면 피해·대가를 더 줄여라(미약=살짝·행운=뚜렷이·큰 행운=크게). "
-                    + "★7=압도적: 자기 축에서만 압도적 — 실패라도 피해 전혀 없음+뜻밖의 이득, 성공이면 성과 극대화(단 성패 자체는 예비값대로)★. ★'말도 안 되는 시너지'는 네 메인 판정이 ★독립적으로★ 대성공인데 이것도 7일 때만★. [행운!] 표기.");
+                    + "★7=압도적: 자기 축에서만 압도적 — 실패라도 피해 전혀 없음+뜻밖의 이득, 성공이면 성과 극대화(단 성패 자체는 예비값대로)★. ★'말도 안 되는 시너지'는 네 메인 판정이 ★독립적으로★ 대성공인데 이것도 7일 때만★. 행운 표기는 ★시스템(🍀)이 한다 — [행운!] 라벨을 직접 쓰지 마라★(성과 강화만 서술).");
             }
-            if (ThreadLocalRandom.current().nextInt(100) < lukV)
-                note.append(" [행운 조짐] 이 행동이 ★판정 없이 풀리는 종류★면 뜻밖의 행운을 하나 곁들여도 좋다 — ★어떤 유용한 우연이든★: 뜻밖의 쓸모있는 물건을 발견·획득(치료약·열쇠·도구 등), 닫힌 문의 우회로·지름길, 단서의 '위치'가 눈에 띔 등. ★단 핵심 퍼즐 해법·괴담 약점은 주지 마라(운은 길을 열 뿐, 답은 플레이어 몫 — 영감과 다르다).★ 발동 시 [행운!]으로 한 줄 표기.");
+            if (ThreadLocalRandom.current().nextInt(100) < lukV) {
+                pendingSerendipity.put(player.getUniqueId(), "§d🍀 §f[행운!]"); // ★실제 발동만★ 시스템이 표기(서술 배달 뒤 1회) — GM 자유 마커는 stripTags가 제거
+                note.append(" [행운 조짐] 이 행동이 ★판정 없이 풀리는 종류★면 뜻밖의 행운을 하나 곁들여도 좋다 — ★어떤 유용한 우연이든★: 뜻밖의 쓸모있는 물건을 발견·획득(치료약·열쇠·도구 등), 닫힌 문의 우회로·지름길, 단서의 '위치'가 눈에 띔 등. ★단 핵심 퍼즐 해법·괴담 약점은 주지 마라(운은 길을 열 뿐, 답은 플레이어 몫 — 영감과 다르다).★ 그 우연을 서술로 자연스럽게 녹여라 — ★[행운!] 같은 라벨은 쓰지 마라(표기는 시스템이 한다).★");
+            }
         } else {
             if (ThreadLocalRandom.current().nextInt(100) < (5 - lukV) * 10)
                 note.append(" [불운 조짐] 이 행동에 사소한 악재를 곁들여라 — 미끄러짐·하필 그 순간·작은 사고·엉뚱한 소음·물건을 떨어뜨림 등. ★치명타·즉사는 금지(성가신 정도로만)★. 불운은 서술로만 녹여라(별도 표기 없음).");
