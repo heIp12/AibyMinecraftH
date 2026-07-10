@@ -1312,6 +1312,19 @@ public class TRPGGameManager {
             player.sendMessage("§6[설정] 턴 처리 방식: " + (state.isGroupTurn()
                 ? "§a단체턴 §7(행동가능 전원 행동 수집 후 GM 1회 통합 처리 — 일관성↑·비용↓, 기본)"
                 : "§e개별턴 §7(행동마다 즉시 GM 호출 — 응답 빠름·비용↑)") + " §7— 즉시 적용");
+        } else if (key.equals("fanout") || key.equals("팬아웃")) {
+            // ★단체턴 서술 팬아웃 토글★: on=통합 서술을 라운드 동료에게 결정적 전달(기본) / off=WITNESS 재량에만 의존(구동작).
+            if (sub.length >= 2) {
+                String v = sub[1].toLowerCase();
+                if (v.equals("on") || v.equals("true") || v.equals("1")) state.setGroupFanout(true);
+                else if (v.equals("off") || v.equals("false") || v.equals("0")) state.setGroupFanout(false);
+                else { player.sendMessage("§c사용법: §f/trpg setting fanout <on|off>"); return; }
+            } else {
+                state.setGroupFanout(!state.isGroupFanout()); // 값 없으면 토글
+            }
+            player.sendMessage("§6[설정] 단체턴 서술 팬아웃: " + (state.isGroupFanout()
+                ? "§a켜짐 §7(통합 서술을 라운드 동료에게 결정적 전달 — 기본)"
+                : "§c꺼짐 §7(GM의 WITNESS 재량에만 의존 — 동료 장면 누락 가능)") + " §7— 즉시 적용");
         } else {
             openStartSettings(player);
         }
@@ -6956,7 +6969,7 @@ public class TRPGGameManager {
         //   뷰어 로그(logGmOutput)는 대표 1회만 — 같은 구역 가시성 규칙으로 동료 시점에도 이미 보인다(이중 기록 방지).
         //   라운드 도중 다른 구역으로 옮겨진 동료(강제이동 등)는 제외(이미 다른 장면). 항목은 여기서 제거하지 않는다 —
         //   인라인 주사위 분할 전달(before/after/후속)이 모두 팬아웃돼야 하므로, 정리는 다음 라운드 갱신·개별 경로·리셋이 맡는다.
-        java.util.List<UUID> grpMembers = actor != null ? activeGroupRound.get(actor.getUniqueId()) : null;
+        java.util.List<UUID> grpMembers = (actor != null && state.isGroupFanout()) ? activeGroupRound.get(actor.getUniqueId()) : null; // 팬아웃 토글(off=WITNESS 재량에만 의존)
         if (grpMembers != null && actor != null) {
             String grpNarrative = ai.stripTags(raw);
             if (!grpNarrative.isBlank()) {
@@ -8525,23 +8538,39 @@ public class TRPGGameManager {
 
                 if (trimmed.isEmpty()) return; // 생각만 있고 대사 없음 — 생각 로그·활성창은 위에서 이미 갱신, GM 주입만 생략
 
-                // GM 컨텍스트에만 주입 — 플레이어에게 직접 전달하지 않음.
-                // GM이 다음 턴 서술에서 NPC 행동을 자연스럽게 녹여 낸다.
-                //  ★행동 요지임을 명시★: 여기 섞인 대사를 GM이 따옴표로 그대로 베끼면 그 NPC 자신의 목소리(@대화·선연락)와
-                //  갈라져 '두 목소리' 버그가 난다 → 3인칭 서술·간접화만 요청(B1 이중 말투 방지).
+                // ★NPC 능동 발화 결정적 전달(A)★: 자율 응답 속 ★따옴표 대사★는 그 자리에서 소리 내어 말한 것이다 —
+                //   같은 구역 플레이어에게 [근처]로 엔진이 직접 들려준다. (기존엔 GM 컨텍스트에만 주입되고 #192가 GM의
+                //   따옴표 재현을 금지해, 플레이어가 말을 걸지 않는 한 NPC의 외침·인사·혼잣말이 ★어느 채널로도★ 들리지
+                //   않았다 — 3세션 로그 감사에서 같은 구역 자율대사 24/24 유실 확인. 목소리는 NPC 것 그대로, 전달만
+                //   엔진이 하므로 이중 말투 없음.) 어미 렌더(#207)는 이 비동기 콜백에서(블로킹 안전), 전달은 메인 스레드.
+                String quotedRaw = String.join(" ", quotesOf(trimmed));
+                String ambSpec = quotedRaw.isBlank() ? "" : endingRenderSpec(npcObj);
+                final String ambientSpeech = quotedRaw.isBlank() ? ""
+                    : (ambSpec.isBlank() ? quotedRaw : ai.restyleDialogue(quotedRaw, ambSpec));
+
                 // ★#247 자율 이동 반영★: 자율 서술이 '이동'을 담고 있으면 GM이 <NPC_AT>로 실제 위치를 옮기도록 지시한다.
                 //   (엔진 zone은 GM의 <NPC_AT>로만 갱신 → 이 신호가 없으면 서술은 복도를 걸어도 엔진상 원구역에 갇혀 타 구역 위협 불가.)
                 boolean movedCue = trimmed.contains("이동") || trimmed.contains("향해") || trimmed.contains("향한다") || trimmed.contains("향하")
                     || trimmed.contains("나아가") || trimmed.contains("나선") || trimmed.contains("걸어") || trimmed.contains("다가")
                     || trimmed.contains("쫓") || trimmed.contains("따라") || trimmed.contains("복도") || trimmed.contains("계단")
                     || trimmed.contains("올라가") || trimmed.contains("내려가") || trimmed.contains("넘어가") || trimmed.contains("건너") || trimmed.contains("쪽으로");
-                ai.injectGmSystem("[NPC 자율 행동 — GM만 인지] " + npcName + " (위치: "
-                    + (npcZone.isEmpty() ? "?" : npcZone) + "): " + trimmed
-                    + "  ※행동 요지다 — 3인칭으로 녹이고, 이 NPC의 대사를 ★따옴표로 그대로 옮기지 마라★(그의 말은 본인 채널에서 나온다)."
-                    + (movedCue ? "  ★이동 감지 — 이 인물이 지금 위치('" + (npcZone.isEmpty() ? "?" : npcZone)
-                        + "')에서 다른 구역으로 움직였다면, 네 서술에 <NPC_AT npc=\"" + npcName + "\" zone=\"목적지 존ID\"/>를 ★반드시 함께★ 내 실제 위치를 옮겨라"
-                        + "(안 내면 엔진상 원래 구역에 갇혀, 다가가던 플레이어를 실제로 위협·접촉하지 못한다). 이동 안 했으면 낼 필요 없다." : ""));
-                gameLogger.logGmOutput("NPC(" + npcName + ")", trimmed);
+
+                // GM 주입(행동 요지) + 능동 발화 전달 — 전달 성사 여부에 따라 GM 지시가 갈리므로 메인 스레드에서 함께 처리.
+                //  · 전달됨: "대사는 이미 들려줬다 — 반복 말고 정황·반응만" (중복 방지)
+                //  · 미전달(곁에 아무도 없음·대사 없음): 기존대로 "따옴표로 옮기지 마라"(B1 이중 말투 방지)
+                plugin.getServer().getScheduler().runTask(plugin, () -> {
+                    int heardCnt = ambientSpeech.isBlank() ? 0
+                        : deliverNpcAmbientSpeech(npcId, npcName, npcZone, ambientSpeech);
+                    ai.injectGmSystem("[NPC 자율 행동 — GM만 인지] " + npcName + " (위치: "
+                        + (npcZone.isEmpty() ? "?" : npcZone) + "): " + trimmed
+                        + (heardCnt > 0
+                            ? "  ※이 중 대사(따옴표 부분)는 시스템이 이미 같은 구역 인원에게 [근처] 발화로 들려줬다 — 서술에 같은 말을 반복하지 말고 행동·정황·반응만 3인칭으로 녹여라."
+                            : "  ※행동 요지다 — 3인칭으로 녹이고, 이 NPC의 대사를 ★따옴표로 그대로 옮기지 마라★(그의 말은 본인 채널에서 나온다).")
+                        + (movedCue ? "  ★이동 감지 — 이 인물이 지금 위치('" + (npcZone.isEmpty() ? "?" : npcZone)
+                            + "')에서 다른 구역으로 움직였다면, 네 서술에 <NPC_AT npc=\"" + npcName + "\" zone=\"목적지 존ID\"/>를 ★반드시 함께★ 내 실제 위치를 옮겨라"
+                            + "(안 내면 엔진상 원래 구역에 갇혀, 다가가던 플레이어를 실제로 위협·접촉하지 못한다). 이동 안 했으면 낼 필요 없다." : ""));
+                    gameLogger.logGmOutput("NPC(" + npcName + ")", trimmed);
+                });
             });
             anyFired = true;
         }
@@ -8852,6 +8881,40 @@ public class TRPGGameManager {
         };
         if (tampered) { bumpCommFatigue(tmodC); tamperTextNatural(callMsg, tmodC, deliver); } // 자주 변조하면 매체 신뢰도↓
         else deliver.accept(callMsg);
+    }
+
+    /** 텍스트에서 따옴표("…" / "…") 안 대사를 전부 추출(2자 이상). NPC 자율 응답의 '소리 내어 말한 부분' 판별용. */
+    private static java.util.List<String> quotesOf(String s) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        if (s == null || s.isBlank()) return out;
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("[\"“]([^\"”]{2,})[\"”]").matcher(s);
+        while (m.find()) {
+            String q = m.group(1).trim();
+            if (!q.isEmpty()) out.add(q);
+        }
+        return out;
+    }
+
+    /** ★NPC 능동 발화(장면 대사) 결정적 전달★ — 자율 NPC의 따옴표 대사를 같은 구역 플레이어 ★전원★에게 [근처]로
+     *  직접 들려준다(대면 발화라 변조 없음, 연락처 교환도 아님). 메인 스레드에서 호출. 들은 인원 수 반환(0=곁에 아무도 없음).
+     *  (배경: #192가 GM의 NPC 따옴표 대사 재현을 금지하고, NPC 본인 채널(nearby)은 @대화 응답에만 발화 →
+     *   자율 비트의 외침·인사·혼잣말이 채널 틈에 빠져 유실되던 문제의 전달 경로.) */
+    private int deliverNpcAmbientSpeech(String npcId, String npcName, String npcZone, String speech) {
+        if (speech == null || speech.isBlank() || npcZone == null || npcZone.isEmpty()) return 0;
+        java.util.List<String> heardNames = new java.util.ArrayList<>();
+        for (PlayerData pd : state.getAllPlayers()) {
+            if (pd.isDead || !spawnedPlayers.contains(pd.uuid) || !npcZone.equals(pd.zone)) continue;
+            Player tp = Bukkit.getPlayer(pd.uuid);
+            if (tp == null || !tp.isOnline()) continue;
+            tp.sendMessage("§a[근처] §f" + npcName + ": " + speech);
+            msgToWatchers(tp, "§a[근처] §f" + npcName + ": " + speech); // 관전 중계
+            appendNarrativeLog(pd, "[근처] " + npcName + ": " + speech);
+            heardNames.add(pd.gmDisplayName());
+        }
+        if (heardNames.isEmpty()) return 0;
+        state.log("comm", npcName, "[근처] " + speech);
+        gameLogger.logComm("nearby", npcName, heardNames, speech); // 뷰어: 같은 구역 수신자 기록
+        return heardNames.size();
     }
 
     /**
