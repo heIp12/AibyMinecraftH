@@ -11950,7 +11950,8 @@ public class TRPGGameManager {
             if (!nearby.isEmpty()) {
                 ai.injectGmSystem("[접근] " + moved.gmDisplayName() + "이(가) 인접한 " + zoneDisplayName(newZone)
                     + "으로 다가왔다. " + String.join(", ", nearby)
-                    + "의 시점에서 '저 멀리/건너편에서 누군가 움직이는 기척'으로 이 조우를 다음 서술에 거리감 있게 반영하라.");
+                    + "의 시점에서 '저 멀리/건너편에서 누군가 움직이는 기척'으로 이 조우를 다음 서술에 거리감 있게 반영하라."
+                    + " (기척의 존재 자체는 시스템이 이미 한 줄로 알렸다 — '인기척이 느껴진다'류를 또 반복하지 말고, 필요하면 그 순간의 분위기만 살짝 얹어라.)");
             }
             // ★결정적 조우 알림(엔진·서사체)★ — '누가 왔다·갔다·있다'는 사실은 엔진이 보장하되,
             //   [도착]식 메타 라벨 대신 ★몰입형 서술 한 줄★로 전한다(피드백: 시스템 알림은 몰입을 깬다).
@@ -11969,25 +11970,34 @@ public class TRPGGameManager {
                     if (nid.isEmpty()) continue;
                     String nz = npcZones.getOrDefault(nid, getStr(no, "zone"));
                     if (!newZone.equals(nz)) continue;
-                    if (npcLoggedZone.containsKey(nid)) seenHere.add(getStr(no, "name")); // 이미 화면에 등장한 NPC — 이름 공개
-                    else strangersHere++;                                                 // 미등장 — 익명 기척만
+                    // ★이름 공개 기준 = '이 플레이어가 실제로 아는 NPC'★(면식/연락처). npcLoggedZone(전역 등장 로그)은
+                    //   자율 NPC가 멀리서 행동만 해도 찍혀, 만난 적 없는 NPC 이름이 새던 버그 → everKnownNpcContacts로 교정.
+                    if (moved.everKnownNpcContacts.contains(nid)) seenHere.add(getStr(no, "name")); // 아는 NPC만 이름
+                    else strangersHere++;                                                          // 모르는 NPC(면식 없음) — 익명 '낯선 인기척'
                 }
             }
             Player mvP = Bukkit.getPlayer(moved.uuid);
             if (mvP != null && mvP.isOnline()) {                          // ① 이동자: 이 방에 누가 있는가
+                // ★인원수만큼 반복 출력 방지★: 낯선 기척은 '한 줄로 합쳐' 수만 반영한다(1=낯선 인기척·2=두 사람·3+=여러).
+                String strangerPhrase = strangersHere <= 0 ? ""
+                    : strangersHere == 1 ? "낯선 인기척"
+                    : strangersHere == 2 ? "두 사람의 낯선 인기척"
+                    :                      "여러 낯선 인기척";
                 String hereLine;
                 if (!seenHere.isEmpty())
                     hereLine = "§7§o" + String.join(", ", seenHere) + "이(가) 여기 있다."
-                             + (strangersHere > 0 ? " 낯선 인기척도 느껴진다." : "");
+                             + (strangersHere > 0 ? " " + strangerPhrase + "도 느껴진다." : "");
                 else if (strangersHere > 0)
-                    hereLine = "§7§o낯선 인기척이 느껴진다.";
+                    hereLine = "§7§o" + strangerPhrase + "이 느껴진다.";
                 else
                     hereLine = "§8§o주위에 인기척은 없다.";
                 mvP.sendMessage(hereLine);
                 msgToWatchers(mvP, hereLine);
+                String strangerLog = strangersHere <= 0 ? "" : strangersHere == 1 ? " +낯선 기척"
+                    : strangersHere == 2 ? " +두 기척" : " +여러 기척";
                 appendNarrativeLog(moved, !seenHere.isEmpty()
-                    ? "(주위: " + String.join(", ", seenHere) + (strangersHere > 0 ? " +낯선 기척" : "") + ")"
-                    : (strangersHere > 0 ? "(주위: 낯선 기척)" : "(주위: 인기척 없음)"));
+                    ? "(주위: " + String.join(", ", seenHere) + strangerLog + ")"
+                    : (strangersHere > 0 ? "(주위:" + strangerLog.replace(" +", " ") + ")" : "(주위: 인기척 없음)"));
             }
             for (PlayerData op : state.getAllPlayers()) {                 // ② 도착 구역의 기존 인원: 누가 왔다
                 if (op.uuid.equals(moved.uuid) || op.isDead || !spawnedPlayers.contains(op.uuid) || !newZone.equals(op.zone)) continue;
