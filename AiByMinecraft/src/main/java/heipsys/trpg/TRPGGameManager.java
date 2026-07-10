@@ -1074,6 +1074,11 @@ public class TRPGGameManager {
             // ★#6★ 데이터 초기화(소지 추적·부위치)는 ★오프라인 참가자에게도★ 적용한다 — 예전엔 online 블록 안이라
             //   재도전 순간 접속이 끊겼던 참가자가 전판 구역·아이템을 그대로 이고 복귀하던 desync가 있었다.
             pd.heldItemIds.clear(); pd.itemStates.clear(); pd.spot = "";
+            // 이동·busy 잔류도 함께 초기화 — resetToBase는 이들을 안 지우고(clearRoleData 소관, 재도전엔 미호출)
+            //   남겨두면 전판 이동 경로를 새 판에서 이어 걷거나(낡은 travelPath), 리셋된 시계보다 미래의
+            //   busyUntilMin에 잠겨 행동 불능이 될 수 있다(재도전 = 같은 스테이지를 '처음부터').
+            pd.travelPath.clear(); pd.travelDest = "";
+            pd.busyUntilMin = 0; pd.actionStartMin = 0; pd.currentActionText = "";
             Player rp = Bukkit.getPlayer(pd.uuid);
             if (rp != null && rp.isOnline()) {
                 rp.getInventory().clear();                                   // 전판 아이템 물리 제거
@@ -5145,10 +5150,15 @@ public class TRPGGameManager {
             String st   = (t.length > 1 && t[1] != null) ? t[1].trim() : "";
             String note = (t.length > 2 && t[2] != null) ? t[2].trim() : "";
             if (npc.isEmpty()) continue;
-            // 메타 노출 방지 + 별칭 중복저장 방지: 플레이어/NPC 정식 표시명으로 정규화(별칭·id·계정명 → 한 키).
+            // ★플레이어는 이 태그의 대상이 아니다★ — 플레이어의 사망·기절·조종은 엔진(hp/status)이 소유하고 부활·회복
+            //   메커니즘과 물려 있어, 여기 저장하면 '엔진은 살렸는데 문맥은 계속 사망'인 이중 진실이 생긴다 → 무시.
+            if (findAnyByName(npc) != null) { gameLogger.logEvent("[무시] NPC_STATE 대상이 플레이어(" + npc + ") — 플레이어 상태는 엔진 소유"); continue; }
+            // 메타 노출 방지 + 별칭 중복저장 방지: NPC 정식 표시명으로 정규화(별칭·id → 한 키).
             String disp = canonicalNpcName(npc);
-            boolean release = st.isEmpty() || st.contains("해제") || st.contains("복귀") || st.contains("부활")
-                           || st.contains("풀") || st.contains("회복") || st.contains("탈출");
+            // 해제 판정: 해제·복귀류 낱말이 있어도 부정어(불능·불가·실패·못)가 붙으면 해제가 아니다("회복 불능"·"탈출 실패" 오판 방지).
+            boolean negated = st.contains("불능") || st.contains("불가") || st.contains("실패") || st.contains("못");
+            boolean release = st.isEmpty() || (!negated && (st.contains("해제") || st.contains("복귀") || st.contains("부활")
+                           || st.contains("풀") || st.contains("회복") || st.contains("탈출")));
             if (release) {
                 state.clearNpcDisposition(disp);
                 gameLogger.logEvent("NPC 상태 해제 — " + disp + (st.isEmpty() ? "" : " (" + st + ")"));

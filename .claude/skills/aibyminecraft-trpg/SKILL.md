@@ -310,3 +310,17 @@ description: >-
   (자율="관측된 행동 로그:"/대화=머리말 그대로 — 3인칭·보고체 누출 완화), 직접 대화 <NPC_LEARN> 소비,
   머리말 등급 봉인, knowledgeConfidence 확신40·소문15, 결정적 순간 6문장 허용. ★남은 감사(로그 관측 후)★:
   응답순서 예시 반말 레지스터, ★기호 에코, 단일주체 엔티티 AI(#119) 톤이 npcCorePrompt와 다른 문법인지 별도 감사.
+- **문·열쇠 규칙은 GdamGenerator ★두 곳★에 산다(동기화 필수)**: gated_zones 스키마 설명(~484)과 맨 끝
+  자기점검 체크리스트 8(b)(~837). 한쪽만 고치면 체크리스트(마지막 지시)가 이긴다 — 실제로 그렇게 한 번
+  회귀했다. 엔진 규약: 잠긴 문 = gated_zones 엔트리 + unlocks 열쇠 ★짝★(gatePassReason 10440— 이중잠금
+  아님·정상). bypass는 열쇠 대체가 아니라 1인 추가 우회. 금지는 '한 문에 여러 조건 스택'뿐.
+- **criticalNpcDirective(#9 정합)**: reconcile 문구는 ★분기별 분리★ — n>0에 '0명도 정상' 류를 붙이면
+  '정확히 N명'과 자기모순(약모델이 0명 출력). npc_dependency 필드는 high=NPC ★독립★(오해 주의) —
+  판단 문구는 '해결이 인물에 걸렸는가'로.
+- **NPC_STATE(#266) 엔진 배선 완료**: npcDispositions(durable, 매턴 gmCtx 재주입) + isNpcDisabled가
+  fireNpcAiForTurn pool(활성창·라운드로빈·막후주입 전부 pool 경유 확인)·zoneHasCombatThreat 게이트.
+  ★플레이어 대상 NPC_STATE는 무시★(플레이어 상태는 엔진 소유 — 부활·회복과 이중 진실 방지).
+  해제 키워드는 부정어 가드(불능·불가·실패·못 → 해제 아님).
+- **재도전(performRetry) 초기화 계약**: resetToBase는 zone·소지·travelPath·busy를 ★안 지운다★
+  (clearRoleData 소관, 재도전엔 미호출) → performRetry 루프가 직접 초기화해야 하며 ★오프라인 참가자
+  포함★(데이터는 전원, 물리 인벤·아이템 지급은 온라인만 — 오프라인 물리 잔류는 알려진 한계).
