@@ -1392,6 +1392,9 @@ public class AiManager {
                     String role = "assistant".equals(m.get("role").getAsString()) ? "model" : "user";
                     contents.add(geminiMsg(role, m.get("content").getAsString()));
                 }
+                JsonObject genCfg = new JsonObject();
+                genCfg.addProperty("maxOutputTokens", maxTokens); // ★#3★ 출력 토큰 상한 반영(예전엔 없어 32K GDAM 미보장)
+                req.add("generationConfig", genCfg);
                 req.add("contents", contents);
                 body = req.toString();
             }
@@ -1401,6 +1404,15 @@ public class AiManager {
 
                 JsonObject req = new JsonObject();
                 req.addProperty("model", model);
+                req.addProperty("max_completion_tokens", maxTokens); // ★#3★ 출력 토큰 상한(GPT-5 계열은 max_tokens 아닌 이 키)
+                // ★#3 effort★ — OpenAI는 minimal/low/medium/high. xhigh·max는 high로 클램프. 모델이 안 받으면 아래 400-effort 재시도가 제거.
+                if (effort != null && !effort.isBlank()) {
+                    String oe = switch (effort.trim()) {
+                        case "minimal" -> "minimal"; case "low" -> "low"; case "medium" -> "medium";
+                        case "high", "xhigh", "max" -> "high"; default -> "";
+                    };
+                    if (!oe.isEmpty()) req.addProperty("reasoning_effort", oe);
+                }
                 JsonArray arr = new JsonArray();
                 if (system != null && !system.isBlank()) arr.add(msg("system", system));
                 arr.addAll(gson.toJsonTree(messages).getAsJsonArray());

@@ -1517,7 +1517,7 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
         //    이전엔 코어 한 번에 zones·npcs·clues까지 다 받아 8192토큰에서 잘려 매번 파싱 실패했다 → 둘로 분할.
         String structPrompt = head
             + "위 스키마에서 ★entity, world_rules(core/details/loophole/collapse_condition/npc_dependency), "
-            + "constraints(era/phone_usable/outside_contact/can_leave_scene/comms_monitored/comms_dangerous/noninterference/notes), "
+            + "constraints(era/phone_usable/outside_contact/can_leave_scene/comms_monitored/comms_dangerous/noninterference/gated_zones/written_comm/postal/silence_required/comm_media/notes), "
             + "timeline(단계별 start_time/end_time/main_events 포함)★ 만 하나의 JSON 객체로 생성하라.\n"
             + "이 네 가지 최상위 필드만 출력하고 zones·npcs·roles·key_items 등 다른 필드는 절대 포함하지 마라."
             + ScenarioArchetypes.worldRulesBlock(roomNumber, conceptTypeHint) // 외부화·샘플링: 세계 규칙 후보 소수(1~2스테이지 기본만) + 운영 유형 고정 반영
@@ -1534,13 +1534,15 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
             if (progress != null) progress.accept("구조");
 
             // 1b. 월드 청크: zones·relationships·npcs·clues·daily_prologue·meeting_design·common_items
-            String structCtx = contextJson(core, null, "entity", "timeline");
+            // ★#1 컨텍스트 단절 수정★: world_rules(정답·collapse_condition·npc_dependency)·constraints(통신·gated_zones)를
+            //   함께 넘겨야 구역·NPC·단서가 정답 규칙·제약과 어긋나지 않는다(예전엔 entity·timeline만 줘 단서가 해법과 따로 놀았다).
+            String structCtx = contextJson(core, null, "entity", "timeline", "world_rules", "constraints");
             String worldPrompt = head
                 + "## 이미 확정된 구조(참고, 일관성 유지)\n" + structCtx + "\n\n"
                 + "위 스키마의 ★zones, relationships, npcs, clues, daily_prologue, meeting_design, common_items★ "
                 + "만 하나의 JSON 객체로 출력하라. 형식: {\"zones\":[...],\"relationships\":[...],\"npcs\":[...],"
                 + "\"clues\":[...],\"daily_prologue\":...,\"meeting_design\":...,\"common_items\":[...]}\n"
-                + "entity·timeline·roles·key_items 등 다른 최상위 필드는 절대 포함하지 마라."
+                + "entity·timeline·world_rules·constraints·roles·key_items 등 다른 최상위 필드는 절대 포함하지 마라(참고용으로만 봤다)."
                 + ScenarioArchetypes.rolesBlock(roomNumber) // 외부화·샘플링: NPC 역할 후보 소수만 주입(1~2스테이지는 기본만)
                 + criticalNpcDirective(roomNumber)          // ★이번 회차 중요 NPC 수(0~4 가변)★ — '항상 2명' 고정 편향 제거
                 + "\n## ★검증: npcs가 괴담 성향(disposition)·규칙에 맞게 반응·배치됐는가? 아니면 고쳐라."
@@ -1560,7 +1562,7 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
                                              "daily_prologue", "meeting_design", "common_items"})
                     if (world.has(k)) core.add(k, world.get(k));
 
-            String coreCtx = contextJson(core, null, "entity", "zones", "relationships");
+            String coreCtx = contextJson(core, null, "entity", "zones", "relationships", "world_rules"); // ★#1★ 배역도 정답·세계규칙을 보고 배치
 
             String recentNames = recentNameCsv();
             String nameAvoid = recentNames.isEmpty() ? ""
@@ -1593,7 +1595,7 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
                 recordNames(usedNames);
                 // ★constraints 포함★ — 아이템 청크가 gated_zones(잠긴 문 목록)를 봐야 '문마다 여는 열쇠 짝'을 실제로
                 //   만들 수 있다(예전엔 entity만 줘서 어느 문이 잠겼는지 모른 채 열쇠를 짓게 했다 — 짝 규칙이 공염불).
-                String itemCtx = contextJson(core, roles, "entity", "constraints");
+                String itemCtx = contextJson(core, roles, "entity", "constraints", "zones"); // ★#1★ 실제 zones를 봐야 열쇠·아이템이 존재하는 구역에 배치
 
                 String itemsPrompt = head
                     + "## 이미 확정된 내용(참고, 일관성 유지)\n" + itemCtx + "\n\n"
