@@ -11680,6 +11680,26 @@ public class TRPGGameManager {
         return next;
     }
 
+    /** ★이동 중 전투 임박 판정★ — 이 구역에 자동으로 걸어 들어가면 전투가 벌어질 만한가.
+     *  봉쇄된 구역이거나, 적대·위장 NPC(또는 그로 등록된 괴담)가 현재 그 구역에 있으면 true.
+     *  (환경·편재형 괴담처럼 위치가 없는 위협은 못 잡는다 — 그 경우 GM이 <ZONE_SEAL>·<BLOCK_MOVE>로 처리.) */
+    private boolean zoneHasCombatThreat(String zone) {
+        if (zone == null || zone.isEmpty()) return false;
+        if (state.isZoneSealed(zone)) return true;
+        JsonObject gd = state.getGdamData();
+        if (gd != null && gd.has("npcs") && gd.get("npcs").isJsonArray()) {
+            for (JsonElement el : gd.getAsJsonArray("npcs")) {
+                if (el == null || !el.isJsonObject()) continue;
+                JsonObject npc = el.getAsJsonObject();
+                if (!isHostileNpc(npc)) continue;
+                String id = getStr(npc, "id");
+                String nz = npcZones.getOrDefault(id, getStr(npc, "zone"));
+                if (zone.equals(nz)) return true;
+            }
+        }
+        return false;
+    }
+
     /** ★#265 다홉 이동★ 이동자 본인 턴 = 한 턴의 시간 예산(minutesPerTurn)이 허락하는 만큼 여러 홉을 전진하고, 그 경로 전체를
      *  GM이 한 번에 서술하도록 구동(morph 패턴). 지나친 경유지는 조우 알림 없이(transitOnly) 상태만 갱신하고, 멈추는(도착) 홉만
      *  전체 조우 처리한다. 목적지까지 시간이 모자라면 갈 수 있는 데까지만 가고 travelPath에 잔여를 남겨 다음 턴에 계속한다
@@ -11705,9 +11725,14 @@ public class TRPGGameManager {
         int maxHops = Math.max(1, budget / perHop);                             // 최소 1홉 보장(예산이 작아도 한 칸은 간다)
         java.util.List<String> hops = new java.util.ArrayList<>();
         String lastPrev = null, lastNext = null;
+        boolean threatStop = false; String threatZone = null;
         for (int i = 0; i < maxHops && pd.isTraveling(); i++) {
             String prev = pd.zone, next = pd.travelPath.get(0);
-            boolean stopHop = (pd.travelPath.size() == 1) || (i == maxHops - 1); // 이번 턴 멈추는(도착 or 예산 소진) 홉만 전체 조우
+            boolean isDest = (pd.travelPath.size() == 1);
+            // ★이동 중 전투 임박 시 끊기★: 경유지(목적지 아님)에 봉쇄·괴담·적대 NPC가 있으면 그 앞에서 멈추고 플레이어 판단을 기다린다.
+            //   목적지로 ★직접 택한★ 위험 구역은 대치하러 가는 것이므로 막지 않는다(자동 경유만 끊는다).
+            if (!isDest && zoneHasCombatThreat(next)) { threatStop = true; threatZone = next; break; }
+            boolean stopHop = isDest || (i == maxHops - 1);                     // 이번 턴 멈추는(도착 or 예산 소진) 홉만 전체 조우
             updatePlayerZone(pd.name, next, "", false, false, !stopHop);        // 경유는 transitOnly=true(조우·쪽지 스킵)
             if (!next.equals(pd.zone)) {                                        // 잠겨 못 들어감 → 그 앞에서 정지
                 pd.travelPath.clear(); pd.travelDest = "";
@@ -11719,25 +11744,38 @@ public class TRPGGameManager {
             if (pd.travelPath.isEmpty()) pd.travelDest = "";
             hops.add(next); lastPrev = prev; lastNext = next;
         }
-        if (hops.isEmpty()) return;                                             // 한 홉도 못 감(정지 사유는 위에서 통지)
-        pendingHops.put(pd.uuid, new String[]{lastPrev, lastNext, String.valueOf(turn)}); // BLOCK_MOVE는 '마지막 홉'만 되돌린다
-        lastHopTurn.put(pd.uuid, turn);
-        boolean arrived = pd.travelPath.isEmpty();
+        if (hops.isEmpty() && !threatStop) return;                              // 한 홉도 못 가고 위협도 아님(정지 사유는 위에서 통지)
+        if (!hops.isEmpty()) {
+            pendingHops.put(pd.uuid, new String[]{lastPrev, lastNext, String.valueOf(turn)}); // BLOCK_MOVE는 '마지막 홉'만 되돌린다
+            lastHopTurn.put(pd.uuid, turn);
+        }
         boolean multi = hops.size() > 1;
         StringBuilder path = new StringBuilder();
         for (int i = 0; i < hops.size(); i++) { if (i > 0) path.append(" → "); path.append(zoneDisplayName(hops.get(i))); }
-        String msg = "[이동 중 → " + destName + "] "
-            + pd.gmDisplayName() + "이(가) " + path + (multi ? " 순서로 지나" : " 구역에 들어서")
-            + (arrived
-                ? (multi ? " 목적지에 도착했다. ★지나온 경유지는 각 한 줄씩 아주 짧게★ 훑고 도착지를 묘사하라."
-                         : " — ★도착★. 도착지를 묘사하라.")
-                    + " ★도착지에 있는 인물(동료·NPC)이 보이면 반드시 언급하라★ — 빈 방인지 누가 있는지가 플레이어에겐 핵심 정보다."
-                : " 아직 이동 중이다(" + zoneDisplayName(lastNext) + "까지 왔고 목적지까진 더 남음, 다음 턴에 계속). "
-                    + (multi ? "지나친 구역들을 ★각 한 줄씩★" : "지나치며 ★한눈에 들어오는 것만★")
-                    + " 짧게, 장황하지 않게 훑어라(스치는 구역에 인물이 있으면 곁들여).")
-            + " 막아야 할 극적 상황일 때만 <BLOCK_MOVE player=\"" + pd.gmDisplayName() + "\" reason=\"…\"/>"
-            + "(막으면 마지막으로 지나려던 " + zoneDisplayName(lastNext) + " 진입만 취소되고 그 앞에 멈춘다)."
-            + (playerInput == null || playerInput.isBlank() ? "" : " (플레이어 입력 '" + playerInput + "'은 참고만.)");
+        String msg;
+        if (threatStop) {
+            // ★전투 임박 — 자동 이동 종료, 플레이어가 판단★: 남은 경로를 비우고 눈앞의 위협을 바로 서술한다.
+            pd.travelPath.clear(); pd.travelDest = "";
+            String seen = hops.isEmpty() ? "" : (pd.gmDisplayName() + "이(가) " + path + (multi ? "을(를) 지나 " : " 구역을 지나 "));
+            msg = "[이동 중단 — 위협] " + seen + "★" + zoneDisplayName(threatZone) + " 쪽에서 위협(괴담·적대자)의 기척★을 느끼고 걸음을 멈춘다. "
+                + "자동 이동을 여기서 끊는다 — ★눈앞에 보이는 것(앞쪽의 낌새·위협의 기척)만 짧게 바로 서술★해 플레이어가 어떻게 할지(맞설지·돌아갈지·숨을지) 정하게 하라. "
+                + "★그 위협의 정체·약점은 앞질러 밝히지 마라(보이는 낌새만).★"
+                + (hops.isEmpty() ? "" : " 지나온 경유지는 각 한 줄로만 짧게.");
+        } else {
+            boolean arrived = pd.travelPath.isEmpty();
+            msg = "[이동 중 → " + destName + "] "
+                + pd.gmDisplayName() + "이(가) " + path + (multi ? " 순서로 지나" : " 구역에 들어서")
+                + (arrived
+                    ? (multi ? " 목적지에 도착했다. ★지나온 경유지는 각 한 줄씩 아주 짧게★ 훑고 도착지를 묘사하라."
+                             : " — ★도착★. 도착지를 묘사하라.")
+                        + " ★도착지에 있는 인물(동료·NPC)이 보이면 반드시 언급하라★ — 빈 방인지 누가 있는지가 플레이어에겐 핵심 정보다."
+                    : " 아직 이동 중이다(" + zoneDisplayName(lastNext) + "까지 왔고 목적지까진 더 남음, 다음 턴에 계속). "
+                        + (multi ? "지나친 구역들을 ★각 한 줄씩★" : "지나치며 ★한눈에 들어오는 것만★")
+                        + " 짧게, 장황하지 않게 훑어라(스치는 구역에 인물이 있으면 곁들여).")
+                + " 막아야 할 극적 상황일 때만 <BLOCK_MOVE player=\"" + pd.gmDisplayName() + "\" reason=\"…\"/>"
+                + "(막으면 마지막으로 지나려던 " + zoneDisplayName(lastNext) + " 진입만 취소되고 그 앞에 멈춘다).";
+        }
+        msg += (playerInput == null || playerInput.isBlank() ? "" : " (플레이어 입력 '" + playerInput + "'은 참고만.)");
         turnMan.handleAction(p, msg, gmSystemPrompt);
     }
 
