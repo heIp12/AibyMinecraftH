@@ -818,7 +818,7 @@ public class SystemTraitRegistry {
                  GET_CONTACTS, FORCE_ENCOUNTER, DECOY, DELAY, ONE_WAY_CALL,
                  TELEPORT, RALLY, EVADE_SENSE,
                  OBSERVER_SIGHT, PACT, PAST_EDIT, GDAM_MORPH, PHASE_OUT, POSSESS_NPC, MIMIC, NPC_BIND,
-                 TIME_REWIND -> td.param("uses", 1);
+                 TIME_REWIND, TEMP_BUFF -> td.param("uses", 1);
             default -> 0;
         };
     }
