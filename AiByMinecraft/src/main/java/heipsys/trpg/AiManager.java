@@ -759,6 +759,20 @@ public class AiManager {
         });
     }
 
+    /** 저급(assistant/미니) 티어 1회성 호출 — ★커스텀 시스템 프롬프트★를 쓴다(통신 변조처럼 단순·즉시·값싼 변환용).
+     *  callGmAiOnce의 저티어 형제: 변조 리라이트는 단순 변환이라 미니 모델로 충분하고, 즉시 통신에 GM 호출 지연을
+     *  얹지 않으며 비용도 크게 준다. 실패 시 "§c[보조 AI 오류]"를 돌려주니 호출부가 폴백을 태울 수 있다. */
+    public CompletableFuture<String> callAssistantOnce(String systemPrompt, String userMessage) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                List<JsonObject> single = List.of(msg("user", userMessage));
+                return send(assistantModel(), systemPrompt, single, ASST_MAX_TOKENS, assistantEffort);
+            } catch (Exception e) {
+                return "§c[보조 AI 오류] " + e.getMessage();
+            }
+        });
+    }
+
     /**
      * 특성(능력) 생성용 1회성 호출 — ★GM 티어(gmModel)로 격상★. assistantModel(mini)은 이름을 단어 짜깁기하고
      * name·설명·효과가 따로 놀았다(교차검증 지적). 특성은 세션당 몇 번(캐릭터·클리어 보상·배역)만 생성되고

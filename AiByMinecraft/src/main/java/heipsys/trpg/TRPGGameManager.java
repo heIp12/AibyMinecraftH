@@ -10293,7 +10293,7 @@ public class TRPGGameManager {
             String endStyle = endingRenderSpec(npcObj); // ending_style 우선, 없으면 '어미'를 규정한 speech_style(#207)
             if (!endStyle.isBlank()) visible = ai.restyleDialogue(visible, endStyle);
             // ★통신 변조★: 매체 모달리티가 맞는 괴담이 원격 답신을 가로채 바꿔 전달(30%). 대면(sameZone)은 변조 안 함.
-            //   변조 내용은 GM(AI)이 자연스럽게 다시 씀(tamperTextNatural, 비동기) — 실패 시 하드코딩 폴백.
+            //   변조 내용은 저급(미니) AI가 자연스럽게 다시 씀(tamperTextNatural, 비동기) — 실패 시 하드코딩 폴백.
             final String tmodR = commModality(media, writtenF);
             final boolean tamperedR = remote && entityInterferes(tmodR) && entityCommActive() && new java.util.Random().nextInt(100) < tamperChance(tmodR);
             if (tamperedR) bumpCommFatigue(tmodR); // 남용 시 신뢰도↓
@@ -11034,18 +11034,23 @@ public class TRPGGameManager {
         return t;
     }
 
-    /** ★통신 변조 = GM(AI)이 자연스럽게 생성★ — 하드코딩 단어뒤집기·'…' 신호끊김 대신, 원문의 핵심(지시·사실·
-     *  방향·숫자)을 은근히 뒤틀되 ★받는 이가 변조된 줄 전혀 모르게★ 매끄러운 다른 내용으로 바꾼다. 비동기 —
-     *  결과(변조문)를 ★메인 스레드에서★ onReady로 넘긴다. AI 실패·오류·공백이면 기존 하드코딩 tamperText로 폴백. */
+    /** ★통신 변조 = 저급(assistant/미니) AI가 자연스럽게 생성★ — 하드코딩 단어뒤집기·'…' 신호끊김 대신, 원문의
+     *  핵심(지시·사실·방향·숫자)을 은근히 뒤틀되 ★받는 이가 변조된 줄 전혀 모르게★ 매끄러운 다른 내용으로 바꾼다.
+     *  변조 리라이트는 단순 변환이라 미니 티어로 충분하고, 즉시 통신에 GM 호출 지연을 얹지 않으며 비용도 크게 준다.
+     *  ★변조 폭 = '서로 아는 정보는 그대로, 수신자가 모를 핵심 하나만'★ — 공유 맥락을 살려 그럴듯함·은밀함을 얻고,
+     *  다 뒤집어 티 나거나 아는 걸 바꿔 들키는 걸 막는다(발각은 여전히 면대면 재확인 등 외부 모순으로만, #712).
+     *  비동기 — 결과(변조문)를 ★메인 스레드에서★ onReady로 넘긴다. AI 실패·오류·공백이면 하드코딩 tamperText로 폴백. */
     private void tamperTextNatural(String original, String modality, java.util.function.Consumer<String> onReady) {
         if (original == null || original.isBlank()) { onReady.accept(original); return; }
         String sys = "너는 괴담이 통신을 몰래 가로채 내용을 바꿔치기하는 '변조 장치'다. 받는 사람이 ★변조된 줄 전혀 모르게★ "
-            + "자연스럽고 그럴듯한 ★다른 내용★으로 바꾼다. 규칙: ①핵심 지시·사실·방향·숫자를 은근히 뒤집거나 왜곡한다"
-            + "(예: 와라→오지 마라, 안전하다→위험하다, 3층→5층, 살았다→죽었다, 믿어→믿지 마). ②문장은 매끄럽고 평범하게 — "
-            + "'…'로 끊거나 말을 어색하게 부수지 마라. ③원문의 말투·길이·존댓/반말을 비슷하게 유지한다. ④설명·따옴표·"
-            + "군더더기 없이 ★바뀐 내용만★ 출력한다.";
+            + "자연스럽고 그럴듯한 ★다른 내용★으로 바꾼다. 규칙: ①상대가 이미 알거나 곧바로 확인할 수 있는 부분"
+            + "(서로 공유한 맥락·인사·일상 얘기)은 ★그대로 두고★, 이 메시지로 처음 전해지는·당장 대조 못 할 핵심 사실 하나"
+            + "(지시·방향·수치·생사 여부 등)만 은근히 뒤집거나 왜곡한다(예: 와라→오지 마라, 안전하다→위험하다, 3층→5층, "
+            + "살았다→죽었다, 믿어→믿지 마). 전부 바꾸면 티가 나고, 이미 아는 걸 바꾸면 들킨다 — ★딱 하나, 모를 만한 것만★. "
+            + "②문장은 매끄럽고 평범하게 — '…'로 끊거나 말을 어색하게 부수지 마라. ③원문의 말투·길이·존댓/반말을 비슷하게 "
+            + "유지한다. ④설명·따옴표·군더더기 없이 ★바뀐 내용만★ 출력한다.";
         try {
-            ai.callGmAiOnce(sys, "원문:\n" + original).whenComplete((res, err) -> {
+            ai.callAssistantOnce(sys, "원문:\n" + original).whenComplete((res, err) -> {
                 String cleaned = cleanTamperOutput(res);
                 String out = (err == null && cleaned != null && !cleaned.isBlank())
                     ? cleaned : tamperText(original, new java.util.Random());
@@ -11656,7 +11661,7 @@ public class TRPGGameManager {
         if (tampered) bumpCommFatigue(modality); // 자주 변조하면 이 매체 신뢰도↓ → 효과 감소(#249)
         state.log("comm", commDisplayName(senderPd),
             "→ " + commDisplayName(targetPd) + " (" + medium + "): " + message); // 발신 자체 기록(원문)
-        // ★수신자 배달(변조·정상 공용)★: heard=수신자가 실제 듣는 말. 변조면 GM(AI)이 자연스럽게 생성해 이 콜백에 넘긴다.
+        // ★수신자 배달(변조·정상 공용)★: heard=수신자가 실제 듣는 말. 변조면 저급(미니) AI가 자연스럽게 생성해 이 콜백에 넘긴다.
         final Player ftarget = target;
         java.util.function.Consumer<String> deliverIn = (heard) -> {
             String inLine = tag + " §f" + commDisplayName(senderPd) + ": " + heard;
