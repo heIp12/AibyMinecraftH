@@ -182,8 +182,11 @@ public class AiManager {
                     case "openai" -> { // 최신 버전 우선(목록 순서 비보장 → 버전 번호로 최신 선별). gpt-5 계열 > gpt-4 계열.
                         autoHigh = latestVer(ids, new String[]{"gpt-5"}, OAI_NON_FLAGSHIP);   // 최신 gpt-5 표준(mini·nano·pro 제외)
                         if (autoHigh == null) autoHigh = latestVer(ids, new String[]{"gpt-4"}, OAI_NON_FLAGSHIP);
-                        autoMedium = latestVer(ids, new String[]{"gpt-5", "mini"}, OAI_SPECIAL); // 최신 gpt-5*-mini
-                        if (autoMedium == null) autoMedium = autoHigh;
+                        // ★MEDIUM(중품질·GM 주력) = HIGH 바로 아래 '표준' gpt-5(★mini 아님★) — 예: HIGH=gpt-5.5면 MEDIUM=gpt-5.4.
+                        //   예전엔 최신 gpt-5*-mini로 잡아 MEDIUM==LOW(둘 다 mini)로 붕괴했다(저품질·중품질 세션이 같은 모델). 표준으로 자동 책정한다.
+                        double hiV = (autoHigh != null) ? parseVer(autoHigh.toLowerCase()) : Double.MAX_VALUE;
+                        autoMedium = latestVerBelow(ids, new String[]{"gpt-5"}, OAI_NON_FLAGSHIP, hiV); // HIGH보다 낮은 최신 표준 gpt-5
+                        if (autoMedium == null) autoMedium = autoHigh; // 표준 gpt-5가 하나뿐이면 HIGH와 동일(그래도 표준·mini 아님)
                         autoLow = latestVer(ids, new String[]{"mini"}, OAI_SPECIAL);          // ★nano는 엔티티·보조에도 부실 → 저티어 바닥도 mini★(nano 미사용)
                         if (autoLow == null) autoLow = autoMedium;
                         autoMini = latestVer(ids, new String[]{"mini"}, OAI_SPECIAL);         // 미니(NPC) = 최신 *-mini
@@ -266,6 +269,22 @@ public class AiManager {
             if (!ok) continue;
             double v = parseVer(l);
             if (v > bestV) { bestV = v; best = id; }
+        }
+        return best;
+    }
+
+    /** latestVer와 같되 버전이 ceilExclusive '미만'인 것만 — HIGH 바로 아래 표준 티어(MEDIUM) 자동 책정용.
+     *  ceil과 같은(=HIGH) 최상위 버전은 제외해, 있으면 한 단계 낮은 표준을 고른다(없으면 null → 호출부에서 HIGH로 폴백). */
+    private static String latestVerBelow(List<String> ids, String[] require, String[] exclude, double ceilExclusive) {
+        String best = null; double bestV = -1;
+        for (String id : ids) {
+            String l = id.toLowerCase();
+            boolean ok = true;
+            for (String r : require) if (!l.contains(r)) { ok = false; break; }
+            if (ok && exclude != null) for (String e : exclude) if (l.contains(e)) { ok = false; break; }
+            if (!ok) continue;
+            double v = parseVer(l);
+            if (v < ceilExclusive && v > bestV) { bestV = v; best = id; }
         }
         return best;
     }
