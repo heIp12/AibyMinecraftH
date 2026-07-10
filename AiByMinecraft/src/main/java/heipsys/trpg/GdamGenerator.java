@@ -481,7 +481,8 @@ type 값 규칙: "written_book"=책/일기/문서류, "paper"=쪽지/메모, "ma
 - notes: 위로 표현 못 한 기타 자연 제약을 짧게(예: "정전으로 조명 제한", "무전기 배터리 잔량 부족").
 - gated_zones: (선택) 장비·인증 잠금이 있는 구역 배열. 각 항목: {zone: "zone_id", requires: "필요 조건(장비명/인증)", bypass: "물리 우회 방법(없으면 생략)", bypass_dc: DC숫자(생략 가능), remote_bypass: true/false(원격으로 우회·해제 가능한가. 현장 필수면 false — 급박 구간에 이동만으로 기회 전소 금지·이동 비용 명시)}.
   ★★ gated_zones[].zone ID 절대 규칙: zone 값은 반드시 이 시나리오 zones[*].zone_id 목록에 실제로 존재하는 id를 그대로 복사한다. "zone_엘리베이터홀"처럼 존 이름에 "zone_" 접두어를 붙이거나 임의 id를 지어내면 런타임에서 '[무시: 알 수 없는 구역]' 오류가 발생해 잠금이 영구 무효가 된다.
-  ★★ 퍼즐 이중 잠금 방지 (절대 금지 — 억지 왕복 차단): 하나의 문(한 zone_id)에 잠금 수단을 두 개 이상 겹치지 마라. 전형적 금지 패턴: gated_zones[].requires(카드키)와 key_items[*].item_params.unlocks(전력/아이템 해제)가 같은 zone을 동시에 잠그는 것. 문이 전력으로 열린다면 전력만으로, 카드키가 필요하면 처음부터 카드키만으로 설계하라. 규칙: 하나의 zone에 (a) gated_zones[].requires와 (b) key_items[*].item_params.unlocks가 모두 설정되어 있으면 둘 중 하나를 반드시 제거하라.
+  ★★ 잠긴 문 설계 = '잠금 표시 1개 + 그 문을 여는 열쇠 1개'로 ★짝을 맞춰라★ (엔진 규약): 하나의 잠긴 문은 반드시 ★gated_zones[] 엔트리 1개(그 문이 잠겼다는 표시 + 연출용 requires 텍스트) + 그 문을 여는 열쇠 아이템 1개(key_items[*].item_params.unlocks = 그 zone_id)★ 두 가지가 ★함께★ 있어야 정상 작동한다. 이 둘은 '한 자물쇠의 두 짝'이지 이중 잠금이 아니다 — ★어느 하나도 빼지 마라★(gated_zones만 있고 여는 열쇠가 없으면 영영 못 여는 문, 열쇠만 있고 gated_zones가 없으면 잠기지도 않은 문이라 열쇠가 무용지물). requires에 적은 물건과 그 zone을 여는 unlocks 열쇠는 ★반드시 같은 것★을 가리켜라(requires="카드키"면 그 카드키 아이템의 item_params.unlocks가 이 zone_id).
+  ★★ 진짜 금지 = 억지 왕복(한 문에 서로 다른 조건을 여러 개 요구): 하나의 문을 열려고 ★서로 다른 여러 아이템·조건을 모두★ 요구하지 마라(예: 카드키 AND 별도의 전력복구 AND 암호까지 다 있어야 열림). 한 문엔 여는 방법을 ★하나만★ 둬라 — 열쇠 1종(unlocks), 또는 정의된 물리 우회(bypass) 하나. 여러 관문을 순서대로 통과시키고 싶으면 문을 여러 개(zone 여러 개)로 나눠 각 문에 열쇠 하나씩 배치하라(한 문에 겹쳐 쌓지 말 것).
 - notes (과거 시대 + phone_usable=false): 대체 통신 수단명·도달 소요 시간·발각 위험 수준을 반드시 명시한다(예: "전령은 도보 2턴, 발각 위험 중"). NPC가 수신하는 대체통신도 동일한 도달 소요·발각 위험을 따른다(대면 즉시 전달과 구분). comms_monitored 대신 이 notes 기준을 적용한다.
 - notes (미래 + 복수 통신 채널): "감청 대상 채널 = [목록], 안전 채널 = [목록]"을 명시한다. 안전 채널이 명시되면 그 채널로 핵심 정보를 안전하게 전달하는 공략을 허용한다.
 - 제약은 플레이어 자유를 부수는 장치가 아니라, '이 괴담을 왜 벗어날 수 없는가'를 설득력 있게 만드는 장치다.
@@ -1605,6 +1606,7 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
                         logger.warning("[gdam] 분할 결과 검증 실패 → 단일 생성 폴백");
                         return generate(roomNumber, 0, concept, progress);
                     }
+                    repairZoneRefs(core); // ★#2★ 분할(기본) 경로에도 zone 참조 자동 보정 — 예전엔 레거시 단일생성 경로에서만 돌아 기본 생성엔 미적용이었다.
                     try {
 						save(seed, core);
 					} catch (Exception e) {
