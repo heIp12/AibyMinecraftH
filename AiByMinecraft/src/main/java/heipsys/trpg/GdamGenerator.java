@@ -538,7 +538,7 @@ area보다 상위 개념. 서로 ★도보로 오갈 수 없는 완전히 분리
 npcs 배열은 시나리오에 등장하는 주변 인물(플레이어 배역 외)을 정의한다.
 - critical: false (일반 NPC): GM AI가 서술에 통합하여 직접 조종. name·zone만 필수.
 - ★age(나이, 정수 8~85)★: ★모든 NPC★(critical·비critical)에 역할·맥락에 맞는 현실적 나이를 넣어라 — 게임이 이 나이로 세대별 말투·어휘(어린이=쉬운 말·짧은 문장, 청소년=줄임말·유행어, 청년=표준 회화, 중장년=관용구·에두름, 노년=옛말투·속담)를 자동으로 입힌다. 예: 학생=10대, 직장인=20~50대, 노인 관리인·촌로=60대+. ★빠지면 '세대 불명'이 되어 나이대 말투가 통째로 안 붙는다.★
-- critical: true (중요 NPC): 독립 AI 인스턴스로 자율 행동. 스테이지당 1~2명으로 제한.
+- critical: true (중요 NPC): 독립 AI 인스턴스로 자율 행동. ★수는 회차마다 다르다(0~4명) — 아래 '이번 회차 중요 NPC' 지시가 주는 ★정확한 수★에 맞춰라(항상 2명식 고정 금지). 0명이면 괴담·일반 NPC·미충원 배역만으로 채운다.★
   * personality: 성격·숨겨진 면 한 문장 — ★상투형 라벨로 때우지 마라(겁쟁이·친절·예민 같은 유형어만 쓰지 말 것). 이 인물만의 구체적 모순·습관·디테일로 잡아라★ (예: "겁쟁이지만 비밀을 안다"처럼 뭉뚱그리지 말고 → "남 앞에선 침착한 척하지만 혼자되면 문을 세 번 확인하고, 열쇠를 쥐고도 모른 척한다"처럼). ★personality엔 화법·말투('세월에 빗대어 말하며' 류)도, 정서 기질('웬만해선 안 놀란다' 류)도 넣지 마라 — 말투는 speech_style가, 기질은 temperament가 맡는다. personality는 '무슨 사람인가(가치관·모순·습관·비밀)'만 담고 speech_style·temperament와 ★내용이 겹치지 않게★ 나눠라.★
   * motivation: 이 NPC의 목표 한 문장 (예: "살아남기 위해 진실을 숨기려 한다")
   * temperament(기질): 이 인물의 ★정서 기본값★ 한 구절 — 감정이 어느 쪽으로 잘 기우는지. 예: "쉽게 불안해하고 최악을 상상한다" / "웬만해선 흔들리지 않는다" / "발끈 잘하고 금세 식는다". personality와 겹치지 말고 '평소 감정의 결'만 담아라(대사의 정서 톤을 매 턴 일관되게 잡는 값).
@@ -1477,6 +1477,20 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
             + "보조 괴담도 ★실존 원전★에서 골라라(새 창작 금지). 주 괴담의 해결 경로는 반드시 성립시켜라(보조가 막아도 대가를 치르고 만회 가능).";
     }
 
+    /** 이번 회차 중요(critical:true) NPC 수 — ★0~4 가변★(회차마다 다르게). '항상 2명' 편향을 깨고, 괴담만으로 충분한
+     *  판(0)부터 앙상블(4)까지 폭넓게. 일반(critical:false) NPC·미충원 배역-NPC는 이와 별개로 장면을 채운다. */
+    private static int criticalNpcCount(int roomNumber) {
+        int roll = java.util.concurrent.ThreadLocalRandom.current().nextInt(100);
+        return roll < 15 ? 0 : roll < 40 ? 1 : roll < 65 ? 2 : roll < 85 ? 3 : 4; // 0:15 1:25 2:25 3:20 4:15
+    }
+
+    /** 중요 NPC 수 지시(월드 청크). 정확한 목표 수를 못박아 '항상 2명' 고정 편향을 깬다. */
+    private static String criticalNpcDirective(int roomNumber) {
+        int n = criticalNpcCount(roomNumber);
+        if (n == 0) return "\n\n## ★이번 회차 중요(critical:true) NPC = 0명★\n독립 AI로 도는 중요 NPC를 ★두지 마라(어떤 npcs 항목도 critical:true 금지)★ — 괴담과 일반(critical:false) NPC, 그리고 플레이어가 안 맡은 배역만으로 장면을 채운다.";
+        return "\n\n## ★이번 회차 중요(critical:true) NPC = 정확히 " + n + "명★\n독립 AI로 자율 행동하는 중요 NPC를 ★정확히 " + n + "명★ 두어라(더도 덜도 말고 " + n + "). 나머지 주변 인물은 critical:false(일반)로. '항상 2명'식 고정 배치를 피하고 반드시 이 수에 맞춰라.";
+    }
+
     /**
      * 분할 생성: 코어(roles/key_items 제외) → 배역 → 아이템 순으로 3회 호출.
      * 각 출력이 작아 잘림 위험이 크게 줄고, 실패한 단계만 적은 비용으로 재시도된다.
@@ -1520,6 +1534,7 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
                 + "\"clues\":[...],\"daily_prologue\":...,\"meeting_design\":...,\"common_items\":[...]}\n"
                 + "entity·timeline·roles·key_items 등 다른 최상위 필드는 절대 포함하지 마라."
                 + ScenarioArchetypes.rolesBlock(roomNumber) // 외부화·샘플링: NPC 역할 후보 소수만 주입(1~2스테이지는 기본만)
+                + criticalNpcDirective(roomNumber)          // ★이번 회차 중요 NPC 수(0~4 가변)★ — '항상 2명' 고정 편향 제거
                 + "\n## ★검증: npcs가 괴담 성향(disposition)·규칙에 맞게 반응·배치됐는가? 아니면 고쳐라."
                 + "\n## daily_prologue.opening: 도입 강도를 시나리오 성격에 맞게 정하라 — "
                 + "\"calm\"(대부분: 담담한 일상에서 서서히 침식) · \"tense\"(일상에 미묘한 긴장·불안, 단 초자연은 아님) · "
