@@ -103,6 +103,20 @@ description: >-
   상시 갱신(효율 될 만한 지식은 항상 등록).
 
 ## 최근 추가된 아키텍처 사실 (회귀 방지)
+- **★실플레이(저사양 GPT GM) 감사 배치(2026-07, 2a72dc9~db99b33)★ — 약한 모델 방어 원칙**:
+  ▸**인기척 알림**: 수 반영 단일 문구(1=낯선 인기척·2=두 사람의·3+=여러), `[접근]` 주입에 반복금지.
+  ★이름 공개 기준 = `moved.everKnownNpcContacts`(그 플레이어 면식/연락처)★ — `npcLoggedZone`(전역 등장 로그)
+  쓰면 자율 NPC가 멀리서 행동만 해도 만난 적 없는 이름이 샌다(updatePlayerZone ~11972).
+  ▸**행운 마커는 엔진 소유**: GM이 쓴 `[행운!]/[큰 행운!]/[행운 조짐]/[불운 조짐]`은 stripTags가 제거.
+  실제 발동만 표기 — d7=showInlineDice 🍀, 무판정 우연=`pendingSerendipity`(computePreRollNote가 set→
+  onGmResponse 4c가 서술 뒤 1회 배출). GM 프롬프트도 "라벨은 시스템, GM은 결과만 서술".
+  ▸**STATE_UPDATE 대괄호/혼합/고아 스트립**(AiManager): 꺾쇠 전용 규칙이 `[STATE_UPDATE]…</STATE_UPDATE>`를
+  못 잡아 누출 → `[<]…STATE_UPDATE…[]>]` 쌍+고아 규칙 추가(WITNESS/ZONE_UPDATE와 동형).
+  ▸**NPC 대사 이중 서술**: 대화 답신(handleNpcDirectComm)의 GM 주입에도 "이미 전달됨—재인용 금지" 가드
+  (자율부 8671~와 대칭). ▸**NPC 전지 금지**: npcCorePrompt에 "직접 목격·전해들음·원래앎만 안다" 인지 한계.
+  ▸**임시 hp/san = 비율 보존**: applyGaugeBuff/revertGaugeBuff(최대치±amount 하한1, 현재치 같은 비율 스케일,
+  살아있으면 0 안 됨), TempStatBuff.appliedDelta 저장. flat 가감(영구 회복·손상·게이지 붕괴) 금지.
+  ▸**수면마비류 '자서 클리어'는 정상**(collapse_condition 충족) — 타임라인 사건 강제 발동 가드 넣지 말 것.
 - **★정보 경제 = '영감=연상'(2026-07, 3ddac6b — '해상도'로 회귀 금지)★**: 3축 분리 — 발견=탐색이 보장(스톤월링 금지) /
   ★관찰 사실(이름·글자·날짜·모양)은 영감 무관 그대로 또렷이★("김하율이라는 이름이 적힌 이름표", 영감 1~4만 둔감) /
   영감(SPR)은 ★이미 아는 단서끼리의 연상★만(10+ 때때로·모은 관련 단서 비례, 15+ 자주, "어디서 봤더라—" 물음형만).
