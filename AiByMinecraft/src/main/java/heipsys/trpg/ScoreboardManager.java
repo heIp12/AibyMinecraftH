@@ -68,6 +68,9 @@ public class ScoreboardManager {
         if (!state.isDailyPhase()) {
             set(obj, turnStatusLine(pd),                 line--);
         }
+        // ★일시 효과(휘발성 버프/디버프)★ — 지속시간(남은 턴)·양을 상시 표시(약물·괴담·NPC 효과).
+        String tb = tempBuffLine(pd);
+        if (tb != null) set(obj, tb,                      line--);
         set(obj, divider(2),                             line--);
         set(obj, "§7상세: §b네더의 별 우클릭",            line);
 
@@ -102,6 +105,33 @@ public class ScoreboardManager {
 
     /** ★#254 후속★ 현재 '내 차례' 표시 문자열(변화 감지용 — 바뀔 때만 스코어보드 재빌드해 깜빡임 방지). */
     public String turnStatusFor(PlayerData pd) { return turnStatusLine(pd); }
+
+    /** ★일시 효과 한 줄★ — 활성 임시 버프/디버프를 "일시 힘+3(2) 영감-1(1)"처럼 요약(양·남은 턴). 없으면 null.
+     *  버프=초록, 디버프=빨강. 사이드바 폭을 위해 최대 3개만 보이고 나머지는 "+N"으로. */
+    private String tempBuffLine(PlayerData pd) {
+        if (pd.tempStatBuffs == null || pd.tempStatBuffs.isEmpty()) return null;
+        StringBuilder s = new StringBuilder("§e일시 ");
+        int shown = 0, total = pd.tempStatBuffs.size();
+        for (PlayerData.TempStatBuff b : pd.tempStatBuffs) {
+            if (shown >= 3) { s.append("§8+").append(total - shown); break; }
+            if (shown > 0) s.append(" ");
+            s.append(b.amount >= 0 ? "§a" : "§c")
+             .append(statShort(b.stat)).append(b.amount > 0 ? "+" : "").append(b.amount)
+             .append("§7(").append(Math.max(0, b.turnsLeft)).append(")");
+            shown++;
+        }
+        return s.toString();
+    }
+
+    /** 스탯 키 → 사이드바용 짧은 한글 라벨. */
+    private String statShort(String stat) {
+        if (stat == null) return "?";
+        switch (stat) {
+            case "str": return "힘";   case "cha": return "매력"; case "luk": return "운";
+            case "spr": return "영감"; case "hp":  return "체력"; case "san": return "정신";
+            default: return stat;
+        }
+    }
 
     /** 위치 라벨: "존이름" 또는 "존이름§7[세부위치]" */
     private String resolveLocationLabel(PlayerData pd) {

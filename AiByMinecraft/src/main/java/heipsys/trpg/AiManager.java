@@ -997,6 +997,7 @@ public class AiManager {
             .replaceAll("<NPC_AT [^/]*/?>", "")
             .replaceAll("<BUSY [^/]*/?>", "")
             .replaceAll("<BLOCK_MOVE [^/]*/?>", "")
+            .replaceAll("<TEMP_STAT [^/]*/?>", "")
             .replaceAll("<DUR [^/]*/?>", "")
             .replaceAll("</?NO_HOPE\\s*/?>", "")
             .replaceAll("<MAP_GRANT [^/]*/?>", "")
@@ -1563,6 +1564,28 @@ public class AiManager {
             String delta  = extractAttr(attrs, "delta").orElse(null);
             String reason = extractAttr(attrs, "reason").orElse("");
             if (delta != null) out.add(new String[]{delta, reason});
+            from = end + 2;
+        }
+        return out;
+    }
+
+    /** <TEMP_STAT player="X" stat="근력|매력|행운|영감|체력|정신력" amount="±N" turns="M"/> 파싱 → [{player, stat, amount, turns}, ...]
+     *  — 약물·일시 효과로 몇 턴간 스탯을 올린다(음수면 일시 약화). 세션 종료 시 휘발. */
+    public java.util.List<String[]> parseTempStatTags(String response) {
+        java.util.List<String[]> out = new ArrayList<>();
+        final String PREFIX = "<TEMP_STAT ";
+        int from = 0;
+        while (true) {
+            int idx = response.indexOf(PREFIX, from);
+            if (idx == -1) break;
+            int end = response.indexOf("/>", idx);
+            if (end == -1) break;
+            String attrs  = response.substring(idx + PREFIX.length(), end);
+            String player = extractAttr(attrs, "player").orElse(null);
+            String stat   = extractAttr(attrs, "stat").orElse("");
+            String amount = extractAttr(attrs, "amount").orElse("");
+            String turns  = extractAttr(attrs, "turns").orElse("");
+            if (player != null && !stat.isBlank()) out.add(new String[]{player, stat, amount, turns});
             from = end + 2;
         }
         return out;

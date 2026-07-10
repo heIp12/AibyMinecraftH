@@ -902,6 +902,7 @@ public class TRPGGameManager {
         itemMan.reclaimChapterItems(new ArrayList<>(Bukkit.getOnlinePlayers()));
         narrativeDelivery.clearAll();
         mapMan.clear();
+        state.getAllPlayers().forEach(this::clearTempStatBuffs); // ★임시 스탯 버프 휘발★(세션 종료)
         state.endSession(resetCorruption);
         ai.saveUsage();   // 세션 종료 시점 영구 사용량 체크포인트 저장
         ai.clearAll();
@@ -2785,6 +2786,8 @@ public class TRPGGameManager {
 
             // 2b. ★위협도·분노도 게이지★ 태그 소비(플레이어 비노출) — 함정·도발·전파 등으로 GM이 세력을 올린다.
             applyThreatAngerTags(raw);
+            // 2c. ★임시 스탯 버프★ 태그 소비(약물·일시 효과) — 몇 턴간 스탯을 올린다(세션 종료 시 휘발).
+            applyTempStatTags(raw);
 
             // 3. ITEM_GRANT 파싱 및 처리 + heldItemIds 추적
             JsonObject itemGrant = ai.parseItemGrant(raw);
@@ -5072,6 +5075,105 @@ public class TRPGGameManager {
                 + (!tgt.isBlank() ? " 표적=" + tgt : "")
                 + (a.length > 2 && !a[2].isBlank() ? " (" + a[2] + ")" : ""));
         }
+    }
+
+    /** GM 응답의 <TEMP_STAT>를 소비해 임시 스탯 버프를 부여한다(약물·일시 효과). 플레이어 비노출(stripTags가 제거). */
+    private void applyTempStatTags(String raw) {
+        if (raw == null || raw.isEmpty()) return;
+        for (String[] t : ai.parseTempStatTags(raw)) {
+            PlayerData pd = findAnyByName(t[0]);
+            if (pd == null) continue;
+            String stat = normalizeStatKey(t[1]);
+            if (stat == null) continue;
+            int amount = parseGaugeDelta(t[2], 0);
+            int turns  = Math.max(1, Math.min(30, parseGaugeDelta(t[3], 0)));  // 1~30턴 클램프(무한 버프 방지)
+            amount = Math.max(-10, Math.min(10, amount));                       // ±10 클램프(과도 버프 방지)
+            if (amount == 0) continue;
+            applyTempStatBuff(pd, stat, amount, turns);
+        }
+    }
+
+    /** 스탯 이름(한/영·별칭)을 정규 키로. 모르면 null. */
+    private static String normalizeStatKey(String s) {
+        if (s == null) return null;
+        s = s.trim().toLowerCase();
+        switch (s) {
+            case "str": case "근력": case "힘": return "str";
+            case "cha": case "매력": return "cha";
+            case "luk": case "luck": case "행운": case "운": return "luk";
+            case "spr": case "영감": case "직감": return "spr";
+            case "hp":  case "체력": return "hp";
+            case "san": case "정신력": case "정신": return "san";
+            default: return null;
+        }
+    }
+
+    /** ★임시 스탯 버프★ — stat을 amount만큼 turns턴 동안 올린다(약물·특성 등). 라이브 스탯에 즉시 반영하고 목록에 등록.
+     *  hp/san은 최대치+현재치를 함께 올린다(임시 여력). 음수 amount면 일시 약화. */
+    private void applyTempStatBuff(PlayerData pd, String stat, int amount, int turns) {
+        if (pd == null || amount == 0 || turns <= 0) return;
+        stat = normalizeStatKey(stat);
+        if (stat == null) return;
+        switch (stat) {
+            case "str": pd.str += amount; break;
+            case "cha": pd.cha += amount; break;
+            case "luk": pd.luk += amount; break;
+            case "spr": pd.spr += amount; break;
+            case "hp":  pd.hp[1]  += amount; pd.hp[0]  = Math.max(0, pd.hp[0]  + amount); break;
+            case "san": pd.san[1] += amount; pd.san[0] = Math.max(0, pd.san[0] + amount); break;
+            default: return;
+        }
+        pd.tempStatBuffs.add(new PlayerData.TempStatBuff(stat, amount, turns));
+        Player p = Bukkit.getPlayer(pd.uuid);
+        String label = diceStatLabel(stat);
+        String sign = amount > 0 ? "+" : "";
+        if (p != null && p.isOnline())
+            p.sendMessage((amount > 0 ? "§b" : "§c") + "[일시 " + label + " " + sign + amount + "] §7" + turns + "턴 동안 유지됩니다.");
+        updateAllScoreboards();
+        refreshMoveSpeed(pd); // 근력 버프면 이동속도 즉시 반영
+        gameLogger.logAbilityResult(pd.gmDisplayName(), "일시 능력치", label + " " + sign + amount + " (" + turns + "턴)");
+    }
+
+    /** 매 턴: 임시 스탯 버프 turnsLeft 감소, 0이면 amount만큼 되돌리고 제거. 버프가 있는 동안은 매 턴 스코어보드를 갱신해
+     *  남은 턴 카운트다운이 실시간으로 보이게 한다. */
+    private void tickTempStatBuffs(PlayerData pd) {
+        if (pd == null || pd.tempStatBuffs == null || pd.tempStatBuffs.isEmpty()) return;
+        java.util.Iterator<PlayerData.TempStatBuff> it = pd.tempStatBuffs.iterator();
+        while (it.hasNext()) {
+            PlayerData.TempStatBuff b = it.next();
+            b.turnsLeft--;
+            if (b.turnsLeft <= 0) {
+                revertTempStatBuff(pd, b);
+                it.remove();
+                Player p = Bukkit.getPlayer(pd.uuid);
+                if (p != null && p.isOnline()) p.sendMessage("§7[일시 " + diceStatLabel(b.stat) + " 효과가 끝났다.]");
+            }
+        }
+        refreshMoveSpeed(pd);                             // 근력 버프 만료 시 이동속도 원복
+        Player p = Bukkit.getPlayer(pd.uuid);
+        if (p != null && p.isOnline()) refreshScoreboard(p); // 남은 턴 카운트다운·만료 반영
+    }
+
+    /** 임시 버프 한 건을 되돌린다(amount만큼 뺀다). hp/san은 최대치를 낮추고 현재치를 새 최대 이하로 클램프. */
+    private void revertTempStatBuff(PlayerData pd, PlayerData.TempStatBuff b) {
+        if (pd == null || b == null || b.stat == null) return;
+        switch (b.stat) {
+            case "str": pd.str -= b.amount; break;
+            case "cha": pd.cha -= b.amount; break;
+            case "luk": pd.luk -= b.amount; break;
+            case "spr": pd.spr -= b.amount; break;
+            case "hp":  pd.hp[1]  = Math.max(1, pd.hp[1]  - b.amount); pd.hp[0]  = Math.max(0, Math.min(pd.hp[0],  pd.hp[1]));  break;
+            case "san": pd.san[1] = Math.max(1, pd.san[1] - b.amount); pd.san[0] = Math.max(0, Math.min(pd.san[0], pd.san[1])); break;
+        }
+    }
+
+    /** 세션 종료(리트라이·클리어·중단) 시 전부 되돌리고 비운다(휘발). resetToBase가 스탯을 재할당하는 경로에선 목록만 비면 되지만,
+     *  그렇지 않은 경로(중단 등)에서도 라이브 스탯이 깨끗해지도록 되돌린 뒤 비운다(재할당 경로여도 되돌림은 무해). */
+    private void clearTempStatBuffs(PlayerData pd) {
+        if (pd == null || pd.tempStatBuffs == null || pd.tempStatBuffs.isEmpty()) return;
+        for (PlayerData.TempStatBuff b : pd.tempStatBuffs) revertTempStatBuff(pd, b);
+        pd.tempStatBuffs.clear();
+        updateAllScoreboards();
     }
 
     /** 부호 정수 파싱("+15"/"15"/"-10"). 실패 시 def. */
@@ -11453,6 +11555,8 @@ public class TRPGGameManager {
     private void tickFaintCounters() {
         for (PlayerData pd : state.getAllPlayers()) {
             if (pd.isDead) continue;
+
+            tickTempStatBuffs(pd); // ★임시 스탯 버프★ 남은 턴 감소·만료 시 되돌림
 
             // 기절 회복 카운터
             if ("faint".equals(pd.status) && pd.faintTurnsRemaining > 0) {
