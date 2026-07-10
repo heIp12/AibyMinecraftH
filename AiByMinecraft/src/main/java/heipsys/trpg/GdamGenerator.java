@@ -1590,12 +1590,15 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
                     }
                 }
                 recordNames(usedNames);
-                String itemCtx = contextJson(core, roles, "entity");
+                // ★constraints 포함★ — 아이템 청크가 gated_zones(잠긴 문 목록)를 봐야 '문마다 여는 열쇠 짝'을 실제로
+                //   만들 수 있다(예전엔 entity만 줘서 어느 문이 잠겼는지 모른 채 열쇠를 짓게 했다 — 짝 규칙이 공염불).
+                String itemCtx = contextJson(core, roles, "entity", "constraints");
 
                 String itemsPrompt = head
                     + "## 이미 확정된 내용(참고, 일관성 유지)\n" + itemCtx + "\n\n"
                     + "위 스키마의 key_items 배열만 JSON으로 출력하라. 형식: {\"key_items\":[ ... ]}\n"
-                    + "글이 적힌 아이템(책·쪽지·지도)은 content 본문을 반드시 채운다. 다른 최상위 필드는 출력하지 마라.";
+                    + "글이 적힌 아이템(책·쪽지·지도)은 content 본문을 반드시 채운다. 다른 최상위 필드는 출력하지 마라.\n"
+                    + "★잠금-열쇠 짝(필수)★: 위 constraints.gated_zones의 ★각 항목마다★ 그 문을 여는 열쇠 1개를 key_items에 반드시 포함하라 — item_params.unlocks에 그 항목의 zone 값을 ★그대로 복사★한다(열쇠 없는 잠금은 영영 못 여는 문이 된다). 반대로 gated_zones에 없는 zone을 여는 unlocks 열쇠는 만들지 마라(잠기지 않은 문의 열쇠 = 무용지물).";
 
                 return aiManager.callGmAiLarge(GDAM_SYSTEM_PROMPT, itemsPrompt).thenCompose(itemsRaw -> {
                     JsonArray items = tryParseArray(itemsRaw, "key_items");

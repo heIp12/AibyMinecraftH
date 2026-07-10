@@ -4543,6 +4543,7 @@ public class TRPGGameManager {
         JsonObject ally = null;
         for (JsonObject npc : getCriticalNpcs()) {
             if (!isNpcCommunicable(npc) || isHostileNpc(npc)) continue;
+            if (isNpcDisabled(npc)) continue; // ★#266★ 사망·제압·구속된 인물은 걸어와 조우할 수 없다 — 조력 후보 제외
             ally = npc; break;
         }
         applyTraitUsed(pd, td.id, state.getCurrentTurn());
@@ -5208,6 +5209,18 @@ public class TRPGGameManager {
         if (nm != null && !nm.isBlank() && disp.containsKey(nm.trim())) return true;
         if (id != null && !id.isBlank() && disp.containsKey(canonicalNpcName(id))) return true;
         return false;
+    }
+
+    /** ★#266★ 이 NPC가 '그 자리에서 사라진' 종결 상태(사망·퇴장·소멸)인가 — 도착 인기척·존재 카운트 제외용.
+     *  제압·구속·기절은 몸이 그 자리에 ★있으므로★ 기척으로 세는 게 맞다(자율행동·전투위협만 isNpcDisabled로 막는다). */
+    private boolean isNpcGone(JsonObject npc) {
+        if (npc == null) return false;
+        java.util.Map<String,String> m = state.getNpcDispositions();
+        if (m.isEmpty()) return false;
+        String nm = getStr(npc, "name"), id = getStr(npc, "id");
+        String v = (nm != null && !nm.isBlank()) ? m.get(nm.trim()) : null;
+        if (v == null && id != null && !id.isBlank()) v = m.get(canonicalNpcName(id));
+        return v != null && (v.contains("사망") || v.contains("퇴장") || v.contains("소멸"));
     }
 
     /** GM 응답의 <TEMP_STAT>를 소비해 임시 스탯 버프를 부여한다(약물·일시 효과). 플레이어 비노출(stripTags가 제거). */
@@ -12124,6 +12137,7 @@ public class TRPGGameManager {
                     JsonObject no = ne.getAsJsonObject();
                     String nid = getStr(no, "id");
                     if (nid.isEmpty()) continue;
+                    if (isNpcGone(no)) continue; // ★#266★ 사망·퇴장·소멸한 NPC는 '인기척'으로 세지 않는다(제압·기절은 몸이 있으니 그대로 셈)
                     String nz = npcZones.getOrDefault(nid, getStr(no, "zone"));
                     if (!newZone.equals(nz)) continue;
                     // ★이름 공개 기준 = '이 플레이어가 실제로 아는 NPC'★(면식/연락처). npcLoggedZone(전역 등장 로그)은
