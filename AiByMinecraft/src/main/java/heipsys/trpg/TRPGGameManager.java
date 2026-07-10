@@ -5120,9 +5120,8 @@ public class TRPGGameManager {
             String st   = (t.length > 1 && t[1] != null) ? t[1].trim() : "";
             String note = (t.length > 2 && t[2] != null) ? t[2].trim() : "";
             if (npc.isEmpty()) continue;
-            // 메타 노출 방지: 계정명이 넘어오면 표시명(캐릭터명)으로 정규화(플레이어 인물일 때).
-            PlayerData pd = findAnyByName(npc);
-            String disp = (pd != null) ? pd.gmDisplayName() : npc;
+            // 메타 노출 방지 + 별칭 중복저장 방지: 플레이어/NPC 정식 표시명으로 정규화(별칭·id·계정명 → 한 키).
+            String disp = canonicalNpcName(npc);
             boolean release = st.isEmpty() || st.contains("해제") || st.contains("복귀") || st.contains("부활")
                            || st.contains("풀") || st.contains("회복") || st.contains("탈출");
             if (release) {
@@ -5150,6 +5149,30 @@ public class TRPGGameManager {
         sb.append(" — 이들은 이미 이 상태로 매듭지어졌다. 멀쩡히 다시 싸우게 하거나 없던 일로 되돌리지 마라(제압된 자는 결박·무력한 채다). "
                + "상태를 뒤집을 명시적 계기(구출·풀려남·부활·재봉인 실패 등)가 실제로 생기면 그때만 <NPC_STATE npc=\"이름\" state=\"해제\"/>로 풀어라.]");
         return sb.toString();
+    }
+
+    /** ★#266★ 이름·별칭·id·계정명을 '정식 표시명' 한 키로 정규화(종결 상태 중복저장 방지·조회 일치). */
+    private String canonicalNpcName(String raw) {
+        if (raw == null) return "";
+        String r = raw.trim();
+        if (r.isEmpty()) return r;
+        PlayerData pd = findAnyByName(r);
+        if (pd != null) return pd.gmDisplayName();
+        JsonObject npc = findNpcByName(r);
+        if (npc != null) { String nm = getStr(npc, "name"); if (nm != null && !nm.isBlank()) return nm.trim(); }
+        return r;
+    }
+
+    /** ★#266★ 이 NPC가 이미 종결 상태(제압·구속·봉인·격퇴·기절·사망·퇴장)인가 — 자율행동·전투위협·등장 판정에서 제외용.
+     *  dispositions는 정식 표시명 키이므로 name/id 정규화로 조회. 저장은 종결 상태만 하므로(해제 시 삭제) '존재=무력화'다. */
+    private boolean isNpcDisabled(JsonObject npc) {
+        if (npc == null) return false;
+        java.util.Map<String,String> disp = state.getNpcDispositions();
+        if (disp.isEmpty()) return false;
+        String nm = getStr(npc, "name"), id = getStr(npc, "id");
+        if (nm != null && !nm.isBlank() && disp.containsKey(nm.trim())) return true;
+        if (id != null && !id.isBlank() && disp.containsKey(canonicalNpcName(id))) return true;
+        return false;
     }
 
     /** GM 응답의 <TEMP_STAT>를 소비해 임시 스탯 버프를 부여한다(약물·일시 효과). 플레이어 비노출(stripTags가 제거). */
@@ -8587,6 +8610,7 @@ public class TRPGGameManager {
         // 우연 정체성 중복 NPC는 자율 구동 제외(버그3) — 나머지가 후보 풀.
         List<JsonObject> pool = new ArrayList<>();
         for (JsonObject npc0 : criticals) {
+            if (isNpcDisabled(npc0)) continue;   // ★#266★ 제압·사망·퇴장 등 종결 상태 NPC는 자율 구동(발화·이동·스케줄) 제외
             String ov0 = overlappingPlayerLabel(npc0);
             if (ov0 != null && isAccidentalIdentityDup(npc0)) continue;
             pool.add(npc0);
@@ -11801,6 +11825,7 @@ public class TRPGGameManager {
                 if (el == null || !el.isJsonObject()) continue;
                 JsonObject npc = el.getAsJsonObject();
                 if (!isHostileNpc(npc)) continue;
+                if (isNpcDisabled(npc)) continue;          // ★#266★ 이미 제압·격퇴·사망·퇴장한 적대 NPC는 이동차단 위협에서 제외
                 String id = getStr(npc, "id");
                 String nz = npcZones.getOrDefault(id, getStr(npc, "zone"));
                 if (zone.equals(nz)) return true;
