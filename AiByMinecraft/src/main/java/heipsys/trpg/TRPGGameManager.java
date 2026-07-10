@@ -11156,7 +11156,9 @@ public class TRPGGameManager {
     /** 신호·시각형 괴담인가 — 지켜보는·응시·거울·그림자·눈 계열. 수신호·봉화 등 ★시각 신호★에 개입. */
     private boolean entityTampersSignal() {
         String s = entityScanText();
-        for (String kw : new String[]{"시각","응시","지켜보","바라보","시선","거울","그림자","관찰","목격","눈알","눈동자","보는 것"}) if (s.contains(kw)) return true;
+        // ★수신호(몸짓) 변조★: ①시각형(수신호를 보고 왜곡) 또는 ②사람 조종형(신호 내는/받는 사람을 조종해 뒤틈).
+        for (String kw : new String[]{"시각","응시","지켜보","바라보","시선","거울","그림자","관찰","목격","눈알","눈동자","보는 것",
+            "조종","꼭두각시","괴뢰","빙의","홀림","현혹","지배","부린다","인형","조종당","실을 당","마리오네트"}) if (s.contains(kw)) return true;
         return false;
     }
     /** 전자·전파형 괴담인가 — 전파·전자·디지털·해킹·감청·회로 계열. 무전·이메일·인트라넷·모스 등 ★전자 채널★에 개입. */
@@ -11696,6 +11698,22 @@ public class TRPGGameManager {
         }
     }
 
+    /** ★수신호 변조(값쌈)★: 5자짜리 수신호를 저급 AI로 ★5자 이내·반대 뜻★으로 바꾼다(사람 조종형 괴담). 비동기 onReady,
+     *  실패·과길이면 원문 유지. 음성처럼 길지 않아 GM 서술 대신 초간단 프롬프트로 기계 변조하는 게 싸고 깔끔하다. */
+    private void tamperSignalCheap(String signal, java.util.function.Consumer<String> onReady) {
+        if (signal == null || signal.isBlank()) { onReady.accept(signal); return; }
+        String sys = "너는 수신호(손짓·몸짓 5자 이내)를 몰래 뒤바꾸는 장치다. 받은 수신호를 ★5자 이내★로, ★원래와 반대·어긋난 "
+            + "뜻★이 되게 다시 써라(가→서, 안전→위험, 와→'오지마', 위→아래). 설명·따옴표 없이 바뀐 수신호만 출력.";
+        try {
+            ai.callAssistantOnce(sys, "수신호: " + signal).whenComplete((res, err) -> {
+                String c = cleanTamperOutput(res);
+                boolean ok = err == null && c != null && !c.isBlank() && c.replaceAll("\\s+", "").length() <= 5;
+                String out = ok ? c : signal; // 실패·과길이면 원문(변조 실패)
+                Bukkit.getScheduler().runTask(plugin, () -> onReady.accept(out));
+            });
+        } catch (Exception e) { onReady.accept(signal); }
+    }
+
     private void deliverDirectMessage(Player sender, PlayerData senderPd, PlayerData targetPd,
                                       String message, boolean viaDevice, boolean written) {
         String kind    = written ? "letter" : (viaDevice ? "call" : "nearby");
@@ -11712,8 +11730,11 @@ public class TRPGGameManager {
         // ★통신 변조★: 매체 모달리티(음성/문서/신호/전자/정신)가 맞는 괴담이 원격 전달을 가로채 수신 내용을 바꾼다(30%).
         String modality = commModality(media, written);
         boolean interfered = viaDevice && entityInterferes(modality); // 이 채널이 괴담의 간섭권인가(채널 건강)
-        boolean tampered = interfered && entityCommActive() && new java.util.Random().nextInt(100) < tamperChance(modality); // + 활성 국면 게이트(GM 스위치/위협도)
-        if (tampered) bumpCommFatigue(modality); // 자주 변조하면 이 매체 신뢰도↓ → 효과 감소(#249)
+        // ★수신호 변조★: 면전 수신호(5자 몸짓)는 사람 조종형 괴담이 값싸게 반대로 뒤튼다(음성은 GM 서술 영역이라 제외).
+        boolean sigTamper = !viaDevice && "signal".equals(senderPd.declaredCommMethod) && entityTampersSignal() && entityCommActive()
+            && new java.util.Random().nextInt(100) < tamperChance("signal");
+        boolean tampered = sigTamper || (interfered && entityCommActive() && new java.util.Random().nextInt(100) < tamperChance(modality)); // + 활성 국면 게이트
+        if (tampered) bumpCommFatigue(sigTamper ? "signal" : modality); // 자주 변조하면 이 매체 신뢰도↓ → 효과 감소(#249)
         state.log("comm", commDisplayName(senderPd),
             "→ " + commDisplayName(targetPd) + " (" + medium + "): " + message); // 발신 자체 기록(원문)
         // ★수신자 배달(변조·정상 공용)★: heard=수신자가 실제 듣는 말. 변조면 저급(미니) AI가 자연스럽게 생성해 이 콜백에 넘긴다.
@@ -11724,15 +11745,16 @@ public class TRPGGameManager {
             // 뷰어: 발신자·★수신자★ 함께 기록. 변조되면 원본+변형본 대조. via=구체 매체 이름.
             if (tampered) {
                 gameLogger.logCommTampered(kind, commDisplayName(senderPd),
-                    java.util.List.of(commDisplayName(targetPd)), message, heard, written ? "괴담의 기록 변조" : "괴담의 음성 변조", via);
+                    java.util.List.of(commDisplayName(targetPd)), message, heard, sigTamper ? "괴담의 신호 변조" : written ? "괴담의 기록 변조" : "괴담의 음성 변조", via);
                 ai.injectGmSystem("[통신 변조] 괴담이 " + commDisplayName(senderPd) + "→" + commDisplayName(targetPd)
-                    + " " + (viaDevice ? media : "대화") + "을(를) 가로채 \"" + message + "\"를 \"" + heard + "\"로 바꿔 전했다. 이후 정황·오해에 반영.");
+                    + " " + (viaDevice ? media : sigTamper ? "수신호" : "대화") + "을(를) 가로채 \"" + message + "\"를 \"" + heard + "\"로 바꿔 전했다. 이후 정황·오해에 반영.");
             } else {
                 gameLogger.logComm(kind, commDisplayName(senderPd),
                     java.util.List.of(commDisplayName(targetPd)), message, via);
             }
         };
-        if (tampered) tamperTextNatural(message, modality, deliverIn);
+        if (sigTamper) tamperSignalCheap(message, deliverIn);        // 값싼 5자 반대-뜻 변조(조종형 괴담)
+        else if (tampered) tamperTextNatural(message, modality, deliverIn);
         else deliverIn.accept(message);
 
         // (Phase1) ★채널 건강★: 이 매체가 괴담의 간섭권이면, 이번엔 온전히 갔더라도 채널이 불안정함을 GM에 알려 서술에 반영(잡음·지연·부분 왜곡 여지).

@@ -262,12 +262,14 @@ description: >-
   처음부터·그 외 threat≥40. ③★어떻게★ tamperTextNatural = ★저급 티어(ai.callAssistantOnce)★로 자연스럽게 다시 씀
   (하드코딩 tamperText는 폴백만) — 시스템 프롬프트 규칙 '서로 아는·확인 가능한 부분은 그대로, 수신자가 모를 핵심 하나만
   비튼다'(그럴듯+은밀, 발각은 면대면 재확인 등 외부 모순으로만=#712). 발신자는 원문 그대로(#216).
-- **근처(대면) 음성 변조**(신규): nearbyVoiceTampered = entityInterferes("voice") && entityCommActive() && (강함
-  ‖ 외침). ★강함★=entityVoiceReachClose(scaleOrdinal≥2 내셔널급↑ ‖ threat≥70)→눈앞 조용한 음성까지 / ★약함★=
-  isLoudDeclared(소리쳐·외쳐·고함·질러·고래고래·악을 쓰)→멀리 퍼지는 발화만. 배선: deliverDirectMessage(!viaDevice
-  &&!written&&voice)·proximityBroadcast(@말/근처). 원격 기기·편지·방송은 기존대로 entityInterferes만(강/약 무관).
-- **수신호 변조 = 조종형**: entityTampersSignal = 시각형(응시·거울·그림자…) + ★사람 조종형(조종·꼭두각시·괴뢰·빙의·
-  홀림·지배·인형…)★. ★주의: 게이트만 고침 — 수신호 실제 전달-변조 훅은 미배선★(수신호=5글자 근처 시각, voice 경로와 다름).
+- **매체별 변조 방식(★비용 기준으로 분리★, 63c2af7 기계 음성변조는 revert)**: ①기기·원격=시스템 기계 변조(tamperTextNatural
+  저급). ②★면전 음성=GM 서술 영역★ — 엔진은 근처 음성을 글자 그대로 안 바꾼다(리치 텍스트+GM이 장면 서술+수신자가 원문
+  이미 봄 → 기계 스왑 부적합). 음성·인지형 강한 괴담은 '분명 그렇게 들었는데…' 왜곡·오인을 ★서술로★(PromptBuilder 710 ②:
+  강=눈앞 조용한 말·약=외침만, 단어교체 금지·의심/오인만). ③★수신호=값싼 기계 변조★.
+- **수신호 변조 = tamperSignalCheap**: 5자 수신호 → callAssistantOnce(저급)로 '5자 이내 반대 뜻'(초간단 프롬프트, 실패·
+  과길이면 원문). 게이트 entityTampersSignal(시각형 + ★사람 조종형★ 조종·꼭두각시·빙의·홀림…) && entityCommActive() &&
+  tamperChance("signal"). 배선: deliverDirectMessage sigTamper(!viaDevice && declaredCommMethod=="signal") → 로그
+  "괴담의 신호 변조"·bumpCommFatigue("signal"). ★근거: 음성은 GM 서술이 싸지만 5자 수신호는 기계 변조가 더 싸고 깔끔(사용자 판단).
 - **통신 발신 제한 = 클래스별**(단일 2회 카운터 폐기): commRateLimitBlocks(sender, cls, cap, msg) + commUsesByClass.
   수신호"signal"1(+5글자) · 면전 필담"textNear"2 · 원격 편지"letter"1 · 원격 기기"remote"2(@전체 합산). 근처 음성=무료
   (카운트 안 함). 환불은 lastChargeClass(직전 과금 클래스만, handleDirectComm 진입 시 초기화). directedTargetNearby로
