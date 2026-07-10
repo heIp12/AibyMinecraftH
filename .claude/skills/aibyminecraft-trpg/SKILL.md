@@ -12,10 +12,23 @@ description: >-
 한국어 마인크래프트(Paper 1.21.7) 괴담 TRPG 호러 플러그인. AI(GM/NPC/괴담)가 시나리오
 (.gdam)를 굴리고, 플레이는 log-viewer.html로 시점별 재생·감사한다.
 
-## ★ 커밋 전 검증 (가장 중요 — 컴파일 불가 환경)
-빌드/컴파일이 안 되므로 아래 3단으로 검증한다. **커밋 전 반드시.**
+## ★ 커밋 전 검증 (가장 중요)
+**★이 원격 환경엔 javac·mvn이 있고 전체 컴파일이 가능하다★** — 예전 "컴파일 불가" 가정은 틀렸다. bracecheck는
+브레이스만 봐 ★중복 변수 선언·타입 오류·시그니처 불일치를 못 잡는다★(실제로 CharacterGenerator의 중복 `roll`
+선언이 bracecheck를 통과한 채 ★전체 빌드를 깨 '로그 안 생김'을 유발★했다 — 빌드 실패 = 플러그인 재빌드 불가).
+**Java를 고쳤으면 커밋 전 반드시 전체 컴파일한다.**
 
-1. **브레이스 검사** (Java·HTML 공통 1차):
+0. **★전체 컴파일 (Java 변경 시 필수·최종 판정)★** — mvn은 papermc.io가 org 정책상 403(offline·online 모두 실패)라
+   ★paperclip(scratchpad의 paper.jar)에서 라이브러리 추출 + gson(central은 열림)으로 javac 우회★가 정답:
+   ```
+   SCR=<시스템 프롬프트의 세션 scratchpad 경로>
+   rm -rf /tmp/cp && mkdir -p /tmp/cp && (cd /tmp/cp && unzip -oq "$SCR/paper.jar" 'META-INF/libraries/*')
+   [ -f /tmp/cp/gson.jar ] || curl -sSL -o /tmp/cp/gson.jar https://repo.maven.apache.org/maven2/com/google/code/gson/gson/2.10.1/gson-2.10.1.jar
+   CP=$(find /tmp/cp -name '*.jar'|tr '\n' ':'); javac -proc:none -nowarn -cp "$CP" -d /tmp/jout $(find AiByMinecraft/src/main/java -name '*.java') 2>&1 | grep 'error:'
+   ```
+   → `error:` 0줄이어야 함(정상 시 클래스 ~73개 산출). paperclip은 `META-INF/libraries/**`에 paper-api·adventure 등 전부 번들.
+
+1. **브레이스 검사** (Java·HTML 공통 1차·빠른 체크):
    `python .claude/skills/aibyminecraft-trpg/tools/bracecheck.py <file>` → `OK 0/0/0` 이어야 함.
    - Java에서 정규식-무관하므로 신뢰. **주의**: HTML 안의 JS 정규식 리터럴(`/\(([^)]*)\)/` 등)은
      오탐(MISMATCH)을 낼 수 있음 → 그 줄이 편집 대상이 아니고 아래 node --check가 통과하면 무시.

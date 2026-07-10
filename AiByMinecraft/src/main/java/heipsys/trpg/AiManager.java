@@ -1245,6 +1245,40 @@ public class AiManager {
         }
     }
 
+    /** ★같은 태그가 여러 번 나오면 전부 파싱★(광역 피해·다중 지급 등 다대상). 순서 유지, 파싱 실패한 개는 건너뜀. */
+    private java.util.List<JsonObject> parseAllTags(String text, String open, String close) {
+        java.util.List<JsonObject> out = new java.util.ArrayList<>();
+        if (text == null) return out;
+        int from = 0;
+        while (true) {
+            int s = text.indexOf(open, from);
+            if (s < 0) break;
+            int e = text.indexOf(close, s + open.length());
+            if (e < 0) break;
+            try {
+                JsonObject o = gson.fromJson(text.substring(s + open.length(), e).trim(), JsonObject.class);
+                if (o != null) out.add(o);
+            } catch (Exception ignore) {}
+            from = e + close.length();
+        }
+        return out;
+    }
+    /** STATE_UPDATE 다중(다대상). 표준 태그가 여럿이면 전부, 하나도 없으면 단일 폴백(임베디드·벌거벗은 JSON). */
+    public java.util.List<JsonObject> parseAllStateUpdates(String response) {
+        java.util.List<JsonObject> all = parseAllTags(response, "<STATE_UPDATE>", "</STATE_UPDATE>");
+        if (!all.isEmpty()) return all;
+        JsonObject single = parseStateUpdate(response);
+        return single != null ? java.util.List.of(single) : java.util.List.of();
+    }
+    /** ITEM_GRANT 다중(한 행동에서 여러 명에게 지급). */
+    public java.util.List<JsonObject> parseAllItemGrants(String response) {
+        return parseAllTags(response, "<ITEM_GRANT>", "</ITEM_GRANT>");
+    }
+    /** ITEM_USE 다중. */
+    public java.util.List<JsonObject> parseAllItemUses(String response) {
+        return parseAllTags(response, "<ITEM_USE>", "</ITEM_USE>");
+    }
+
     // ======================================================
     //  HTTP 코어 (provider 분기)
     // ======================================================
@@ -1358,6 +1392,9 @@ public class AiManager {
                     String role = "assistant".equals(m.get("role").getAsString()) ? "model" : "user";
                     contents.add(geminiMsg(role, m.get("content").getAsString()));
                 }
+                JsonObject genCfg = new JsonObject();
+                genCfg.addProperty("maxOutputTokens", maxTokens); // ★#3★ 출력 토큰 상한 반영(예전엔 없어 32K GDAM 미보장)
+                req.add("generationConfig", genCfg);
                 req.add("contents", contents);
                 body = req.toString();
             }
@@ -1367,6 +1404,15 @@ public class AiManager {
 
                 JsonObject req = new JsonObject();
                 req.addProperty("model", model);
+                req.addProperty("max_completion_tokens", maxTokens); // ★#3★ 출력 토큰 상한(GPT-5 계열은 max_tokens 아닌 이 키)
+                // ★#3 effort★ — OpenAI는 minimal/low/medium/high. xhigh·max는 high로 클램프. 모델이 안 받으면 아래 400-effort 재시도가 제거.
+                if (effort != null && !effort.isBlank()) {
+                    String oe = switch (effort.trim()) {
+                        case "minimal" -> "minimal"; case "low" -> "low"; case "medium" -> "medium";
+                        case "high", "xhigh", "max" -> "high"; default -> "";
+                    };
+                    if (!oe.isEmpty()) req.addProperty("reasoning_effort", oe);
+                }
                 JsonArray arr = new JsonArray();
                 if (system != null && !system.isBlank()) arr.add(msg("system", system));
                 arr.addAll(gson.toJsonTree(messages).getAsJsonArray());

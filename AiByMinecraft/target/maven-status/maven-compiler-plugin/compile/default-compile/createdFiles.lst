@@ -2,6 +2,7 @@ heipsys\trpg\TRPGGameManager$1.class
 heipsys\trpg\CharacterGenerator.class
 heipsys\trpg\CorruptionManager.class
 heipsys\trpg\TRPGGameManager$PendingDelivery.class
+heipsys\trpg\model\PlayerData$TempStatBuff.class
 heipsys\trpg\GdamCatalog$Entry.class
 heipsys\trpg\TRPGGameManager$DroppedNote.class
 heipsys\trpg\AiManager.class
