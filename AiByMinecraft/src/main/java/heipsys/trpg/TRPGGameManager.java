@@ -5136,21 +5136,23 @@ public class TRPGGameManager {
     }
 
     /** ★임시 스탯 버프★ — stat을 amount만큼 turns턴 동안 올린다(약물·특성 등). 라이브 스탯에 즉시 반영하고 목록에 등록.
-     *  hp/san은 최대치+현재치를 함께 올린다(임시 여력). 음수 amount면 일시 약화. */
+     *  hp/san은 ★비율 보존★: 최대치를 amount만큼 바꾸고 현재치를 같은 비율로 스케일한다(만료 시 같은 비율로 원복 →
+     *  안 다치면 정확히 원위치, 다치면 그 비율만 남음). 음수 amount면 일시 약화(살아있으면 0=사망까진 안 감). */
     private void applyTempStatBuff(PlayerData pd, String stat, int amount, int turns) {
         if (pd == null || amount == 0 || turns <= 0) return;
         stat = normalizeStatKey(stat);
         if (stat == null) return;
+        int appliedDelta = amount; // 스칼라는 그대로 되돌린다. hp/san은 '실제 최대치 변화량'(비율 보존 복원용)으로 대체.
         switch (stat) {
             case "str": pd.str += amount; break;
             case "cha": pd.cha += amount; break;
             case "luk": pd.luk += amount; break;
             case "spr": pd.spr += amount; break;
-            case "hp":  pd.hp[1]  += amount; pd.hp[0]  = Math.max(0, pd.hp[0]  + amount); break;
-            case "san": pd.san[1] += amount; pd.san[0] = Math.max(0, pd.san[0] + amount); break;
+            case "hp":  appliedDelta = applyGaugeBuff(pd.hp,  amount); break;   // ★비율 보존★: 최대치+현재치 같은 비율로
+            case "san": appliedDelta = applyGaugeBuff(pd.san, amount); break;
             default: return;
         }
-        pd.tempStatBuffs.add(new PlayerData.TempStatBuff(stat, amount, turns));
+        pd.tempStatBuffs.add(new PlayerData.TempStatBuff(stat, amount, turns, appliedDelta));
         Player p = Bukkit.getPlayer(pd.uuid);
         String label = diceStatLabel(stat);
         String sign = amount > 0 ? "+" : "";
@@ -5181,7 +5183,7 @@ public class TRPGGameManager {
         if (p != null && p.isOnline()) refreshScoreboard(p); // 남은 턴 카운트다운·만료 반영
     }
 
-    /** 임시 버프 한 건을 되돌린다(amount만큼 뺀다). hp/san은 최대치를 낮추고 현재치를 새 최대 이하로 클램프. */
+    /** 임시 버프 한 건을 되돌린다. 스칼라는 amount만큼 뺀다. hp/san은 ★비율 보존★으로 되돌린다(최대치 복원 + 현재치 같은 비율 재스케일). */
     private void revertTempStatBuff(PlayerData pd, PlayerData.TempStatBuff b) {
         if (pd == null || b == null || b.stat == null) return;
         switch (b.stat) {
@@ -5189,9 +5191,31 @@ public class TRPGGameManager {
             case "cha": pd.cha -= b.amount; break;
             case "luk": pd.luk -= b.amount; break;
             case "spr": pd.spr -= b.amount; break;
-            case "hp":  pd.hp[1]  = Math.max(1, pd.hp[1]  - b.amount); pd.hp[0]  = Math.max(0, Math.min(pd.hp[0],  pd.hp[1]));  break;
-            case "san": pd.san[1] = Math.max(1, pd.san[1] - b.amount); pd.san[0] = Math.max(0, Math.min(pd.san[0], pd.san[1])); break;
+            case "hp":  revertGaugeBuff(pd.hp,  b.appliedDelta); break;
+            case "san": revertGaugeBuff(pd.san, b.appliedDelta); break;
         }
+    }
+
+    /** ★hp/san 임시 버프를 비율 보존으로 적용★ — 최대치를 amount만큼(하한1) 바꾸고 현재치를 같은 비율로 스케일한다.
+     *  살아있으면(현재>0) 임시효과로 현재치를 0(사망)까지 떨어뜨리지 않는다 — 약화지 사망이 아니다(사망은 피해 시스템 몫).
+     *  반환값 = ★실제 적용된 최대치 변화량★(하한 클램프 반영) — 되돌릴 때 이 값으로 정확히 복원한다. */
+    private static int applyGaugeBuff(int[] g, int amount) {
+        int oldMax = Math.max(1, g[1]);
+        int newMax = Math.max(1, oldMax + amount);
+        int floor  = g[0] > 0 ? 1 : 0;
+        g[0] = Math.max(floor, Math.min((int) Math.round(g[0] * (double) newMax / oldMax), newMax));
+        g[1] = newMax;
+        return newMax - oldMax;
+    }
+
+    /** ★hp/san 임시 버프를 비율 보존으로 되돌린다★ — 최대치를 appliedDelta만큼 되돌리고 현재치를 같은 비율로 재스케일.
+     *  안 다쳤으면 정확히 원위치, 다치면 그 비율만 남는다(버프=영구 회복·디버프=영구 손상 없음). */
+    private static void revertGaugeBuff(int[] g, int appliedDelta) {
+        int curMax = Math.max(1, g[1]);
+        int restoredMax = Math.max(1, curMax - appliedDelta);
+        int floor = g[0] > 0 ? 1 : 0;
+        g[0] = Math.max(floor, Math.min((int) Math.round(g[0] * (double) restoredMax / curMax), restoredMax));
+        g[1] = restoredMax;
     }
 
     /** 세션 종료(리트라이·클리어·중단) 시 전부 되돌리고 비운다(휘발). resetToBase가 스탯을 재할당하는 경로에선 목록만 비면 되지만,
