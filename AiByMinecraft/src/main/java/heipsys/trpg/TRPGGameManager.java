@@ -2854,7 +2854,7 @@ public class TRPGGameManager {
                 String sMark = pendingSerendipity.remove(player.getUniqueId());
                 if (sMark != null) {
                     final String mline = sMark;
-                    present(() -> { if (player.isOnline()) { player.sendMessage(mline); msgToWatchers(player, mline); } });
+                    present(() -> { if (player.isOnline()) msgToWatchers(player, mline); }); // msgToWatchers가 본인+관전자에 전달(별도 sendMessage 시 이중)
                 }
             }
             } finally {
@@ -9050,8 +9050,7 @@ public class TRPGGameManager {
             if (pd.isDead || !spawnedPlayers.contains(pd.uuid) || !npcZone.equals(pd.zone)) continue;
             Player tp = Bukkit.getPlayer(pd.uuid);
             if (tp == null || !tp.isOnline()) continue;
-            tp.sendMessage("§a[근처] §f" + npcName + ": " + speech);
-            msgToWatchers(tp, "§a[근처] §f" + npcName + ": " + speech); // 관전 중계
+            msgToWatchers(tp, "§a[근처] §f" + npcName + ": " + speech); // 본인+관전자(별도 sendMessage 시 이중 출력)
             appendNarrativeLog(pd, "[근처] " + npcName + ": " + speech);
             heardNames.add(pd.gmDisplayName());
         }
@@ -12031,8 +12030,7 @@ public class TRPGGameManager {
                     hereLine = "§7§o" + strangerPhrase + "이 느껴진다.";
                 else
                     hereLine = "§8§o주위에 인기척은 없다.";
-                mvP.sendMessage(hereLine);
-                msgToWatchers(mvP, hereLine);
+                msgToWatchers(mvP, hereLine);   // ★msgToWatchers가 본인+관전자에게 보낸다 → 별도 sendMessage 금지(이중 출력 버그)★
                 String strangerLog = strangersHere <= 0 ? "" : strangersHere == 1 ? " +낯선 기척"
                     : strangersHere == 2 ? " +두 기척" : " +여러 기척";
                 appendNarrativeLog(moved, !seenHere.isEmpty()
@@ -12044,8 +12042,7 @@ public class TRPGGameManager {
                 Player opp = Bukkit.getPlayer(op.uuid);
                 if (opp == null || !opp.isOnline()) continue;
                 String inLine = "§7§o" + moved.gmDisplayName() + (forced ? "이(가) 떠밀리듯 들이닥친다." : "이(가) 들어온다.");
-                opp.sendMessage(inLine);
-                msgToWatchers(opp, inLine);
+                msgToWatchers(opp, inLine);     // 본인+관전자(별도 sendMessage 시 이중 출력)
             }
             if (prevZone != null && !prevZone.isEmpty()) {                // ③ 떠난 구역의 인원: 누가 갔다
                 for (PlayerData op : state.getAllPlayers()) {
@@ -12056,8 +12053,7 @@ public class TRPGGameManager {
                     String outLine = op.visitedZones.contains(newZone)
                         ? "§7§o" + moved.gmDisplayName() + "이(가) " + zoneDisplayName(newZone) + " 쪽으로 사라진다."
                         : "§7§o" + moved.gmDisplayName() + "이(가) 자리를 뜬다.";
-                    opp.sendMessage(outLine);
-                    msgToWatchers(opp, outLine);
+                    msgToWatchers(opp, outLine);   // 본인+관전자(별도 sendMessage 시 이중 출력)
                 }
             }
             // ★길목 안내★: 이 방에서 갈 수 있는 인접 구역(=보이는 길목)을 GM이 서술로 한 번 짚어 플레이어가
