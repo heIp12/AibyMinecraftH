@@ -11745,26 +11745,48 @@ public class TRPGGameManager {
                     + "으로 다가왔다. " + String.join(", ", nearby)
                     + "의 시점에서 '저 멀리/건너편에서 누군가 움직이는 기척'으로 이 조우를 다음 서술에 거리감 있게 반영하라.");
             }
-            // ★결정적 조우 알림(엔진)★ — '누가 왔다·갔다·있다'를 GM 재량 서술에만 맡기지 않고 시스템 라인으로 직접 알린다.
+            // ★결정적 조우 알림(엔진·서사체)★ — '누가 왔다·갔다·있다'는 사실은 엔진이 보장하되,
+            //   [도착]식 메타 라벨 대신 ★몰입형 서술 한 줄★로 전한다(피드백: 시스템 알림은 몰입을 깬다).
             //   (로그 감사: [합류] 주입에도 도착 장면이 동료에게 8~42% 미전달 — 주입은 '다음 서술'에 실리는데 그 서술이
             //    다른 플레이어 턴이면 증발 + WITNESS 재량 의존. 방송(#92)·NPC 능동발화와 같은 '사실은 엔진이 보장' 계열.)
-            //   목록은 ★플레이어만★ — NPC는 위장·미지(#260)·미발견 스포 위험이 있어 GM 서술 몫으로 남긴다.
+            //   NPC 포함(피드백: 빼면 NPC 존재를 모른다): ★이미 등장한 NPC(npcLoggedZone 기록)는 이름으로★,
+            //   아직 정체가 안 드러난 NPC는 '낯선 인기척'으로 ★익명 포함★ — 존재는 알리고 정체 공개는 GM·상호작용 몫(#260 위장 스포 방지).
+            java.util.List<String> seenHere = new java.util.ArrayList<>(present);
+            int strangersHere = 0;
+            JsonObject gdMove = state.getGdamData();
+            if (gdMove != null && gdMove.has("npcs") && gdMove.get("npcs").isJsonArray()) {
+                for (JsonElement ne : gdMove.getAsJsonArray("npcs")) {
+                    if (ne == null || !ne.isJsonObject()) continue;
+                    JsonObject no = ne.getAsJsonObject();
+                    String nid = getStr(no, "id");
+                    if (nid.isEmpty()) continue;
+                    String nz = npcZones.getOrDefault(nid, getStr(no, "zone"));
+                    if (!newZone.equals(nz)) continue;
+                    if (npcLoggedZone.containsKey(nid)) seenHere.add(getStr(no, "name")); // 이미 화면에 등장한 NPC — 이름 공개
+                    else strangersHere++;                                                 // 미등장 — 익명 기척만
+                }
+            }
             Player mvP = Bukkit.getPlayer(moved.uuid);
-            if (mvP != null && mvP.isOnline()) {                          // ① 이동자: 도착 구역에 누가 있는지
-                String hereLine = present.isEmpty()
-                    ? "§7[도착] " + zoneDisplayName(newZone) + " §8— 동료는 보이지 않는다."
-                    : "§7[도착] " + zoneDisplayName(newZone) + " §8— 여기엔 §f" + String.join(", ", present) + "§8이(가) 있다.";
+            if (mvP != null && mvP.isOnline()) {                          // ① 이동자: 이 방에 누가 있는가
+                String hereLine;
+                if (!seenHere.isEmpty())
+                    hereLine = "§7§o" + String.join(", ", seenHere) + "이(가) 여기 있다."
+                             + (strangersHere > 0 ? " 낯선 인기척도 느껴진다." : "");
+                else if (strangersHere > 0)
+                    hereLine = "§7§o낯선 인기척이 느껴진다.";
+                else
+                    hereLine = "§8§o주위에 인기척은 없다.";
                 mvP.sendMessage(hereLine);
                 msgToWatchers(mvP, hereLine);
-                appendNarrativeLog(moved, present.isEmpty()
-                    ? "[도착] " + zoneDisplayName(newZone) + " — 동료 없음"
-                    : "[도착] " + zoneDisplayName(newZone) + " — " + String.join(", ", present) + " 있음");
+                appendNarrativeLog(moved, !seenHere.isEmpty()
+                    ? "(주위: " + String.join(", ", seenHere) + (strangersHere > 0 ? " +낯선 기척" : "") + ")"
+                    : (strangersHere > 0 ? "(주위: 낯선 기척)" : "(주위: 인기척 없음)"));
             }
             for (PlayerData op : state.getAllPlayers()) {                 // ② 도착 구역의 기존 인원: 누가 왔다
                 if (op.uuid.equals(moved.uuid) || op.isDead || !spawnedPlayers.contains(op.uuid) || !newZone.equals(op.zone)) continue;
                 Player opp = Bukkit.getPlayer(op.uuid);
                 if (opp == null || !opp.isOnline()) continue;
-                String inLine = "§7[도착] §f" + moved.gmDisplayName() + "§7이(가) 들어왔다" + (forced ? " §8— 무언가에 떠밀리듯." : ".");
+                String inLine = "§7§o" + moved.gmDisplayName() + (forced ? "이(가) 떠밀리듯 들이닥친다." : "이(가) 들어온다.");
                 opp.sendMessage(inLine);
                 msgToWatchers(opp, inLine);
             }
@@ -11774,8 +11796,9 @@ public class TRPGGameManager {
                     Player opp = Bukkit.getPlayer(op.uuid);
                     if (opp == null || !opp.isOnline()) continue;
                     // 관찰자가 모르는 구역명은 숨긴다(#165 스포 방지) — 아는 곳이면 행선지가 보인다.
-                    String destShown = op.visitedZones.contains(newZone) ? zoneDisplayName(newZone) + "(으)로" : "다른 곳으로";
-                    String outLine = "§7[이동] §f" + moved.gmDisplayName() + "§7이(가) " + destShown + " 떠났다.";
+                    String outLine = op.visitedZones.contains(newZone)
+                        ? "§7§o" + moved.gmDisplayName() + "이(가) " + zoneDisplayName(newZone) + " 쪽으로 사라진다."
+                        : "§7§o" + moved.gmDisplayName() + "이(가) 자리를 뜬다.";
                     opp.sendMessage(outLine);
                     msgToWatchers(opp, outLine);
                 }

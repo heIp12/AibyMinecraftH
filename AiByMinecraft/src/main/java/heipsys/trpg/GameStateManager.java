@@ -932,7 +932,9 @@ public class GameStateManager {
             StringJoiner others = new StringJoiner("  ");
             otherZone.forEach(p -> others.add(
                 p.toShortLine() + "(" + zoneNameOf(p.zone) + "·" + distanceLabel(zoneDistance(actorZone, p.zone)) + ")"));
-            sb.append("다른 위치 동료(거리): ").append(others).append("\n");
+            // ★서술 금지 마킹★: 저품질 모델이 이 참고 정보를 행동자 서술 본문에 그대로 풀어 써
+            //   '난 보관실인데 왜 접객실 동료 행동이 보이지?'(장면 혼선 46%, GPT 저품질 로그)가 나던 것 억제.
+            sb.append("다른 위치 동료(거리·GM 참고용 — ★이들의 장면·행동을 이 서술에 끌어오지 마라★): ").append(others).append("\n");
         }
 
         // 최근 이벤트 — ★현재 행동자가 지각할 수 있는(같은 위치 zone, 또는 본인) 일만 반영한다.
