@@ -2797,6 +2797,14 @@ public class TRPGGameManager {
                     clearTag = null; // 이 턴은 클리어 보류 — 아래로 흘러 <DICE> 굴림을 실제로 수행하고, 성공 시 stash가 매듭짓는다.
                 }
                 if (clearTag != null) {
+                    // ★#2 종결 전 상태 반영★: CLEAR로 이 응답의 상태·NPC종결·아이템소모 태그가 유실되지 않게 먼저 적용한다
+                    //   (희생 hp_change로 인한 사망·봉인 상태·최종 아이템 소모가 등급·생존자 평가에 반영되게). CLEAR는 여기서
+                    //   return하므로 아래 일반 경로(2827~)의 적용을 못 타 예전엔 이 태그들이 통째로 유실됐다.
+                    JsonObject suClear = ai.parseStateUpdate(raw);
+                    if (suClear != null) applyStateUpdate(suClear);
+                    applyNpcStateTags(raw);
+                    JsonObject iuClear = ai.parseItemUse(raw);
+                    if (iuClear != null) applyItemUse(iuClear);
                     String grade = clearTag.has("grade") ? clearTag.get("grade").getAsString() : "C";
                     // ★위협도 상한★ — 세력이 높으면 '깨끗한 승리' 불가(먹인 대가): 90+ 최대 B, 70~89 최대 A.
                     String capG = capGradeByThreat(grade);
@@ -2816,16 +2824,15 @@ public class TRPGGameManager {
             // ★턴당 1회 처리(STATE_UPDATE 유무와 무관) — 순수 서술 턴에도 회귀 스냅샷·세이브·지속효과 진행.
             //   (이전엔 applyStateUpdate 안에서만 호출돼, 태그 없는 서술 턴에는 변신/관조 지속이 멈춰 교착이 났음)
             maybeCaptureRewind(); // 시간 회귀용 턴 스냅샷 + 변신·관조 지속 틱(턴 가드로 턴당 1회, 변화 적용 전 상태)
-            maybeAutoSave();      // 자동 세이브(턴당 1회) — 예기치 못한 중단 후 이어하기용
+            // ★#8 자동 세이브는 이 응답의 상태·아이템 적용 뒤로 옮겼다★(예전엔 여기서 저장 → 이번 턴 피해·아이템 미반영 스냅샷 = 한 턴 어긋남)
 
             // ★연출 순차화(선출력 방지)★: 여기부터 주사위까지의 '플레이어 연출'(핵심정보 팝업·상태 알림·주사위)을
             //   present()로 모아 두었다가, 서술 배달이 끝난 뒤 실행한다. 상태 변화(HP/SAN·구역·아이템)는 그대로 즉시 반영.
             java.util.List<Runnable> presSink = new java.util.ArrayList<>();
             gmPresentationSink = presSink;
             try {
-            // 2. STATE_UPDATE 파싱 및 적용
-            JsonObject stateUpdate = ai.parseStateUpdate(raw);
-            if (stateUpdate != null) applyStateUpdate(stateUpdate);
+            // 2. STATE_UPDATE 파싱 및 적용 — ★#4 다대상★: 광역 피해·다중 상태변화는 태그를 여러 개 내므로 전부 적용(첫 개만 반영하던 버그)
+            for (JsonObject stateUpdate : ai.parseAllStateUpdates(raw)) applyStateUpdate(stateUpdate);
 
             // 2b. ★위협도·분노도 게이지★ 태그 소비(플레이어 비노출) — 함정·도발·전파 등으로 GM이 세력을 올린다.
             applyThreatAngerTags(raw);
@@ -2840,9 +2847,8 @@ public class TRPGGameManager {
                 gameLogger.logEvent("통신 변조 스위치 — GM " + ("on".equals(tamperSw) ? "ON(괴담이 통신을 가로채기 시작)" : "OFF(변조 중단)"));
             }
 
-            // 3. ITEM_GRANT 파싱 및 처리 + heldItemIds 추적
-            JsonObject itemGrant = ai.parseItemGrant(raw);
-            if (itemGrant != null) {
+            // 3. ITEM_GRANT 파싱 및 처리 + heldItemIds 추적 — ★#4 다대상★: 한 행동에서 여러 명에게 지급 시 전부 처리
+            for (JsonObject itemGrant : ai.parseAllItemGrants(raw)) {
                 // ★버그 수정★: GM은 player에 ★캐릭터명(charName)★을 넣는데(스키마 지시), processGrant/추적은
                 //   계정명(p.getName()/pd.name)으로 매칭 → 실지급·추적이 100% 실패해 '아이템을 받은 적 없음'.
                 //   charName·계정명·roleId 모두 매칭하는 findAnyByName으로 대상을 확정해 계정명으로 정규화한다.
@@ -2868,9 +2874,9 @@ public class TRPGGameManager {
                 }
             }
 
-            // 3b. ITEM_USE 파싱·적용 (기계 효과 아이템 사용 — 아이템 Phase II)
-            JsonObject itemUse = ai.parseItemUse(raw);
-            if (itemUse != null) applyItemUse(itemUse);
+            // 3b. ITEM_USE 파싱·적용 (기계 효과 아이템 사용 — 아이템 Phase II) — ★#4 다대상★
+            for (JsonObject itemUse : ai.parseAllItemUses(raw)) applyItemUse(itemUse);
+            maybeAutoSave(); // ★#8★ 상태·아이템 적용 뒤 저장 — 중단 후 이어하기가 이번 턴 결과까지 반영(예전엔 적용 전 저장)
 
             // 4. 서술 배달 — <DICE>가 있으면 그 위치에서 쪼개 [앞 서술]→[주사위 인라인]→[뒤 결과 서술](#254). 없으면 통짜 배달.
             JsonObject inlineDice = (player != null && player.isOnline()) ? ai.parseDiceTag(raw) : null;
