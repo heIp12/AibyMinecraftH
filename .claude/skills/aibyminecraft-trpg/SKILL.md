@@ -102,6 +102,16 @@ description: >-
   시전자 전용) — `logAbilityResult(…,overt=true)`는 주사위·물리 판정·행동불능만.
 - **★성별 인식★**: pd.gender/npcs[].gender를 프롬프트에 실제 주입해야 대명사·호칭이 안 뒤섞인다 — GM 등장인물명단(rosterGenderTag),
   toTurnLine, npcCorePrompt(자기 성별), handleNpcDirectComm 머리말(상대 성별)에 주입. npcs[]에도 gender 필수(생성기 스키마).
+- **★배역 초과·성별·시대 정합★**: `ensureEnoughRoles`(플레이어>배역)는 ①비핵심·비플롯(true_role/knowledge 없음)·성인 NPC를
+  플레이 배역으로 ★우선 승격★(`isPromotableNpc`/`npcToRole`, npcs에서 제거) ②남으면 ★시대·성별 맞춤 합성★(`periodName`/`periodJob`,
+  `isPastEra` — 조선=전통명·직업, 여성역=여성명; '휘말린 피해자' 라벨 금지). 배정 성별 벌점은 ★하드(10000)★(doPreAssign·RoleManager)
+  — 같은 성별 배역 있으면 반드시 그쪽. **시대 말투**: `eraRegisterHint`(조선=현대 어미 금지)를 npcCorePrompt⑥·GM 프롬프트에 주입.
+- **★약체 역전 성장★**: `awardEndStats`가 등급 보상 + `weaknessGrowthPoints`(0~3) 합산 → 약하게 시작할수록 매 스테이지 영구 스탯을
+  더 얻어 ★최종적으로 강자를 뛰어넘는다★(수렴 아님). ★핵심★: 현재 스탯이 아니라 **`pd.origStartPow`(1스테이지 원시작 파워, 최초 1회
+  고정·reset 안 함)**로 약세를 재므로 성장해도 보정이 안 사라진다(6스테이지×3=최대+18로 유계). 발동능력 없으면 +1. 등급만 보던 예전엔 격차 고정.
+- **★위협도/분노도 경합★**: adjustThreat/adjustAnger/get/set은 ★synchronized★(비동기 턴 동시 조정 시 갱신 유실→표기 비단조 방지).
+  종료 사건(is_end)은 하나 뜨면 이후 무시(이중 '끝' 방지, good=이른 시각 우선). `resolveZoneId`는 접두어(zone_)·구역명 품은
+  세부장소("안채 마당"→마당) 근사 매칭(GM이 없는 zone 지어내도 흡수). GM엔 '없는 구역 지어내기 금지' 가드.
 - **스포일러 금지**: 미발견 구역·괴담 정체/약점 사전 노출 금지(지도 다이얼로그·프롤로그 등).
 - **뷰어 시점 가시성 = "실제로 닿은 것만"**: `visibleTo` — 본인/지목수신(to)/system은 표시,
   근처·방송은 같은 구역만, '전체(전역)'는 플레이어만(NPC 미표시). GM/시스템 안내방송은 플레이어 전원.

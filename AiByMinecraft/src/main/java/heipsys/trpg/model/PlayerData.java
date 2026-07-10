@@ -128,6 +128,10 @@ public class PlayerData {
         return added;
     }
 
+    /** ★약체 역전 성장★ 원래(1스테이지) 시작 총 파워 — 최초 1회 고정. 성장해도 안 줄어들어(스탯이 올라도) 약체가 매 스테이지
+     *  꾸준히 보정받아 강자를 최종적으로 뛰어넘을 수 있게 한다(캠페인 넘어 유지, reset에서 지우지 않음). 0=아직 미측정. */
+    public int origStartPow = 0;
+
     /** 방문해 본 zone 집합 (직접 그린 약도에 드러나는 범위) */
     public Set<String> visitedZones = new HashSet<>();
     /** 전체 지도를 입수했는지 (true면 약도에 모든 zone 표시) */

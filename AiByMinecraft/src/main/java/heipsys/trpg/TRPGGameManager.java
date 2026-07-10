@@ -10746,13 +10746,18 @@ public class TRPGGameManager {
         });
     }
 
-    /** ★약체 역전 성장 포인트★ — 시작이 약할수록(스탯·HP/SAN 약세 + 발동능력 부재) 매 스테이지 영구 스탯을 더 준다.
-     *  0~2(평균 시작=0, 약체=1~2). 성장할수록 baseStat이 올라 computeWeaknessBonus가 줄어 자연 수렴한다. */
+    /** ★약체 역전 성장 포인트★ — ★원래(시작) 약세★가 클수록 매 스테이지 영구 스탯을 더 준다(0~3).
+     *  ★핵심★: computeWeaknessBonus(현재 스탯)이 아니라 ★최초 1회 고정한 origStartPow★로 약세를 재므로, 성장해 스탯이 올라도
+     *  보정이 사라지지 않는다 → 약체가 6스테이지 내내 꾸준히 더 성장해 ★강자를 최종적으로 뛰어넘을 수 있다★(수렴이 아니라 역전).
+     *  발동(액티브) 능력이 없으면 +1 가중. baseStat이 무한히 오르진 않게 상한 3·캠페인 6스테이지 = 최대 +18로 유계. */
     private int weaknessGrowthPoints(PlayerData pd) {
         if (pd == null) return 0;
-        int w = computeWeaknessBonus(pd); // 0~5 (스탯 4종 + HP/SAN 최대치 약세)
-        if (pd.traits != null && pd.traits.stream().noneMatch(t -> t.active)) w += 1; // ★발동(액티브) 능력 없음도 약세★ — 성장 여지 +1
-        return Math.min(2, w / 2); // 평균(w~1)→0, 약체(w 4~6)→2
+        int cur = pd.baseStr + pd.baseCha + pd.baseLuk + pd.baseSpr + pd.baseHp[1] + pd.baseSan[1];
+        if (pd.origStartPow <= 0) pd.origStartPow = cur; // 최초 1회(1스테이지 종료 시점) 원시작 파워 고정
+        final int BASELINE = 33;                         // computeWeaknessBonus와 동일 기준(평균 시작 ~31)
+        int w = Math.max(0, Math.min(5, (BASELINE - pd.origStartPow + 2) / 3)); // 원래 시작 약세(0~5) — 안 줄어듦
+        if (pd.traits != null && pd.traits.stream().noneMatch(t -> t.active)) w += 1; // 발동능력 부재도 약세
+        return Math.min(3, w / 2); // 평균 시작(w~1)→0, 약체(w4~5)→2, 최약체·무액티브(w6)→3
     }
 
     /** 종료 보상 스텟 총량: S=3, A=2, B=0~1, 그 이하 0. */
