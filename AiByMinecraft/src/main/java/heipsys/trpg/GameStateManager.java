@@ -96,6 +96,12 @@ public class GameStateManager {
     private int    anger       = 0;   // 0~100
     private String angerTarget = "";  // 분노 표적(캐릭터/계정명) — 규칙파괴 살해 대상
 
+    // ★#266 엔진 계약 A — NPC/괴담 '종결 상태' 영속(압축 생존)★: 제압·결박·봉인·격퇴·사망·퇴장처럼 한 번 매듭지어진
+    //  인물의 무력화 상태를 이름→상태로 durable 저장한다. 매 턴 GM 문맥에 재주입하므로(threatAnger처럼) 대화 압축으로
+    //  '피에르 제압됨'이 사라져도 GM이 그를 다시 멀쩡히 싸우게 하지 않는다. 값은 짧은 한국어(예: "제압(창고에 결박)").
+    //  플레이어 비노출(GM 전용·감사용). 명시적 계기(<NPC_STATE state="해제">)로만 풀린다.
+    private final java.util.LinkedHashMap<String,String> npcDispositions = new java.util.LinkedHashMap<>();
+
     private JsonObject gdamData = null;
 
     private final CorruptionData                 corruption = new CorruptionData();
@@ -133,6 +139,7 @@ public class GameStateManager {
         foundItems.clear();
         discoveredFacts.clear();
         unlockedZones.clear();
+        npcDispositions.clear();   // ★#266★ 새 판/스테이지/재도전 = 새 등장인물 → 종결 상태도 초기화
         eventLog.clear();
         campaignLog.clear(); // 새 게임 시작 — 캠페인(전 스테이지) 로그도 초기화
         threat = 0; anger = 0; angerTarget = ""; // 괴담 세력 게이지 초기화
@@ -157,6 +164,7 @@ public class GameStateManager {
         foundItems.clear();
         discoveredFacts.clear();
         unlockedZones.clear();
+        npcDispositions.clear();   // ★#266★ 새 판/스테이지/재도전 = 새 등장인물 → 종결 상태도 초기화
         archiveStageLog();   // 스테이지 전환 — 이번 스테이지 로그를 캠페인 로그에 보관 후 비움
         eventLog.clear();
         threat = 0; anger = 0; angerTarget = ""; // 새 스테이지 — 세력 게이지 초기화
@@ -174,6 +182,7 @@ public class GameStateManager {
         foundItems.clear();
         discoveredFacts.clear();
         unlockedZones.clear();
+        npcDispositions.clear();   // ★#266★ 새 판/스테이지/재도전 = 새 등장인물 → 종결 상태도 초기화
         archiveStageLog();   // 재도전 — 이번 시도 로그도 캠페인 로그에 보관
         eventLog.clear();
         // 괴담이 지난 시도를 기억해 더 사납게 시작 — 위협도 시작 바닥을 오염도에서 시드(분노는 초기화).
@@ -222,6 +231,7 @@ public class GameStateManager {
         o.add("unlockedZones", SNAP_GSON.toJsonTree(unlockedZones));
         o.add("sealedZones", SNAP_GSON.toJsonTree(sealedZones));    // ★#180 §6-4★ 런타임 구역 봉쇄 영속(이어하기 유지)
         o.add("blockedMedia", SNAP_GSON.toJsonTree(blockedMedia));  // ★#180 §6-4★ 매체별 통신 차단 영속(이어하기 유지)
+        o.add("npcDispositions", SNAP_GSON.toJsonTree(npcDispositions)); // ★#266★ NPC 종결 상태 영속(이어하기 유지)
         o.add("activeNpcs", SNAP_GSON.toJsonTree(activeNpcs));
         o.add("corruption", SNAP_GSON.toJsonTree(corruption));
         JsonObject ps = new JsonObject();
@@ -269,6 +279,13 @@ public class GameStateManager {
         snapStrInto(unlockedZones, o, "unlockedZones");
         snapStrInto(sealedZones, o, "sealedZones");   // ★#180 §6-4★ 런타임 봉쇄 복원
         snapStrInto(blockedMedia, o, "blockedMedia"); // ★#180 §6-4★ 매체 차단 복원
+        npcDispositions.clear();                      // ★#266★ NPC 종결 상태 복원(이름→상태)
+        if (o.has("npcDispositions") && o.get("npcDispositions").isJsonObject()) {
+            for (Map.Entry<String, JsonElement> e : o.getAsJsonObject("npcDispositions").entrySet()) {
+                try { if (e.getValue() != null && e.getValue().isJsonPrimitive()) npcDispositions.put(e.getKey(), e.getValue().getAsString()); }
+                catch (Exception ignore) {}
+            }
+        }
         snapStrInto(activeNpcs, o, "activeNpcs");
         if (o.has("corruption")) {
             CorruptionData c = SNAP_GSON.fromJson(o.get("corruption"), CorruptionData.class);
@@ -333,6 +350,21 @@ public class GameStateManager {
     public int decayAnger(int amount) { anger = Math.max(0, anger - Math.max(0, amount)); if (anger == 0) angerTarget = ""; return anger; }
     /** 재도전 시 위협도 시작 바닥 — 괴담이 지난 시도를 기억해 더 사납게 시작(오염도 비례, 상한 40). */
     private int retryThreatFloor() { return Math.min(40, corruption.level * 8); }
+
+    // ★#266 NPC/괴담 종결 상태★ — 제압·결박·봉인·격퇴·사망·퇴장을 durable 저장, 매 턴 GM 문맥에 재주입(압축 생존).
+    /** 이름→상태 기록(둘 중 하나라도 비면 무시). 기존 값이 있으면 덮어써 악화·보강을 반영한다. */
+    public void setNpcDisposition(String name, String state) {
+        if (name == null || name.isBlank() || state == null || state.isBlank()) return;
+        npcDispositions.put(name.trim(), state.trim());
+    }
+    /** 명시적 계기(풀려남·부활·복귀)로만 해제. */
+    public void clearNpcDisposition(String name) {
+        if (name != null && !name.isBlank()) npcDispositions.remove(name.trim());
+    }
+    /** 현재 종결 상태 스냅샷(GM 문맥·감사용) — 이름→상태. 비었으면 빈 맵. */
+    public java.util.Map<String,String> getNpcDispositions() {
+        return new java.util.LinkedHashMap<>(npcDispositions);
+    }
 
     private static boolean snapB(JsonObject o, String k, boolean d) { return o.has(k) && !o.get(k).isJsonNull() ? o.get(k).getAsBoolean() : d; }
     private static int     snapI(JsonObject o, String k, int d)     { return o.has(k) && !o.get(k).isJsonNull() ? o.get(k).getAsInt() : d; }

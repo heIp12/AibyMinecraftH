@@ -1017,6 +1017,7 @@ public class AiManager {
             .replaceAll("(?i)</?THREAT\\b[^>]*>", "")   // 여는·자기닫힘·★고아 </THREAT>★ 모두(약한 모델이 </THREAT> 홀로 냄 — 로그 실측 누출)
             .replaceAll("(?i)</?ANGER\\b[^>]*>", "")
             .replaceAll("(?i)</?DANGER\\b[^>]*>", "")   // GPT 등이 <THREAT> 대신 내는 <DANGER delta.../> 변형 누출 차단
+            .replaceAll("(?i)</?NPC_STATE\\b[^>]*>", "") // ★#266★ NPC 종결 상태 태그(제압·결박·봉인…) — GM 전용, 서술 누출 차단
             .replaceAll("<SUMMON[^>]*>", "")
             .replaceAll("<PACE [^/]*/?>", "")
             // ★[지난 자율 행동] 마커 누적 방지★: 미니 모델이 이전 턴의 이 내부 마커를 에코해 매턴 하나씩
@@ -1617,6 +1618,27 @@ public class AiManager {
             String target = extractAttr(attrs, "target").orElse("");
             String reason = extractAttr(attrs, "reason").orElse("");
             if (delta != null) out.add(new String[]{delta, target, reason});
+            from = end + 2;
+        }
+        return out;
+    }
+
+    /** ★#266★ <NPC_STATE npc="이름" state="제압|구속|봉인|격퇴|사망|퇴장|해제" note="짧은 설명"/> 파싱 → [{npc, state, note}, ...]
+     *  — NPC/괴담의 '종결 상태'를 durable 기록(압축 생존). state="해제"면 그 인물의 상태를 지운다(풀려남·부활·복귀). */
+    public java.util.List<String[]> parseNpcStateTags(String response) {
+        java.util.List<String[]> out = new ArrayList<>();
+        final String PREFIX = "<NPC_STATE ";
+        int from = 0;
+        while (true) {
+            int idx = response.indexOf(PREFIX, from);
+            if (idx == -1) break;
+            int end = response.indexOf("/>", idx);
+            if (end == -1) break;
+            String attrs = response.substring(idx + PREFIX.length(), end);
+            String npc   = extractAttr(attrs, "npc").orElse(null);
+            String state = extractAttr(attrs, "state").orElse("");
+            String note  = extractAttr(attrs, "note").orElse("");
+            if (npc != null && !npc.isBlank()) out.add(new String[]{npc, state, note});
             from = end + 2;
         }
         return out;

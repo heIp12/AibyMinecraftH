@@ -2537,6 +2537,10 @@ public class TRPGGameManager {
         // ★괴담 세력 게이지(위협도·분노도) GM 전용★ — 현재 세력을 알려 그에 맞게 서술·증분하게 한다(플레이어·로그 미노출).
         gmCtx.append(threatAngerGmContext());
 
+        // ★#266 NPC 종결 상태(제압·결박·봉인·격퇴·사망·퇴장) GM 전용★ — 매 턴 재주입해 대화 압축으로도
+        //   '이미 무력화됨'이 사라지지 않게 한다(GM이 제압된 NPC를 다시 멀쩡히 싸우게 하는 회귀 차단).
+        gmCtx.append(npcDispositionGmContext());
+
         // ★같은 구역 동료 목격(#7)★: 옆에 누가 있는지 GM에 결정적으로 알려 '같은 구역 목격 필수' 규칙이 실제로 발화되게 한다
         //   (인원 많으면 상호작용 대상·영감 예민 동료 우선, 나머지는 가볍게 — 요청 반영).
         gmCtx.append(sameZoneWitnessContext(pd));
@@ -2791,6 +2795,8 @@ public class TRPGGameManager {
             applyThreatAngerTags(raw);
             // 2c. ★임시 스탯 버프★ 태그 소비(약물·일시 효과) — 몇 턴간 스탯을 올린다(세션 종료 시 휘발).
             applyTempStatTags(raw);
+            // 2d. ★#266 NPC 종결 상태★ 태그 소비(제압·결박·봉인·격퇴·사망·퇴장/해제) — durable 저장, 매 턴 GM 문맥 재주입.
+            applyNpcStateTags(raw);
 
             // 3. ITEM_GRANT 파싱 및 처리 + heldItemIds 추적
             JsonObject itemGrant = ai.parseItemGrant(raw);
@@ -5102,6 +5108,48 @@ public class TRPGGameManager {
                 + (!tgt.isBlank() ? " 표적=" + tgt : "")
                 + (a.length > 2 && !a[2].isBlank() ? " (" + a[2] + ")" : ""));
         }
+    }
+
+    /** ★#266★ GM 응답의 <NPC_STATE>를 소비해 NPC/괴담 '종결 상태'를 durable 저장/해제(플레이어 비노출: stripTags 제거).
+     *  state가 해제·복귀·부활·풀림·회복·탈출 계열이면 그 인물의 상태를 지운다. 그 외는 note를 곁들여 상태로 기록한다.
+     *  이렇게 저장한 상태는 npcDispositionGmContext()가 매 턴 GM 문맥에 재주입 → 대화 압축 후에도 유지된다. */
+    private void applyNpcStateTags(String raw) {
+        if (raw == null || raw.isEmpty()) return;
+        for (String[] t : ai.parseNpcStateTags(raw)) {
+            String npc  = (t[0] == null) ? "" : t[0].trim();
+            String st   = (t.length > 1 && t[1] != null) ? t[1].trim() : "";
+            String note = (t.length > 2 && t[2] != null) ? t[2].trim() : "";
+            if (npc.isEmpty()) continue;
+            // 메타 노출 방지: 계정명이 넘어오면 표시명(캐릭터명)으로 정규화(플레이어 인물일 때).
+            PlayerData pd = findAnyByName(npc);
+            String disp = (pd != null) ? pd.gmDisplayName() : npc;
+            boolean release = st.isEmpty() || st.contains("해제") || st.contains("복귀") || st.contains("부활")
+                           || st.contains("풀") || st.contains("회복") || st.contains("탈출");
+            if (release) {
+                state.clearNpcDisposition(disp);
+                gameLogger.logEvent("NPC 상태 해제 — " + disp + (st.isEmpty() ? "" : " (" + st + ")"));
+            } else {
+                String val = note.isBlank() ? st : (st + "(" + note + ")");
+                state.setNpcDisposition(disp, val);
+                gameLogger.logEvent("NPC 종결 상태 — " + disp + ": " + val);
+            }
+        }
+    }
+
+    /** ★#266★ 현재 무력화·종결된 인물을 GM 전용 한 줄로 요약. 매 턴 gmCtx에 실려 대화 압축 후에도 유지된다. 없으면 "". */
+    private String npcDispositionGmContext() {
+        java.util.Map<String,String> m = state.getNpcDispositions();
+        if (m.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder(" [무력화·종결된 인물(지속·GM 전용): ");
+        boolean first = true;
+        for (java.util.Map.Entry<String,String> e : m.entrySet()) {
+            if (!first) sb.append(" · ");
+            sb.append(e.getKey()).append("=").append(e.getValue());
+            first = false;
+        }
+        sb.append(" — 이들은 이미 이 상태로 매듭지어졌다. 멀쩡히 다시 싸우게 하거나 없던 일로 되돌리지 마라(제압된 자는 결박·무력한 채다). "
+               + "상태를 뒤집을 명시적 계기(구출·풀려남·부활·재봉인 실패 등)가 실제로 생기면 그때만 <NPC_STATE npc=\"이름\" state=\"해제\"/>로 풀어라.]");
+        return sb.toString();
     }
 
     /** GM 응답의 <TEMP_STAT>를 소비해 임시 스탯 버프를 부여한다(약물·일시 효과). 플레이어 비노출(stripTags가 제거). */
