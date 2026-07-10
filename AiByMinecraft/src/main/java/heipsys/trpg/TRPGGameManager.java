@@ -10104,10 +10104,13 @@ public class TRPGGameManager {
             if (tamperedR) bumpCommFatigue(tmodR); // 남용 시 신뢰도↓
 
             // GM 컨텍스트에 요약만 주입 (전체 대화 노출 방지) — 원본 기준, 변조와 무관하게 즉시.
+            //   ★이중 서술 방지★: 이 대사는 시스템이 이미 양쪽에 그대로 전달했다 → GM이 다음 서술에서 따옴표로 재인용하면
+            //   같은 말이 두 번 나온다(자율부 8671~8675와 동일한 가드를 대화 답신에도 건다).
             String summary = visible.length() > 120 ? visible.substring(0, 120) + "…" : visible;
             ai.injectGmSystem("[NPC " + (media.isEmpty() ? "직접 대화" : media) + "] " + commDisplayName(senderPd) + " → " + npcName
                 + ": \"" + (message.length() > 60 ? message.substring(0, 60) + "…" : message)
-                + "\" / " + npcName + " 반응: " + summary);
+                + "\" / " + npcName + " 반응: " + summary
+                + "  ※이 대화는 이미 양쪽에게 그대로 전달됐다 — 네 서술에서 이 대사를 ★따옴표로 다시 옮기지 마라★. 필요하면 행동·표정·정황만 3인칭으로 짧게 얹어라(같은 말 반복 금지).");
 
             final String visibleF = visible;           // restyleDialogue로 재대입될 수 있어 람다용 final 사본
             final String kindR = writtenF ? "letter" : (viaCallF ? "call" : "nearby");
