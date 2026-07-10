@@ -9590,21 +9590,37 @@ public class TRPGGameManager {
         if (commDetectableByEntity(senderPd)) noteCommUsedIfDangerous(senderPd, "전체 발신"); // 은밀 개방이면 괴담이 감지 못함
     }
 
-    /** ★대화 방식별 제약★: 수신호는 띄어쓰기 빼고 5글자까지 + 발신 횟수 제한. 막히면 true(발신 취소).
-     *  ★지정 대상 통신(@이름·@번호·NPC)은 매체 불문 한 턴 2회까지★(@전체와 합산) — 근처에 소리내어
-     *  말하기(무지정 음성)만 자유. payload = 실제 전할 내용(수신호 글자수 판정용). directed = 지정 통신 여부. */
-    private boolean commMethodLimitBlocks(Player sender, PlayerData senderPd, String payload, boolean directed) {
+    /** ★근처(대면) 지정 통신인가★ — 원격 발신 횟수(2회) 부과 여부용. 번호 다이얼·다른 구역=원격(과금),
+     *  같은 구역·위치 불명·최근 조우=대면(무료). 라우팅의 대면 규칙(플레이어 9770·NPC 10175)과 동일하게 맞춘다. */
+    private boolean directedTargetNearby(PlayerData senderPd, PlayerData targetPd, JsonObject npcObj,
+                                         boolean dialedByNumber, Player sender) {
+        if (dialedByNumber) return false;                        // 번호 다이얼 = 원격 전자
+        if (targetPd != null)                                    // 플레이어: 같은(비어있지 않은) 구역이면 대면
+            return !senderPd.zone.isEmpty() && senderPd.zone.equals(targetPd.zone);
+        if (npcObj != null) {                                    // NPC: 10175 규칙(위치 불명·같은 구역=대면) + 최근 조우
+            String npcZone = npcZones.getOrDefault(getStr(npcObj, "id"), getStr(npcObj, "zone"));
+            boolean sameZone = senderPd.zone.isEmpty() || npcZone.isEmpty() || senderPd.zone.equals(npcZone);
+            return sameZone || recentEncounterFace(sender);
+        }
+        return true;                                             // 지정 대상 없음 = 근처 무지정 발화
+    }
+
+    /** ★대화 방식별 제약★: 수신호는 띄어쓰기 빼고 5글자까지(근처·원격 공통 내용 규칙). 막히면 true(발신 취소).
+     *  ★발신 횟수(한 턴 2회)는 원격 통신에만 부과★ — 같은 구역 사람에게 @이름·@말로 말 거는 건 통화가 아니라
+     *  대화라 무료다(nearby=true면 횟수 면제). payload=수신호 글자수 판정용. directed=지정 여부. nearby=대면 여부. */
+    private boolean commMethodLimitBlocks(Player sender, PlayerData senderPd, String payload, boolean directed, boolean nearby) {
         String m = senderPd.declaredCommMethod;
-        boolean textSig = "text".equals(m) || "signal".equals(m);
-        if (!textSig && !directed) return false; // 근처 무지정 음성(그냥 말하기)만 자유
-        if ("signal".equals(m)) {
+        if ("signal".equals(m)) {                                // 수신호 5글자 — 매체 내용 규칙(근처든 원격이든)
             String compact = payload == null ? "" : payload.replaceAll("\\s+", "");
             if (compact.length() > 5) {
                 sender.sendMessage("§7(수신호는 띄어쓰기 빼고 5글자까지만 — 지금 " + compact.length() + "자. 짧게 줄이세요.)");
                 return true;
             }
         }
-        return commRateLimitBlocks(sender); // 한 턴 발신 횟수(2회) — @전체와 공용 카운터
+        if (nearby) return false;                                // ★근처 대면(음성·필담·수신호)은 발신 횟수 면제 — 대화★
+        boolean textSig = "text".equals(m) || "signal".equals(m);
+        if (!textSig && !directed) return false;                 // (방어) 근처 무지정 음성 — 보통 nearby로 이미 면제
+        return commRateLimitBlocks(sender);                      // 원격 지정 발신/필담 → 한 턴 2회(@전체와 공용 카운터)
     }
 
     /** ★한 턴 통신 발신 횟수 제한★: 지정 통신(@이름·@번호·NPC)과 @전체를 ★합산해 한 턴 2회까지★.
@@ -9685,7 +9701,7 @@ public class TRPGGameManager {
         //   명령으로 쳤는데 '대화'가 대상 이름으로 잘못 해석돼 "@이름 메시지" 안내가 떴다. '@대화'(붙임)만 키워드로
         //   보고, '@ 대화 좀…'(띄움)은 그대로 근처 발화 내용으로 둔다(그 단어를 말하려는 것).
         boolean atAttached = raw.length() > 1 && raw.charAt(1) != ' ';
-        if (atAttached && (token.equals("근처") || token.equals("대화") || token.equals("주변"))) {
+        if (atAttached && (token.equals("근처") || token.equals("대화") || token.equals("주변") || token.equals("말"))) {
             if (message.isEmpty()) { sender.sendMessage("§c사용법: §f@대화 메시지§7 (근처에 소리내어 말하기) · §f@이름 메시지 · §f@전체 메시지"); return; }
             proximityBroadcast(sender, senderPd, message); // 키워드 뒤 내용만 발화
             return;
@@ -9709,9 +9725,11 @@ public class TRPGGameManager {
         }
 
         // ★대화 방식별 제약★: @전체(전자 발신)는 위에서 이미 처리됨. 근처 무명발화는 content 전체가 내용.
+        //   ★근처(대면) 대화는 발신 횟수(2회)에서 면제★ — 같은 구역 사람에게 @이름·@말로 말 거는 건 통화가 아니다(버그 수정).
         boolean isProximity = !dialedByNumber && targetPd == null && npcObj == null;
         String limitPayload = isProximity ? content : message;
-        if (commMethodLimitBlocks(sender, senderPd, limitPayload, !isProximity)) return;
+        boolean nearbyDirected = directedTargetNearby(senderPd, targetPd, npcObj, dialedByNumber, sender);
+        if (commMethodLimitBlocks(sender, senderPd, limitPayload, !isProximity, nearbyDirected)) return;
 
         // ★매체별 차단(#180)★: 이 발신이 쓰려는 매체가 괴담·사건으로 막혔으면 취소(다른 수단 유도).
         String intendedMedium = senderPd.declaredCommMethod;
