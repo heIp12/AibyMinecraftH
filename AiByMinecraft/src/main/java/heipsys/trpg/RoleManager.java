@@ -77,7 +77,8 @@ public class RoleManager {
                     JsonObject role = ordered.get(i);
                     cost = Math.abs(pAge - roleMidAge(role));
                     String rGender = role.has("gender") ? role.get("gender").getAsString() : "";
-                    if (!pGender.isEmpty() && !rGender.isEmpty() && !pGender.equals(rGender)) cost += 40;
+                    if (!pGender.isEmpty() && !rGender.isEmpty() && !pGender.equals(rGender)) cost += 10000; // ★성별 우선(하드)★ — 교차배정(여성인데 남성명·아빠배역) 방지, 같은 성별 없을 때만 부득이 교차
+
                 }
                 if (cost < bestCost) { bestCost = cost; bestIdx = i; }
             }

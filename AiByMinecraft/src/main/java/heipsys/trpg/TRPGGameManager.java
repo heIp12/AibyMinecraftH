@@ -8305,6 +8305,24 @@ public class TRPGGameManager {
         }
     }
 
+    /** 시나리오 시대(constraints.era). 없으면 "". */
+    private String scenarioEra() {
+        JsonObject g = state.getGdamData();
+        if (g != null && g.has("constraints") && g.get("constraints").isJsonObject())
+            return getStr(g.getAsJsonObject("constraints"), "era");
+        return "";
+    }
+    /** ★시대 말투★ 힌트 — 조선·과거면 현대 어미·신조어 금지(사극체), 미래면 그에 맞게. 현대·미지정이면 빈 문자열(기본 말투). */
+    private static String eraRegisterHint(String era) {
+        if (era == null || era.isBlank()) return "";
+        if (isPastEra(era))
+            return "★시대 말투(" + era + ")★: ★현대 말씨·신조어·외래어 금지★ — 그 시대 사람답게 말하라. 옛 호칭(자네·게·소인·나리·마님·도련님·아씨·서방님 등)과 예스러운 어미를 자연스럽게 쓰고, "
+                + "'~하라구·~라니까·~거든요·~인 것 같아요·~하죠·~네요' 같은 현대 구어체 어미는 피하라(시대에 어울리는 결로).";
+        if (era.matches(".*(미래|근미래|SF|우주|사이버|가상|홀로).*"))
+            return "★시대 말투(" + era + ")★: 이 미래 배경에 어울리는 어휘·호칭으로 — 단 과도한 조어로 대사를 뒤덮지 마라(알아듣게).";
+        return ""; // 현대·근현대는 기본 말투
+    }
+
     /** 나이대에 맞는 말투·어휘 힌트(세대별 결). 존댓말 수준과 별개의 '세대 어휘·톤' 베이스라인 — 개성 말씨가 그 위에 얹힌다. */
     private static String ageRegisterHint(int age) {
         if (age < 0) return "세대 불명 — 평범한 현대 회화.";
@@ -8448,6 +8466,9 @@ public class TRPGGameManager {
         else                             npcFluencyBlock(sb, intel);             // ③ 유창도(주사위) 폴백
         npcAgeSpeechBlock(sb, npcAge);                                            // ④ 나이별 말투·어휘(항상)
         npcProfanityBlock(sb, npcObj);                                            // ⑤ 욕설·비속어(독립 3축: 발동·강도·돌려까기, ①~④ 위에 얹음)
+        // ⑥ ★시대 말투★(항상) — 조선/과거면 현대 어미 금지·사극체. speech_style·나이 결 위에 시대 결을 얹는다.
+        String eraHint = eraRegisterHint(scenarioEra());
+        if (!eraHint.isEmpty()) sb.append("- ").append(eraHint).append("\n");
         // ── 보편 규칙(양 모드 공통) ──
         sb.append("- 마크다운·메타 해설 금지(순수 대사·서술만). ★단 이 응답에서 쓰라고 따로 지시된 태그만 예외★ — 지시 없는 태그를 스스로 만들어 쓰지 마라.\n");
         sb.append("- ★일관성★: 지금까지 나눈 대화(부탁·약속·합의·경고·알려준 정보 등)를 기억하고 다음 태도에 반영하라 — 방금 한 말을 잊은 듯 모순되게 굴지 마라.\n");
@@ -12698,9 +12719,12 @@ public class TRPGGameManager {
             JsonObject c = gdam.getAsJsonObject("constraints");
             sb.append("\n## 배경·행동 제약 ★\n");
             String era = getStr(c, "era");
-            if (!era.isBlank())
+            if (!era.isBlank()) {
                 sb.append("- 시대 배경: ").append(era)
                   .append(" — 이 시대에 맞게 사물·언어·기술·통신을 묘사하라(무심코 현대 기준으로 서술 금지).\n");
+                String eh = eraRegisterHint(era);
+                if (!eh.isEmpty()) sb.append("  · ").append(eh).append(" ★네가 잠깐 내는 단역(NPC)의 대사도 이 결로.★\n");
+            }
             if (c.has("can_leave_scene") && !c.get("can_leave_scene").getAsBoolean())
                 sb.append("- 현장 이탈 불가: 플레이어는 이 공간을 벗어날 수 없다(자연스러운 이유로 막힘 — 폭우·고립·결계 등). 탈출 시도는 막힌 상황으로 서술하라.\n");
             if (c.has("outside_contact") && !c.get("outside_contact").getAsBoolean())
@@ -13092,6 +13116,68 @@ public class TRPGGameManager {
             for (String n : EXTRA_CHAR_NAMES) { String c = n + k; if (used.add(c)) return c; }
     }
 
+    // ★시대·성별별 합성 배역 이름/직업 풀★ — 조선·과거는 전통 이름·직업, 그 외(현대·미래)는 현대 것. 성별-이름 일관 보장.
+    private static final String[] NAME_TRAD_M = {"돌쇠","만복","춘삼","덕배","칠성","판돌","삼동","병칠","막동","봉출","길만","점복","순돌","용팔","개똥이"};
+    private static final String[] NAME_TRAD_F = {"끝단","분이","언년","막딸","순덕","금옥","간난","곱단","월선","삼월","꽃분","말순","연분","봉녀","점순"};
+    private static final String[] NAME_MOD_M  = {"김도현","이준서","박지훈","최민재","정우진","강현우","윤성호","임재현","한동욱","조성민","서정한","오태경"};
+    private static final String[] NAME_MOD_F  = {"김서연","이지우","박하은","최수빈","정예린","강민서","윤채원","임소율","한지민","조유나","서다혜","오나경"};
+    private static final String[] JOB_TRAD    = {"장돌뱅이","나무꾼","보부상","주모","삯바느질꾼","대장장이","약초꾼","뱃사공","길손","마부","물지게꾼","방물장수","소작농","떠돌이 악사","옹기장수"};
+
+    /** 과거(전근대) 시대인가 — 합성 배역 이름·직업을 전통 것으로 낼지 판단. */
+    private static boolean isPastEra(String era) {
+        return era != null && era.matches(".*(조선|고려|삼국|신라|백제|고구려|가야|발해|고대|중세|근세|근대|개화|구한말|일제|한국전쟁|전근대|왕조|사극|과거).*");
+    }
+    /** 시대·성별에 맞는 합성 배역 이름(중복 방지). ★여성 배역엔 반드시 여성 이름★(성별-이름 불일치 방지). */
+    private String periodName(String era, String gender, java.util.Set<String> used) {
+        boolean fem = "여성".equals(gender);
+        String[] pool = isPastEra(era) ? (fem ? NAME_TRAD_F : NAME_TRAD_M) : (fem ? NAME_MOD_F : NAME_MOD_M);
+        for (String n : pool) if (used.add(n)) return n;
+        for (int k = 2; ; k++) for (String n : pool) { String c = n + k; if (used.add(c)) return c; }
+    }
+    /** 시대에 맞는 평범한 직업 하나(합성 배역용). '휘말린 피해자' 같은 라벨이 아니라 제 삶을 사는 직업. */
+    private String periodJob(String era) {
+        String[] pool = isPastEra(era) ? JOB_TRAD : EXTRA_BYSTANDER_JOBS;
+        return pool[ThreadLocalRandom.current().nextInt(pool.length)];
+    }
+
+    /** 조연 승격 가능 NPC인가 — 비핵심 + 플롯 정보(true_role/knowledge) 없음 + 비자율 + 말 통함 + 성인(13+). */
+    private boolean isPromotableNpc(JsonObject npc) {
+        if (npc == null) return false;
+        if (npc.has("critical") && npc.get("critical").getAsBoolean()) return false;         // 핵심 NPC = 플롯 구동 → 제외
+        if (npc.has("true_role") && !getStr(npc, "true_role").isBlank()) return false;        // 숨은 진상 보유 → 스포 위험
+        if (npc.has("knowledge") && npc.get("knowledge").isJsonArray() && npc.getAsJsonArray("knowledge").size() > 0) return false; // 핵심 지식 보유
+        if (npc.has("independent_ai") && npc.get("independent_ai").getAsBoolean()) return false;
+        if (npc.has("communicable") && !npc.get("communicable").getAsBoolean()) return false; // 말 안 통함 → 플레이 불가
+        int age = npc.has("age") && !npc.get("age").isJsonNull() ? npc.get("age").getAsInt() : 30;
+        if (age < 13) return false;                                                          // 어린이는 조연 유지
+        String rt = getStr(npc, "role_type");
+        if (rt.contains("가이드") || rt.contains("백과") || rt.contains("배신") || rt.contains("내부자") || rt.contains("흑막") || rt.contains("정보원")) return false; // 플롯 장치 역할
+        return true;
+    }
+    /** 조연 NPC를 플레이 배역으로 변환(char_name=NPC명·성격→initial_info). 스탯은 기본값(취약 배정 아님). */
+    private JsonObject npcToRole(JsonObject npc, String era, java.util.Set<String> used) {
+        JsonObject r = new JsonObject();
+        String nm = getStr(npc, "name");
+        r.addProperty("role_id", "role_" + getStr(npc, "id"));
+        r.addProperty("name", isPastEra(era) ? "동네 사람" : "이웃 주민");
+        r.addProperty("is_core", false);
+        String g = getStr(npc, "gender");
+        r.addProperty("char_name", nm.isBlank() ? periodName(era, g, used) : nm);
+        if (!g.isBlank()) r.addProperty("gender", g);
+        if (npc.has("zone")) r.addProperty("zone", npc.get("zone").getAsString());
+        int age = npc.has("age") && !npc.get("age").isJsonNull() ? npc.get("age").getAsInt() : 30;
+        JsonArray ar = new JsonArray(); ar.add(Math.max(18, age - 2)); ar.add(age + 2); r.add("age_range", ar);
+        JsonArray jp = new JsonArray(); for (int k = 0; k < 4; k++) jp.add(periodJob(era)); r.add("job_pool", jp);
+        r.addProperty("role_type", "bystander");
+        JsonArray info = new JsonArray();
+        String persona = getStr(npc, "personality");
+        info.add(persona.isBlank() ? "이 고장에서 제 삶을 꾸리며 살아온 평범한 사람이다." : ("평소 이런 사람이다: " + persona));
+        info.add("사건이 벌어지자 자연스레 그 자리에 얽혀 들어, 직접 겪으며 헤쳐 나가야 한다.");
+        r.add("initial_info", info);
+        r.addProperty("hidden_info", "원래 이 사건의 중심 인물은 아니었으나, 우연히 현장에 있어 직접 위협에 노출된다.");
+        return r;
+    }
+
     /**
      * 플레이어 수가 .gdam 배역 수보다 많으면, 부족한 만큼 '사건에 휘말리는 주변 인물' 배역을 gdam.roles에 추가한다.
      * → 남는 플레이어도 관전이 아니라 평범한 외부인으로 등장해 사건에 휘말린다.
@@ -13102,48 +13188,65 @@ public class TRPGGameManager {
         JsonArray roles = gdam.getAsJsonArray("roles");
         int have = roles.size();
         if (have == 0 || playerCount <= have) return;
+        int need = playerCount - have;
+
+        String era = "";
+        if (gdam.has("constraints") && gdam.get("constraints").isJsonObject())
+            era = getStr(gdam.getAsJsonObject("constraints"), "era");
 
         List<String> zones = new ArrayList<>();
+        java.util.Set<String> usedNames = new java.util.HashSet<>();
         for (JsonElement el : roles) {
             if (!el.isJsonObject()) continue;
             JsonObject r = el.getAsJsonObject();
             if (r.has("zone") && !r.get("zone").getAsString().isBlank()) zones.add(r.get("zone").getAsString());
+            if (r.has("char_name")) usedNames.add(r.get("char_name").getAsString());
         }
-        // 이미 쓰인 이름(배역 char_name + NPC명) 수집 — 휘말림 배역 이름이 겹치지 않게
-        java.util.Set<String> usedNames = new java.util.HashSet<>();
-        for (JsonElement el : roles)
-            if (el.isJsonObject() && el.getAsJsonObject().has("char_name"))
-                usedNames.add(el.getAsJsonObject().get("char_name").getAsString());
         if (gdam.has("npcs") && gdam.get("npcs").isJsonArray())
             for (JsonElement el : gdam.getAsJsonArray("npcs"))
                 if (el.isJsonObject()) { String nm = getStr(el.getAsJsonObject(), "name"); if (!nm.isBlank()) usedNames.add(nm); }
 
-        int need = playerCount - have;
-        for (int i = 0; i < need; i++) {
+        int added = 0;
+        // ① ★조연 NPC 우선 승격(사용자 제안)★: 비핵심·비플롯·성인·말 통하는 NPC를 플레이 배역으로 전환한다.
+        //    기존 조연은 시대·이름·성격이 이미 갖춰져(예: 조선 '박씨댁') 현대식 합성보다 몰입이 낫다. 승격분은 npcs에서
+        //    제거해 AI NPC로 이중 스폰되지 않게 한다. (뒤에서부터 순회 — remove 인덱스 안정.)
+        if (gdam.has("npcs") && gdam.get("npcs").isJsonArray()) {
+            JsonArray npcs = gdam.getAsJsonArray("npcs");
+            for (int i = npcs.size() - 1; i >= 0 && added < need; i--) {
+                if (!npcs.get(i).isJsonObject()) continue;
+                JsonObject npc = npcs.get(i).getAsJsonObject();
+                if (!isPromotableNpc(npc)) continue;
+                JsonObject r = npcToRole(npc, era, usedNames);
+                usedNames.add(getStr(r, "char_name"));
+                roles.add(r);
+                npcs.remove(i);
+                added++;
+            }
+        }
+        int promoted = added;
+        // ② 남으면 ★시대·성별 맞춤 합성 배역★ — 성별-이름 일관(여성역=여성명), 시대 직업, ★'휘말린 피해자' 라벨 금지(존엄한 persona)★.
+        for (int idx = 0; added < need; idx++, added++) {
+            String g = (idx % 2 == 0) ? "여성" : "남성"; // 성별 섞기 → 배정이 양쪽 플레이어를 매칭 가능
             JsonObject r = new JsonObject();
-            r.addProperty("role_id", "role_extra" + (i + 1));
-            r.addProperty("name", "휘말린 외부인");
+            r.addProperty("role_id", "role_extra" + (idx + 1));
+            r.addProperty("name", isPastEra(era) ? "동네 사람" : "이웃 주민");
             r.addProperty("is_core", false);
-            // ★char_name/gender를 코드에서 부여 — AI 생성 배역이 아니라 누락되면 계정명이 노출되고 이름이 안 정해진다.
-            r.addProperty("char_name", pickExtraName(usedNames));
-            r.addProperty("gender", ThreadLocalRandom.current().nextBoolean() ? "남성" : "여성");
-            // ★평범한 민간인 직업·성인 나이를 코드에서 부여★ — job_pool/age_range가 없으면 배역 배정(applyRoleJob)이
-            //   원년(기본) 직업·나이를 그대로 둬, 원년 캐릭터가 환상/괴담풍이면 휘말림 배역까지 그 값(예: 12세 '환영의 엮음이')이 노출된다.
-            JsonArray jobPool = new JsonArray();
-            for (String j : EXTRA_BYSTANDER_JOBS) jobPool.add(j);
+            r.addProperty("gender", g);
+            r.addProperty("char_name", periodName(era, g, usedNames)); // 성별에 맞는 이름
+            JsonArray jobPool = new JsonArray(); for (int k = 0; k < 5; k++) jobPool.add(periodJob(era));
             r.add("job_pool", jobPool);
-            JsonArray ageRange = new JsonArray(); ageRange.add(20); ageRange.add(55);
-            r.add("age_range", ageRange);
-            if (!zones.isEmpty()) r.addProperty("zone", zones.get(i % zones.size())); // 사건 현장(또는 그 일대)에 분산 배치
+            JsonArray ageRange = new JsonArray(); ageRange.add(20); ageRange.add(55); r.add("age_range", ageRange);
+            if (!zones.isEmpty()) r.addProperty("zone", zones.get(idx % zones.size()));
             r.addProperty("role_type", "bystander");
             JsonArray info = new JsonArray();
-            info.add("당신은 우연히 이 장소에 있게 된 평범한 사람이다 — 특별한 사명도, 사전 정보도 없다.");
-            info.add("그저 평소처럼 지내려던 참이었지만, 곧 이 자리에서 벌어지는 일에 본의 아니게 휘말린다.");
+            info.add("당신은 이 고장에서 제 삶을 꾸리며 살아온 평범한 사람이다 — 특별한 사명도, 사전 정보도 없다.");
+            info.add("여느 때처럼 지내려던 참에, 이 자리에서 벌어지는 일에 자연스레 얽혀 든다.");
             r.add("initial_info", info);
-            r.addProperty("hidden_info", "사건과 무관한 외부인으로 우연히 현장에 있었다. 처음엔 영문을 모르지만 진행될수록 직접 위협에 노출되어 휘말린다.");
+            r.addProperty("hidden_info", "사건의 중심 인물은 아니었으나 우연히 현장에 있어 직접 위협에 노출된다.");
             roles.add(r);
         }
-        plugin.getLogger().info("[TRPG] 플레이어(" + playerCount + ") > 배역(" + have + ") → '휘말린 외부인' 배역 " + need + "개 추가");
+        plugin.getLogger().info("[TRPG] 플레이어(" + playerCount + ") > 배역(" + have + ") → 조연 승격 " + promoted
+            + " + 합성 " + (added - promoted) + " 배역 보강 (시대: " + (era.isBlank() ? "미지정" : era) + ")");
     }
 
     /**
@@ -13233,7 +13336,9 @@ public class TRPGGameManager {
                         JsonObject role = ordered.get(i);
                         cost = Math.abs(pAge - roleMidAge(role));
                         String rGender = role.has("gender") ? role.get("gender").getAsString() : "";
-                        if (!pGender.isEmpty() && !rGender.isEmpty() && !pGender.equals(rGender)) cost += 40;
+                        // ★성별 우선(하드)★: 같은 성별 배역이 하나라도 남아있으면 그쪽으로 가게 큰 벌점 — '여성인데 강태팔(남성명)·아빠 배역'
+                        //   같은 교차 배정을 막는다. 같은 성별 배역이 없을 때만 부득이 교차(그때도 이름·정체성은 배역 성별로 일관).
+                        if (!pGender.isEmpty() && !rGender.isEmpty() && !pGender.equals(rGender)) cost += 10000;
                     }
                     if (cost < bestCost) { bestCost = cost; bestIdx = i; }
                 }
