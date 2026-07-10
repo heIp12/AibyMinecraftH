@@ -13160,6 +13160,20 @@ public class TRPGGameManager {
         preRolledDice.put(player.getUniqueId(), rolls);
         note.append(". 성공기준(dc)은 행동 난이도로 네가 정하고(쉬움~8·보통~12·어려움~15·극악~18), 고른 능력치 값이 dc 이상=성공·dc보다 조금(1~2) 낮으면 부분성공·더 낮으면 실패. "
             + "'대성공/대실패' 표식이 붙은 값이면 그대로 대성공/대실패로. 판정이 필요 없는 행동이면 이 값을 무시하라.");
+        // ★행운/불운 3종(#luck)★ — 판정과 별개로 이 행동에 확률로 행운/불운을 곁들이도록 GM에 지시(rolls는 put 뒤에도 같은 참조라 추가 반영됨).
+        //   luk≥5: (a)3%×luk '행운 추가굴림'(판정이면 성공 강화/실패 피해 감소 — showInlineDice가 🍀 연출·로그) (b)1%×luk '행운 조짐'(무판정 우연).
+        //   luk<5: 대신 (5-luk)×10% '불운 조짐'(모든 행동에 사소한 악재).
+        if (lukV >= 5) {
+            if (ThreadLocalRandom.current().nextInt(100) < lukV * 3) {
+                rolls.addProperty("luck_reroll", ThreadLocalRandom.current().nextInt(1, 21)); // 🍀 연출용 행운 주사위값
+                note.append(" [행운 판정 예고] 이 행동이 ★판정(주사위)★이면 행운이 한 번 더 따른다 — ★성공이면 성과를 한 뼘 더 강화, 실패면 입는 피해·대가를 눈에 띄게 줄여★ 서술하라(치명타가 스치는 상처로). [행운!] 표기.");
+            }
+            if (ThreadLocalRandom.current().nextInt(100) < lukV)
+                note.append(" [행운 조짐] 이 행동이 ★판정 없이 풀리는 종류★면 뜻밖의 행운을 하나 곁들여도 좋다 — ★어떤 유용한 우연이든★: 뜻밖의 쓸모있는 물건을 발견·획득(치료약·열쇠·도구 등), 닫힌 문의 우회로·지름길, 단서의 '위치'가 눈에 띔 등. ★단 핵심 퍼즐 해법·괴담 약점은 주지 마라(운은 길을 열 뿐, 답은 플레이어 몫 — 영감과 다르다).★ 발동 시 [행운!]으로 한 줄 표기.");
+        } else {
+            if (ThreadLocalRandom.current().nextInt(100) < (5 - lukV) * 10)
+                note.append(" [불운 조짐] 이 행동에 사소한 악재를 곁들여라 — 미끄러짐·하필 그 순간·작은 사고·엉뚱한 소음·물건을 떨어뜨림 등. ★치명타·즉사는 금지(성가신 정도로만)★. 불운은 서술로만 녹여라(별도 표기 없음).");
+        }
         return note.toString();
     }
 
@@ -13309,6 +13323,22 @@ public class TRPGGameManager {
                 + (fluck > 0 ? " §7+행운 " + fluck : fluck < 0 ? " §7-행운 " + (-fluck) : "");
             msgToWatchers(player, "§e🎲 §7[§f" + statDisp + " §7/ 기준 " + fdc + "§7] → " + colorCode(fcol) + fout);
         }, landTick);
+        // ★행운 추가굴림 연출·로그(#luck B1)★ — 프리롤이 luck_reroll을 심었으면 메인 착지 뒤에 🍀 행운 주사위를 한 번 더 보여준다.
+        //   실제 기계효과(성공 강화/실패 피해 감소)는 GM이 [행운 판정 예고] 지시대로 이번 응답에 반영한다 — 여기선 연출·뷰어 로그만.
+        if (rolls != null && rolls.has("luck_reroll")) {
+            final boolean lwin = success || partial;
+            final int lroll = rolls.get("luck_reroll").getAsInt();
+            gameLogger.logAbilityResult(pd != null ? pd.gmDisplayName() : player.getName(), "행운 판정",
+                "행운이 따라준다 — d20=" + lroll + " (기준 10 이상 성공) → " + (lwin ? "성과강화" : "피해감소")); // 뷰어 diceParse 호환(dN=M·기준·→한토큰)
+            plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+                if (!player.isOnline()) return;
+                titleToWatchers(player, Title.title(
+                    Component.text("🍀 " + lroll, NamedTextColor.LIGHT_PURPLE, TextDecoration.BOLD),
+                    Component.text("행운 판정 · " + (lwin ? "성과 강화" : "피해 감소"), NamedTextColor.LIGHT_PURPLE),
+                    Title.Times.times(Duration.ofMillis(120), Duration.ofMillis(1800), Duration.ofMillis(400))));
+                msgToWatchers(player, "§d🍀 §7[행운 판정] → " + (lwin ? "§a성과 강화" : "§a피해 감소"));
+            }, landTick + 10L);
+        }
         // ★순서 보장(사용자 요청)★: 굴림 → 착지(결과 공개) → ★그 다음에★ 결과 서술이 이어진다.
         //   결과가 눈에 들어올 짧은 틈(0.8s)을 준 뒤 onDone(뒤 서술)을 실행 — 결과·서술을 미리 보여주고 굴리지 않는다.
         plugin.getServer().getScheduler().runTaskLater(plugin, () -> { if (onDone != null) onDone.accept(fout); }, landTick + 16L);
