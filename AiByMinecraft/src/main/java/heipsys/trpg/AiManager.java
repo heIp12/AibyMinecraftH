@@ -182,8 +182,11 @@ public class AiManager {
                     case "openai" -> { // 최신 버전 우선(목록 순서 비보장 → 버전 번호로 최신 선별). gpt-5 계열 > gpt-4 계열.
                         autoHigh = latestVer(ids, new String[]{"gpt-5"}, OAI_NON_FLAGSHIP);   // 최신 gpt-5 표준(mini·nano·pro 제외)
                         if (autoHigh == null) autoHigh = latestVer(ids, new String[]{"gpt-4"}, OAI_NON_FLAGSHIP);
-                        autoMedium = latestVer(ids, new String[]{"gpt-5", "mini"}, OAI_SPECIAL); // 최신 gpt-5*-mini
-                        if (autoMedium == null) autoMedium = autoHigh;
+                        // ★MEDIUM(중품질·GM 주력) = HIGH 바로 아래 '표준' gpt-5(★mini 아님★) — 예: HIGH=gpt-5.5면 MEDIUM=gpt-5.4.
+                        //   예전엔 최신 gpt-5*-mini로 잡아 MEDIUM==LOW(둘 다 mini)로 붕괴했다(저품질·중품질 세션이 같은 모델). 표준으로 자동 책정한다.
+                        double hiV = (autoHigh != null) ? parseVer(autoHigh.toLowerCase()) : Double.MAX_VALUE;
+                        autoMedium = latestVerBelow(ids, new String[]{"gpt-5"}, OAI_NON_FLAGSHIP, hiV); // HIGH보다 낮은 최신 표준 gpt-5
+                        if (autoMedium == null) autoMedium = autoHigh; // 표준 gpt-5가 하나뿐이면 HIGH와 동일(그래도 표준·mini 아님)
                         autoLow = latestVer(ids, new String[]{"mini"}, OAI_SPECIAL);          // ★nano는 엔티티·보조에도 부실 → 저티어 바닥도 mini★(nano 미사용)
                         if (autoLow == null) autoLow = autoMedium;
                         autoMini = latestVer(ids, new String[]{"mini"}, OAI_SPECIAL);         // 미니(NPC) = 최신 *-mini
@@ -266,6 +269,22 @@ public class AiManager {
             if (!ok) continue;
             double v = parseVer(l);
             if (v > bestV) { bestV = v; best = id; }
+        }
+        return best;
+    }
+
+    /** latestVer와 같되 버전이 ceilExclusive '미만'인 것만 — HIGH 바로 아래 표준 티어(MEDIUM) 자동 책정용.
+     *  ceil과 같은(=HIGH) 최상위 버전은 제외해, 있으면 한 단계 낮은 표준을 고른다(없으면 null → 호출부에서 HIGH로 폴백). */
+    private static String latestVerBelow(List<String> ids, String[] require, String[] exclude, double ceilExclusive) {
+        String best = null; double bestV = -1;
+        for (String id : ids) {
+            String l = id.toLowerCase();
+            boolean ok = true;
+            for (String r : require) if (!l.contains(r)) { ok = false; break; }
+            if (ok && exclude != null) for (String e : exclude) if (l.contains(e)) { ok = false; break; }
+            if (!ok) continue;
+            double v = parseVer(l);
+            if (v < ceilExclusive && v > bestV) { bestV = v; best = id; }
         }
         return best;
     }
@@ -962,6 +981,11 @@ public class AiManager {
             .replaceAll("(?i)<STATE_UPDATE\\b[^{]*\\{[\\s\\S]*?\\}\\s*>", "")   // <STATE_UPDATE {json}>
             .replaceAll("(?i)<STATE_UPDATE\\b[\\s\\S]*?</STATE_UPDATE>", "")    // 속성 붙은 쌍 <STATE_UPDATE ...>…</STATE_UPDATE>
             .replaceAll("(?i)<STATE_UPDATE\\b[\\s\\S]*$", "")                   // 여는 태그만 남고 미완성/잘림
+            // ★대괄호·혼합·고아 STATE_UPDATE★: 약한 모델(GPT 등)이 [STATE_UPDATE]…</STATE_UPDATE>(대괄호 여+꺾쇠 닫)·
+            //   [STATE_UPDATE]…[/STATE_UPDATE]·빈 [STATE_UPDATE]로 서술에 누출(실플레이 로그 seq19 실측). 위 꺾쇠 전용 규칙이 못 잡는다.
+            //   여는([·<)~닫는(]·>) 쌍을 본문째 + 남은 고아 태그 제거. (내용 있는 델타 JSON은 parseNakedStateJson이 이미 상태에 적용.)
+            .replaceAll("(?is)[\\[<]\\s*STATE_UPDATE\\b[^\\]>]*[\\]>][\\s\\S]*?[\\[<]\\s*/\\s*STATE_UPDATE\\s*[\\]>]", "")
+            .replaceAll("(?is)[\\[<]\\s*/?\\s*STATE_UPDATE\\b[^\\]>]*[\\]>]", "")
             // ★태그 없는 '벌거벗은' 상태 델타 JSON 제거(GPT 등)★: <STATE_UPDATE> 래퍼 없이 {"player":..,"hp_change":..}만
             //   흘려 상태 적용도 안 되고 서술로 누출되던 것. 시그니처 키(hp_change·san_change·timeline_change)로 식별 —
             //   실제 서술엔 이 영문 스키마 키가 나올 수 없어 오탐 없음. parseNakedStateJson이 같은 형식을 파싱해 상태는 적용한다.
@@ -997,6 +1021,7 @@ public class AiManager {
             .replaceAll("<NPC_AT [^/]*/?>", "")
             .replaceAll("<BUSY [^/]*/?>", "")
             .replaceAll("<BLOCK_MOVE [^/]*/?>", "")
+            .replaceAll("<TEMP_STAT [^/]*/?>", "")
             .replaceAll("<DUR [^/]*/?>", "")
             .replaceAll("</?NO_HOPE\\s*/?>", "")
             .replaceAll("<MAP_GRANT [^/]*/?>", "")
@@ -1011,12 +1036,40 @@ public class AiManager {
             .replaceAll("(?i)</?THREAT\\b[^>]*>", "")   // 여는·자기닫힘·★고아 </THREAT>★ 모두(약한 모델이 </THREAT> 홀로 냄 — 로그 실측 누출)
             .replaceAll("(?i)</?ANGER\\b[^>]*>", "")
             .replaceAll("(?i)</?DANGER\\b[^>]*>", "")   // GPT 등이 <THREAT> 대신 내는 <DANGER delta.../> 변형 누출 차단
+            .replaceAll("(?i)</?NPC_STATE\\b[^>]*>", "") // ★#266★ NPC 종결 상태 태그(제압·결박·봉인…) — GM 전용, 서술 누출 차단
             .replaceAll("<SUMMON[^>]*>", "")
             .replaceAll("<PACE [^/]*/?>", "")
             // ★[지난 자율 행동] 마커 누적 방지★: 미니 모델이 이전 턴의 이 내부 마커를 에코해 매턴 하나씩
             //   불어나던 버그(1→57, 오타 '자울'까지 전파). 어디에 있든 전부 제거 — 저장 시 정확히 1개만
             //   다시 붙인다(callNpcAi). 출력 누출(플레이어/GM 로그)도 함께 차단.
             .replaceAll("\\[지난\\s*자[율울]\\s*행동\\]\\s*", "")
+            // ★GM 시스템 주입·GM 전용 문맥이 서술로 누출되는 것 차단('마음의 소리')★ — GM이 입력 지시문(판정 결과·
+            //   소지품·같은 구역 동료·스탯 결·행운 보정·NPC 자율행동 등 GM 전용 컨텍스트)을 서술에 그대로 되뇌는 버그.
+            //   이 메타 마커·지시문을 제거한다. 실제 대사 '[이름]…'·방송 '[방송]'은 이 라벨들과 겹치지 않아 안전.
+            // (1) ★여러 줄에 걸치는 블록 먼저(DOTALL)★ — NPC 자율행동/막후 진행 주입은 NPC 원문(여러 줄)을 품고
+            //     ★행동 요지다…채널에서 나온다).★ 지시문으로 끝난다. 마커부터 그 ※지시문 끝까지 통째로 지운다
+            //     (줄 단위로 지우면 첫 줄만 없어지고 NPC 원문이 서술로 남는다). ※ 프리앰블도 함께 소거.
+            .replaceAll("(?s)(?:\\[시스템 주입\\]\\s*)?\\[NPC 자율 행동[\\s\\S]*?※\\s*행동 요지[^\\n]*", "")
+            .replaceAll("(?s)(?:\\[시스템 주입\\]\\s*)?\\[막후 진행[^\\]]*\\][^\\n]*", "")
+            // (2) 한 줄짜리 주입·판정 마커 줄 통째(사망·회복·홀림 등 [시스템 주입] 접두 에코, 판정 결과 주입).
+            .replaceAll("(?m)^\\s*\\[시스템 주입\\].*$", "")
+            .replaceAll("\\[시스템 주입\\][^\\n]*", "")                 // 인라인 잔여
+            .replaceAll("\\[판정 결과\\][^\\n]*", "")                   // 주사위 결과 주입(🎲 주사위:…/주사위 dN=… 어느 표기든)
+            // (3) turnCtx 마커(계정 접두 없이 그대로 누출) — 대괄호로 경계 확정.
+            .replaceAll("\\[소지품:[^\\]]*\\]", "")                     // GM 아이템 인지
+            .replaceAll("\\[행운 보정[^\\]]*\\]", "")                   // 행운 보정 알림
+            // ★행운 마커는 엔진 소유★: '[행운!]/[큰 행운!]'은 실제 발동 시에만 시스템이 표기한다(d7=showInlineDice 🍀,
+            //   무판정 우연=serendipity 라인). GM이 자유 텍스트로 쓰면 저사양 모델이 판정 없이 남발한다(실플레이 5연발 실측).
+            //   → GM 응답의 이 라벨과 [행운 조짐]/[행운 추가판정]/[불운 조짐] 지시 마커 에코를 전부 제거(우연·성과 서술 자체는 남음).
+            .replaceAll("\\[\\s*(?:큰\\s*)?행운\\s*!\\s*\\]", "")
+            .replaceAll("\\[\\s*행운\\s*(?:조짐|추가판정)[^\\]]*\\]", "")
+            .replaceAll("\\[\\s*불운\\s*조짐[^\\]]*\\]", "")
+            .replaceAll("\\[GM 필수:[^\\]]*\\]", "")                    // 아이템 사용 환기
+            .replaceAll("\\[같은 구역 동료[^\\]\\n]*\\]?", "")          // 같은 구역 목격자 명단(닫힘/개행 어느 쪽이든)
+            .replaceAll("\\[[^\\]\\n]*\\((?:근력|영감)\\s*\\d+\\)[^\\]]*\\]", "") // 스탯 결(신체 열세/둔한 직감 등)
+            // (4) ※로 시작하는 GM 지시 문장 줄(블록에 안 붙고 홀로 남은 경우).
+            .replaceAll("(?m)^\\s*※.*$", "")
+            .replaceAll("\\n{3,}", "\n\n")
             .trim();
     }
 
@@ -1547,6 +1600,28 @@ public class AiManager {
         return out;
     }
 
+    /** <TEMP_STAT player="X" stat="근력|매력|행운|영감|체력|정신력" amount="±N" turns="M"/> 파싱 → [{player, stat, amount, turns}, ...]
+     *  — 약물·일시 효과로 몇 턴간 스탯을 올린다(음수면 일시 약화). 세션 종료 시 휘발. */
+    public java.util.List<String[]> parseTempStatTags(String response) {
+        java.util.List<String[]> out = new ArrayList<>();
+        final String PREFIX = "<TEMP_STAT ";
+        int from = 0;
+        while (true) {
+            int idx = response.indexOf(PREFIX, from);
+            if (idx == -1) break;
+            int end = response.indexOf("/>", idx);
+            if (end == -1) break;
+            String attrs  = response.substring(idx + PREFIX.length(), end);
+            String player = extractAttr(attrs, "player").orElse(null);
+            String stat   = extractAttr(attrs, "stat").orElse("");
+            String amount = extractAttr(attrs, "amount").orElse("");
+            String turns  = extractAttr(attrs, "turns").orElse("");
+            if (player != null && !stat.isBlank()) out.add(new String[]{player, stat, amount, turns});
+            from = end + 2;
+        }
+        return out;
+    }
+
     /** <ANGER delta="±N" target="이름" reason="…"/> 파싱 → [{delta, target, reason}, ...] — 분노도 가감·표적. */
     public java.util.List<String[]> parseAngerTags(String response) {
         java.util.List<String[]> out = new ArrayList<>();
@@ -1562,6 +1637,27 @@ public class AiManager {
             String target = extractAttr(attrs, "target").orElse("");
             String reason = extractAttr(attrs, "reason").orElse("");
             if (delta != null) out.add(new String[]{delta, target, reason});
+            from = end + 2;
+        }
+        return out;
+    }
+
+    /** ★#266★ <NPC_STATE npc="이름" state="제압|구속|봉인|격퇴|사망|퇴장|해제" note="짧은 설명"/> 파싱 → [{npc, state, note}, ...]
+     *  — NPC/괴담의 '종결 상태'를 durable 기록(압축 생존). state="해제"면 그 인물의 상태를 지운다(풀려남·부활·복귀). */
+    public java.util.List<String[]> parseNpcStateTags(String response) {
+        java.util.List<String[]> out = new ArrayList<>();
+        final String PREFIX = "<NPC_STATE ";
+        int from = 0;
+        while (true) {
+            int idx = response.indexOf(PREFIX, from);
+            if (idx == -1) break;
+            int end = response.indexOf("/>", idx);
+            if (end == -1) break;
+            String attrs = response.substring(idx + PREFIX.length(), end);
+            String npc   = extractAttr(attrs, "npc").orElse(null);
+            String state = extractAttr(attrs, "state").orElse("");
+            String note  = extractAttr(attrs, "note").orElse("");
+            if (npc != null && !npc.isBlank()) out.add(new String[]{npc, state, note});
             from = end + 2;
         }
         return out;

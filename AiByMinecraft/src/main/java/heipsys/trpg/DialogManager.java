@@ -515,12 +515,18 @@ public class DialogManager {
 
     /** 시작 설정 다이얼로그 — 자동생성·시작 스테이지·괴담 유형을 버튼으로 고른다. 항목을 누르면 바뀌고 이 창이 다시 열린다. */
     public void showStartSettings(Player player, boolean pregen, int startStage, String typeHint, String famePool,
-                                  Runnable onTogglePregen, Runnable onPickStage, Runnable onPickType, Runnable onPickFame) {
+                                  boolean groupTurn,
+                                  Runnable onTogglePregen, Runnable onPickStage, Runnable onPickType, Runnable onPickFame,
+                                  Runnable onToggleGroupTurn) {
         List<ActionButton> buttons = new ArrayList<>();
         buttons.add(ActionButton.create(
             Component.text("자동 사전생성:  " + (pregen ? "켜짐" : "꺼짐"), pregen ? NamedTextColor.GREEN : NamedTextColor.RED),
             Component.text("다음 시나리오를 미리 만들어 둘지 (끄면 즉석 생성)"), 180,
             DialogAction.customClick((v, a) -> onTogglePregen.run(), ClickCallback.Options.builder().uses(1).build())));
+        buttons.add(ActionButton.create(
+            Component.text("턴 처리:  " + (groupTurn ? "단체턴" : "개별턴"), groupTurn ? NamedTextColor.GREEN : NamedTextColor.YELLOW),
+            Component.text(groupTurn ? "행동가능 전원 행동 후 GM 1회 통합 처리 (일관성↑·비용↓)" : "행동마다 즉시 GM 호출 (응답 빠름·비용↑)"), 180,
+            DialogAction.customClick((v, a) -> onToggleGroupTurn.run(), ClickCallback.Options.builder().uses(1).build())));
         buttons.add(ActionButton.create(
             Component.text("시작 스테이지:  " + startStage + (startStage > 1 ? "  (레벨 보정 " + (startStage - 1) + "단계)" : ""), NamedTextColor.AQUA),
             Component.text("새 게임을 몇 스테이지부터 — 높을수록 시작 캐릭터가 강함 (1~6)"), 180,

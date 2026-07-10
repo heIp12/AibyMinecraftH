@@ -70,6 +70,8 @@ public class GameStateManager {
     private int     clockEnd           = -1;    // 종료 시각(분, 시작 기준 누적; start 이하이면 +1440)
     private int     minutesPerTurn     = 15;    // 공포 파트 1턴당 진행 분
     private int     turnMode           = 1;     // ★#151★ 0=고정(턴당 고정 분) / 1=가변(행동 DUR로 시계 진행, ★기본값★) / 2=비동기 busy. 세션 시작 시 래치, 세이브 포함.
+    private boolean groupTurn          = false; // ★단체턴★ true=단체(전원 행동 수집 후 GM 1회 통합) / false=개별(행동마다 즉시 GM 호출, ★기본값 off★). 통합 응답의 다중 플레이어 태그(STATE_UPDATE/DICE 등)를 파서가 첫 것만 처리해 2인+ 상태·주사위가 유실되는 계약 미비 → 그 계약 전까지 개별턴이 기본. 세션 시작 시 래치, 세이브 포함.
+    private boolean groupFanout        = true;  // ★단체턴 서술 팬아웃★ true=단체 라운드 통합 서술을 참여 동료에게 결정적 전달(기본) / false=기존 WITNESS 재량에만 의존. groupTurn과 별개 토글.
     private boolean timeVisibleDefault = true;  // 이 방에서 기본적으로 시간 인지 가능 여부
     private boolean endEventFired      = false; // 종료 사건/제한 시각 도달 여부
     private final Set<String>       firedEvents       = new HashSet<>();
@@ -93,6 +95,12 @@ public class GameStateManager {
     private int    threat      = 0;   // 0~100
     private int    anger       = 0;   // 0~100
     private String angerTarget = "";  // 분노 표적(캐릭터/계정명) — 규칙파괴 살해 대상
+
+    // ★#266 엔진 계약 A — NPC/괴담 '종결 상태' 영속(압축 생존)★: 제압·결박·봉인·격퇴·사망·퇴장처럼 한 번 매듭지어진
+    //  인물의 무력화 상태를 이름→상태로 durable 저장한다. 매 턴 GM 문맥에 재주입하므로(threatAnger처럼) 대화 압축으로
+    //  '피에르 제압됨'이 사라져도 GM이 그를 다시 멀쩡히 싸우게 하지 않는다. 값은 짧은 한국어(예: "제압(창고에 결박)").
+    //  플레이어 비노출(GM 전용·감사용). 명시적 계기(<NPC_STATE state="해제">)로만 풀린다.
+    private final java.util.LinkedHashMap<String,String> npcDispositions = new java.util.LinkedHashMap<>();
 
     private JsonObject gdamData = null;
 
@@ -131,6 +139,7 @@ public class GameStateManager {
         foundItems.clear();
         discoveredFacts.clear();
         unlockedZones.clear();
+        npcDispositions.clear();   // ★#266★ 새 판/스테이지/재도전 = 새 등장인물 → 종결 상태도 초기화
         eventLog.clear();
         campaignLog.clear(); // 새 게임 시작 — 캠페인(전 스테이지) 로그도 초기화
         threat = 0; anger = 0; angerTarget = ""; // 괴담 세력 게이지 초기화
@@ -155,6 +164,7 @@ public class GameStateManager {
         foundItems.clear();
         discoveredFacts.clear();
         unlockedZones.clear();
+        npcDispositions.clear();   // ★#266★ 새 판/스테이지/재도전 = 새 등장인물 → 종결 상태도 초기화
         archiveStageLog();   // 스테이지 전환 — 이번 스테이지 로그를 캠페인 로그에 보관 후 비움
         eventLog.clear();
         threat = 0; anger = 0; angerTarget = ""; // 새 스테이지 — 세력 게이지 초기화
@@ -172,6 +182,7 @@ public class GameStateManager {
         foundItems.clear();
         discoveredFacts.clear();
         unlockedZones.clear();
+        npcDispositions.clear();   // ★#266★ 새 판/스테이지/재도전 = 새 등장인물 → 종결 상태도 초기화
         archiveStageLog();   // 재도전 — 이번 시도 로그도 캠페인 로그에 보관
         eventLog.clear();
         // 괴담이 지난 시도를 기억해 더 사납게 시작 — 위협도 시작 바닥을 오염도에서 시드(분노는 초기화).
@@ -203,6 +214,8 @@ public class GameStateManager {
         o.addProperty("clockEnd", clockEnd);
         o.addProperty("minutesPerTurn", minutesPerTurn);
         o.addProperty("turnMode", turnMode);
+        o.addProperty("groupTurn", groupTurn);
+        o.addProperty("groupFanout", groupFanout);
         o.addProperty("timeVisibleDefault", timeVisibleDefault);
         o.addProperty("endEventFired", endEventFired);
         o.addProperty("lastFiredEventLabel", lastFiredEventLabel);
@@ -218,6 +231,7 @@ public class GameStateManager {
         o.add("unlockedZones", SNAP_GSON.toJsonTree(unlockedZones));
         o.add("sealedZones", SNAP_GSON.toJsonTree(sealedZones));    // ★#180 §6-4★ 런타임 구역 봉쇄 영속(이어하기 유지)
         o.add("blockedMedia", SNAP_GSON.toJsonTree(blockedMedia));  // ★#180 §6-4★ 매체별 통신 차단 영속(이어하기 유지)
+        o.add("npcDispositions", SNAP_GSON.toJsonTree(npcDispositions)); // ★#266★ NPC 종결 상태 영속(이어하기 유지)
         o.add("activeNpcs", SNAP_GSON.toJsonTree(activeNpcs));
         o.add("corruption", SNAP_GSON.toJsonTree(corruption));
         JsonObject ps = new JsonObject();
@@ -248,6 +262,8 @@ public class GameStateManager {
         clockEnd          = snapI(o, "clockEnd", -1);
         minutesPerTurn    = snapI(o, "minutesPerTurn", 15);
         turnMode          = snapI(o, "turnMode", 1); // 구형 세이브(필드 없음)도 가변 시간 기본값으로
+        groupTurn         = snapB(o, "groupTurn", false); // 필드 없는 구형 세이브는 개별턴(기본 off) — 단체턴 다중태그 계약 미비
+        groupFanout       = snapB(o, "groupFanout", true);
         timeVisibleDefault = snapB(o, "timeVisibleDefault", true);
         endEventFired     = snapB(o, "endEventFired", false);
         lastFiredEventLabel = snapS(o, "lastFiredEventLabel", "");
@@ -263,6 +279,13 @@ public class GameStateManager {
         snapStrInto(unlockedZones, o, "unlockedZones");
         snapStrInto(sealedZones, o, "sealedZones");   // ★#180 §6-4★ 런타임 봉쇄 복원
         snapStrInto(blockedMedia, o, "blockedMedia"); // ★#180 §6-4★ 매체 차단 복원
+        npcDispositions.clear();                      // ★#266★ NPC 종결 상태 복원(이름→상태)
+        if (o.has("npcDispositions") && o.get("npcDispositions").isJsonObject()) {
+            for (Map.Entry<String, JsonElement> e : o.getAsJsonObject("npcDispositions").entrySet()) {
+                try { if (e.getValue() != null && e.getValue().isJsonPrimitive()) npcDispositions.put(e.getKey(), e.getValue().getAsString()); }
+                catch (Exception ignore) {}
+            }
+        }
         snapStrInto(activeNpcs, o, "activeNpcs");
         if (o.has("corruption")) {
             CorruptionData c = SNAP_GSON.fromJson(o.get("corruption"), CorruptionData.class);
@@ -327,6 +350,21 @@ public class GameStateManager {
     public int decayAnger(int amount) { anger = Math.max(0, anger - Math.max(0, amount)); if (anger == 0) angerTarget = ""; return anger; }
     /** 재도전 시 위협도 시작 바닥 — 괴담이 지난 시도를 기억해 더 사납게 시작(오염도 비례, 상한 40). */
     private int retryThreatFloor() { return Math.min(40, corruption.level * 8); }
+
+    // ★#266 NPC/괴담 종결 상태★ — 제압·결박·봉인·격퇴·사망·퇴장을 durable 저장, 매 턴 GM 문맥에 재주입(압축 생존).
+    /** 이름→상태 기록(둘 중 하나라도 비면 무시). 기존 값이 있으면 덮어써 악화·보강을 반영한다. */
+    public void setNpcDisposition(String name, String state) {
+        if (name == null || name.isBlank() || state == null || state.isBlank()) return;
+        npcDispositions.put(name.trim(), state.trim());
+    }
+    /** 명시적 계기(풀려남·부활·복귀)로만 해제. */
+    public void clearNpcDisposition(String name) {
+        if (name != null && !name.isBlank()) npcDispositions.remove(name.trim());
+    }
+    /** 현재 종결 상태 스냅샷(GM 문맥·감사용) — 이름→상태. 비었으면 빈 맵. */
+    public java.util.Map<String,String> getNpcDispositions() {
+        return new java.util.LinkedHashMap<>(npcDispositions);
+    }
 
     private static boolean snapB(JsonObject o, String k, boolean d) { return o.has(k) && !o.get(k).isJsonNull() ? o.get(k).getAsBoolean() : d; }
     private static int     snapI(JsonObject o, String k, int d)     { return o.has(k) && !o.get(k).isJsonNull() ? o.get(k).getAsInt() : d; }
@@ -738,6 +776,10 @@ public class GameStateManager {
     public int getCurrentTurn()  { return currentTurn; }
     public int  getTurnMode()      { return turnMode; }
     public void setTurnMode(int m) { turnMode = (m < 0 ? 0 : (m > 2 ? 2 : m)); }
+    public boolean isGroupTurn()       { return groupTurn; }
+    public void    setGroupTurn(boolean b) { groupTurn = b; }
+    public boolean isGroupFanout()     { return groupFanout; }
+    public void    setGroupFanout(boolean b) { groupFanout = b; }
 
     /** ★#151 Stage A★ 행동 소요(DUR)만큼 시계를 진행 — DUR/비동기 모드에서 고정 tickClock 대신 호출.
      *  TIME_SKIP(skipTime)과 달리 syncStageToClock까지 수행(정상 진행과 동일 정렬). 일상/비활성 시계면 무효. */
@@ -922,7 +964,9 @@ public class GameStateManager {
             StringJoiner others = new StringJoiner("  ");
             otherZone.forEach(p -> others.add(
                 p.toShortLine() + "(" + zoneNameOf(p.zone) + "·" + distanceLabel(zoneDistance(actorZone, p.zone)) + ")"));
-            sb.append("다른 위치 동료(거리): ").append(others).append("\n");
+            // ★서술 금지 마킹★: 저품질 모델이 이 참고 정보를 행동자 서술 본문에 그대로 풀어 써
+            //   '난 보관실인데 왜 접객실 동료 행동이 보이지?'(장면 혼선 46%, GPT 저품질 로그)가 나던 것 억제.
+            sb.append("다른 위치 동료(거리·GM 참고용 — ★이들의 장면·행동을 이 서술에 끌어오지 마라★): ").append(others).append("\n");
         }
 
         // 최근 이벤트 — ★현재 행동자가 지각할 수 있는(같은 위치 zone, 또는 본인) 일만 반영한다.

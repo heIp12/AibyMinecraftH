@@ -107,7 +107,7 @@ public class GdamGenerator {
 1. ★완급 + 중규모 사건(본선과 별개로 굵직한 독립 사건)★: 큰 본선 사건 사이에 ★곁가지 사건(side:true)★을 끼워라 — 분위기 환기·자원 소모·짧은 선택. 이 사건도 작은 괴담처럼 ★자체 규모(side_scale)·발생/마감 시각(time·deadline)·가벼운 성격(disposition)·자체 전개★를 가진다(전부 본선에 직결될 필요는 없다). ★개수는 스케일별 분량 가이드를 따른다(로컬 0~1 … 복합 3~5).★
    · ★규모(side_scale)는 본 괴담보다 1~2단계 낮게★: 로컬(st1)=없거나 사소 / 시티(st2)=없거나 로컬급 / 내셔널(st3)=로컬~시티급 / 글로벌(st4)=시티~내셔널급 또는 ★로컬급 잡몹 다수★ / 코즈믹(st5)=내셔널~글로벌급 또는 잡몹 떼. ★본 괴담과 맞먹거나 더 큰 사건 금지★(주객전도). side_scale은 이 급에 맞춰.
    · ★결과유형(event_role) — 각 중규모 사건은 아래 11종 중 ★그 사건에 어울리는 하나★를 골라 지정하라. 사건 수만큼만(11종을 다 넣으라는 게 아니다), 서로 다르게 섞어라 — 유형 다양성이 회차 재미다.★
-     〈성공하면 길이 열리는 관문형〉 ①해결관문=깨야 본 괴담 '완전 해결(clear)'이 가능(스킵해도 해결만 막힐 뿐 '생존 엔딩'은 열림) · ⑤탈출관문=깨야 도주로가 열림 · ⑧힌트관문=깨야 핵심 힌트를 얻기 시작(영감 해상도와 맞물림) · ⑩등장관문=깨야 괴담이 등장(안 깨고 방치·타임아웃 시 초강화 괴담에 파국).
+     〈성공하면 길이 열리는 관문형〉 ①해결관문=깨야 본 괴담 '완전 해결(clear)'이 가능(스킵해도 해결만 막힐 뿐 '생존 엔딩'은 열림) · ⑤탈출관문=깨야 도주로가 열림 · ⑧힌트관문=깨야 핵심 힌트를 얻기 시작(깨기 전엔 핵심 단서가 잠김) · ⑩등장관문=깨야 괴담이 등장(안 깨고 방치·타임아웃 시 초강화 괴담에 파국).
      〈실패하면 나빠지는 압박형〉 ③방치강화=마감까지 못 막으면 괴담 강화 · ④즉시파국=못 막으면 그 자리서 탈락·사망(★반드시 1턴 이상 경고·유예를 먼저★ — 갑작스러운 즉사 금지) · ⑥방해유발=안 깨면 이후 추격·봉쇄·감시가 붙음 · ⑦인명희생=마감까지 못 막으면 NPC·동료가 죽음 · ⑨지속출혈=안 막으면 체력·정신력이 지속·점증 소모.
      〈깨는 게 양날인 대가형〉 ②함정강화=깨면 오히려 괴담 강화(안 건드리는 게 나을 수도) · ⑪정보대가=깨면 도주가 불가능해지지만 핵심정보를 얻음(배수진).
    · ★재도전을 부르되 교착은 절대 금지★ — 목표는 '1회차 클리어는 어렵지만 회차를 거듭하면 가능'이다. ★어떤 회차에도 클리어가 불가능한 구조(모든 길이 관문에 막힘)는 금지.★ 그러므로: 중규모 사건을 ★전부 관문형(①⑤⑧⑩)으로 채우지 마라★ — 중규모 사건을 다 스킵·희생·우회하고도 최소 '생존', 대개 '해결'까지 갈 경로가 반드시 남아야 한다(중규모 사건=선택적 압박·기회이지 필수 관문이 아니다). ①해결관문·⑩등장관문은 합쳐 ★최대 1개★(둘 이상이면 필수 관문 남발). 큰 대가를 건 사건(①⑤⑩④⑪)은 effect/label에 '무엇을·언제까지·하면·안 하면'을 구체적으로 적고 해결 경로를 반드시 열어둬라.
@@ -407,6 +407,7 @@ type 값 규칙: "written_book"=책/일기/문서류, "paper"=쪽지/메모, "ma
 - evidence: NPC에게 제시하면 반응이 바뀜(사진·증거물). item_params:{"uses":N}. lore_info에 '무엇을 증명하는지' 적는다.
 ★ 남용 금지: 핵심 공략 동선에 필요한 아이템에만 item_type을 준다. 분위기·소품은 item_type 생략.
 ★ key의 unlocks는 gated_zones의 zone과 일치시키고, 그 구역 requires와 모순 없게 하라.
+★★ item_params.unlocks에 쓰는 zone_id는 반드시 이 .gdam의 zones[*].zone_id 목록에 있는 값을 그대로 복사한다 — "zone_엘리베이터홀"처럼 zone 이름에 "zone_" 접두어를 붙여 임의로 만들거나 존재하지 않는 id를 쓰면 런타임에서 '[무시: 알 수 없는 구역]' 오류로 잠금이 해제되지 않는다.
 ### item_type 심화 규칙 (런타임 상태·정합성):
 - ★잔량이 있는 타입(light=charges, weapon=ammo, consumable/ritual/evidence=uses)은 초기값을 반드시 명시한다.
   값이 작을수록(예: charges 2~3, ammo 1~6) 자원 관리 긴장이 생긴다. 무한이 자연스러우면 생략(−1 취급).
@@ -479,6 +480,8 @@ type 값 규칙: "written_book"=책/일기/문서류, "paper"=쪽지/메모, "ma
   * 시간 인지(timeline.time_visible)도 배경에 맞게: 시계가 없는 시대·공간이면 false.
 - notes: 위로 표현 못 한 기타 자연 제약을 짧게(예: "정전으로 조명 제한", "무전기 배터리 잔량 부족").
 - gated_zones: (선택) 장비·인증 잠금이 있는 구역 배열. 각 항목: {zone: "zone_id", requires: "필요 조건(장비명/인증)", bypass: "물리 우회 방법(없으면 생략)", bypass_dc: DC숫자(생략 가능), remote_bypass: true/false(원격으로 우회·해제 가능한가. 현장 필수면 false — 급박 구간에 이동만으로 기회 전소 금지·이동 비용 명시)}.
+  ★★ gated_zones[].zone ID 절대 규칙: zone 값은 반드시 이 시나리오 zones[*].zone_id 목록에 실제로 존재하는 id를 그대로 복사한다. "zone_엘리베이터홀"처럼 존 이름에 "zone_" 접두어를 붙이거나 임의 id를 지어내면 런타임에서 '[무시: 알 수 없는 구역]' 오류가 발생해 잠금이 영구 무효가 된다.
+  ★★ 퍼즐 이중 잠금 방지 (절대 금지 — 억지 왕복 차단): 하나의 문(한 zone_id)에 잠금 수단을 두 개 이상 겹치지 마라. 전형적 금지 패턴: gated_zones[].requires(카드키)와 key_items[*].item_params.unlocks(전력/아이템 해제)가 같은 zone을 동시에 잠그는 것. 문이 전력으로 열린다면 전력만으로, 카드키가 필요하면 처음부터 카드키만으로 설계하라. 규칙: 하나의 zone에 (a) gated_zones[].requires와 (b) key_items[*].item_params.unlocks가 모두 설정되어 있으면 둘 중 하나를 반드시 제거하라.
 - notes (과거 시대 + phone_usable=false): 대체 통신 수단명·도달 소요 시간·발각 위험 수준을 반드시 명시한다(예: "전령은 도보 2턴, 발각 위험 중"). NPC가 수신하는 대체통신도 동일한 도달 소요·발각 위험을 따른다(대면 즉시 전달과 구분). comms_monitored 대신 이 notes 기준을 적용한다.
 - notes (미래 + 복수 통신 채널): "감청 대상 채널 = [목록], 안전 채널 = [목록]"을 명시한다. 안전 채널이 명시되면 그 채널로 핵심 정보를 안전하게 전달하는 공략을 허용한다.
 - 제약은 플레이어 자유를 부수는 장치가 아니라, '이 괴담을 왜 벗어날 수 없는가'를 설득력 있게 만드는 장치다.
@@ -535,7 +538,7 @@ area보다 상위 개념. 서로 ★도보로 오갈 수 없는 완전히 분리
 npcs 배열은 시나리오에 등장하는 주변 인물(플레이어 배역 외)을 정의한다.
 - critical: false (일반 NPC): GM AI가 서술에 통합하여 직접 조종. name·zone만 필수.
 - ★age(나이, 정수 8~85)★: ★모든 NPC★(critical·비critical)에 역할·맥락에 맞는 현실적 나이를 넣어라 — 게임이 이 나이로 세대별 말투·어휘(어린이=쉬운 말·짧은 문장, 청소년=줄임말·유행어, 청년=표준 회화, 중장년=관용구·에두름, 노년=옛말투·속담)를 자동으로 입힌다. 예: 학생=10대, 직장인=20~50대, 노인 관리인·촌로=60대+. ★빠지면 '세대 불명'이 되어 나이대 말투가 통째로 안 붙는다.★
-- critical: true (중요 NPC): 독립 AI 인스턴스로 자율 행동. 스테이지당 1~2명으로 제한.
+- critical: true (중요 NPC): 독립 AI 인스턴스로 자율 행동. ★수는 회차마다 다르다(0~4명) — 아래 '이번 회차 중요 NPC' 지시가 주는 ★정확한 수★에 맞춰라(항상 2명식 고정 금지). 0명이면 괴담·일반 NPC·미충원 배역만으로 채운다.★
   * personality: 성격·숨겨진 면 한 문장 — ★상투형 라벨로 때우지 마라(겁쟁이·친절·예민 같은 유형어만 쓰지 말 것). 이 인물만의 구체적 모순·습관·디테일로 잡아라★ (예: "겁쟁이지만 비밀을 안다"처럼 뭉뚱그리지 말고 → "남 앞에선 침착한 척하지만 혼자되면 문을 세 번 확인하고, 열쇠를 쥐고도 모른 척한다"처럼). ★personality엔 화법·말투('세월에 빗대어 말하며' 류)도, 정서 기질('웬만해선 안 놀란다' 류)도 넣지 마라 — 말투는 speech_style가, 기질은 temperament가 맡는다. personality는 '무슨 사람인가(가치관·모순·습관·비밀)'만 담고 speech_style·temperament와 ★내용이 겹치지 않게★ 나눠라.★
   * motivation: 이 NPC의 목표 한 문장 (예: "살아남기 위해 진실을 숨기려 한다")
   * temperament(기질): 이 인물의 ★정서 기본값★ 한 구절 — 감정이 어느 쪽으로 잘 기우는지. 예: "쉽게 불안해하고 최악을 상상한다" / "웬만해선 흔들리지 않는다" / "발끈 잘하고 금세 식는다". personality와 겹치지 말고 '평소 감정의 결'만 담아라(대사의 정서 톤을 매 턴 일관되게 잡는 값).
@@ -792,8 +795,9 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
     (key_clue 포함)는 정공법 탐색의 보상으로 ★중후반★에 둔다. 초반에 얻을 수 있는 hard 단서는 결정적 정답이
     아니라 ★중의적 복선★이어야 한다 — 당장은 의미가 모호해 여러 갈래로 읽히고, 후반에 다른 단서와 맞물릴 때
     비로소 "아, 그게 이거였구나"로 회수(소급 이해)된다. 함정처럼 위장해도 좋다(사람이 친절히 알려주는 형태가
-    아니라 출처가 사람 아닌 듯한 낙서·물건·우연한 이상 현상). 영감(SPR) 해상도와 곱해진다(어렵게 얻어도 영감이
-    낮으면 더 애매하게 읽힘).
+    아니라 출처가 사람 아닌 듯한 낙서·물건·우연한 이상 현상). ★중의성은 단서의 '내용' 자체에 설계하라★ — 발견된
+    관찰 사실은 런타임에서 영감과 무관하게 그대로 읽히므로(흐려 주지 않는다), 여러 갈래로 해석되는 내용이어야
+    중의성이 성립한다(잇고 해석하는 것은 플레이어 몫, 영감은 연상만 거든다).
   ★ 예외 — 늦게 합류하는 배역(knowledge_advantage=true): 늦게 온 대가로 ★더 나은 단서(때론 결정적에 가까운)나
     유리한 시작 위치★를 그대로 갖는다(합류 정보격차 보상). 이 배역에겐 '초반 결정적-금지'를 완화해 좋은 단서를
     앞당겨 줘도 된다.
@@ -829,6 +833,7 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
 5. ★정답 경로 실물 연결(orphan 금지)★: collapse_condition을 이루는 authored 정답 아이템·단서·NPC 지식이 ★실제 획득·사용 경로★(어디서 어떻게 손에 넣고 무엇에 쓰는지)에 물려 있는가. 정답 자료가 놀고 GM이 즉흥 사실로 대체하게 두지 마라 — 정답은 배치한 그 자료를 통해 도달하게.
 6. ★collapse_condition 자기정합★: entity.weakness/solution과 논리적으로 일치하고, ①우회로(엉뚱한 방법으로 손쉽게 충족되는 구멍)나 ②순환(정의상 불가능한 것을 요구 — '이름 잃은 넋'을 '이름 돌려주기'로 풀라는 식)이 없는가. 소환·발동 규칙과 파훼 규칙이 서로 어긋나지 않게(부른 자만 표적인데 아무나 자처하면 클리어되는 구멍 금지).
 7. ★내부 토큰 잔존 금지★: 어떤 텍스트 필드(note·description·prologue 등)에도 role_A/zone_B/npc_C 같은 ★내부 스키마 토큰★이 남아 있지 않게(플레이어에게 노출된다). 사람이 읽을 이름·표시명으로 치환하라.
+8. ★zone ID 일관성 + 이중 잠금 검사★: (a) gated_zones[].zone과 key_items[*].item_params.unlocks에 쓴 모든 zone_id가 zones[*].zone_id 목록에 실제로 있는가 — 없으면 '[무시: 알 수 없는 구역]' 오류로 잠금이 작동하지 않는다. 아이템의 location과 clues의 위치 명칭도 zones의 실제 이름과 일치하는지 확인하라. (b) 같은 zone에 gated_zones[].requires(카드키)와 key_items[*].item_params.unlocks(전력·아이템 해제)가 동시에 설정된 이중 잠금이 없는가 — 있으면 둘 중 하나를 제거하라.
 """;
 
     // 두 조각을 런타임에 결합('+'는 상수 폴딩되어 64KB 단일 상수가 되므로 String.join 사용).
@@ -1442,17 +1447,18 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
         return "\n\n## ★구조 우선 설계(후반 스테이지)\n위 world_rules의 ★고정 구조★를 토대로 괴담을 설계하라 — ★entity.type은 그 구조에서 자연히 도출★하고 독립적으로 먼저 고정하지 마라(구조가 먼저다). 귀신·호러가 안 맞으면 ★크리처·괴수·외계·음모·컬트·변종 등 어떤 정체로든★ 좋다(단 세션이 특정 카테고리로 고정됐다면 그 범위 안에서). 친숙(실존) 괴담 모드면 원전 본래 기제를 따르고 이 강제는 무시하라.";
     }
 
-    /** 이번 회차 공존 괴담 수(1~4 가변, 스테이지 가중). S1=1 고정, S6=2~5 정점. */
+    /** 이번 회차 공존 괴담 수. ★기본은 단일(1마리)이 대부분★ — 다수는 확률적 소수 예외(배경 적합 시).
+     *  S1=1 고정 … S5까지도 단일 우세, S6만 2+ 정점(메인 2개 이상 유지). */
     private static int coexistCount(int roomNumber) {
         int s = Math.max(1, Math.min(6, roomNumber));
         int roll = java.util.concurrent.ThreadLocalRandom.current().nextInt(100);
         return switch (s) {
-            case 1 -> 1;
-            case 2 -> roll < 70 ? 1 : 2;
-            case 3 -> roll < 45 ? 1 : roll < 85 ? 2 : 3;
-            case 4 -> roll < 30 ? 1 : roll < 70 ? 2 : roll < 95 ? 3 : 4;
-            case 5 -> roll < 20 ? 1 : roll < 55 ? 2 : roll < 85 ? 3 : 4;
-            default -> roll < 15 ? 2 : roll < 50 ? 3 : roll < 80 ? 4 : 5; // S6 정점: 2~5
+            case 1 -> 1;                                                  // 항상 단일
+            case 2 -> roll < 88 ? 1 : 2;                                  // 대부분 단일
+            case 3 -> roll < 82 ? 1 : roll < 97 ? 2 : 3;                  // 단일 우세
+            case 4 -> roll < 74 ? 1 : roll < 93 ? 2 : roll < 99 ? 3 : 4;
+            case 5 -> roll < 66 ? 1 : roll < 90 ? 2 : roll < 98 ? 3 : 4;  // 후반도 단일이 다수
+            default -> roll < 50 ? 2 : roll < 83 ? 3 : roll < 96 ? 4 : 5; // S6 정점: 항상 2+ 유지
         };
     }
 
@@ -1466,9 +1472,23 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
                 ? "보조는 ★같은 출처·비슷한 결(테마·장소)★로 골라 주 괴담과 자연스럽게 물리게 하라(SCP엔 SCP, 일본괴담엔 일본괴담 식). "
                 : "보조는 다른 결이어도 되나 여전히 ★함정·장애·역이용★으로 기능해야 한다. ")
             + (roomNumber >= 6
-                ? "★스테이지 6은 정점 — 5격+4격을 동시에 상대하듯, 서로 다른 규칙 둘 이상을 병행 대응하게 하라(강화 복합).★ "
-                : "")
+                ? "★스테이지 6은 정점 — 5격+4격을 동시에 상대하듯, 서로 다른 규칙 둘 이상을 병행 대응하게 하라(강화 복합). 여기선 반드시 2개 이상 유지.★ "
+                : "★단, 개수보다 개연성이 우선★ — 이 배경·컨셉·장소가 여러 괴담을 자연스럽게 담지 못하면 보조를 억지로 부풀리지 말고, 주 괴담의 다른 양상·함정으로 흡수해 ★사실상 단일처럼★ 다뤄도 된다(무대에 정말 어울릴 때만 별개 개체로). ")
             + "보조 괴담도 ★실존 원전★에서 골라라(새 창작 금지). 주 괴담의 해결 경로는 반드시 성립시켜라(보조가 막아도 대가를 치르고 만회 가능).";
+    }
+
+    /** 이번 회차 중요(critical:true) NPC 수 — ★0~4 가변★(회차마다 다르게). '항상 2명' 편향을 깨고, 괴담만으로 충분한
+     *  판(0)부터 앙상블(4)까지 폭넓게. 일반(critical:false) NPC·미충원 배역-NPC는 이와 별개로 장면을 채운다. */
+    private static int criticalNpcCount(int roomNumber) {
+        int roll = java.util.concurrent.ThreadLocalRandom.current().nextInt(100);
+        return roll < 15 ? 0 : roll < 40 ? 1 : roll < 65 ? 2 : roll < 85 ? 3 : 4; // 0:15 1:25 2:25 3:20 4:15
+    }
+
+    /** 중요 NPC 수 지시(월드 청크). 정확한 목표 수를 못박아 '항상 2명' 고정 편향을 깬다. */
+    private static String criticalNpcDirective(int roomNumber) {
+        int n = criticalNpcCount(roomNumber);
+        if (n == 0) return "\n\n## ★이번 회차 중요(critical:true) NPC = 0명★\n독립 AI로 도는 중요 NPC를 ★두지 마라(어떤 npcs 항목도 critical:true 금지)★ — 괴담과 일반(critical:false) NPC, 그리고 플레이어가 안 맡은 배역만으로 장면을 채운다.";
+        return "\n\n## ★이번 회차 중요(critical:true) NPC = 정확히 " + n + "명★\n독립 AI로 자율 행동하는 중요 NPC를 ★정확히 " + n + "명★ 두어라(더도 덜도 말고 " + n + "). 나머지 주변 인물은 critical:false(일반)로. '항상 2명'식 고정 배치를 피하고 반드시 이 수에 맞춰라.";
     }
 
     /**
@@ -1514,6 +1534,7 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
                 + "\"clues\":[...],\"daily_prologue\":...,\"meeting_design\":...,\"common_items\":[...]}\n"
                 + "entity·timeline·roles·key_items 등 다른 최상위 필드는 절대 포함하지 마라."
                 + ScenarioArchetypes.rolesBlock(roomNumber) // 외부화·샘플링: NPC 역할 후보 소수만 주입(1~2스테이지는 기본만)
+                + criticalNpcDirective(roomNumber)          // ★이번 회차 중요 NPC 수(0~4 가변)★ — '항상 2명' 고정 편향 제거
                 + "\n## ★검증: npcs가 괴담 성향(disposition)·규칙에 맞게 반응·배치됐는가? 아니면 고쳐라."
                 + "\n## daily_prologue.opening: 도입 강도를 시나리오 성격에 맞게 정하라 — "
                 + "\"calm\"(대부분: 담담한 일상에서 서서히 침식) · \"tense\"(일상에 미묘한 긴장·불안, 단 초자연은 아님) · "
@@ -1770,6 +1791,7 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
                     if (!validate(gdam)) {
                         throw new RuntimeException(".gdam 검증 실패: 필수 항목 누락");
                     }
+                    repairZoneRefs(gdam); // ★zone 참조 자동 검증·보정(존재하지 않는 zone_id → 이름 매칭 보정, 못 찾으면 경고)
 
                     save(seed, gdam);
                     if (progress != null) progress.accept("저장");
@@ -2036,6 +2058,97 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
             }
         }
         return true;
+    }
+
+    /**
+     * ★생성 후 zone 참조 자동 검증·보정★ (버그: 존재하지 않는 맵을 아이템·잠금이 참조).
+     * constraints.gated_zones[].zone 과 key_items[].item_params.unlocks 가 zones[].zone_id에 없으면
+     * zone 이름 매칭으로 실제 id에 대응시키고(확신 있을 때만), 못 찾으면 경고만 남긴다(런타임은 알 수 없는 구역을 무시).
+     * ※ 이중 잠금(전력+카드키)은 하나가 world_rules 자유서술에 살아 있어 구조화 JSON만으론 신뢰성 있게 검출 불가 →
+     *   생성 프롬프트 규칙(gated_zones 이중 잠금 금지 조항)에 맡긴다. 여기선 zone_id 정합만 담당한다.
+     * ※ 같은 zone에 gated_zones와 item.unlocks가 함께 있는 것은 '문 + 그 문의 열쇠'라는 ★정상 설계★이므로 건드리지 않는다.
+     */
+    private void repairZoneRefs(JsonObject g) {
+        try {
+            if (!g.has("zones") || !g.get("zones").isJsonArray()) return;
+            java.util.Set<String> validIds = new java.util.HashSet<>();
+            java.util.Map<String, String> nameToId = new java.util.HashMap<>();
+            for (JsonElement ze : g.getAsJsonArray("zones")) {
+                if (ze == null || !ze.isJsonObject()) continue;
+                JsonObject zo = ze.getAsJsonObject();
+                if (!zo.has("zone_id") || zo.get("zone_id").isJsonNull()) continue;
+                String id = zo.get("zone_id").getAsString().trim();
+                if (id.isEmpty()) continue;
+                validIds.add(id);
+                if (zo.has("name") && !zo.get("name").isJsonNull()) {
+                    String nm = zo.get("name").getAsString().trim();
+                    if (!nm.isEmpty()) nameToId.putIfAbsent(nm, id);
+                }
+            }
+            if (validIds.isEmpty()) return;
+
+            // 1) constraints.gated_zones[].zone 보정
+            if (g.has("constraints") && g.get("constraints").isJsonObject()) {
+                JsonObject cons = g.getAsJsonObject("constraints");
+                if (cons.has("gated_zones") && cons.get("gated_zones").isJsonArray()) {
+                    for (JsonElement ge : cons.getAsJsonArray("gated_zones")) {
+                        if (ge == null || !ge.isJsonObject()) continue;
+                        JsonObject go = ge.getAsJsonObject();
+                        if (!go.has("zone") || go.get("zone").isJsonNull()) continue;
+                        String z = go.get("zone").getAsString().trim();
+                        if (z.isEmpty() || validIds.contains(z)) continue;
+                        String fixed = matchZoneId(z, nameToId);
+                        if (fixed != null) {
+                            logger.warning("[gdam] gated_zone zone 보정: '" + z + "' → '" + fixed + "'");
+                            go.addProperty("zone", fixed);
+                        } else {
+                            logger.warning("[gdam] gated_zone zone 미해결(런타임 무시→잠금 무효): '" + z + "'");
+                        }
+                    }
+                }
+            }
+
+            // 2) key_items[].item_params.unlocks 보정
+            if (g.has("key_items") && g.get("key_items").isJsonArray()) {
+                for (JsonElement ie : g.getAsJsonArray("key_items")) {
+                    if (ie == null || !ie.isJsonObject()) continue;
+                    JsonObject io = ie.getAsJsonObject();
+                    if (!io.has("item_params") || !io.get("item_params").isJsonObject()) continue;
+                    JsonObject ip = io.getAsJsonObject("item_params");
+                    if (!ip.has("unlocks") || ip.get("unlocks").isJsonNull()) continue;
+                    String u = ip.get("unlocks").getAsString().trim();
+                    if (u.isEmpty() || validIds.contains(u)) continue;
+                    String fixed = matchZoneId(u, nameToId);
+                    if (fixed != null) {
+                        logger.warning("[gdam] item unlocks 보정: '" + u + "' → '" + fixed + "'");
+                        ip.addProperty("unlocks", fixed);
+                    } else {
+                        logger.warning("[gdam] item unlocks 미해결(열쇠 무효 가능): '" + u + "'");
+                    }
+                }
+            }
+        } catch (Exception e) {
+            logger.warning("[gdam] repairZoneRefs 예외(무시): " + e.getMessage());
+        }
+    }
+
+    /** 존재하지 않는 zone 참조를 zone 이름 매칭으로 실제 zone_id에 대응(확신 있을 때만). 못 찾으면 null.
+     *  "zone_격리실 복도"처럼 이름에 "zone_" 접두어를 붙인 흔한 오류를 우선 처리하고,
+     *  부분 일치는 후보가 ★정확히 1개★일 때만 채택한다(애매하면 포기 — 오배선 방지). */
+    private String matchZoneId(String ref, java.util.Map<String, String> nameToId) {
+        if (ref == null) return null;
+        String r = ref.trim();
+        String bare = r.startsWith("zone_") ? r.substring(5).trim() : r;
+        if (nameToId.containsKey(bare)) return nameToId.get(bare); // "zone_"+정확한 이름
+        if (nameToId.containsKey(r))    return nameToId.get(r);
+        if (bare.isEmpty()) return null;
+        String hit = null; int hits = 0;
+        for (java.util.Map.Entry<String, String> en : nameToId.entrySet()) {
+            String nm = en.getKey();
+            if (nm.isEmpty()) continue;
+            if (nm.equals(bare) || nm.contains(bare) || bare.contains(nm)) { hit = en.getValue(); hits++; }
+        }
+        return hits == 1 ? hit : null; // 후보가 유일할 때만 보정
     }
 
     /** JsonObject에 key가 있고 값이 비어있지 않은가(문자열 기준). */

@@ -106,6 +106,55 @@ public class TurnManager {
         return true;
     }
 
+    /**
+     * ★단체턴(같은 구역 묶음, 증분 2a)★ 여러 명의 행동을 GM 1회 호출로 통합 처리한다.
+     * - 개별 행동 로그(eventLog·narrativeLog)는 호출 측(flushGroupZone)에서 이미 남겼다 — 여기선 다시 남기지 않는다.
+     * - 장면 입력은 대표(첫 제출자) 기준 buildTurnInput — 같은 구역이라 동료 상태·직전행동이 함께 담긴다.
+     * - 응답은 대표 플레이어에 실려 기존 responseHandler로 전달되고, 통합 서술의 동료 팬아웃은
+     *   TRPGGameManager.deliverNarrative(activeGroupRound)가 처리한다.
+     * - 참여 전원 ACTING 잠금(라운드 처리 중 중복 입력 차단), 완료·실패 시 전원 IDLE 복귀.
+     */
+    public boolean handleGroupAction(List<Player> actors, String combinedAction,
+                                     String gmSystemPrompt, String turnCtx) {
+        if (actors == null || actors.isEmpty()) return false;
+        Player rep = actors.get(0);
+        PlayerData repPd = state.getPlayer(rep);
+        if (repPd == null || repPd.isDead) return false;
+        final List<PlayerData> pds = new ArrayList<>();
+        for (Player a : actors) {
+            PlayerData p = state.getPlayer(a);
+            if (p != null) { p.turnState = TurnState.ACTING; pds.add(p); }
+        }
+        state.nextTurn();
+
+        String turnInput = state.buildTurnInput(rep, combinedAction);
+        if (turnCtx != null && !turnCtx.isEmpty()) turnInput = turnCtx + "\n\n" + turnInput;
+        if (preRollProvider != null) {                       // ★인라인 주사위 프리롤(#254)을 참여 전원 몫으로
+            StringBuilder pr = new StringBuilder();
+            for (Player a : actors) {
+                String s = preRollProvider.apply(a);
+                if (s != null && !s.isEmpty()) pr.append(s).append("\n");
+            }
+            if (pr.length() > 0) turnInput = pr.toString() + turnInput;
+        }
+
+        CompletableFuture<Void> future = ai.callGmAi(gmSystemPrompt, turnInput)
+            .thenAccept(response -> {
+                for (PlayerData p : pds) p.turnState = TurnState.IDLE;
+                pending.remove(rep.getUniqueId());
+                if (responseHandler != null) {
+                    responseHandler.accept(new GmResponse(rep, response));
+                }
+            })
+            .exceptionally(ex -> {
+                for (PlayerData p : pds) p.turnState = TurnState.IDLE;
+                pending.remove(rep.getUniqueId());
+                return null;
+            });
+        pending.put(rep.getUniqueId(), future);
+        return true;
+    }
+
     // ──────────────────────────────────────────────────────────────
     //  상태 조회
     // ──────────────────────────────────────────────────────────────

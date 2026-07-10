@@ -176,6 +176,24 @@ public class PlayerData {
     public int   baseLuk = 4;
     public int   baseSpr = 4;
 
+    /** ★임시 스탯 버프★ — 몇 턴간 스탯을 올리는 효과(약물·특성 등). 라이브 스탯(str/cha/luk/spr 또는 hp/san 최대)에
+     *  이미 반영돼 있고, 이 목록은 남은 턴·되돌릴 양을 추적한다(매 턴 turnsLeft 감소 → 0이면 amount만큼 되돌리고 제거).
+     *  세션 종료(리트라이·클리어)시 전부 되돌리고 비운다(휘발). Gson 세이브에 포함돼 이어하기(resume) 시 유지. */
+    public List<TempStatBuff> tempStatBuffs = new ArrayList<>();
+
+    /** 임시 스탯 버프 한 건 — stat(str/cha/luk/spr/hp/san) · amount(요청한 양, 표시·스칼라 되돌림용) · turnsLeft(남은 턴).
+     *  appliedDelta = hp/san의 ★실제 최대치 변화량★(하한1 클램프 반영) — 되돌릴 때 이 값으로 최대치를 복원하고 현재치는
+     *  같은 비율로 재스케일한다(비율 보존). 스칼라(str/cha/luk/spr)는 appliedDelta를 안 쓰고 amount를 그대로 뺀다. */
+    public static class TempStatBuff {
+        public String stat;
+        public int    amount;
+        public int    turnsLeft;
+        public int    appliedDelta;
+        public TempStatBuff() {}
+        public TempStatBuff(String stat, int amount, int turnsLeft) { this(stat, amount, turnsLeft, amount); }
+        public TempStatBuff(String stat, int amount, int turnsLeft, int appliedDelta) { this.stat = stat; this.amount = amount; this.turnsLeft = turnsLeft; this.appliedDelta = appliedDelta; }
+    }
+
     /** Gson 역직렬화 전용 no-arg 생성자. 필드 이니셜라이저를 실행시켜, 구버전 세이브에 없는
      *  신규 컬렉션 필드가 null(→ NPE)이 되지 않게 한다. (없으면 Gson이 Unsafe로 할당해 이니셜라이저를 건너뛴다.) */
     public PlayerData() {}
@@ -203,6 +221,7 @@ public class PlayerData {
         cha = baseCha;
         luk = baseLuk;
         spr = baseSpr;
+        tempStatBuffs.clear(); // ★임시 버프 휘발★ — 스탯을 base로 되돌리므로 남은 버프 목록도 비운다(재도전 = 처음부터).
         // 배역이 있으면 배역 나이로, 없으면 고유 나이로 복귀 (재도전 시 배역 나이 유지)
         age = (roleAge >= 0) ? roleAge : baseAge;
         isDead              = false;

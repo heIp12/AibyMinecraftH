@@ -16,7 +16,7 @@ description: >-
 빌드/컴파일이 안 되므로 아래 3단으로 검증한다. **커밋 전 반드시.**
 
 1. **브레이스 검사** (Java·HTML 공통 1차):
-   `python .claude/skills/aibyminecraft-trpg/tools/bracecheck.py <file>` → `OK 0/0/0` 이어야 함.
+   `python .Codex/skills/aibyminecraft-trpg/tools/bracecheck.py <file>` → `OK 0/0/0` 이어야 함.
    - Java에서 정규식-무관하므로 신뢰. **주의**: HTML 안의 JS 정규식 리터럴(`/\(([^)]*)\)/` 등)은
      오탐(MISMATCH)을 낼 수 있음 → 그 줄이 편집 대상이 아니고 아래 node --check가 통과하면 무시.
    - **★사각지대: 텍스트 블록 64KB 한도★** — bracecheck가 `OK`여도 ★단일 String 상수(텍스트 블록 `"""…"""`)가
@@ -27,16 +27,16 @@ description: >-
      조립 결과가 분할 전과 바이트 동일한지 파이썬으로 확인. (이 한도는 BASE_2·BASE_1에서 두 번 걸렸다.)
 2. **JS 문법** (log-viewer.html 수정 시): `<script>` 추출 후 `node --check`. → node가 최종 판정.
 3. **크로미엄 렌더** (뷰어 동작 검증): 헤드리스로 로그 주입해 실제 결과 확인.
-   - 편의 도구: `python .claude/skills/aibyminecraft-trpg/tools/viewer_verify.py --viewer AiByMinecraft/src/main/resources/log-viewer.html --log <a.jsonl> [--scenario <s.json>] [--probe <probe.js>]`
+   - 편의 도구: `python .Codex/skills/aibyminecraft-trpg/tools/viewer_verify.py --viewer AiByMinecraft/src/main/resources/log-viewer.html --log <a.jsonl> [--scenario <s.json>] [--probe <probe.js>]`
    - 크롬 바이너리: `/opt/pw-browsers/chromium_headless_shell-*/chrome-linux/headless_shell`
      (플래그: `--headless --no-sandbox --disable-gpu --virtual-time-budget=6000 --run-all-compositor-stages-before-draw --dump-dom`)
    - 뷰어 진입점 `loadLogText(name, text)`; 시나리오는 `SCENARIO=` 주입; 시점검사는 `curVP` + `visibleTo(e,vp)`/`filtered()`.
 
 ## 커밋·브랜치 규약
-- 개발 브랜치: `claude/optimistic-hamilton-jw2ayv` (지정된 경우 그 브랜치). `git push -u origin <branch>`.
+- 개발 브랜치: `Codex/optimistic-hamilton-jw2ayv` (지정된 경우 그 브랜치). `git push -u origin <branch>`.
 - 커밋 메시지: **한국어**, 첫 줄 요약("게임:"/"뷰어:"/"생성기:" 접두), 본문에 원인·수정·검증.
-- 푸터(커밋): `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>` + `Claude-Session: ...`.
-- 모델 식별자(claude-opus-4-8 등)를 커밋·PR·코드·주석에 넣지 말 것(채팅 답변에만).
+- 푸터(커밋): `Co-Authored-By: Codex Opus 4.8 <noreply@anthropic.com>` + `Codex-Session: ...`.
+- 모델 식별자(Codex-opus-4-8 등)를 커밋·PR·코드·주석에 넣지 말 것(채팅 답변에만).
 - PR은 사용자가 명시 요청할 때만.
 
 ## 아키텍처 지도 (AiByMinecraft/src/main/java/heipsys/)
@@ -89,7 +89,7 @@ description: >-
 - **괴담 이름(친숙 모드)**: 실존 괴담은 한국 통용 명칭 우선(빨간마스크(口裂け女) 등), 의역 금지,
   확신 없으면 원어(발음). 회차 시드 번호를 이름에 넣지 말 것.
 - **모델 티어**: GM=medium(sonnet), NPC=mini(haiku). 정밀 1회성은 callAssistantHiFi. 정밀 대형
-  설계는 사용자 승인 하에 Fable5(claude-fable-5) 다중에이전트 Workflow("울트라코드").
+  설계는 사용자 승인 하에 Fable5(Codex-fable-5) 다중에이전트 Workflow("울트라코드").
 
 ## ★ 환경·도구 제약 (효율 메모 — 꼭 확인)
 - **Workflow(다중에이전트 울트라코드)는 헤드리스 자율 실행에서 launch 실패**: 권한 스트림이 닫혀 1-에이전트
@@ -103,30 +103,6 @@ description: >-
   상시 갱신(효율 될 만한 지식은 항상 등록).
 
 ## 최근 추가된 아키텍처 사실 (회귀 방지)
-- **★실플레이(저사양 GPT GM) 감사 배치(2026-07, 2a72dc9~db99b33)★ — 약한 모델 방어 원칙**:
-  ▸**인기척 알림**: 수 반영 단일 문구(1=낯선 인기척·2=두 사람의·3+=여러), `[접근]` 주입에 반복금지.
-  ★이름 공개 기준 = `moved.everKnownNpcContacts`(그 플레이어 면식/연락처)★ — `npcLoggedZone`(전역 등장 로그)
-  쓰면 자율 NPC가 멀리서 행동만 해도 만난 적 없는 이름이 샌다(updatePlayerZone ~11972).
-  ▸**행운 마커는 엔진 소유**: GM이 쓴 `[행운!]/[큰 행운!]/[행운 조짐]/[불운 조짐]`은 stripTags가 제거.
-  실제 발동만 표기 — d7=showInlineDice 🍀, 무판정 우연=`pendingSerendipity`(computePreRollNote가 set→
-  onGmResponse 4c가 서술 뒤 1회 배출). GM 프롬프트도 "라벨은 시스템, GM은 결과만 서술".
-  ▸**STATE_UPDATE 대괄호/혼합/고아 스트립**(AiManager): 꺾쇠 전용 규칙이 `[STATE_UPDATE]…</STATE_UPDATE>`를
-  못 잡아 누출 → `[<]…STATE_UPDATE…[]>]` 쌍+고아 규칙 추가(WITNESS/ZONE_UPDATE와 동형).
-  ▸**NPC 대사 이중 서술**: 대화 답신(handleNpcDirectComm)의 GM 주입에도 "이미 전달됨—재인용 금지" 가드
-  (자율부 8671~와 대칭). ▸**NPC 전지 금지**: npcCorePrompt에 "직접 목격·전해들음·원래앎만 안다" 인지 한계.
-  ▸**임시 hp/san = 비율 보존**: applyGaugeBuff/revertGaugeBuff(최대치±amount 하한1, 현재치 같은 비율 스케일,
-  살아있으면 0 안 됨), TempStatBuff.appliedDelta 저장. flat 가감(영구 회복·손상·게이지 붕괴) 금지.
-  ▸**수면마비류 '자서 클리어'는 정상**(collapse_condition 충족) — 타임라인 사건 강제 발동 가드 넣지 말 것.
-- **★정보 경제 = '영감=연상'(2026-07, 3ddac6b — '해상도'로 회귀 금지)★**: 3축 분리 — 발견=탐색이 보장(스톤월링 금지) /
-  ★관찰 사실(이름·글자·날짜·모양)은 영감 무관 그대로 또렷이★("김하율이라는 이름이 적힌 이름표", 영감 1~4만 둔감) /
-  영감(SPR)은 ★이미 아는 단서끼리의 연상★만(10+ 때때로·모은 관련 단서 비례, 15+ 자주, "어디서 봤더라—" 물음형만).
-  ★전 구간 단정("~틀림없다")·해석·결론 금지 = 추리는 플레이어 몫.★ 구판 7티어 해상도 사다리(15+여야 실제 내용)는
-  저품질 모델 '긁힌 자국' 재탕 스톤월링 + 고영감 추리 대체의 원인으로 폐기(PB 힌트절제/능력치상세·TRPG actorStatGmContext).
-  생성기: 단서 중의성은 '내용 자체'에 설계(런타임이 흐려 주지 않음). 같은 커밋: 턴 절차 '매듭 점검'(소급 <CLEAR> 포함,
-  마무리 1~3응답), 주사위=인라인 기본+★굴리는 결정타만 2단계★(全판정 2응답 아님), 루프물 선언(개별 사망 정당·전원
-  몰살만 사전 암시 — ★단 아주 드문 은닉 치명 함정=즉사 허용★, 영감 레이더 사전회피/행운 생존판정/다음 회차 학습으로
-  공정, 희소·개연 필수·파티 전멸 함정 금지·luckSaves 없이 LUK생존은 영감/행운 판정으로), 사회 축(목격 반사회 행동→신고·평판·공권력, ★개연성 게이트: 전달 경로·무대 관할 정합★ — 무인
-  지역 경찰 소환 금지), true_role 톤 유출 가드('모르는 관찰자' 화법), luckSaves 유령 안전망 삭제(행운=굴림 보정만).
 - **★NPC 말투 2체계 + 개성 종결어미 30% 하드코딩(2026-07)★**: 말투는 ①**ending_style**(문장 끝 고정 어미=캐릭터
   시그니처, pass2 `restyleDialogue`가 ★거의 매 문장★ 렌더) ②**speech_style**(어조·리듬·필러, pass1 모델이 소화, 필러는
   ★드물게·위치 흩뜨림★) 둘로 갈린다. **버그수정(f77d7e0)**: `mentionsEnding()`이 '말끝'만 보고 `"말끝을 삼키듯"`(어조 흐림)을
@@ -260,7 +236,7 @@ description: >-
   (엔티티 name/type/rules/ai_context 키워드 매칭 — '소리·울림' 광의어는 오탐하니 좁게). tamperText는 핵심어·
   숫자 뒤집기 우선, 없으면 신호끊김(…). 물리형 괴담이 통신 변조하면 게이트 오탐 의심.
 - **소통수단(#177)**: 기본 4종은 GM 호출 없이 필드로 즉시 판정(applyCommMethodLocal). 새 수단 GM 판정은 #180.
-- **비용 기법 현황(참조본 zip 대조 결론)**: 우리는 이미 프롬프트 캐싱(시스템+히스토리 프리픽스 cache_control·1h TTL)·적응형 effort(output_config)·모델 티어·자동탐지·JsonSalvage(절단JSON 로컬복구, HEAD)를 갖춰 Claude 기준 참조본과 동등 이상. 참조본의 절감은 저가 제공사(MiMo/Cerebras) 전환+reasoning suffix가 실체 — Claude엔 무의미. 다중프로바이더는 열면 `AICraft.java` 한 곳(providerFor/modelName/applyReasoningEffort). ★비용 아닌 품질 갭★: 참조본은 히스토리 system-role을 Claude GM에 `[시스템 지침]`으로 전달, 우리는 Claude 경로에서 드롭(AiManager send Claude 분기) — 필요 시 REF 1766-1781 병합루프 이식.
+- **비용 기법 현황(참조본 zip 대조 결론)**: 우리는 이미 프롬프트 캐싱(시스템+히스토리 프리픽스 cache_control·1h TTL)·적응형 effort(output_config)·모델 티어·자동탐지·JsonSalvage(절단JSON 로컬복구, HEAD)를 갖춰 Codex 기준 참조본과 동등 이상. 참조본의 절감은 저가 제공사(MiMo/Cerebras) 전환+reasoning suffix가 실체 — Codex엔 무의미. 다중프로바이더는 열면 `AICraft.java` 한 곳(providerFor/modelName/applyReasoningEffort). ★비용 아닌 품질 갭★: 참조본은 히스토리 system-role을 Codex GM에 `[시스템 지침]`으로 전달, 우리는 Codex 경로에서 드롭(AiManager send Codex 분기) — 필요 시 REF 1766-1781 병합루프 이식.
 - **#231 비용 진단(실측 $17 vs 예측 $12, 40% 초과)**: ★구조는 정상★ — send()(AiManager 1111~)은 system 블록에 ★무조건★ cache_control(1h TTL), GM/NPC/entity 멀티턴은 cacheHistory=true로 마지막 메시지 프리픽스 캐싱. 단가(accumulateUsage 445): 캐시읽기 0.1× · ★캐시쓰기 1.25×(=읽기의 12.5배)★ · 출력 5×(입력 대비). ★중복 규칙 통합은 실효 없음★(베이스 캐시됨, 10줄/842줄≈0.1%). 유력 정체: (1)★캐시쓰기 churn★=1h TTL 만료(느린 인간 턴·세션 중단)·단발게임마다 40K 베이스 1.25× 재생성 / (2)출력 길이(5× 단가, GM 서술 과다) / (3)미캐시 단발호출. ★계측 추가(이번가동 전용, 영구저장·UsageStat 불변)★: accCacheRead/accCacheWrite/accCostOut + `usageDiagLines()` → /trpg status에 순수입력/캐시읽기/캐시쓰기/출력·비용비중·캐시히트% 표시. ★실플레이 1회 후 /trpg status로 정체 규명★(히트% 낮으면 churn / 출력비중 높으면 서술 트림 / 순수입력 크면 미캐시). luckSaves처럼 dead-code 아님 — send 경로 확인됨.
 - **injectGmSystem은 이번 턴 전용 버퍼**(AiManager, append-only 제거 완료 873e883): 주입 노트는 gmContext(영구 히스토리)에 안 쌓고 `pendingSystemNotes`(gmLock 보호)에 적재 → callGmAi 전송 스냅샷 후행에만 붙이고 즉시 clear. ★캐싱 유지★: 안정 프리픽스(gmContext)=순수 행동만 → 히스토리 캐싱 온전, 이번 턴 노트만 매 턴 새로 전송. 같은 "[태그]" 노트는 최신으로 교체(leadingTag+removeIf → 상반·중복 누적 방지). flush는 각 줄 '[시스템 주입]' 접두 유지 → 누출 스크럽(stripTags)이 GM 에코 제거(마음의 소리 #213 정합). callGmAiOnce는 단일메시지 문맥이라 flush 안 함(노트는 다음 callGmAi가 소비 — playDiceResult의 [판정 결과] 경로). clearAll/truncate/import 3곳 모두 버퍼도 정리. (예전엔 gmContext 직접 append → 스테이지 내내 stale 누적·토큰↑.) 감사 미이행(보고만·사용자 승인 대기): GM 베이스 매턴 전송(~40K토큰, 단 캐시됨)이라 DICE 2단계·SPR·NPC해결금지·교착 규칙 3~4중 중복이 #231 비용 관련 — 통합 시 절감(고위험). ★프롬프트 태그 예시는 원시 꺾쇠(`<TAG>`)로★ — HTML 이스케이프(`&lt;`)하면 GM이 escape 뱉어 파서 미스(DROP_NOTE 버그 e68c981).
 - **결정타: 자동성공 종결 + 실패 치명성**(사용자 설계, 회귀 주의): "핵심행동 완료→종결 판정 저굴림→드래그"의 근본 해법 = ★애초에 불필요한 굴림을 없애는 것★. (A) 자동성공 종결(PB:250): 결정타에도 "충분히 높으면 무판정 자동성공" 원칙이 똑같이 적용 — 관련 능력치가 난이도를 ★명백히 압도★하거나 정석 조건이 ★완전·명백 충족+저위협★이면 굴리지 말고 ★즉시 <CLEAR>★(운 저굴림으로 이긴 판 드래그 금지). '자동성공 금지'는 ★불확실한★ 결정타 굴림 스킵 금지지, 명백한 종결까지 굴리라는 뜻 아님. PB:251 2단계(DICE→다음응답 CLEAR)는 ★굴리는 결정타 한정★ — 무판정 종결이면 곧바로 <CLEAR>. PB:404 '시험'은 과정에서 치르는 것, 다 갖춘 종결을 굴림으로 재봉쇄 금지. ★엔진은 DICE 없는 CLEAR 정상 수락★(onGmResponse 2458 가드는 DICE+CLEAR 동시일 때만 CLEAR 보류) → 순수 프롬프트 정합. (B) 실패 치명성(PB:256 신규 + playDiceResult critHint): 전투·직접위협·자살강행에서 스스로 건 결정타가 ★실패(특히 대실패)★면 부상·후퇴로 무마 말고 ★체력 0=개별 사망까지★ 정당(hp_change 음수). 과보호 금지 — 사전암시 필요한 건 ★전원 몰살(배드엔딩)★뿐, 개별 사망은 즉시 정당(PB:296과 정합). ★엔진 사실★: luckSaves(2847 '위기구제 행운')는 ★정의만 되고 호출 안 됨=dead code★ → LUK 자동구제 미작동(이미 과보호 아님). checkHpCollapse(10441)=hp0 사망·hp1 기절, 클램프로 사망 막지 않음. 잔여 완화(교착방지): PB:282(진행 삭제 금지·2턴 결판)·424~427(단일행동 1회판정)·255(조건↑→dc↓)·워치독(~511-534 제한시각 강제종결).
