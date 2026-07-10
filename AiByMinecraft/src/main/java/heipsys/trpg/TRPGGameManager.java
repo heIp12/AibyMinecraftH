@@ -157,6 +157,11 @@ public class TRPGGameManager {
      *  예전엔 고정턴 분(minutesPerTurn 15~20)을 통째로 흘려 사소한 행동에도 20분씩 소모됐다 →
      *  DUR 누락은 '짧은 미상 행동'으로 보고 작은 값만 흘린다(minutesPerTurn가 더 작으면 그쪽을 따른다). */
     private static final int DUR_MISSING_MIN = 3;
+    /** ★#265 다홉 이동★ 홉 하나(인접 구역 통과)당 이동 소요(분). 구역 간 거리(분) 데이터가 아직 없어 균일 폴백 —
+     *  한 턴의 시간 예산(minutesPerTurn)을 이 값으로 나눈 만큼(최소 1홉) 한 번에 전진한다.
+     *  예산 15분·5분/홉이면 한 턴 3홉(=목적지가 3경유면 한 번에 도착), 5홉 여정이면 이번 턴 3홉·다음 턴 잔여.
+     *  (나중에 zones에 구역별 거리 필드를 넣으면 홉별 가변 비용으로 대체 가능.) */
+    private static final int MOVE_MINUTES_PER_HOP = 5;
     /** ★최소 나이★ 캐릭터·배역 나이는 이 값 미만이 되지 않는다(8세). 배역 age_range 하한·랜덤 생성·조정 모두에 적용. */
     private static final int MIN_AGE = 8;
 
@@ -11558,17 +11563,62 @@ public class TRPGGameManager {
         return next;
     }
 
-    /** 이동자 본인 턴 = 한 홉 전진 + 그 홉을 GM이 서술하도록 구동(morph 패턴). playerInput은 참고용. */
+    /** ★#265 다홉 이동★ 이동자 본인 턴 = 한 턴의 시간 예산(minutesPerTurn)이 허락하는 만큼 여러 홉을 전진하고, 그 경로 전체를
+     *  GM이 한 번에 서술하도록 구동(morph 패턴). 지나친 경유지는 조우 알림 없이(transitOnly) 상태만 갱신하고, 멈추는(도착) 홉만
+     *  전체 조우 처리한다. 목적지까지 시간이 모자라면 갈 수 있는 데까지만 가고 travelPath에 잔여를 남겨 다음 턴에 계속한다
+     *  (이동 트리거 유지). BLOCK_MOVE 롤백은 '마지막 홉'만 되돌린다. playerInput은 참고용. */
     private void travelTurn(Player p, PlayerData pd, String playerInput) {
-        String destName = pd.travelDest.isEmpty() ? "목적지" : zoneDisplayName(pd.travelDest); // 도착 홉에서 travelDest가 비워지기 전에 확보
-        String hop = advanceOneHop(pd);
-        if (hop == null) return; // 정지 사유는 advanceOneHop이 통지
+        // 상태 정지 사유(피격·기절·조종·동물·변신·사망) — advanceOneHop과 동일 가드.
+        if (pd == null || !pd.isTraveling() || pd.isDead
+            || !"normal".equals(pd.status) || pd.puppetRecoveryTurns != 0 || animalForm.contains(pd.uuid)
+            || morphTurns.getOrDefault(pd.uuid, 0) > 0 || stunTurns.getOrDefault(pd.uuid, 0) > 0) {
+            if (pd != null && pd.isTraveling()) {
+                pd.travelPath.clear(); pd.travelDest = "";
+                Player gp = Bukkit.getPlayer(pd.uuid);
+                if (gp != null && gp.isOnline()) gp.sendMessage("§7[이동 중단] 지금은 이동을 계속할 수 없습니다.");
+            }
+            return;
+        }
+        int turn = state.getCurrentTurn();
+        Integer last = lastHopTurn.get(pd.uuid);
+        if (last != null && last == turn) return;                               // 같은 턴 이중 전진 방지
+        String destName = pd.travelDest.isEmpty() ? "목적지" : zoneDisplayName(pd.travelDest); // 비워지기 전에 확보
+        int budget = Math.max(MOVE_MINUTES_PER_HOP, state.getMinutesPerTurn());  // 이 턴 이동 시간 예산(분)
+        int maxHops = Math.max(1, budget / MOVE_MINUTES_PER_HOP);                // 최소 1홉 보장(예산이 작아도 한 칸은 간다)
+        java.util.List<String> hops = new java.util.ArrayList<>();
+        String lastPrev = null, lastNext = null;
+        for (int i = 0; i < maxHops && pd.isTraveling(); i++) {
+            String prev = pd.zone, next = pd.travelPath.get(0);
+            boolean stopHop = (pd.travelPath.size() == 1) || (i == maxHops - 1); // 이번 턴 멈추는(도착 or 예산 소진) 홉만 전체 조우
+            updatePlayerZone(pd.name, next, "", false, false, !stopHop);        // 경유는 transitOnly=true(조우·쪽지 스킵)
+            if (!next.equals(pd.zone)) {                                        // 잠겨 못 들어감 → 그 앞에서 정지
+                pd.travelPath.clear(); pd.travelDest = "";
+                Player gp = Bukkit.getPlayer(pd.uuid);
+                if (gp != null && gp.isOnline()) gp.sendMessage("§c[이동 중단] 잠겨 있어 그 앞에서 멈췄습니다.");
+                break;
+            }
+            pd.travelPath.remove(0);
+            if (pd.travelPath.isEmpty()) pd.travelDest = "";
+            hops.add(next); lastPrev = prev; lastNext = next;
+        }
+        if (hops.isEmpty()) return;                                             // 한 홉도 못 감(정지 사유는 위에서 통지)
+        pendingHops.put(pd.uuid, new String[]{lastPrev, lastNext, String.valueOf(turn)}); // BLOCK_MOVE는 '마지막 홉'만 되돌린다
+        lastHopTurn.put(pd.uuid, turn);
         boolean arrived = pd.travelPath.isEmpty();
+        boolean multi = hops.size() > 1;
+        StringBuilder path = new StringBuilder();
+        for (int i = 0; i < hops.size(); i++) { if (i > 0) path.append(" → "); path.append(zoneDisplayName(hops.get(i))); }
         String msg = "[이동 중 → " + destName + "] "
-            + pd.gmDisplayName() + "이(가) " + zoneDisplayName(hop) + " 구역에 들어섰다"
-            + (arrived ? " — ★도착★. 경유지에서 한눈에 들어온 것을 짧게 요약하고 도착지를 묘사하라. ★도착지에 있는 인물(동료·NPC)이 보이면 반드시 언급하라★ — 빈 방인지 누가 있는지가 플레이어에겐 핵심 정보다."
-                       : ". 지나치며 ★한눈에 들어오는 것만★ 1~2문장으로, 장황하지 않게 서술하라(지나치는 구역에 인물이 있으면 스치듯 언급).")
-            + " 막아야 할 극적 상황일 때만 <BLOCK_MOVE player=\"" + pd.gmDisplayName() + "\" reason=\"…\"/>."
+            + pd.gmDisplayName() + "이(가) " + path + (multi ? " 순서로 지나" : " 구역에 들어서")
+            + (arrived
+                ? (multi ? " 목적지에 도착했다. ★지나온 경유지는 각 한 줄씩 아주 짧게★ 훑고 도착지를 묘사하라."
+                         : " — ★도착★. 도착지를 묘사하라.")
+                    + " ★도착지에 있는 인물(동료·NPC)이 보이면 반드시 언급하라★ — 빈 방인지 누가 있는지가 플레이어에겐 핵심 정보다."
+                : " 아직 이동 중이다(" + zoneDisplayName(lastNext) + "까지 왔고 목적지까진 더 남음, 다음 턴에 계속). "
+                    + (multi ? "지나친 구역들을 ★각 한 줄씩★" : "지나치며 ★한눈에 들어오는 것만★")
+                    + " 짧게, 장황하지 않게 훑어라(스치는 구역에 인물이 있으면 곁들여).")
+            + " 막아야 할 극적 상황일 때만 <BLOCK_MOVE player=\"" + pd.gmDisplayName() + "\" reason=\"…\"/>"
+            + "(막으면 마지막으로 지나려던 " + zoneDisplayName(lastNext) + " 진입만 취소되고 그 앞에 멈춘다)."
             + (playerInput == null || playerInput.isBlank() ? "" : " (플레이어 입력 '" + playerInput + "'은 참고만.)");
         turnMan.handleAction(p, msg, gmSystemPrompt);
     }
@@ -11634,6 +11684,12 @@ public class TRPGGameManager {
     }
 
     private void updatePlayerZone(String playerName, String newZone, String spot, boolean forced, boolean bypass) {
+        updatePlayerZone(playerName, newZone, spot, forced, bypass, false);
+    }
+    /** transitOnly=true(경유 홉, #265): 상태(구역·방문·잠금)만 갱신하고 ★조우 알림·쪽지 발견은 건너뛴다★ —
+     *  다홉 이동에서 지나치는 구역마다 [합류]/[접근] 주입·입퇴장 메시지가 쏟아져 GM 컨텍스트가 부풀고 스팸이 되는 것 방지.
+     *  실제로 멈추는(도착) 홉만 transitOnly=false로 전체 조우 처리한다. */
+    private void updatePlayerZone(String playerName, String newZone, String spot, boolean forced, boolean bypass, boolean transitOnly) {
         PlayerData moved = findAnyByName(playerName);
         if (moved == null || newZone == null || newZone.isBlank()) return;
         boolean firstAssignment = moved.zone.isEmpty();
@@ -11685,8 +11741,8 @@ public class TRPGGameManager {
         // ★실시간 뷰어 위치★: 첫 배치(스폰)가 아닌 실제 구역 이동만 기록 → 상태패널 '현재 위치' 갱신.
         if (zoneChanged && !firstAssignment && spawnedPlayers.contains(moved.uuid))
             gameLogger.logMove(moved.gmDisplayName(), zoneDisplayName(newZone), forced ? "강제" : (bypass ? "우회" : ""));
-        // ★편지 두고가기★: 새 구역에 들어오면 그곳에 남겨진 쪽지를 발견(엉뚱한 손·훼손본 포함).
-        if (zoneChanged && spawnedPlayers.contains(moved.uuid)) discoverDroppedNotes(moved, newZone);
+        // ★편지 두고가기★: 새 구역에 들어오면 그곳에 남겨진 쪽지를 발견(엉뚱한 손·훼손본 포함). 경유(transit)는 스치므로 제외.
+        if (zoneChanged && !transitOnly && spawnedPlayers.contains(moved.uuid)) discoverDroppedNotes(moved, newZone);
         // ★나가는 길 공개(지도·대분류 표시용)★: 새 구역에 들어서면 그곳에서 '보이는' 같은 대분류의 인접 구역만
         //   약도·지도에 공개한다(다른 realm·대분류는 제외 — #165 스포 방지). ★이동 가능 여부와는 별개★ —
         //   다른 대분류로 넘어가는 경계 인접 구역은 여기선 계속 숨기되(대분류 라벨·지도 미노출), 실제 이동은
@@ -11703,8 +11759,8 @@ public class TRPGGameManager {
             if (mpp != null && mpp.isOnline()) mapMan.giveStartMap(mpp);
         }
         // 조우 알림: 새로 들어온 위치의 인원에겐 '합류'(같은 구역 도착), 인접 구역 인원에겐 '접근'(저 멀리 다가옴)을
-        // GM 컨텍스트에 주입해 조우 서술 누락을 막는다(거리·규모 기반 지각 규칙과 연동).
-        if (zoneChanged && !firstAssignment && spawnedPlayers.contains(moved.uuid)) {
+        // GM 컨텍스트에 주입해 조우 서술 누락을 막는다(거리·규모 기반 지각 규칙과 연동). 경유 홉(transit, #265)은 건너뛴다.
+        if (zoneChanged && !firstAssignment && !transitOnly && spawnedPlayers.contains(moved.uuid)) {
             java.util.Set<String> adj = mapMan.getAdjacentZones(newZone);
             List<String> present = new ArrayList<>();
             List<String> nearby  = new ArrayList<>();
