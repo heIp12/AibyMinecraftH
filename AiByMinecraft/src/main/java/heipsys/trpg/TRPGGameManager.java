@@ -10721,7 +10721,12 @@ public class TRPGGameManager {
         grades.forEach((name, g) -> {
             PlayerData pd = findAnyByName(name); // 사망(자기희생)자도 성장 스텟 반영 — findByName은 사망자 제외
             if (pd == null) return;
-            int pts = endStatPoints(g);
+            int base = endStatPoints(g);
+            // ★약체 역전 성장(#56 강화)★: 약하게 시작할수록(스탯·HP/SAN 바닥·발동능력 없음) 매 스테이지 영구 스탯을
+            //   ★더★ 얻는다 → 강한 직업을 후반에 따라잡거나 앞지를 수 있다. 성장하면 약세가 줄어 자연히 수렴(무한증폭 없음).
+            //   등급 보상(base)만 있던 예전엔 강자·약자가 같은 등급이면 같은 성장이라 격차가 영영 안 좁혀졌다.
+            int wk = weaknessGrowthPoints(pd);
+            int pts = base + wk;
             if (pts <= 0) return;
             java.util.List<String> stats = (growth != null) ? growth.getOrDefault(name, java.util.List.of())
                                                             : java.util.List.<String>of();
@@ -10734,11 +10739,20 @@ public class TRPGGameManager {
             }
             Player p = Bukkit.getPlayer(pd.uuid);
             if (p != null && p.isOnline()) {
-                p.sendMessage("§a[성장] §f" + g + "급§a 평가 — 시나리오 중 행동으로 단련된 스텟 "
-                    + pts + " 획득: §f" + gained.toString().trim());
+                p.sendMessage("§a[성장] §f" + g + "급§a 평가" + (wk > 0 ? " §e+약체 역전 보정 " + wk + "§a" : "")
+                    + " — 시나리오 중 단련된 스텟 " + pts + " 획득: §f" + gained.toString().trim());
                 scoreMan.update(p, pd, state.getRoomNumber());
             }
         });
+    }
+
+    /** ★약체 역전 성장 포인트★ — 시작이 약할수록(스탯·HP/SAN 약세 + 발동능력 부재) 매 스테이지 영구 스탯을 더 준다.
+     *  0~2(평균 시작=0, 약체=1~2). 성장할수록 baseStat이 올라 computeWeaknessBonus가 줄어 자연 수렴한다. */
+    private int weaknessGrowthPoints(PlayerData pd) {
+        if (pd == null) return 0;
+        int w = computeWeaknessBonus(pd); // 0~5 (스탯 4종 + HP/SAN 최대치 약세)
+        if (pd.traits != null && pd.traits.stream().noneMatch(t -> t.active)) w += 1; // ★발동(액티브) 능력 없음도 약세★ — 성장 여지 +1
+        return Math.min(2, w / 2); // 평균(w~1)→0, 약체(w 4~6)→2
     }
 
     /** 종료 보상 스텟 총량: S=3, A=2, B=0~1, 그 이하 0. */
