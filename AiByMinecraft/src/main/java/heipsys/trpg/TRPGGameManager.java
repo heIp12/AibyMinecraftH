@@ -1071,12 +1071,16 @@ public class TRPGGameManager {
             JsonObject roleData = getRoleDataById(pd.roleId);
             if (roleData != null) applyRoleStats(pd, roleData);
             if (isImmediateSpawn(pd.roleId)) spawnedPlayers.add(pd.uuid);
+            // ★#6★ 데이터 초기화(소지 추적·부위치)는 ★오프라인 참가자에게도★ 적용한다 — 예전엔 online 블록 안이라
+            //   재도전 순간 접속이 끊겼던 참가자가 전판 구역·아이템을 그대로 이고 복귀하던 desync가 있었다.
+            pd.heldItemIds.clear(); pd.itemStates.clear(); pd.spot = "";
             Player rp = Bukkit.getPlayer(pd.uuid);
             if (rp != null && rp.isOnline()) {
-                pd.heldItemIds.clear(); pd.itemStates.clear(); pd.spot = ""; // 소지 추적·부위치 초기화(전판 아이템 desync 방지)
                 rp.getInventory().clear();                                   // 전판 아이템 물리 제거
-                giveRoleStartItems(rp, pd.roleId);                          // 배역 시작 구역 복원 + 시작 아이템 재지급
+                giveRoleStartItems(rp, pd.roleId);                          // 배역 시작 구역 복원 + 시작 아이템 재지급(물리)
                 scoreMan.update(rp, pd, state.getRoomNumber());
+            } else {
+                applyRoleStartZone(pd);                                      // ★#6★ 오프라인: 시작 구역만 데이터로 복원(전판 마지막 구역 잔류 방지·물리 지급은 미가능)
             }
         }
 
@@ -1862,6 +1866,27 @@ public class TRPGGameManager {
                 }
                 startDailyPhase();
             }));
+    }
+
+    /** ★#6★ 배역 시작 구역만 데이터로 복원(giveRoleStartItems의 zone 설정 부분과 동일) — 오프라인 참가자 재도전 시
+     *  물리 지급 없이 위치만 초기화해 전판 마지막 구역에 남지 않게 한다. */
+    private void applyRoleStartZone(PlayerData pd) {
+        if (pd == null) return;
+        JsonObject gdam = state.getGdamData();
+        if (gdam == null || !gdam.has("roles")) return;
+        for (var el : gdam.getAsJsonArray("roles")) {
+            JsonObject r = el.getAsJsonObject();
+            if (!r.has("role_id") || !r.get("role_id").getAsString().equals(pd.roleId)) continue;
+            if (r.has("zone")) {
+                String initZone = r.get("zone").getAsString();
+                pd.zone = initZone;
+                if (!initZone.isBlank()) {
+                    pd.visitedZones.add(initZone);
+                    pd.visitedZones.addAll(mapMan.getAdjacentZones(initZone));
+                }
+            }
+            return;
+        }
     }
 
     private void giveRoleStartItems(Player player, String roleId) {
@@ -5295,7 +5320,9 @@ public class TRPGGameManager {
         if (pd == null || pd.tempStatBuffs == null || pd.tempStatBuffs.isEmpty()) return;
         for (PlayerData.TempStatBuff b : pd.tempStatBuffs) revertTempStatBuff(pd, b);
         pd.tempStatBuffs.clear();
-        updateAllScoreboards();
+        // ★#7★ 여기서 updateAllScoreboards()를 부르지 않는다: 이 메서드는 세션 종료 정리(끝나기 직전, scoreMan.clear 직후)에만
+        //   호출되므로, 스코어보드를 다시 그리면 방금 지운 TRPG 스코어보드가 종료 순간에 되살아난다. 스탯 되돌림은 데이터만 하면 된다.
+        //   (혹시 이 메서드를 게임 도중에 재사용하게 되면, 그 호출부에서 직접 스코어보드를 갱신할 것.)
     }
 
     /** 부호 정수 파싱("+15"/"15"/"-10"). 실패 시 def. */

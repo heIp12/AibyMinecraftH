@@ -1488,8 +1488,12 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
     /** 중요 NPC 수 지시(월드 청크). 정확한 목표 수를 못박아 '항상 2명' 고정 편향을 깬다. */
     private static String criticalNpcDirective(int roomNumber) {
         int n = criticalNpcCount(roomNumber);
-        if (n == 0) return "\n\n## ★이번 회차 중요(critical:true) NPC = 0명★\n독립 AI로 도는 중요 NPC를 ★두지 마라(어떤 npcs 항목도 critical:true 금지)★ — 괴담과 일반(critical:false) NPC, 그리고 플레이어가 안 맡은 배역만으로 장면을 채운다.";
-        return "\n\n## ★이번 회차 중요(critical:true) NPC = 정확히 " + n + "명★\n독립 AI로 자율 행동하는 중요 NPC를 ★정확히 " + n + "명★ 두어라(더도 덜도 말고 " + n + "). 나머지 주변 인물은 critical:false(일반)로. '항상 2명'식 고정 배치를 피하고 반드시 이 수에 맞춰라.";
+        // ★#9 구조 정합★: 이 수는 '항상 2명' 편향을 깨는 목표치다. 단, 해결이 실제로 특정 인물에 걸린 구조면 0으로 비워
+        //   'NPC가 있어야 풀리는데 아무도 없는' 모순을 만들지 않도록, 방향(오해 소지 있는 npc_dependency 필드명 대신)에
+        //   무관하게 '해결이 인물에 걸렸는가'로 판단시키는 정합 문구를 함께 준다.
+        String reconcile = "\n★단, 구조 정합이 우선★: 이미 확정된 world_rules·구조상 ★사건의 해결·핵심 진행이 특정 인물(조력자·열쇠 역할·핵심 정보원·적대 주체)에 실제로 걸려 있으면★ 그 인물은 반드시 critical:true로 두어라 — 위 목표가 0이어도 ★최소 1명★은 둬서 '인물이 있어야 풀리는데 아무도 없는' 모순을 막아라. 반대로 순수 규칙·사물형이라 인물 없이 풀리면 0명도 정상이다.";
+        if (n == 0) return "\n\n## ★이번 회차 중요(critical:true) NPC 목표 = 0명★\n독립 AI로 도는 중요 NPC 없이 괴담·일반(critical:false) NPC·플레이어가 안 맡은 배역만으로 장면을 채우는 것을 기본 목표로 하라." + reconcile;
+        return "\n\n## ★이번 회차 중요(critical:true) NPC = 정확히 " + n + "명★\n독립 AI로 자율 행동하는 중요 NPC를 ★정확히 " + n + "명★ 두어라(더도 덜도 말고 " + n + "). 나머지 주변 인물은 critical:false(일반)로. '항상 2명'식 고정 배치를 피하고 이 수에 맞춰라." + reconcile;
     }
 
     /**
