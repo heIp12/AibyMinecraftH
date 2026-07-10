@@ -9818,9 +9818,11 @@ public class TRPGGameManager {
             npcObj = (!dialedByNumber && targetPd == null) ? findNpcByName(token) : null;
             // ★#220★ 이름 매칭 실패 + 관계 호칭(형/누나 등)이면 같은 구역의 '관계 정의된' NPC 1명으로 연결(모호하면 근처 발화).
             if (npcObj == null && !dialedByNumber && targetPd == null) npcObj = resolveHonorificNpc(senderPd, token);
-            // ★임시이름(A)★: 여전히 미매칭이면 — 이름 모르는 눈앞(같은 구역) NPC를 서술적 임시이름으로 부른 것으로 보고 유일 후보로 연결.
-            //   id로 라우팅 + 로그는 NPC 실명(canonical)이라 임시이름이 별도 인물로 갈라지지 않는다(뷰어 포함). 모호하면 근처 발화로.
-            if (npcObj == null && !dialedByNumber && targetPd == null) npcObj = resolveTempNameNpc(senderPd, token);
+            // ★근처 채팅 첫 단어 보존★: 예전엔 여기서 '이름 모르는 눈앞 NPC 임시이름(A)'으로 ★아무 첫 단어나★ 근처의 유일
+            //   NPC에 묶어 1:1로 돌렸는데(resolveTempNameNpc), 그 탓에 근처에 NPC가 하나라도 있으면 '@안녕하세요 여러분'의
+            //   첫 단어('안녕하세요')를 대상 토큰으로 오인해 잘라먹었다(제보: @근처채팅 시 무조건 첫 띄어쓰기 전이 사라짐).
+            //   → 알려진 이름·번호·관계호칭이 아니면 대상 지정을 하지 않는다. 미매칭은 아래에서 근처 발화(content 전체)로
+            //   처리되고, 같은 구역 NPC는 어차피 그 발화를 듣고 반응하므로(proximityBroadcast→notifyLocalWitnesses) 소통도 유지된다.
         }
 
         // ★대화 방식별 제약★: @전체(전자 발신)는 위에서 이미 처리됨. 근처 무명발화는 content 전체가 내용.
@@ -10232,35 +10234,10 @@ public class TRPGGameManager {
         return hits == 1 ? uniq : null;
     }
 
-    /** 임시이름 별칭(A): 플레이어가 이름 모르는 근처 NPC를 서술적 임시이름(@말없는 스님)으로 부른 것 → 그 NPC id에 고정. ★한 개체=한 명★. */
-    private final Map<UUID, Map<String, String>> tempNpcAliases = new HashMap<>();
-
-    /** @X가 알려진 이름/번호와 안 맞을 때 — 같은 구역(눈앞)의 이름 모를 critical NPC가 ★유일하면★ 그 NPC로 연결하고 임시이름을 그 id에 고정.
-     *  이후 같은 임시이름은 (NPC가 이동해도) 같은 개체로 라우팅되고, 로그·뷰어엔 NPC 실명(canonical)만 남아 두 명으로 갈라지지 않는다. 모호(0·2명+)면 근처 발화 폴백. */
-    private JsonObject resolveTempNameNpc(PlayerData senderPd, String token) {
-        if (token == null || token.isBlank() || senderPd == null) return null;
-        String key = token.trim().toLowerCase();
-        Map<String, String> aliases = tempNpcAliases.get(senderPd.uuid);
-        if (aliases != null) { // 이미 맺은 임시이름 → 그 NPC(이동해도 동일 개체)
-            String boundId = aliases.get(key);
-            if (boundId != null)
-                for (JsonObject npc : getCriticalNpcs())
-                    if (boundId.equalsIgnoreCase(getStr(npc, "id")) && isNpcCommunicable(npc)) return npc;
-        }
-        if (senderPd.zone == null || senderPd.zone.isEmpty()) return null; // 눈앞 판정 불가
-        JsonObject cand = null; int hits = 0;
-        for (JsonObject npc : getCriticalNpcs()) {
-            String nid = getStr(npc, "id");
-            String nz  = npcZones.getOrDefault(nid, getStr(npc, "zone"));
-            if (!senderPd.zone.equals(nz) || !isNpcCommunicable(npc)) continue; // 같은 구역(눈앞)·말 통하는 상대만
-            String nm = getStr(npc, "name");
-            if (!nm.isBlank() && nm.equalsIgnoreCase(key)) return null; // 실명과 같으면 findNpcByName이 처리했어야 — 임시이름 아님
-            cand = npc; hits++;
-        }
-        if (hits != 1) return null; // 0명(없음)·2명+(모호) → 근처 발화 폴백(오연결 방지)
-        tempNpcAliases.computeIfAbsent(senderPd.uuid, k -> new HashMap<>()).put(key, getStr(cand, "id")); // 별칭 고정
-        return cand;
-    }
+    // ★임시이름(A) 그리디 바인딩 제거★: 예전 resolveTempNameNpc는 알려진 이름·번호가 아닌 ★아무 첫 단어나★ 근처의 유일
+    //   critical NPC에 임시이름으로 묶어 1:1로 돌렸다. 그 탓에 근처에 NPC가 있으면 '@안녕하세요 여러분' 같은 근처 발화의
+    //   첫 단어를 대상 토큰으로 오인해 잘라먹었다(제보). 미지 NPC와의 소통은 근처 발화(같은 구역이면 어차피 들림)로 충분하고,
+    //   관계 호칭은 resolveHonorificNpc가 처리하므로, 근처 채팅 첫 단어 보존을 위해 이 그리디 대상 지정을 폐지한다.
 
     /**
      * ② 플레이어 → NPC 직접 심문.
