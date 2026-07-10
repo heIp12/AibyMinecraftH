@@ -324,3 +324,10 @@ description: >-
 - **재도전(performRetry) 초기화 계약**: resetToBase는 zone·소지·travelPath·busy를 ★안 지운다★
   (clearRoleData 소관, 재도전엔 미호출) → performRetry 루프가 직접 초기화해야 하며 ★오프라인 참가자
   포함★(데이터는 전원, 물리 인벤·아이템 지급은 온라인만 — 오프라인 물리 잔류는 알려진 한계).
+- **통신 변조 = 하이브리드 (내용 GM / 발동 엔진 / ★허용 설계-시 선언★)**: tamperTextNatural(callGmAiOnce)이 변조 문장을
+  AI 생성(하드코딩 tamperText는 폴백만). 발동 확률은 엔진(tamperChance·fatigue). ★개입 허용 채널은 entity.comm_interference
+  (생성기 선언: 음성/문서/신호/전자/정신/전체, 물리형은 [])를 entityInterferes가 ★최우선★으로 읽고, 없으면(구형) 키워드
+  스캔(entityTampersVoice/Written/… — entityScanText) 폴백★. 예전엔 이 허용을 런타임 키워드로만 판정해 #246류 오탐(물리형이
+  통신 변조) 반복 → 설계-시 선언으로 근원 해결. comms_dangerous(사용=위험)·comms_monitored(감청)와는 별개 축.
+- **★GdamGenerator 텍스트블록이 한도 근접(60KB/65.5KB)★**: GDAM_SYSTEM_PROMPT_2에 스키마 필드 추가 시 여유 ~5.5KB뿐.
+  더 늘리면 3분할 필요(64KB UTF-8 상수 한도). 추가 전 위 텍스트블록 크기 스크립트로 확인할 것.

@@ -11127,9 +11127,39 @@ public class TRPGGameManager {
         for (String kw : WRITTEN_MEDIA_KEYWORDS)    if (s.contains(kw.toLowerCase())) return "text";
         return fallbackWritten ? "text" : "voice";
     }
-    /** 이 모달리티에 괴담이 타입상 개입(엿듣기·변조)할 수 있는가. 전자는 전파형 또는 (전자음성이면) 음성형도 포함. */
+    /** ★설계-시 GM(생성기) 선언 우선★ — entity.comm_interference에 이 괴담이 개입할 통신 채널이 명시돼 있으면 그걸
+     *  authoritative로 쓴다(괴담을 통째로 이해한 생성기의 판단 > 런타임 키워드 스캔의 오탐/누락). 필드가 아예 없으면(구형
+     *  .gdam·미선언) null을 돌려주고, 호출부가 기존 키워드 스캔으로 폴백한다. '전체/all/언어/전방위'는 모든 채널 true,
+     *  빈 배열은 '명시적으로 어느 채널도 개입 안 함'(물리형)이라 false. */
+    private Boolean entityDeclaredInterference(String modality) {
+        JsonObject g = state.getGdamData();
+        if (g == null || !g.has("entity") || !g.get("entity").isJsonObject()) return null;
+        JsonObject e = g.getAsJsonObject("entity");
+        if (!e.has("comm_interference") || !e.get("comm_interference").isJsonArray()) return null; // 미선언 → 키워드 폴백
+        String m = (modality == null ? "voice" : modality);
+        for (JsonElement el : e.getAsJsonArray("comm_interference")) {
+            if (el == null || el.isJsonNull()) continue;
+            String v = el.getAsString().trim().toLowerCase();
+            if (v.isEmpty()) continue;
+            if (v.contains("전체") || v.contains("all") || v.contains("모두") || v.contains("언어") || v.contains("전방위")) return true;
+            switch (m) {
+                case "signal":     if (v.contains("신호")||v.contains("시각")||v.contains("봉화")||v.contains("signal")) return true; break;
+                // 전자 채널엔 전자·전파형 + (전화선을 타는) 음성형도 개입 — 기존 entityTampersVoice 포함 의미 보존.
+                case "electronic": if (v.contains("전자")||v.contains("전파")||v.contains("디지털")||v.contains("음성")||v.contains("목소리")||v.contains("electronic")||v.contains("voice")) return true; break;
+                case "psychic":    if (v.contains("정신")||v.contains("사념")||v.contains("텔레파시")||v.contains("psychic")) return true; break;
+                case "text":       if (v.contains("문서")||v.contains("글")||v.contains("필담")||v.contains("서면")||v.contains("기록")||v.contains("text")||v.contains("written")) return true; break;
+                case "voice": default: if (v.contains("음성")||v.contains("목소리")||v.contains("소리")||v.contains("voice")) return true; break;
+            }
+        }
+        return false; // 배열은 있으나 이 채널은 없음 = 개입 안 함
+    }
+
+    /** 이 모달리티에 괴담이 개입(엿듣기·변조)할 수 있는가. ★entity.comm_interference 선언이 있으면 그것 우선★,
+     *  없으면 타입 키워드 스캔 폴백(전자는 전파형 또는 전자음성이면 음성형도 포함). */
     private boolean entityInterferes(String modality) {
-        switch (modality == null ? "voice" : modality) {
+        Boolean declared = entityDeclaredInterference(modality);
+        if (declared != null) return declared;                 // ★설계-시 선언 우선(런타임 키워드 스캔 오탐/누락 대체)
+        switch (modality == null ? "voice" : modality) {       // 폴백: 구형 .gdam·미선언
             case "signal":     return entityTampersSignal();
             case "electronic": return entityTampersElectronic() || entityTampersVoice();
             case "psychic":    return entityTampersPsychic();
