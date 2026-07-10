@@ -231,7 +231,7 @@ public class PlayerData {
         puppetRecoveryTurns = 0;
         puppetTotalTurns = 0;
         puppetGraceTurns = 0;
-        declaredCommMethod  = "";
+        declaredCommMethod  = "voice"; // ★#243★ 기본은 대화(voice) — ""(자동)로 비우면 소리위험 시 자동 필담으로 떨어져 '연락이 계속 문자로'가 된다(#243이 없앤 '자동' 부활 방지).
         pendingCommMethod   = "";
         spot                = "";
         turnState          = TurnState.IDLE;

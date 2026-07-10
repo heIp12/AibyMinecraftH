@@ -96,6 +96,11 @@ public class GameStateManager {
     private int    anger       = 0;   // 0~100
     private String angerTarget = "";  // 분노 표적(캐릭터/계정명) — 규칙파괴 살해 대상
 
+    // ★통신 변조 스위치★: GM이 극적 시점에 괴담의 통신 변조를 직접 켜고 끈다(<COMM_TAMPER>). 0=auto(엔진 규칙:
+    //  감청테마는 처음부터·그 외는 위협 격상 후) / 1=GM 강제 ON / -1=GM 강제 OFF. 유능한 GM은 이 스위치로 극적 타이밍을
+    //  잡고, 약한 GM은 태그를 안 써 자동(auto)으로 떨어진다 — 모델 티어를 따로 판별하지 않아도 되는 이유.
+    private int    commTamperMode = 0;
+
     // ★#266 엔진 계약 A — NPC/괴담 '종결 상태' 영속(압축 생존)★: 제압·결박·봉인·격퇴·사망·퇴장처럼 한 번 매듭지어진
     //  인물의 무력화 상태를 이름→상태로 durable 저장한다. 매 턴 GM 문맥에 재주입하므로(threatAnger처럼) 대화 압축으로
     //  '피에르 제압됨'이 사라져도 GM이 그를 다시 멀쩡히 싸우게 하지 않는다. 값은 짧은 한국어(예: "제압(창고에 결박)").
@@ -142,7 +147,7 @@ public class GameStateManager {
         npcDispositions.clear();   // ★#266★ 새 판/스테이지/재도전 = 새 등장인물 → 종결 상태도 초기화
         eventLog.clear();
         campaignLog.clear(); // 새 게임 시작 — 캠페인(전 스테이지) 로그도 초기화
-        threat = 0; anger = 0; angerTarget = ""; // 괴담 세력 게이지 초기화
+        threat = 0; anger = 0; angerTarget = ""; commTamperMode = 0; // 괴담 세력 게이지 + 통신변조 스위치 초기화
         loadTimelineConfig(gdam);
     }
 
@@ -167,7 +172,7 @@ public class GameStateManager {
         npcDispositions.clear();   // ★#266★ 새 판/스테이지/재도전 = 새 등장인물 → 종결 상태도 초기화
         archiveStageLog();   // 스테이지 전환 — 이번 스테이지 로그를 캠페인 로그에 보관 후 비움
         eventLog.clear();
-        threat = 0; anger = 0; angerTarget = ""; // 새 스테이지 — 세력 게이지 초기화
+        threat = 0; anger = 0; angerTarget = ""; commTamperMode = 0; // 새 스테이지 — 세력 게이지 + 통신변조 스위치 초기화
         loadTimelineConfig(gdam);
     }
 
@@ -186,7 +191,7 @@ public class GameStateManager {
         archiveStageLog();   // 재도전 — 이번 시도 로그도 캠페인 로그에 보관
         eventLog.clear();
         // 괴담이 지난 시도를 기억해 더 사납게 시작 — 위협도 시작 바닥을 오염도에서 시드(분노는 초기화).
-        threat = retryThreatFloor(); anger = 0; angerTarget = "";
+        threat = retryThreatFloor(); anger = 0; angerTarget = ""; commTamperMode = 0; // 재도전 — 통신변조 스위치도 auto로
         loadTimelineConfig(gdamData);
         // 재도전 시에도 영구(비배역) 특성의 스탯 보정을 복원한다 — clearRoleData(다음 스테이지)와 동일한 불변식.
         // (resetToBase만 하면 클리어 보상 특성의 str/hp 등이 재도전마다 사라진다.)
@@ -222,6 +227,7 @@ public class GameStateManager {
         o.addProperty("threat", threat);
         o.addProperty("anger", anger);
         o.addProperty("angerTarget", angerTarget);
+        o.addProperty("commTamperMode", commTamperMode);
         if (gdamData != null) o.add("gdam", gdamData);
         o.add("firedEvents", SNAP_GSON.toJsonTree(firedEvents));
         o.add("blockedEvents", SNAP_GSON.toJsonTree(blockedEvents));
@@ -270,6 +276,7 @@ public class GameStateManager {
         threat            = snapI(o, "threat", 0);
         anger             = snapI(o, "anger", 0);
         angerTarget       = snapS(o, "angerTarget", "");
+        commTamperMode    = snapI(o, "commTamperMode", 0);
         if (o.has("gdam") && o.get("gdam").isJsonObject()) gdamData = o.getAsJsonObject("gdam");
         snapStrInto(firedEvents, o, "firedEvents");
         snapStrInto(blockedEvents, o, "blockedEvents");
@@ -346,6 +353,9 @@ public class GameStateManager {
     }
     public void setThreat(int v) { threat = Math.max(0, Math.min(100, v)); }
     public void setAnger(int v)  { anger  = Math.max(0, Math.min(100, v)); if (anger <= 0) angerTarget = ""; }
+    /** 통신 변조 스위치(GM <COMM_TAMPER>): 0=auto / 1=강제ON / -1=강제OFF. */
+    public int  getCommTamperMode()      { return commTamperMode; }
+    public void setCommTamperMode(int m) { commTamperMode = (m > 0) ? 1 : (m < 0) ? -1 : 0; }
     /** 턴당 분노 자연 감쇠(직접 도발이 없을 때 호출). 반환=적용 후 값. */
     public int decayAnger(int amount) { anger = Math.max(0, anger - Math.max(0, amount)); if (anger == 0) angerTarget = ""; return anger; }
     /** 재도전 시 위협도 시작 바닥 — 괴담이 지난 시도를 기억해 더 사납게 시작(오염도 비례, 상한 40). */

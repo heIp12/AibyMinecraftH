@@ -481,7 +481,8 @@ type 값 규칙: "written_book"=책/일기/문서류, "paper"=쪽지/메모, "ma
 - notes: 위로 표현 못 한 기타 자연 제약을 짧게(예: "정전으로 조명 제한", "무전기 배터리 잔량 부족").
 - gated_zones: (선택) 장비·인증 잠금이 있는 구역 배열. 각 항목: {zone: "zone_id", requires: "필요 조건(장비명/인증)", bypass: "물리 우회 방법(없으면 생략)", bypass_dc: DC숫자(생략 가능), remote_bypass: true/false(원격으로 우회·해제 가능한가. 현장 필수면 false — 급박 구간에 이동만으로 기회 전소 금지·이동 비용 명시)}.
   ★★ gated_zones[].zone ID 절대 규칙: zone 값은 반드시 이 시나리오 zones[*].zone_id 목록에 실제로 존재하는 id를 그대로 복사한다. "zone_엘리베이터홀"처럼 존 이름에 "zone_" 접두어를 붙이거나 임의 id를 지어내면 런타임에서 '[무시: 알 수 없는 구역]' 오류가 발생해 잠금이 영구 무효가 된다.
-  ★★ 퍼즐 이중 잠금 방지 (절대 금지 — 억지 왕복 차단): 하나의 문(한 zone_id)에 잠금 수단을 두 개 이상 겹치지 마라. 전형적 금지 패턴: gated_zones[].requires(카드키)와 key_items[*].item_params.unlocks(전력/아이템 해제)가 같은 zone을 동시에 잠그는 것. 문이 전력으로 열린다면 전력만으로, 카드키가 필요하면 처음부터 카드키만으로 설계하라. 규칙: 하나의 zone에 (a) gated_zones[].requires와 (b) key_items[*].item_params.unlocks가 모두 설정되어 있으면 둘 중 하나를 반드시 제거하라.
+  ★★ 잠긴 문 설계 = '잠금 표시 1개 + 그 문을 여는 열쇠 1개'로 ★짝을 맞춰라★ (엔진 규약): 하나의 잠긴 문은 반드시 ★gated_zones[] 엔트리 1개(그 문이 잠겼다는 표시 + 연출용 requires 텍스트) + 그 문을 여는 열쇠 아이템 1개(key_items[*].item_params.unlocks = 그 zone_id)★ 두 가지가 ★함께★ 있어야 정상 작동한다. 이 둘은 '한 자물쇠의 두 짝'이지 이중 잠금이 아니다 — ★어느 하나도 빼지 마라★(gated_zones만 있고 여는 열쇠가 없으면 영영 못 여는 문, 열쇠만 있고 gated_zones가 없으면 잠기지도 않은 문이라 열쇠가 무용지물). requires에 적은 물건과 그 zone을 여는 unlocks 열쇠는 ★반드시 같은 것★을 가리켜라(requires="카드키"면 그 카드키 아이템의 item_params.unlocks가 이 zone_id).
+  ★★ 진짜 금지 = 억지 왕복(한 문에 서로 다른 조건을 여러 개 요구): 하나의 문을 열려고 ★서로 다른 여러 아이템·조건을 모두★ 요구하지 마라(예: 카드키 AND 별도의 전력복구 AND 암호까지 다 있어야 열림). 한 문을 ★여는 열쇠는 1종(unlocks)★뿐이다. bypass(환기구 기어들기 등 물리 우회)는 열쇠의 ★대체가 아니라 선택적 '추가 개인 루트'★다 — 통과한 1명만 들어가고 문은 계속 잠겨 있으니, bypass를 달아도 ★여는 열쇠는 반드시 따로 있어야★ 한다. 여러 관문을 순서대로 통과시키고 싶으면 문을 여러 개(zone 여러 개)로 나눠 각 문에 열쇠 하나씩 배치하라(한 문에 겹쳐 쌓지 말 것).
 - notes (과거 시대 + phone_usable=false): 대체 통신 수단명·도달 소요 시간·발각 위험 수준을 반드시 명시한다(예: "전령은 도보 2턴, 발각 위험 중"). NPC가 수신하는 대체통신도 동일한 도달 소요·발각 위험을 따른다(대면 즉시 전달과 구분). comms_monitored 대신 이 notes 기준을 적용한다.
 - notes (미래 + 복수 통신 채널): "감청 대상 채널 = [목록], 안전 채널 = [목록]"을 명시한다. 안전 채널이 명시되면 그 채널로 핵심 정보를 안전하게 전달하는 공략을 허용한다.
 - 제약은 플레이어 자유를 부수는 장치가 아니라, '이 괴담을 왜 벗어날 수 없는가'를 설득력 있게 만드는 장치다.
@@ -600,6 +601,7 @@ critical NPC는 한자리 고정이 아니다 — 메인/사이드 사건에 참
     "forbidden_word": "",   // ★금지워드형 괴담일 때만 채운다. 그 외 유형이면 반드시 빈 문자열 "". "없음"/"해당 없음"/"무" 같은 표기 절대 금지(시스템이 글자 그대로 금지어로 인식해 오발). ★매칭이 '공백제거 후 부분문자열'이라 흔한 말이면 평범한 입력이 통째로 파국으로 오발★: '없음/있음/맞다/믿음/마음/생각/사람/시간/이름' 등 문법어·흔한 추상명사 절대 금지. 반드시 그 괴담 특유의 구체적 명사·고유명(2글자 이상)으로.
     "hidden_rules": [],
     "perception": [],
+    "comm_interference": [],   // ★이 괴담이 실제로 가로채·변조·엿들을 수 있는 통신 채널만 나열★ — "음성"/"문서"/"신호"/"전자"/"정신" 중에서, 언어·전방위형이면 "전체". ★물리·환경·저주·심리·소리·시야·이동형처럼 통신과 무관한 괴담은 반드시 빈 배열 []★(런타임이 이 선언을 ★최우선★으로 써서 변조 여부를 정한다 — 비우면 통신 변조를 아예 안 한다). 예: 전화선/무전 괴담 ["음성","전자"] · 거울·응시 괴담 ["신호"] · 저주받은 편지 괴담 ["문서"] · 이름을 부르는 언어형 ["전체"] · SCP-049 같은 물리 접촉형 [].
     "independent_ai": true,
     "can_impersonate": false,
     "ai_context": {
@@ -833,7 +835,7 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
 5. ★정답 경로 실물 연결(orphan 금지)★: collapse_condition을 이루는 authored 정답 아이템·단서·NPC 지식이 ★실제 획득·사용 경로★(어디서 어떻게 손에 넣고 무엇에 쓰는지)에 물려 있는가. 정답 자료가 놀고 GM이 즉흥 사실로 대체하게 두지 마라 — 정답은 배치한 그 자료를 통해 도달하게.
 6. ★collapse_condition 자기정합★: entity.weakness/solution과 논리적으로 일치하고, ①우회로(엉뚱한 방법으로 손쉽게 충족되는 구멍)나 ②순환(정의상 불가능한 것을 요구 — '이름 잃은 넋'을 '이름 돌려주기'로 풀라는 식)이 없는가. 소환·발동 규칙과 파훼 규칙이 서로 어긋나지 않게(부른 자만 표적인데 아무나 자처하면 클리어되는 구멍 금지).
 7. ★내부 토큰 잔존 금지★: 어떤 텍스트 필드(note·description·prologue 등)에도 role_A/zone_B/npc_C 같은 ★내부 스키마 토큰★이 남아 있지 않게(플레이어에게 노출된다). 사람이 읽을 이름·표시명으로 치환하라.
-8. ★zone ID 일관성 + 이중 잠금 검사★: (a) gated_zones[].zone과 key_items[*].item_params.unlocks에 쓴 모든 zone_id가 zones[*].zone_id 목록에 실제로 있는가 — 없으면 '[무시: 알 수 없는 구역]' 오류로 잠금이 작동하지 않는다. 아이템의 location과 clues의 위치 명칭도 zones의 실제 이름과 일치하는지 확인하라. (b) 같은 zone에 gated_zones[].requires(카드키)와 key_items[*].item_params.unlocks(전력·아이템 해제)가 동시에 설정된 이중 잠금이 없는가 — 있으면 둘 중 하나를 제거하라.
+8. ★zone ID 일관성 + 문·열쇠 짝 검사★: (a) gated_zones[].zone과 key_items[*].item_params.unlocks에 쓴 모든 zone_id가 zones[*].zone_id 목록에 실제로 있는가 — 없으면 '[무시: 알 수 없는 구역]' 오류로 잠금이 작동하지 않는다. 아이템의 location과 clues의 위치 명칭도 zones의 실제 이름과 일치하는지 확인하라. (b) ★모든 gated_zones[] 항목에 그 zone을 여는 열쇠(key_items[*].item_params.unlocks = 그 zone_id)가 하나 있는가★ — 열쇠 없는 잠금은 영영 못 여는 문, 대응 gated_zones 없는 unlocks는 무용지물 열쇠다(짝이 빠졌으면 채워 넣어라 — 잠금·열쇠가 함께 있는 것은 이중 잠금이 아니라 정상이다). (c) 한 문(한 zone)에 ★서로 다른 여러 조건★(예: 카드키 AND 전력복구 AND 암호)을 겹쳐 요구하고 있지 않은가 — 여는 방법은 문 하나에 하나만.
 """;
 
     // 두 조각을 런타임에 결합('+'는 상수 폴딩되어 64KB 단일 상수가 되므로 String.join 사용).
@@ -1487,8 +1489,14 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
     /** 중요 NPC 수 지시(월드 청크). 정확한 목표 수를 못박아 '항상 2명' 고정 편향을 깬다. */
     private static String criticalNpcDirective(int roomNumber) {
         int n = criticalNpcCount(roomNumber);
-        if (n == 0) return "\n\n## ★이번 회차 중요(critical:true) NPC = 0명★\n독립 AI로 도는 중요 NPC를 ★두지 마라(어떤 npcs 항목도 critical:true 금지)★ — 괴담과 일반(critical:false) NPC, 그리고 플레이어가 안 맡은 배역만으로 장면을 채운다.";
-        return "\n\n## ★이번 회차 중요(critical:true) NPC = 정확히 " + n + "명★\n독립 AI로 자율 행동하는 중요 NPC를 ★정확히 " + n + "명★ 두어라(더도 덜도 말고 " + n + "). 나머지 주변 인물은 critical:false(일반)로. '항상 2명'식 고정 배치를 피하고 반드시 이 수에 맞춰라.";
+        // ★#9 구조 정합★: 이 수는 '항상 2명' 편향을 깨는 목표치다. 단, 해결이 실제로 특정 인물에 걸린 구조에서 0이 나와
+        //   'NPC가 있어야 풀리는데 아무도 없는' 모순이 되지 않게, 분기별로 다른 정합 문구를 붙인다(오해 소지 있는
+        //   npc_dependency 필드명 대신 '해결이 인물에 걸렸는가'로 판단시킨다). ★n>0 분기에 '0명도 정상' 류 문구를 붙이면
+        //   '정확히 N명'과 정면 모순이 되니 절대 합치지 말 것(분기별 문구 분리가 이 메서드의 핵심).★
+        if (n == 0) return "\n\n## ★이번 회차 중요(critical:true) NPC 목표 = 0명★\n독립 AI로 도는 중요 NPC 없이 괴담·일반(critical:false) NPC·플레이어가 안 맡은 배역만으로 장면을 채우는 것을 기본 목표로 하라."
+            + "\n★단, 구조 정합이 우선★: 이미 확정된 world_rules·구조상 ★사건의 해결·핵심 진행이 특정 인물(조력자·열쇠 역할·핵심 정보원·적대 주체)에 실제로 걸려 있으면★ 그 인물만 ★예외적으로 1명★ critical:true로 두어라('인물이 있어야 풀리는데 아무도 없는' 모순 방지). 순수 규칙·사물형이라 인물 없이 풀리면 0명 그대로 간다.";
+        return "\n\n## ★이번 회차 중요(critical:true) NPC = 정확히 " + n + "명★\n독립 AI로 자율 행동하는 중요 NPC를 ★정확히 " + n + "명★ 두어라(더도 덜도 말고 " + n + "). 나머지 주변 인물은 critical:false(일반)로. '항상 2명'식 고정 배치를 피하고 이 수에 맞춰라."
+            + "\n★구조 정합★: 사건의 해결·핵심 진행이 특정 인물(조력자·열쇠 역할·핵심 정보원·적대 주체)에 걸려 있으면 ★그 인물이 이 " + n + "명 안에 반드시 포함★되게 하라(수는 그대로 " + n + "명 — 늘리거나 줄이지 마라).";
     }
 
     /**
@@ -1583,12 +1591,15 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
                     }
                 }
                 recordNames(usedNames);
-                String itemCtx = contextJson(core, roles, "entity");
+                // ★constraints 포함★ — 아이템 청크가 gated_zones(잠긴 문 목록)를 봐야 '문마다 여는 열쇠 짝'을 실제로
+                //   만들 수 있다(예전엔 entity만 줘서 어느 문이 잠겼는지 모른 채 열쇠를 짓게 했다 — 짝 규칙이 공염불).
+                String itemCtx = contextJson(core, roles, "entity", "constraints");
 
                 String itemsPrompt = head
                     + "## 이미 확정된 내용(참고, 일관성 유지)\n" + itemCtx + "\n\n"
                     + "위 스키마의 key_items 배열만 JSON으로 출력하라. 형식: {\"key_items\":[ ... ]}\n"
-                    + "글이 적힌 아이템(책·쪽지·지도)은 content 본문을 반드시 채운다. 다른 최상위 필드는 출력하지 마라.";
+                    + "글이 적힌 아이템(책·쪽지·지도)은 content 본문을 반드시 채운다. 다른 최상위 필드는 출력하지 마라.\n"
+                    + "★잠금-열쇠 짝(필수)★: 위 constraints.gated_zones의 ★각 항목마다★ 그 문을 여는 열쇠 1개를 key_items에 반드시 포함하라 — item_params.unlocks에 그 항목의 zone 값을 ★그대로 복사★한다(열쇠 없는 잠금은 영영 못 여는 문이 된다). 반대로 gated_zones에 없는 zone을 여는 unlocks 열쇠는 만들지 마라(잠기지 않은 문의 열쇠 = 무용지물).";
 
                 return aiManager.callGmAiLarge(GDAM_SYSTEM_PROMPT, itemsPrompt).thenCompose(itemsRaw -> {
                     JsonArray items = tryParseArray(itemsRaw, "key_items");
@@ -1605,6 +1616,7 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
                         logger.warning("[gdam] 분할 결과 검증 실패 → 단일 생성 폴백");
                         return generate(roomNumber, 0, concept, progress);
                     }
+                    repairZoneRefs(core); // ★#2★ 분할(기본) 경로에도 zone 참조 자동 보정 — 예전엔 레거시 단일생성 경로에서만 돌아 기본 생성엔 미적용이었다.
                     try {
 						save(seed, core);
 					} catch (Exception e) {

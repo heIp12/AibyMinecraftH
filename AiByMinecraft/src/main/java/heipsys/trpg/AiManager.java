@@ -759,6 +759,20 @@ public class AiManager {
         });
     }
 
+    /** 저급(assistant/미니) 티어 1회성 호출 — ★커스텀 시스템 프롬프트★를 쓴다(통신 변조처럼 단순·즉시·값싼 변환용).
+     *  callGmAiOnce의 저티어 형제: 변조 리라이트는 단순 변환이라 미니 모델로 충분하고, 즉시 통신에 GM 호출 지연을
+     *  얹지 않으며 비용도 크게 준다. 실패 시 "§c[보조 AI 오류]"를 돌려주니 호출부가 폴백을 태울 수 있다. */
+    public CompletableFuture<String> callAssistantOnce(String systemPrompt, String userMessage) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                List<JsonObject> single = List.of(msg("user", userMessage));
+                return send(assistantModel(), systemPrompt, single, ASST_MAX_TOKENS, assistantEffort);
+            } catch (Exception e) {
+                return "§c[보조 AI 오류] " + e.getMessage();
+            }
+        });
+    }
+
     /**
      * 특성(능력) 생성용 1회성 호출 — ★GM 티어(gmModel)로 격상★. assistantModel(mini)은 이름을 단어 짜깁기하고
      * name·설명·효과가 따로 놀았다(교차검증 지적). 특성은 세션당 몇 번(캐릭터·클리어 보상·배역)만 생성되고
@@ -1037,6 +1051,7 @@ public class AiManager {
             .replaceAll("(?i)</?ANGER\\b[^>]*>", "")
             .replaceAll("(?i)</?DANGER\\b[^>]*>", "")   // GPT 등이 <THREAT> 대신 내는 <DANGER delta.../> 변형 누출 차단
             .replaceAll("(?i)</?NPC_STATE\\b[^>]*>", "") // ★#266★ NPC 종결 상태 태그(제압·결박·봉인…) — GM 전용, 서술 누출 차단
+            .replaceAll("(?i)</?COMM_TAMPER\\b[^>]*>", "") // ★통신 변조 스위치★ — GM 전용 on/off 신호, 서술 누출 차단
             .replaceAll("<SUMMON[^>]*>", "")
             .replaceAll("<PACE [^/]*/?>", "")
             // ★[지난 자율 행동] 마커 누적 방지★: 미니 모델이 이전 턴의 이 내부 마커를 에코해 매턴 하나씩
@@ -1661,6 +1676,22 @@ public class AiManager {
             from = end + 2;
         }
         return out;
+    }
+
+    /** ★통신 변조 스위치★ <COMM_TAMPER state="on|off"/> 파싱 → "on"/"off"/null(없음). GM이 극적 시점에 괴담의 통신 변조를
+     *  켜고 끈다(여러 개면 마지막=가장 최근 결정). state 속성 우선, 없으면 세그먼트 내 on/off·한국어 키워드. */
+    public String parseCommTamperTag(String response) {
+        if (response == null) return null;
+        final String PREFIX = "<COMM_TAMPER";
+        int idx = response.lastIndexOf(PREFIX);
+        if (idx == -1) return null;
+        int end = response.indexOf(">", idx);
+        if (end == -1) return null;
+        String seg = response.substring(idx, end).toLowerCase();
+        String v = extractAttr(seg, "state").orElse(seg);
+        if (v.contains("off") || v.contains("끔") || v.contains("중단") || v.contains("해제")) return "off";
+        if (v.contains("on")  || v.contains("켬") || v.contains("시작")) return "on";
+        return null;
     }
 
     /** <NPC_AT npc="X" zone="Y"/> 파싱 → [{npc, zone}, ...] — GM이 자율 NPC를 특정 구역(특히 플레이어 장면)에
