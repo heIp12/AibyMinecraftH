@@ -145,6 +145,36 @@ description: >-
   상시 갱신(효율 될 만한 지식은 항상 등록).
 
 ## 최근 추가된 아키텍처 사실 (회귀 방지)
+- **★GPT 3자 조율 감사 A~K 전면 구현(2026-07, 20b35ec·7fcc03b·ef9efff·42fc42e)★**:
+  ▸**B 결과 무결성(TRPGGameManager)**: `unresolvedDecisiveDice`(전역 결정타 게이트 — 미해결이면 어떤
+  <CLEAR>든 `heldCrossClear`로 보류) + `resolveDecisiveDice`(실패→폐기+교정 주입 / 성공&HORROR→적용 /
+  그 외 조용히 정리). hard-decisive(=decisive attr 또는 stash)는 산문 전체 폐기+결정론 시도 라인.
+  `followUpDiceResult`에 위상 가드 + `parseAllStateUpdates` 적용. 리셋 2곳(~1011·~2370)이 게이트 정리.
+  ▸**C 구역 desync**: `locationDesynced`(해석 불가 ZONE_UPDATE의 사전검사 §3c에서 표식 +
+  `injectZoneCorrection` 유효 zone CSV 재지정 주입, `updatePlayerZone` 성공 시 해제). desync 중 같은구역
+  확신 판정 차단: WITNESS·그룹 팬아웃·근처 NPC 발화·대면 라우팅. 리셋 2곳에서 clear.
+  ▸**K 엔딩 사실 정본**: `endingFactSnapshot()`(생사·최종 위치(desync=위치 불명)·마지막 행동 70자 +
+  재구성 금지 규칙)을 `concludeWithReveal` 프롬프트에 주입. `GameStateManager.lastActionDisplayOf`.
+  ▸**E capstone 단서**: clues에 capstone/requires_clues/gm_note(선택). 일반 단서=정답 조각 1~2개만.
+  GM 프롬프트 단서 블록이 선행 미발견 capstone의 content를 ★봉인★ 렌더(`authoredClueDiscovered` 근사 —
+  발견 단서와 content 포함/토큰 3+ 겹침, id 없으면 게이트 해제=안전측).
+  ▸**F 스케줄 하드 게이트**: schedule에 min_timeline_stage/requires_clues(선택) → `scheduleItemLocked`가
+  NPC 프롬프트(9060대)·프롤로그 브리핑·`npcScheduleIntent` 전부에서 잠긴 예정 은닉. PromptBuilder 캐리
+  예외에 '조건 충족 전 조력 앞당김 금지'.
+  ▸**H 나이-직업 정합**: `CharacterGenerator.jobFitsAge`(학생 학령 밴드·13세 이하 고용직 금지·청소년
+  성인 전문직 금지·65+ 신입 금지)가 모든 직업 굴림 필터 + `ageFallbackJob`. 생성기 `lintGdam`(비차단
+  경고: 나이-직업·세대차 관계 <18살차·규모-단계 수·capstone 참조). GdamGenerator.studentAgeBand와 기준 동기 유지.
+  ▸**A단기 컨텍스트**: roles ctx = entity·zones·relationships·world_rules ★+constraints+timeline★ +
+  `npcRosterBrief`+`clueDigest` 주입(시대·환영 정합). items ctx에도 roster + NPC 소지 실존 이름 규칙.
+  ▸**D 난이도**: `showInlineDice`에서 ★결정타만★ 스테이지 DC 하한(1-2:12/3:13/4:14/5:15/6+:16, 위협90+
+  +1, cap19). 프롬프트: 스테이지별 dc 가이드 + '위협70+/사건 구간 결정적 행동 반드시 DICE' 의무.
+  주의: `isDecisiveDice`=attr∨stash∨dc≥14∨위협≥70 — 위협 70+에선 모든 굴림이 하한 대상(의도된 긴장).
+  ▸**G 면식 표시**: `isPhoneUsable()`=false면 연락처 UI가 번호 대신 "[면식]"·"아는 사람:"(내부
+  contactId·라우팅 유지). ▸**J 스로틀**: `npcAutoStateThrottled`(서명=구역·구역내 플레이어·위협밴드·
+  단계·예정, 같으면 35인게임분 내 라운드로빈 생략 — 활성창 NPC 제외), 리셋 2곳 clear.
+  ▸**스케일 5축**: 코즈믹 기준=기간 아님 — 공간·동시전선·인과깊이·지속·파급 중 2축+실제 난이도.
+  ▸**남은 태스크**: A-장기(생성 순서 구조→zones→roles→npcs·clues→items 개편 + vision_id 양방향 링크)는
+  별도 태스크로 유보(현재 clues가 roles보다 먼저 생성돼 id 상호참조 불가 — 발췌 전달로 근사 중).
 - **★성장·직업밸런스 개편(2026-07, 2fad1c9~b35d329)★**:
   ▸**기여도(contribution) 통화 제거**: 강화 게이팅·플레이어 표시 삭제(보상은 성과등급·약체보정만으로 결정).
   `tryStrengthen`은 무조건 적용. 캠페인 최종 총평 인플레 방지만 ★비노출 내부값★ `PlayerData.stageGradeSum`
