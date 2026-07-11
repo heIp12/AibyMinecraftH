@@ -370,6 +370,14 @@ description: >-
   ★남은 감사(미착수·설계 요함)★: 패시브 protect uses 미집행·passive_gm 상시화 / 지속형(debt·vanish·rule_invert 등) 엔진 상태
   없이 injectGmSystem 1회 스냅샷 의존 / 성장 JSON에 effect_params·origin 미상속(약화) + 생성 실패 시 보상 조용히 소실 /
   이어하기·시간회귀가 변신·행동불능·발견단서 상태 미복원(대가만 남음) / 초기특성 CharacterGenerator 예산 미적용.
+- **★초기 특성 이름·개수 품질(저모델 리플레이 감사)★**: `CharacterGenerator.generateInitialTraits`. 어색한 이름(틈겁·눈치결·
+  '무덤 위성' 직업명 복사·필러 4~5개)은 클리어 보상 아닌 ★초기 특성★(id=init_)에서 발생. 원인: ①name '2~7자' 강제가 저모델을
+  억지 조어로 몰고 자기 예시('물러서지 않는 다리' 8자)와 모순 ②좋은 예시가 문학형 편향 ③RARE '2개 이상'=상한 없음 ④파서 개수·
+  직업명복사 미검사. 수정: ★엔진(결정론)=개수 상한(파서 RARE≤3·그외≤2 truncate + RARE 프롬프트 '정확히 2~3개')★,
+  ★프롬프트(Fable5 작성)=이름 자연스러움★ — 글자수 강제 해제(실단어 우선, 2~5자·필요시 두 단어), 억지조어 금지(틈겁·눈치결 나쁜예),
+  평범 실단어 예시 대량(손재주·길눈·눈썰미·담력·뚝심·잔꾀…) + 결있는표현 소수, 직업설정 조각내기·직업명 복사 금지, name↔description
+  역할분리(조사 살린 설명, 압축 명사구 금지). ★분업 원칙 동일: 엔진=개수(기계), 프롬프트=이름(의미)★. 네이밍 프롬프트는 스킬 규약대로
+  Fable5 Agent로 초안(model:fable, 27k토큰). generateStageEndChoices(클리어 보상)의 '18자 명사구'는 별개라 미변경.
 - **뷰어 재생**: buildQueue→queue/qi, step()↔renderQueueItem(instant), seekTo(구간 슬라이더), evHtmlSplit
   (전체·시점 공통 — GM서술 내 [이름]대사 분리), headHtml 'other'클래스(타인=우측정렬), mapZoom(지도 확대),
   #infoResize(정보창 폭·--ifs 글씨 스케일).
