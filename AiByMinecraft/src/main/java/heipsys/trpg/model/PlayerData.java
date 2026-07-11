@@ -62,8 +62,9 @@ public class PlayerData {
 
     public boolean statsConfirmed = false;
     public boolean roleAssigned   = false;
-    /** 기여도 — 스테이지 평가 등급 누적치 (능력 강화 게이팅·진척 표시용, 능력 Phase C). 회차·챕터 넘어 유지. */
-    public int contribution = 0;
+    /** ★비노출 내부값★ — 스테이지 평가 등급 점수 누적(S=5..F=0). ★캠페인 최종 총평의 '스테이지 평균' 인플레 방지에만 쓴다★.
+     *  (구 '기여도' 통화 제거: 능력 강화 게이팅·플레이어 표시는 없앴다 — 보상은 성과등급·약체보정만으로 결정.) 회차·챕터 넘어 유지. */
+    public int stageGradeSum = 0;
 
     /** 현재 소지 중인 아이템 ID 집합 (통신 기기 추적 등에 사용) */
     public Set<String> heldItemIds = new HashSet<>();
