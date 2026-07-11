@@ -379,6 +379,17 @@ description: >-
     → GM이 잊지 않게. 남은 턴 표시.
   ▸상시효과 종료: GM이 `<EFFECT_END key="debt|witness_pact"/>`를 내면 `applyGuardConsumeTags`가 key로 제거(빚 갚음·계약 위반 시).
   ▸스테이지 전환·게임 리셋에서 `activeTimedEffects.clear()`(스테이지 넘어 유지 안 됨). 검증: scratch TimedEffectTest 9케이스.
+- **★특성 감사 재검토 배치(GPT 2차)★**: ▸초기 특성 스탯이 1스테이지 미적용(치명) — `CharacterGenerator`에서 addAll 뒤
+  `snapshotBase()`만 하고 `reapplyTraitStats()`를 안 해, 다음 스테이지에 스탯이 갑자기 증가했다 → snapshotBase(원시 base 고정)
+  ★직후 reapplyTraitStats() 추가★(중복 아님). ▸초기 특성 '스탯 전용' 모순 — 파서가 effectType만 비우고 active·effect 남겨
+  S급이 스탯+공짜 서술형 능동 ★이중★이었다 → 파서에서 `active=false·cooldownTurns=0`도 강제 + tierRules의 'active:true 필수'를
+  상시 패시브·스탯 집중으로 재작성. ▸RARE 개수 상한이 약점 버림 — subList(0,3)이 강점3+약점1에서 약점을 잘랐다 → 약점(D/E/F)
+  없으면 마지막 강점을 뒤의 약점으로 교체(`isWeakGrade`). ▸보호 소진이 캐시 프롬프트에 안 남음(#3) — `applyGuardConsumeTags`에서
+  소진 시 `gmSystemPrompt=buildGmPrompt(...)` 재빌드(블록 게이트 반영). ▸`<PROTECT_USED>` 여러 protect 중 첫 것 임의 소진(#6)
+  → 아직 안 소진된 '횟수 제한' protect 우선 선택. ▸`<EFFECT_END key>`가 전 플레이어 같은 key 오제거(#7) → `key+player` 파싱
+  (parseEffectEndTags가 `List<String[]>{key,player}` 반환) + owner=gmDisplayName 매칭. ▸canAct 콜백 재검사(#5) — 입력창 연 뒤
+  행동 시작 시 지연 콜백이 무조건 소모하던 것 → `handleRemoteSenseObservation`·`handleForesightQuery` 소진 전 `!turnMan.canAct`면
+  취소(소모 없음). ★미완(대규모, 사용자 지시로 보류)★: activeTimedEffects·양수 쿨다운 세이브 직렬화 / 시간회귀 스냅샷 포함.
 - **★패시브·초기특성 정합(감사 A~E)★**:
   ▸**C(trigger_freq)**: buildGmPrompt 트리거 블록에 '발동 빈도 잦음/보통/드묾'(trigger_freq 3/2/1) 추가 — 예산엔 쓰는데 GM엔
     강도만 줘 빈도가 비용과 무관했다.
