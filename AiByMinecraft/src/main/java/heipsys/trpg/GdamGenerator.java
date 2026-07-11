@@ -1007,13 +1007,30 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
         this.gdamDir   = new File(plugin.getDataFolder(), "gdam");
         if (!gdamDir.exists()) gdamDir.mkdirs();
         this.aesKey    = loadOrCreateKey(plugin);
+        // ★추적 기록(괴담·이름 no-repeat·회전 카운터·랜덤 제외)은 gdam 폴더가 아니라 상위 폴더에 둔다★ —
+        //   구버전(gdam 폴더 내)에 있던 파일은 1회 상위로 이관(로드 전에).
+        for (String tf : new String[]{".familiar_history", ".name_history", ".ending_counter", ".random_excluded"})
+            migrateTrackerFile(tf);
         loadFamiliarHistory();
         loadNameHistory();
         loadRandomExcluded();
     }
 
+    /** 추적 기록 파일 저장 폴더 — gdam 폴더의 ★상위★(플러그인 데이터 폴더). gdam 폴더를 비워도 기록이 안 지워지게. */
+    private File historyDir() {
+        File p = gdamDir.getParentFile();
+        return (p != null) ? p : gdamDir;
+    }
+    /** 구버전(gdam 폴더 내) 추적 파일을 상위 폴더로 1회 이관. */
+    private void migrateTrackerFile(String name) {
+        try {
+            File old = new File(gdamDir, name), neu = new File(historyDir(), name);
+            if (old.exists() && !neu.exists()) java.nio.file.Files.move(old.toPath(), neu.toPath());
+        } catch (Exception ignored) {}
+    }
+
     // ── '모두 무작위' 제외 카테고리 영속(.random_excluded) ──────────────────────────
-    private File randomExcludedFile() { return new File(gdamDir, ".random_excluded"); }
+    private File randomExcludedFile() { return new File(historyDir(), ".random_excluded"); }
 
     /** 제외 카테고리를 파일에서 불러온다. ★파일이 없으면(최초 실행)★ 기본 제외(로보토미·코즈믹·SCP)를 심고 저장한다.
      *  파일이 있으면(관리자가 손댄 뒤) 그 내용을 그대로 존중한다(빈 파일=아무것도 제외 안 함). */
@@ -1053,7 +1070,7 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
         }
     }
 
-    private File familiarHistoryFile() { return new File(gdamDir, ".familiar_history"); }
+    private File familiarHistoryFile() { return new File(historyDir(), ".familiar_history"); }
 
     /** 친숙 괴담 사용 기록을 파일에서 불러온다(최근 FAMILIAR_HISTORY_MAX개 유지). */
     private void loadFamiliarHistory() {
@@ -1157,7 +1174,7 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
         return keys;
     }
 
-    private File nameHistoryFile() { return new File(gdamDir, ".name_history"); }
+    private File nameHistoryFile() { return new File(historyDir(), ".name_history"); }
 
     /** 배역 이름 사용 기록을 파일에서 불러온다(최근 NAME_HISTORY_MAX개 유지). */
     private void loadNameHistory() {
@@ -1958,7 +1975,7 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
      *  배정돼, 모델이 프롬프트 예시('~라니까')를 반복 복제해도 '늘 같은 말투'가 안 나온다(엄격 no-repeat: 풀을 다 돌 때까지 중복 없음). */
     private int nextRotatingEnding(int poolSize) {
         if (poolSize <= 0) return 0;
-        File f = new File(gdamDir, ".ending_counter");
+        File f = new File(historyDir(), ".ending_counter");
         int c = 0;
         try { if (f.exists()) c = Integer.parseInt(new String(java.nio.file.Files.readAllBytes(f.toPath())).trim()); }
         catch (Exception ignored) {}
