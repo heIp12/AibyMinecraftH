@@ -368,8 +368,15 @@ description: >-
   ⑥remote_sense·foresight 이중 applyTraitUsed(다이얼로그 콜백+핸들러) → 콜백 것 제거(핸들러가 입력 도착 시 1회 소모;
   chat 경로 2501~는 원래 핸들러 의존이라 정상). 검증: scratch `TraitRegTest` 42케이스(16 uses·클램프·음수·C강등/제거·S생존·costText).
   ★남은 감사(미착수·설계 요함)★: 패시브 protect uses 미집행·passive_gm 상시화 / 지속형(debt·vanish·rule_invert 등) 엔진 상태
-  없이 injectGmSystem 1회 스냅샷 의존 / 성장 JSON에 effect_params·origin 미상속(약화) + 생성 실패 시 보상 조용히 소실 /
-  이어하기·시간회귀가 변신·행동불능·발견단서 상태 미복원(대가만 남음) / 초기특성 CharacterGenerator 예산 미적용.
+  없이 injectGmSystem 1회 스냅샷 의존 / 이어하기·시간회귀가 변신·행동불능·발견단서 상태 미복원(대가만 남음) /
+  초기특성 CharacterGenerator 예산 미적용 / 발동형 AI 실패(handleAction=false) 시 특성·대가 미환불(#4, 미착수).
+- **★성장(클리어 보상) 상속 정합(감사 #6·#7 — TraitManager)★**: ①`preserveActiveNature`가 원본 effect_type만 유지하고
+  applyDefaults로 파라미터를 기본값으로 덮어써 area_scan(scope=3,uses=2) 강화가 scope=2·uses=1로 ★약화★됐다 →
+  원본 effect_params를 바닥값으로 상속(누락=원본값, 이득 파라미터 `UPGRADE_BENEFIT_PARAMS`={uses·scope·power·depth·range·
+  choices·count·scale·dice·intensity·trigger_freq·buff_amount·buff_turns}는 원본 미만 금지=강화≥원본), 그 뒤 applyDefaults로
+  새 등급 예산 재적용. cost·turns 등 하방·양날 파라미터는 상속만·플로어 안 함. ②`generateStageEndChoices`가 성장 JSON 파싱
+  실패 시 null 반환→보상 조용히 소실 → `fallbackStageEndChoices`(결정론적 new_trait 1개, pd.contribution로 3종 로테이션,
+  clampGrade("C",maxGrade), parseStageEndTrait 재사용) 지급. 두 실패 지점(브레이스 없음·예외) 모두 폴백.
 - **★초기 특성 이름·개수 품질(저모델 리플레이 감사)★**: `CharacterGenerator.generateInitialTraits`. 어색한 이름(틈겁·눈치결·
   '무덤 위성' 직업명 복사·필러 4~5개)은 클리어 보상 아닌 ★초기 특성★(id=init_)에서 발생. 원인: ①name '2~7자' 강제가 저모델을
   억지 조어로 몰고 자기 예시('물러서지 않는 다리' 8자)와 모순 ②좋은 예시가 문학형 편향 ③RARE '2개 이상'=상한 없음 ④파서 개수·
