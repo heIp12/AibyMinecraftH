@@ -160,6 +160,16 @@ description: >-
   ▸**다음 괴담 지정 채팅 입력(IDLE 버그)**: 설정단계(phase=IDLE)에선 `ChatListener.onChat`이 `!isActive()`로
   채팅을 버려 괴담 이름이 씹혔다 → `isAwaitingChatInput(player)`(=`pendingEntityReserveInput` 대기)면 IDLE이라도
   라우팅. 설정 전 채팅 캡처가 더 생기면 이 predicate에 등록.
+- **★NPC 개성 어미 '~라니까' 편향·과적용 해소(2026-07, ef16981)★**: 로그 진단 — NPC별
+  speech_style은 정상 분리(ending_style 없는 인물은 자기 말투). 문제는 ①생성기가 ending_style
+  예시 "~라니까"를 verbatim 복제(폴백 풀은 모델이 0개 낼 때만 작동해 편향 못 막음) ②pass2
+  restyleDialogue 과적용(매 문장 스탬프+3인칭 지문·메타 누출). 수정:
+  ▸**생성기**: `finalizeNpcSpeech`가 개성 어미 NPC를 ★회전 풀(8종)★로 덮어씀 —
+  `nextRotatingEnding`(`.ending_counter` 파일 카운터)이 매 시나리오 다른 어미 순환(엄격
+  no-repeat), 첫 1명만 유지. 프롬프트도 "예시 verbatim 복제 금지, 후보 표시만"(정전 인물 캐논 예외).
+  ▸**pass2**(`AiManager.restyleDialogue`): 짧은 파편(괄호·부호 제외 ≤3자) 프리게이트 스킵('놔'→
+  '놔라니까' 차단) + `stripRestyleMeta` 후처리(변환기 자기해설 "(원본이…원형 유지…)" 제거,
+  정상 지문 '(문을 밀며)'는 보존). ★thought는 pass2 미적용이라 자연 말투 — 발화만 어미 렌더됨(정상).★
 - **★실플레이(저사양 GPT GM) 감사 배치(2026-07, 2a72dc9~db99b33)★ — 약한 모델 방어 원칙**:
   ▸**인기척 알림**: 수 반영 단일 문구(1=낯선 인기척·2=두 사람의·3+=여러), `[접근]` 주입에 반복금지.
   ★이름 공개 기준 = `moved.everKnownNpcContacts`(그 플레이어 면식/연락처)★ — `npcLoggedZone`(전역 등장 로그)
