@@ -1614,6 +1614,16 @@ public class AiManager {
         return parseSelfClosingAttr(response, "<IMPERSONATE_END ", "player");
     }
 
+    /** <PROTECT_USED player="X"/> 모두 파싱 → [X, ...] — 방어(protect) 실제 적용 시 스테이지 소진 카운트용. */
+    public java.util.List<String> parseProtectUsedTags(String response) {
+        return parseSelfClosingAttr(response, "<PROTECT_USED ", "player");
+    }
+
+    /** <FATAL_GUARD_USED player="X"/> 모두 파싱 → [X, ...] — 치명 무효화(fatal_guard) 1회 소진용. */
+    public java.util.List<String> parseFatalGuardUsedTags(String response) {
+        return parseSelfClosingAttr(response, "<FATAL_GUARD_USED ", "player");
+    }
+
     /** <ZONE_UPDATE player="X" zone="Y" spot="Z" forced="true"/> 파싱 → [{player, zone, spot, forced}, ...]
      *  forced=강제 이동(납치·공격에 날아감·붕괴 등; 잠긴 게이트도 무시). 없으면 "". */
     public java.util.List<String[]> parseZoneUpdateTags(String response) {

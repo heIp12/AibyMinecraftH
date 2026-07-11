@@ -1894,7 +1894,8 @@ public class TRPGGameManager {
                 if (myPd.traits.stream().anyMatch(t -> "fatal_guard".equals(t.effectType)))
                     ai.injectGmSystem("[보호: 치명 실수 무효화] " + myPd.gmDisplayName()
                         + "은(는) '돌이킬 수 없는 1회성 치명 행동(즉사 규칙 위반 등)'을 저질러도 ★1회에 한해★ 그 결과를 "
-                        + "아슬아슬하게 무효화한다('간발의 차로 무위로 돌아갔다'). 이 보호는 그 순간 소진되며, 이후엔 정상 판정한다.");
+                        + "아슬아슬하게 무효화한다('간발의 차로 무위로 돌아갔다'). 실제로 무효화한 턴에는 <FATAL_GUARD_USED player=\""
+                        + myPd.gmDisplayName() + "\"/>를 함께 내라 — 그 순간 소진되며 이후엔 정상 판정한다.");
             }
             if (myPd != null) {
                 gameLogger.logPrivate(myPd.name, "배역 배정 → " + myPd.gmDisplayName()
@@ -2918,6 +2919,7 @@ public class TRPGGameManager {
             try {
             // 2. STATE_UPDATE 파싱 및 적용 — ★#4 다대상★: 광역 피해·다중 상태변화는 태그를 여러 개 내므로 전부 적용(첫 개만 반영하던 버그)
             for (JsonObject stateUpdate : ai.parseAllStateUpdates(raw)) applyStateUpdate(stateUpdate);
+            applyGuardConsumeTags(raw); // 방어(protect)·치명무효화(fatal_guard) 소진 태그 → 엔진이 실제로 횟수를 센다(감사 A·D)
 
             // 2b. ★위협도·분노도 게이지★ 태그 소비(플레이어 비노출) — 함정·도발·전파 등으로 GM이 세력을 올린다.
             applyThreatAngerTags(raw);
@@ -10529,6 +10531,46 @@ public class TRPGGameManager {
     }
 
     /**
+     * ★방어·치명무효화 소진 태그 처리(감사 A·D)★: GM이 protect/fatal_guard를 실제로 적용했다고 보고한 태그를 받아
+     * 엔진이 usedThisStage를 올려 '몇 회 남았는지'를 실제로 센다(예전엔 프롬프트에 표시만 하고 세지 않아 무제한이었다).
+     * 한도 초과·소진 시 GM에 즉시 고지(injectGmSystem, 캐시된 시스템 프롬프트를 건드리지 않는 전달 채널)해 더는 적용/재사용하지 않게 한다.
+     */
+    private void applyGuardConsumeTags(String raw) {
+        if (raw == null || raw.isEmpty()) return;
+        // protect: uses 한도까지만 경감(uses=0=무제한은 카운트 안 함).
+        for (String nm : ai.parseProtectUsedTags(raw)) {
+            PlayerData pd = findAnyByName(nm);
+            if (pd == null) continue;
+            TraitData t = pd.traits.stream().filter(x -> "protect".equals(x.effectType)).findFirst().orElse(null);
+            if (t == null) continue;
+            int lim = t.param("uses", 0);
+            if (lim <= 0) continue; // 무제한 방어는 소진 개념 없음
+            if (t.usedThisStage >= lim) {
+                ai.injectGmSystem("[보호 소진] " + pd.gmDisplayName() + "의 '" + t.name + "'은(는) 이번 스테이지 한도(" + lim + "회)를 이미 다 썼다 — 더는 경감하지 마라(정상 판정).");
+                continue;
+            }
+            t.usedThisStage++;
+            gameLogger.logAbilityResult(pd.gmDisplayName(), t.name, "방어 발동 (소진 " + t.usedThisStage + "/" + lim + ")");
+            if (t.usedThisStage >= lim)
+                ai.injectGmSystem("[보호 소진] " + pd.gmDisplayName() + "의 '" + t.name + "'이(가) 방금 마지막 " + lim + "번째로 발동해 소진됐다 — 이후엔 경감 없이 정상 판정한다.");
+        }
+        // fatal_guard: 스테이지당 1회. 소진 후엔 재사용 불가.
+        for (String nm : ai.parseFatalGuardUsedTags(raw)) {
+            PlayerData pd = findAnyByName(nm);
+            if (pd == null) continue;
+            TraitData t = pd.traits.stream().filter(x -> "fatal_guard".equals(x.effectType)).findFirst().orElse(null);
+            if (t == null) continue;
+            if (t.usedThisStage > 0) {
+                ai.injectGmSystem("[보호 소진] " + pd.gmDisplayName() + "의 치명 무효화는 이번 스테이지에 이미 소진됐다 — 재사용 불가, 정상 판정한다.");
+                continue;
+            }
+            t.usedThisStage++;
+            gameLogger.logAbilityResult(pd.gmDisplayName(), t.name, "치명 무효화 소진 (1/1)");
+            ai.injectGmSystem("[보호 소진] " + pd.gmDisplayName() + "의 치명 무효화가 방금 소진됐다 — 이후엔 정상 판정한다(재사용 불가).");
+        }
+    }
+
+    /**
      * @통신 대상 토큰 추출 — 띄어쓰기가 포함된 캐릭터명·NPC명(예: "라비 샤르마")도 인식하도록
      * 알려진 이름(전체/all·플레이어 캐릭터명·계정명·연락처번호·NPC명) 중 content가 시작하는
      * ★가장 긴★ 이름을 토큰으로 반환한다. 매칭이 없으면 첫 단어를 토큰으로 본다.
@@ -13339,6 +13381,7 @@ public class TRPGGameManager {
         StringBuilder passiveBlock  = new StringBuilder(); // passive_gm: 항상 고려
         StringBuilder triggerBlock  = new StringBuilder(); // passive_trigger: 조건 충족 시 자동 발동
         StringBuilder protectBlock  = new StringBuilder(); // protect: 피해·효과 자동 경감
+        StringBuilder fatalBlock    = new StringBuilder(); // fatal_guard: 치명 실수 1회 무효화(미소진자만)
         for (PlayerData p : state.getAllPlayers()) {
             for (TraitData t : p.traits) {
                 String n   = p.gmDisplayName();
@@ -13349,18 +13392,28 @@ public class TRPGGameManager {
                                     .append(eff).append(originSuffix(t)).append("\n");
                     case "passive_trigger" -> {
                         int intensity = t.param("intensity", 2);
+                        int freq      = t.param("trigger_freq", 2);
                         String ig = intensity >= 3 ? "강" : intensity == 2 ? "중" : "약";
-                        triggerBlock.append("- ").append(n).append(" (").append(t.name).append(", 강도 ").append(ig).append("): ")
+                        String fg = freq >= 3 ? "잦음" : freq == 2 ? "보통" : "드묾"; // ★발동 빈도(예산에 반영된 값)를 GM에 전달 — 예전엔 강도만 줘 빈도가 비용과 무관하게 임의였다
+                        triggerBlock.append("- ").append(n).append(" (").append(t.name).append(", 강도 ").append(ig)
+                                    .append(", 발동 빈도 ").append(fg).append("): ")
                                     .append(eff).append(originSuffix(t)).append("\n");
                     }
                     case "protect" -> {
                         int power    = t.param("power", 2);
                         int useLimit = t.param("uses", 0);
-                        String pg = power >= 3 ? "거의 무효화" : power == 2 ? "절반 경감" : "소폭 경감";
-                        String ul = useLimit > 0 ? " (스테이지당 " + useLimit + "회 한정)" : "";
-                        protectBlock.append("- ").append(n).append(" (").append(t.name).append("): ")
-                                    .append(eff).append(" [").append(pg).append(ul).append("]")
-                                    .append(originSuffix(t)).append("\n");
+                        if (useLimit == 0 || t.usedThisStage < useLimit) { // ★소진된 방어는 GM에 더는 안내하지 않음(재빌드 시점 반영)★
+                            int rem = useLimit > 0 ? useLimit - t.usedThisStage : 0;
+                            String pg = power >= 3 ? "거의 무효화" : power == 2 ? "절반 경감" : "소폭 경감";
+                            String ul = useLimit > 0 ? " (이번 스테이지 " + rem + "회 남음)" : "";
+                            protectBlock.append("- ").append(n).append(" (").append(t.name).append("): ")
+                                        .append(eff).append(" [").append(pg).append(ul).append("]")
+                                        .append(originSuffix(t)).append("\n");
+                        }
+                    }
+                    case "fatal_guard" -> {
+                        if (t.usedThisStage == 0) // 미소진일 때만 안내(소진 후 재빌드 시 제거)
+                            fatalBlock.append("- ").append(n).append(originSuffix(t)).append("\n");
                     }
                     default -> {}
                 }
@@ -13377,6 +13430,12 @@ public class TRPGGameManager {
         if (protectBlock.length() > 0) {
             sb.append("\n## 방어 특성 보유자 (해당 피해·효과 발생 시 자동 적용, 직접 언급 금지)\n");
             sb.append(protectBlock);
+            sb.append("※ 위 방어로 피해·효과를 실제로 경감한 턴에는 반드시 <PROTECT_USED player=\"이름\"/>를 함께 내라 — 횟수 한정 방어의 소진을 시스템이 센다(소진되면 더는 경감 금지 통보가 온다).\n");
+        }
+        if (fatalBlock.length() > 0) {
+            sb.append("\n## 치명 실수 무효화 보유자 (돌이킬 수 없는 1회성 치명 행동·즉사 규칙 위반을 저질러도 ★1회에 한해★ 아슬아슬하게 무효화, 직접 언급 금지)\n");
+            sb.append(fatalBlock);
+            sb.append("※ 이 무효화를 실제로 적용한 턴(치명 결과를 '간발의 차로 무위로' 돌린 그 순간)에는 반드시 <FATAL_GUARD_USED player=\"이름\"/>를 함께 내라 — 그 뒤엔 소진되어 정상 판정한다.\n");
         }
         // 기계 효과 아이템(item_type) 보유 현황 + 해제된 구역 (아이템 Phase II)
         StringBuilder itemBlock = new StringBuilder();

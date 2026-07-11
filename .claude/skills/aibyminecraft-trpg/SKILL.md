@@ -367,9 +367,21 @@ description: >-
   ·쿨다운관리)이라 건드리면 안 됨→반드시 `mx>0` 조건★. ⑤음의 스텟 하한 −6(str_add=-50식 negSum 부풀려 예산 우회 차단).
   ⑥remote_sense·foresight 이중 applyTraitUsed(다이얼로그 콜백+핸들러) → 콜백 것 제거(핸들러가 입력 도착 시 1회 소모;
   chat 경로 2501~는 원래 핸들러 의존이라 정상). 검증: scratch `TraitRegTest` 42케이스(16 uses·클램프·음수·C강등/제거·S생존·costText).
-  ★남은 감사(미착수·설계 요함)★: 패시브 protect uses 미집행·passive_gm 상시화 / 지속형(debt·vanish·rule_invert 등) 엔진 상태
-  없이 injectGmSystem 1회 스냅샷 의존 / 이어하기·시간회귀가 변신·행동불능·발견단서 상태 미복원(대가만 남음) /
-  초기특성 CharacterGenerator 예산 미적용.
+  ★남은 감사(미착수·설계 요함)★: 지속형(debt·vanish·rule_invert 등) 엔진 상태 없이 injectGmSystem 1회 스냅샷 의존(대규모).
+  (이어하기·시간회귀 상태 복원은 사용자 지시로 보류.)
+- **★패시브·초기특성 정합(감사 A~E)★**:
+  ▸**C(trigger_freq)**: buildGmPrompt 트리거 블록에 '발동 빈도 잦음/보통/드묾'(trigger_freq 3/2/1) 추가 — 예산엔 쓰는데 GM엔
+    강도만 줘 빈도가 비용과 무관했다.
+  ▸**B(passive 예산 할인)**: `abilityCost` 쿨다운·uses==1 할인을 ★active일 때만★ 적용 + `enforcePowerBudget`도 패시브엔
+    cooldown=-1 안 붙임. 예전엔 passive_gm이 C 예산에 -3(스테이지1회) 할인으로 끼어 상시 B급이었다(패시브는 '1회'가 무의미).
+    → 저등급 패시브는 파라미터·스탯으로만 등급을 맞춤(passive_gm@C는 스탯 -단점 부과).
+  ▸**A(protect)·D(fatal_guard)**: 'GM이 세는 소진형 패시브' 공통 처리 — AiManager `parseProtectUsedTags`/`parseFatalGuardUsedTags`,
+    onGmResponse `applyGuardConsumeTags`(findAnyByName로 배역 해소 → usedThisStage++, 소진 시 injectGmSystem 통보). buildGmPrompt
+    방어 블록에 `<PROTECT_USED player=".."/>`·fatalBlock(미소진자만)에 `<FATAL_GUARD_USED player=".."/>` 지시. ★캐시된 gmSystemPrompt는
+    스테이지 시작에만 재빌드 → 중간 소진 피드백은 반드시 injectGmSystem(전송 채널)로★. 예전엔 프롬프트에 'N회 한정'을 표시만 하고 안 셌다.
+  ▸**E3(초기특성 스탯 예산)**: CharacterGenerator generateInitialTraits — 스키마에 스탯 필드 추가 + 파서가 stat 파싱 후 effectType=""로
+    `applyDefaults`(enforcePowerBudget가 스탯을 등급 예산에 클램프). 예전엔 applyDefaults 미호출로 희귀 S/A가 '무료 서술형'이었다. ★초기특성은
+    기계 능동/패시브 없이 스탯으로만 파워★(사용자 결정 E3). 클리어 보상(effect_type 있음)과 구분. 검증: scratch TraitReg2Test 5케이스.
 - **★발동 전 행동중 게이트(감사 #4)★**: 발동형 특성이 `applyTraitUsed`(소모·대가)→`turnMan.handleAction` 순이라
   handleAction이 false(사망·`turnState==ACTING`)를 반환해도 환불이 없어 ★특성·대가만 날아가던★ 문제(응답 지연·호출 겹침
   환경). 15개 activateXxx에 환불을 붙이는 대신 ★소모 전 단일 게이트★: `TurnManager.canAct(player)`(handleAction과 동일

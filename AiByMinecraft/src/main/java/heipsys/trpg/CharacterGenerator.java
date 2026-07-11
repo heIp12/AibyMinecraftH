@@ -501,9 +501,11 @@ public class CharacterGenerator {
         String system = "너는 TRPG 캐릭터 초기 특성 생성기야.\n"
             + "아래 JSON 배열 형식으로만 응답 (다른 텍스트 금지):\n"
             + "[{\"active\":false,\"effect\":\"\",\"concept\":\"\",\"name\":\"\",\"description\":\"\","
-            + "\"grade\":\"C\",\"cooldownTurns\":0},...]\n\n"
+            + "\"grade\":\"C\",\"cooldownTurns\":0,"
+            + "\"str_add\":0,\"cha_add\":0,\"luk_add\":0,\"spr_add\":0,\"hp_max_add\":0,\"san_max_add\":0},...]\n\n"
             + "공통 규칙:\n"
             + "- 직업·나이에서 자연스럽게 연결되는 능력/약점\n"
+            + "- ★스탯 보정(등급=실제 파워)★: 특성 grade에 맞춰 스탯 보정 총합을 준다 — 양의 총합 예산 F=-2·E=-1·D=0·C=1·B=3·A=5·S=10. 다른 스탯에 -를 주면 그만큼 +를 더 줄 수 있다(예: B급 근력+4·행운-1=순합3). 체력최대·정신력최대(hp_max_add·san_max_add)도 같은 1점=1로 계산(표시만 %). ★초기 특성은 기계 능동/패시브 효과 없이 스탯으로만 파워를 낸다★ — 그 등급이 실제 스탯으로 뒷받침되게 하라(희귀 직업 A/S면 스탯 총합을 그만큼 크게, 약점 특성 D/F면 순합을 음수로).\n"
             + "- hidden_info에 해결 수단(아이템·경로·조작법)이 포함되면, 그 '존재·방법'만 알게 하고 '왜 필요한지(괴담 약점·해법과의 연결)'는 캐릭터가 인지하지 못한 상태로 설계하라. 정답을 처음부터 쥐여주지 마라(용도는 플레이 중 발견).\n"
             + "- description과 effect에 스탯 숫자·스탯 약어(STR/HP/SAN/CHA/LUK/SPR) 절대 사용 금지\n"
             + "- effect: 한 문장으로 간결하게 (수동이면 판정에서 발휘되는 식, 능동이면 사용 효과)\n"
@@ -545,6 +547,18 @@ public class CharacterGenerator {
                     td.active        = obj.has("active")       && obj.get("active").getAsBoolean();
                     td.effect        = obj.has("effect")       ? obj.get("effect").getAsString()       : "";
                     td.cooldownTurns = obj.has("cooldownTurns") ? obj.get("cooldownTurns").getAsInt()  : 0;
+                    // ★E3: 초기 특성도 스탯 예산 적용★ — 예전엔 스탯·예산을 아예 안 봐서 희귀 직업 S/A가 '무료 서술형'이었다.
+                    //   스탯 필드를 파싱하고 effectType=""로 applyDefaults → enforcePowerBudget가 스탯을 등급 예산에 클램프(기계효과는 없음).
+                    try {
+                        if (obj.has("str_add"))     td.str_add    = obj.get("str_add").getAsInt();
+                        if (obj.has("cha_add"))     td.cha_add    = obj.get("cha_add").getAsInt();
+                        if (obj.has("luk_add"))     td.luk_add    = obj.get("luk_add").getAsInt();
+                        if (obj.has("spr_add"))     td.spr_add    = obj.get("spr_add").getAsInt();
+                        if (obj.has("hp_max_add"))  td.hp_max_add = obj.get("hp_max_add").getAsInt();
+                        if (obj.has("san_max_add")) td.san_max_add= obj.get("san_max_add").getAsInt();
+                    } catch (Exception ignore) { /* 잘못된 스탯 필드는 0 유지 — 특성 전체를 폴백시키지 않음 */ }
+                    td.effectType = ""; // 초기 특성은 서술형(시스템 기계효과 없음) — 스탯만 등급에 맞춘다
+                    SystemTraitRegistry.applyDefaults(td);
                     result.add(td);
                 }
                 // ★개수 상한(저모델 필러 방지)★: RARE=3, 그 외=2. 저모델이 낯선 직업 설정어를 조각내 4~5개

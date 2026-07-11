@@ -858,10 +858,14 @@ public class SystemTraitRegistry {
             default               -> 3; // passive_gm·show_progress 등 텍스트 의존 = 기본 B
         };
         int discount = 0;
-        if (td.cooldownTurns == -1)     discount += 3; // 스테이지당 1회 = 가장 큰 제약
-        else if (td.cooldownTurns >= 5) discount += 2;
-        else if (td.cooldownTurns >= 2) discount += 1;
-        if (uses == 1)                  discount += 1; // 최소 횟수 제한(1회). uses=0(무제한 패시브)은 할인 제외.
+        // ★쿨다운·1회 할인은 능동(active)만★ — 패시브(항상 켜짐)는 '스테이지 1회·쿨다운'이 실제로 제약이 안 되므로
+        //   할인을 주면 실효 파워가 등급보다 세진다(passive_gm이 C 예산에 −3 할인으로 끼어 상시 B급이 되던 문제).
+        if (td.active) {
+            if (td.cooldownTurns == -1)     discount += 3; // 스테이지당 1회 = 가장 큰 제약
+            else if (td.cooldownTurns >= 5) discount += 2;
+            else if (td.cooldownTurns >= 2) discount += 1;
+            if (uses == 1)                  discount += 1; // 최소 횟수 제한(1회). uses=0(무제한)은 할인 제외.
+        }
         return Math.max(1, base - discount);
     }
 
@@ -911,7 +915,7 @@ public class SystemTraitRegistry {
         int neg = (int) negSum(td);
         int ec = abilityCost(td);
         if (ec > budget + neg && Effect.byKey(td.effectType) != null) {
-            if (td.cooldownTurns != -1) { td.cooldownTurns = -1; ec = abilityCost(td); } // 제약 추가로 할인
+            if (td.active && td.cooldownTurns != -1) { td.cooldownTurns = -1; ec = abilityCost(td); } // 제약 추가로 할인(능동만 — 패시브는 쿨다운 무의미)
             int guard = 0;
             while (ec > budget + neg && reduceOneParam(td) && guard++ < 24) ec = abilityCost(td);
             if (ec > budget + neg) { // 최소 형태로도 초과
