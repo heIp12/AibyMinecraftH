@@ -4250,7 +4250,7 @@ public class TRPGGameManager {
                     + "빚을 저버리고 돕지 않으면 " + t + "에게 불이익(낙인·불운)이 따른다. 언제·어떻게 빚이 발동하는지는 GM이 상황에 맞게 판정하라.");
                 applyTraitUsed(pd, td.id, state.getCurrentTurn());
                 registerTimedEffect("debt", pd.gmDisplayName(), -1, // 상시(조건: 발동자 위기) — 강제 조력 1회로 소진되면 <EFFECT_END key="debt"/>
-                    "빚: " + t + "은(는) " + pd.gmDisplayName() + "이(가) 위기(부상·표적·고립)에 처하면 ★1회 강제로 돕는다★(저버리면 " + t + "에게 낙인·불운). 발동돼 소진되면 <EFFECT_END key=\"debt\"/>를 내라",
+                    "빚: " + t + "은(는) " + pd.gmDisplayName() + "이(가) 위기(부상·표적·고립)에 처하면 ★1회 강제로 돕는다★(저버리면 " + t + "에게 낙인·불운). 발동돼 소진되면 <EFFECT_END key=\"debt\" player=\"" + pd.gmDisplayName() + "\"/>를 내라",
                     "");
                 player.sendMessage("§7[" + td.name + "] " + t + "에게 빚을 지웠습니다.");
             });
@@ -4286,7 +4286,7 @@ public class TRPGGameManager {
                     + "이 계약은 초자연적 구속력을 지녀 ★먼저 어긴 쪽이 괴담의 표적★이 된다. 계약 당사자·성립 여부·위반 판정과 그 결과는 GM이 상황에 맞게 다룬다(무리한 계약이면 성립 안 될 수도).");
                 applyTraitUsed(pd, td.id, state.getCurrentTurn());
                 registerTimedEffect("witness_pact", pd.gmDisplayName(), -1, // 상시(조건: 계약 위반) — 위반 판정으로 소진되면 <EFFECT_END key="witness_pact"/>
-                    "증인 계약 유효: \"" + tm + "\" — 먼저 어긴 쪽이 괴담의 표적이 된다. 위반이 판정돼 결말지어지면 <EFFECT_END key=\"witness_pact\"/>를 내라",
+                    "증인 계약 유효: \"" + tm + "\" — 먼저 어긴 쪽이 괴담의 표적이 된다. 위반이 판정돼 결말지어지면 <EFFECT_END key=\"witness_pact\" player=\"" + pd.gmDisplayName() + "\"/>를 내라",
                     "");
                 player.sendMessage("§7[" + td.name + "] 계약을 성립시켰습니다.");
             });
@@ -6210,6 +6210,9 @@ public class TRPGGameManager {
     }
 
     private void handleRemoteSenseObservation(Player player, PlayerData pd, String traitId, String target) {
+        // ★#5 콜백 시점 재검사★: 입력창을 연 뒤 다른 행동을 시작해 '행동 중'이 됐으면 여기서 소모 없이 취소한다
+        //   (예전엔 지연 콜백이 canAct 재확인 없이 무조건 소모 — 발동 게이트는 버튼 누를 때만 봤다).
+        if (!turnMan.canAct(player)) { player.sendMessage("§7행동 중이라 감지가 취소됐습니다 — 특성은 소모되지 않았습니다."); return; }
         TraitData td = pd.traits.stream().filter(t -> t.id.equals(traitId)).findFirst().orElse(null);
         if (td != null) applyTraitUsed(pd, td.id, state.getCurrentTurn()); // C1: 입력 도착 시 소진
         int range = td != null ? td.param("range", 2) : 2;
@@ -6248,6 +6251,8 @@ public class TRPGGameManager {
     }
 
     private void handleForesightQuery(Player player, PlayerData pd, String traitId, String action) {
+        // ★#5 콜백 시점 재검사★: 입력창을 연 뒤 다른 행동을 시작해 '행동 중'이 됐으면 소모 없이 취소.
+        if (!turnMan.canAct(player)) { player.sendMessage("§7행동 중이라 예지가 취소됐습니다 — 특성은 소모되지 않았습니다."); return; }
         TraitData td = pd.traits.stream().filter(t -> t.id.equals(traitId)).findFirst().orElse(null);
         if (td != null) applyTraitUsed(pd, td.id, state.getCurrentTurn()); // C1: 입력 도착 시 소진
         int depth = td != null ? td.param("depth", 2) : 2;
@@ -10612,12 +10617,18 @@ public class TRPGGameManager {
      */
     private void applyGuardConsumeTags(String raw) {
         if (raw == null || raw.isEmpty()) return;
+        boolean guardStateChanged = false; // 소진되면 캐시된 gmSystemPrompt를 재빌드(소진된 방어를 블록에서 제거)
         // protect: uses 한도까지만 경감(uses=0=무제한은 카운트 안 함).
         for (String nm : ai.parseProtectUsedTags(raw)) {
             PlayerData pd = findAnyByName(nm);
             if (pd == null) continue;
-            TraitData t = pd.traits.stream().filter(x -> "protect".equals(x.effectType)).findFirst().orElse(null);
-            if (t == null) continue;
+            // ★여러 protect 보유 시 아직 안 소진된 '횟수 제한' 방어를 우선 소진★(무제한·이미 소진된 것을 임의로 고르지 않게).
+            java.util.List<TraitData> protects = new java.util.ArrayList<>();
+            for (TraitData x : pd.traits) if ("protect".equals(x.effectType)) protects.add(x);
+            if (protects.isEmpty()) continue;
+            TraitData t = protects.stream()
+                .filter(x -> { int u = x.param("uses", 0); return u > 0 && x.usedThisStage < u; })
+                .findFirst().orElse(protects.get(0));
             int lim = t.param("uses", 0);
             if (lim <= 0) continue; // 무제한 방어는 소진 개념 없음
             if (t.usedThisStage >= lim) {
@@ -10625,6 +10636,7 @@ public class TRPGGameManager {
                 continue;
             }
             t.usedThisStage++;
+            guardStateChanged = true;
             gameLogger.logAbilityResult(pd.gmDisplayName(), t.name, "방어 발동 (소진 " + t.usedThisStage + "/" + lim + ")");
             if (t.usedThisStage >= lim)
                 ai.injectGmSystem("[보호 소진] " + pd.gmDisplayName() + "의 '" + t.name + "'이(가) 방금 마지막 " + lim + "번째로 발동해 소진됐다 — 이후엔 경감 없이 정상 판정한다.");
@@ -10640,15 +10652,22 @@ public class TRPGGameManager {
                 continue;
             }
             t.usedThisStage++;
+            guardStateChanged = true;
             gameLogger.logAbilityResult(pd.gmDisplayName(), t.name, "치명 무효화 소진 (1/1)");
             ai.injectGmSystem("[보호 소진] " + pd.gmDisplayName() + "의 치명 무효화가 방금 소진됐다 — 이후엔 정상 판정한다(재사용 불가).");
         }
-        // 상시 지속효과 종료(EFFECT_END) — debt·witness_pact 등이 조건 충족으로 소진되면 GM이 종료 태그를 낸다.
-        for (String key : ai.parseEffectEndTags(raw)) {
-            String k = key == null ? "" : key.trim();
+        // ★#3 캐시 프롬프트 정합★: 보호 소진 시 gmSystemPrompt를 재빌드 — 블록 게이트(usedThisStage>=uses면 제외)가 반영돼
+        //   이후 턴 GM이 '아직 남은 보호'로 오판하지 않게(injectGmSystem 1회 통보만으론 캐시된 옛 블록이 계속 보인다).
+        if (guardStateChanged) gmSystemPrompt = buildGmPrompt(state.getGdamData());
+        // 상시 지속효과 종료(EFFECT_END key + player) — ★플레이어별로★ 종료(멀티플레이 오제거 방지, #7).
+        for (String[] ke : ai.parseEffectEndTags(raw)) {
+            String k = ke[0], ownerIn = ke.length > 1 ? ke[1] : "";
             if (k.isEmpty()) continue;
-            if (activeTimedEffects.removeIf(te -> te.key.equalsIgnoreCase(k)))
-                gameLogger.logEvent("[지속효과 종료] " + k + " (GM EFFECT_END)");
+            PlayerData op = ownerIn.isBlank() ? null : findAnyByName(ownerIn);
+            String ownerName = op != null ? op.gmDisplayName() : ownerIn; // 저장된 owner=gmDisplayName과 맞춘다
+            boolean removed = activeTimedEffects.removeIf(te -> te.key.equalsIgnoreCase(k)
+                && (ownerName.isBlank() || te.owner.equalsIgnoreCase(ownerName) || te.owner.equalsIgnoreCase(ownerIn)));
+            if (removed) gameLogger.logEvent("[지속효과 종료] " + k + (ownerIn.isBlank() ? "" : "(" + ownerIn + ")") + " (GM EFFECT_END)");
         }
     }
 

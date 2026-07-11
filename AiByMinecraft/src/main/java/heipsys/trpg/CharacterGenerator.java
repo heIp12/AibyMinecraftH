@@ -357,7 +357,8 @@ public class CharacterGenerator {
             return generateInitialTraits(pd, roleContext, tier);
         }).thenApply(traits -> {
             pd.traits.addAll(traits);
-            pd.snapshotBase();
+            pd.snapshotBase();       // ★base는 특성 보정 '이전' 원시 스탯으로 고정★ (reapplyTraitStats가 매 스테이지 base 위에 다시 얹으므로)
+            pd.reapplyTraitStats();  // ★첫 스테이지부터 초기 특성 스탯 적용★ — 예전엔 생략돼 1스테이지엔 미적용→다음 스테이지에 갑자기 증가(중복 아님: base가 원시라 재적용해도 동일)
             return pd;
         });
     }
@@ -479,18 +480,16 @@ public class CharacterGenerator {
     private CompletableFuture<List<TraitData>> generateInitialTraits(PlayerData pd, String roleContext, JobTier tier) {
         String tierRules = switch (tier) {
             case STRONG -> """
-- grade: A 또는 B 사용 (해결사·전문 능력자이므로 강한 특성)
-- 사명감, 오랜 훈련, 특수 기술에서 비롯된 능력으로 작성
-- 능동 특성(active:true) 1개 이상 포함 권장. 쿨다운(cooldownTurns) 1~2 설정
-- 직업·배경에 맞는 제약(조건부 발동, 쿨다운)이 있을 수 있음
+- grade: A 또는 B 사용 (해결사·전문 능력자이므로 강한 스탯 총합)
+- 사명감·오랜 훈련·특수 기술에서 비롯된 ★상시(패시브) 특성★으로 작성. ★active는 항상 false★ — 초기 특성은 발동 능력이 아니라 스탯·기질이다(발동 능력은 게임 진행 보상으로 얻는다).
+- 강한 등급인 만큼 스탯 총합(A=5·B=3)을 그 강점이 드러나게 배분하라(예: 응급구조사 A → 근력·영감에 몰아주기).
 - 개수: 1~2개
 """;
             case RARE -> """
-- grade: S 또는 A 사용 (초자연적 직종이므로 극히 강력한 특성)
-- 반드시 큰 대가·위험부담 수반: 쿨다운 3턴 이상 또는 체력·정신력 소모 또는 특정 조건 하에서만 발동
-- 능동 특성(active:true) 필수 포함. cooldownTurns 2~4 설정
-- 강점이 극단적인 만큼 뚜렷한 약점이나 부작용 특성도 1개 추가 (grade D 또는 F)
-- 개수: ★정확히 2~3개★ (강점 1~2 + 약점/부작용 1). 그 이상 만들지 마라 — 한 직업 설정을 조각내 필러 특성을 늘리지 말 것.
+- grade: S 또는 A 사용 (초자연적 직종 — 스탯 총합이 극히 크다: S=10·A=5)
+- ★상시(패시브) 특성★으로 작성. ★active는 항상 false★(발동 능력·비용 없음 — 초기 파워는 오직 스탯으로). 초자연적 기질을 강한 스탯으로 표현하라(예: 예민한 직감 → 영감·행운↑).
+- 강점이 극단적인 만큼 뚜렷한 약점·부작용 특성도 1개 ★반드시★ 추가 (grade D 또는 F, 순합 음수).
+- 개수: ★정확히 2~3개★ (강점 1~2 + 약점 1). 그 이상 만들지 마라 — 한 직업 설정을 조각내 필러 특성을 늘리지 말 것.
 """;
             default -> """
 - grade: C·D·F 중 ★하나만★ 사용 (초기 캐릭터이므로 강한 특성 없음. 'D/F'처럼 여러 글자로 쓰지 말고 한 등급만)
@@ -557,19 +556,38 @@ public class CharacterGenerator {
                         if (obj.has("hp_max_add"))  td.hp_max_add = obj.get("hp_max_add").getAsInt();
                         if (obj.has("san_max_add")) td.san_max_add= obj.get("san_max_add").getAsInt();
                     } catch (Exception ignore) { /* 잘못된 스탯 필드는 0 유지 — 특성 전체를 폴백시키지 않음 */ }
-                    td.effectType = ""; // 초기 특성은 서술형(시스템 기계효과 없음) — 스탯만 등급에 맞춘다
+                    // ★E3: 초기 특성 = 스탯 전용 패시브★ — 기계효과(effectType)뿐 아니라 활성(active)·쿨다운도 비운다.
+                    //   예전엔 effectType만 비워, active:true·effect가 남은 '공짜 서술형 능동'(차원문 열기·시간 되감기 등)이
+                    //   스탯 예산과 ★이중으로★ 붙었다(스탯 전용이라는 프롬프트와 모순). 초기 파워는 스탯으로만 — 능동 능력은 클리어 보상에서.
+                    td.effectType = "";
+                    td.active = false;      // 활성 능력 제거(발동 버튼·서술형 능동 차단) → effect는 패시브 설명(연출)으로만 남음
+                    td.cooldownTurns = 0;    // 패시브는 쿨다운 없음
                     SystemTraitRegistry.applyDefaults(td);
                     result.add(td);
                 }
                 // ★개수 상한(저모델 필러 방지)★: RARE=3, 그 외=2. 저모델이 낯선 직업 설정어를 조각내 4~5개
                 //   비슷한 필러 이름(신호 잡음·흐려진 이름…)을 뽑던 문제 → 초과분은 앞에서부터 유지(핵심 강점 우선).
                 int cap = (tier == JobTier.RARE) ? 3 : 2;
-                if (result.size() > cap) result = new ArrayList<>(result.subList(0, cap));
+                if (result.size() > cap) {
+                    List<TraitData> keep = new ArrayList<>(result.subList(0, cap));
+                    // ★RARE 약점 보존★: 앞 3개가 전부 강점이고 약점(D/E/F)이 뒤로 밀려 잘리면, 마지막 강점 1개를 약점으로 교체
+                    //   (RARE의 '강점+약점' 규칙을 파서가 보장 — 예전엔 subList가 뒤의 약점만 통째로 버렸다).
+                    if (tier == JobTier.RARE && keep.stream().noneMatch(t -> isWeakGrade(t.grade))) {
+                        TraitData weak = result.stream().skip(cap).filter(t -> isWeakGrade(t.grade)).findFirst().orElse(null);
+                        if (weak != null) keep.set(cap - 1, weak);
+                    }
+                    result = keep;
+                }
                 return result.isEmpty() ? staticFallbackTraits(pd) : result;
             } catch (Exception ex) {
                 return staticFallbackTraits(pd);
             }
         });
+    }
+
+    /** 약점 등급(D/E/F) 판정 — RARE 개수 상한에서 필수 약점 특성을 보존하는 데 쓴다. */
+    private static boolean isWeakGrade(String g) {
+        return "D".equals(g) || "E".equals(g) || "F".equals(g);
     }
 
     /** AI 실패 시 스탯 기반 폴백 특성 (서사형 묘사, 스탯 수치 노출 없음) */

@@ -1624,9 +1624,24 @@ public class AiManager {
         return parseSelfClosingAttr(response, "<FATAL_GUARD_USED ", "player");
     }
 
-    /** <EFFECT_END key="X"/> 모두 파싱 → [X, ...] — 상시 지속효과(debt·witness_pact 등)를 조건 충족 시 종료. */
-    public java.util.List<String> parseEffectEndTags(String response) {
-        return parseSelfClosingAttr(response, "<EFFECT_END ", "key");
+    /** <EFFECT_END key="X" [player="Y"]/> 모두 파싱 → [{key, player}, ...]. player 없으면 "".
+     *  player를 함께 받아 ★특정 플레이어의★ 지속효과만 종료(멀티플레이에서 같은 key가 여럿일 때 오제거 방지). */
+    public java.util.List<String[]> parseEffectEndTags(String response) {
+        java.util.List<String[]> out = new ArrayList<>();
+        final String PREFIX = "<EFFECT_END ";
+        int from = 0;
+        while (true) {
+            int idx = response.indexOf(PREFIX, from);
+            if (idx == -1) break;
+            int end = response.indexOf("/>", idx);
+            if (end == -1) break;
+            String attrs  = response.substring(idx + PREFIX.length(), end);
+            String key    = extractAttr(attrs, "key").orElse(null);
+            String player = extractAttr(attrs, "player").orElse("");
+            if (key != null && !key.isBlank()) out.add(new String[]{key.trim(), player.trim()});
+            from = end + 2;
+        }
+        return out;
     }
 
     /** <ZONE_UPDATE player="X" zone="Y" spot="Z" forced="true"/> 파싱 → [{player, zone, spot, forced}, ...]
