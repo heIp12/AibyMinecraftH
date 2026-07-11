@@ -4088,6 +4088,14 @@ public class TRPGGameManager {
     private void handleSystemTraitActivation(Player player, PlayerData pd, TraitData td) {
         SystemTraitRegistry.Effect e = SystemTraitRegistry.Effect.byKey(td.effectType);
         if (e == null) { player.sendMessage("§7이 특성은 자동으로 효과가 적용됩니다."); return; }
+        // ★중앙 사용횟수 게이트★: uses 기반 능력의 스테이지 한도를 '단일 분기점'에서 강제한다.
+        //   신규 특이 능력 16종은 개별 activateXxx에 uses 검사가 없어 무제한 발동됐다 → 여기서 일괄 차단(발동·소모 전).
+        //   mx==0은 '횟수 제한 없음'(쿨다운·패시브 관리 또는 uses=0 무제한)이므로 건드리지 않는다.
+        int mxUses = SystemTraitRegistry.maxUsesPerStage(td);
+        if (mxUses > 0 && td.usedThisStage >= mxUses) {
+            player.sendMessage("§c[" + td.name + "] 이번 스테이지 사용 횟수를 모두 소진했습니다.");
+            return;
+        }
         // ★능력 이벤트 로깅★: 모든 능동 능력 발동을 단일 분기점에서 구조화 기록(로그 뷰어 '능력' 필터·시점용).
         //   세부 결과는 각 activateXxx가 별도로 남기므로 여기선 '발동' 사실만 남긴다.
         gameLogger.logAbility(pd != null ? pd.gmDisplayName() : player.getName(),
@@ -6018,10 +6026,7 @@ public class TRPGGameManager {
             Component.text("[" + td.name + "] 원격 감지"),
             Component.text("원격으로 감지할 대상을 입력하세요. (범위: " + rangeStr + ")\n예: 옆 방의 대화 / 위층에 무엇이 있는지 / 다른 구역의 인기척"),
             "감지 대상", Component.text("감지하기"),
-            target -> {
-                applyTraitUsed(pd, td.id, state.getCurrentTurn());
-                handleRemoteSenseObservation(player, pd, td.id, target);
-            });
+            target -> handleRemoteSenseObservation(player, pd, td.id, target)); // 소모는 핸들러에서 1회(입력 도착 시) — 콜백 중복 소모 제거(대가·횟수 2배 버그)
     }
 
     private void activateForesight(Player player, PlayerData pd, TraitData td) {
@@ -6035,10 +6040,7 @@ public class TRPGGameManager {
             Component.text("[" + td.name + "] 예지"),
             Component.text("결과를 미리 보고 싶은 '다음 행동'을 입력하세요. 예상 결과·분기를 보여줍니다.\n예: 문을 열고 복도로 나간다 / 그에게 진실을 묻는다"),
             "예측할 행동", Component.text("내다보기"),
-            plan -> {
-                applyTraitUsed(pd, td.id, state.getCurrentTurn());
-                handleForesightQuery(player, pd, td.id, plan);
-            });
+            plan -> handleForesightQuery(player, pd, td.id, plan)); // 소모는 핸들러에서 1회(입력 도착 시) — 콜백 중복 소모 제거(대가·횟수 2배 버그)
     }
 
     private void activateSocial(Player player, PlayerData pd, TraitData td) {

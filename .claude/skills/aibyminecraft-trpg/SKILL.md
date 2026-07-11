@@ -357,6 +357,19 @@ description: >-
   causal_debt(확정성공+N턴뒤 재앙)·rule_invert(규칙1 역전+분노↑)·feed_entity(제물→진정+괴담 성장)·last_words(확정 유언단서)·
   empty_chair(허수 인원→표적 분산)·vanish(대상 인식서 소실, ★S급이면 td.grade로 괴담까지★)·illusion(환영·약한조종, 괴담본체 무효)·
   item_create(ITEM_GRANT로 GM 자유 지급). 입력형 9종(대상·내용 다이얼로그)은 `isInputAbility`에 등록.
+- **★특이 능력 16종 uses/코스트 정합(GPT 감사)★**: enum·activate는 넣었지만 ★3개 표(applyDefaults·maxUsesPerStage·
+  abilityCost)에 미등록★이라 (a)uses 미보장·미클램프 (b)maxUsesPerStage=0→개별 activate에 uses 가드도 없어 무제한 발동
+  (c)abilityCost=default 3→uses1·cooldown-1 할인으로 규칙뒤집기·확정대성공이 C까지 하락. 수정: ①applyDefaults에 16 case
+  (uses·turns·power·depth·cost 기본+클램프) ②maxUsesPerStage 16 등록 ③abilityCost 16 base(causal_debt·rule_invert=10,
+  item_create=power스케일 3/5/10, pitfall/vanish=5 …) ④costText에 mad_clarity(SAN)·causal_debt·rule_invert·feed_entity·
+  pitfall·name_steal 대가 표기. ★중앙 사용횟수 게이트★: `handleSystemTraitActivation` 최상단에 `mx=maxUsesPerStage(td);
+  if(mx>0 && usedThisStage>=mx) 차단`(발동·소모 전, 단일 분기점) — 16종 개별 가드 불필요. ★mx==0=무제한(one_way_call uses=0
+  ·쿨다운관리)이라 건드리면 안 됨→반드시 `mx>0` 조건★. ⑤음의 스텟 하한 −6(str_add=-50식 negSum 부풀려 예산 우회 차단).
+  ⑥remote_sense·foresight 이중 applyTraitUsed(다이얼로그 콜백+핸들러) → 콜백 것 제거(핸들러가 입력 도착 시 1회 소모;
+  chat 경로 2501~는 원래 핸들러 의존이라 정상). 검증: scratch `TraitRegTest` 42케이스(16 uses·클램프·음수·C강등/제거·S생존·costText).
+  ★남은 감사(미착수·설계 요함)★: 패시브 protect uses 미집행·passive_gm 상시화 / 지속형(debt·vanish·rule_invert 등) 엔진 상태
+  없이 injectGmSystem 1회 스냅샷 의존 / 성장 JSON에 effect_params·origin 미상속(약화) + 생성 실패 시 보상 조용히 소실 /
+  이어하기·시간회귀가 변신·행동불능·발견단서 상태 미복원(대가만 남음) / 초기특성 CharacterGenerator 예산 미적용.
 - **뷰어 재생**: buildQueue→queue/qi, step()↔renderQueueItem(instant), seekTo(구간 슬라이더), evHtmlSplit
   (전체·시점 공통 — GM서술 내 [이름]대사 분리), headHtml 'other'클래스(타인=우측정렬), mapZoom(지도 확대),
   #infoResize(정보창 폭·--ifs 글씨 스케일).
