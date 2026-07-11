@@ -191,6 +191,14 @@ public class TRPGGameManager {
      *  그 판정이 성공하면 시스템이 그 자리(같은 배역 문맥)에서 onClearEnding으로 매듭짓는다. 비동기 멀티플레이라
      *  '다음 응답'이 다른 구역의 딴 플레이어 턴으로 새어 종결을 놓치던 버그(제보) 방지. 실패·부분성공이면 폐기. */
     private final Map<UUID, JsonObject> pendingDecisiveClear = new ConcurrentHashMap<>();
+
+    /** ★전역 결정타 게이트(감사 B)★ — 미해결 결정타 판정(굴림~결과 서술까지)이 공중에 떠 있는 플레이어들.
+     *  이 집합이 비어있지 않은 동안 ★어느 플레이어의 <CLEAR>든★ 보류된다(heldCrossClear). 5스테이지 실측 버그:
+     *  차복만의 결정타(부분성공)가 착지하기 전에 옥분의 병렬 응답 CLEAR가 통과해 A급 종결 → 판정 결과와 엔딩이 모순. */
+    private final java.util.Set<UUID> unresolvedDecisiveDice = ConcurrentHashMap.newKeySet();
+    /** 결정타 미해결 중 도착해 보류된 타 응답의 CLEAR 태그(최신 1개)와 그 발신 플레이어. 판정 성공 시 적용, 아니면 폐기. */
+    private JsonObject heldCrossClear = null;
+    private Player heldCrossClearBy = null;
     /** ★체력·정신 소모 메시지 지연 큐★ — STATE_UPDATE(공격받음 등)로 생긴 vital 변화 안내를 ★관련 서술이 나온 뒤★
      *  출력하려고 모아둔다(주사위 결과처럼). applyStateUpdate가 적립 → 서술 전달 후 flushPendingVitalMsgs가 배출. */
     private final Map<UUID, java.util.List<String>> pendingVitalMsgs = new ConcurrentHashMap<>();
@@ -1009,6 +1017,7 @@ public class TRPGGameManager {
         stunTurns.clear();
         possessingNpc.clear();
         activeTimedEffects.clear();
+        unresolvedDecisiveDice.clear(); heldCrossClear = null; heldCrossClearBy = null; // 결정타 게이트 리셋(감사 B)
         resetOverviewCache();
         preSpawnCallCounts.clear();
         preSpawnLastBeat.clear();
@@ -2367,6 +2376,7 @@ public class TRPGGameManager {
 
         morphTurns.clear(); observerTurns.clear(); animalForm.clear(); stunTurns.clear(); possessingNpc.clear(); // 변신·관조·동물형태·행동불능·빙의는 스테이지 넘어 유지되지 않음
         activeTimedEffects.clear(); // 지속형 능력 효과(카운트다운·상시)도 스테이지 넘어 유지되지 않음
+        unresolvedDecisiveDice.clear(); heldCrossClear = null; heldCrossClearBy = null; // 결정타 게이트도 스테이지 리셋(감사 B)
         commBypassTurn.clear(); commBypassStealth.clear(); // 통신 개방도 스테이지 넘어 유지 안 됨(턴 번호 재사용 오작동 방지)
         resetOverviewCache(); // 새 스테이지 = 새 괴담 → 시나리오 개요 캐시 초기화(다음 사용 시 재생성)
         loadForbiddenWord(); // 금지워드형 괴담의 금지어 로드(entity.forbidden_word)
@@ -2935,6 +2945,15 @@ public class TRPGGameManager {
                         + "(종결 처리는 시스템이 이어서 한다), 실패·부분성공이면 대가·전개를 주고 끝내지 마라.");
                     clearTag = null; // 이 턴은 클리어 보류 — 아래로 흘러 <DICE> 굴림을 실제로 수행하고, 성공 시 stash가 매듭짓는다.
                 }
+                // ★전역 결정타 게이트(감사 B)★: 다른 응답의 결정타 판정이 아직 미해결이면 이 CLEAR를 보류한다.
+                //   (같은 응답 DICE+CLEAR는 위 stash가 처리 — 여기는 '타 플레이어/후속 응답'의 CLEAR가 판정을 앞지르는 경쟁 차단.)
+                //   판정이 성공으로 확정되면 resolveDecisiveDice가 보류분을 적용하고, 부분성공·실패면 폐기+GM 교정 주입.
+                if (clearTag != null && !unresolvedDecisiveDice.isEmpty()) {
+                    heldCrossClear = clearTag;
+                    heldCrossClearBy = player;
+                    gameLogger.logEvent("[CLEAR 보류] 미해결 결정타 판정 " + unresolvedDecisiveDice.size() + "건 — 판정 확정 후 처리");
+                    clearTag = null; // 서술·상태 적용은 아래 일반 경로로 계속(종결만 보류)
+                }
                 if (clearTag != null) {
                     // ★#2 종결 전 상태 반영★: CLEAR로 이 응답의 상태·NPC종결·아이템소모 태그가 유실되지 않게 먼저 적용한다
                     //   (희생 hp_change로 인한 사망·봉인 상태·최종 아이템 소모가 등급·생존자 평가에 반영되게). CLEAR는 여기서
@@ -3020,6 +3039,9 @@ public class TRPGGameManager {
 
             // 4. 서술 배달 — <DICE>가 있으면 그 위치에서 쪼개 [앞 서술]→[주사위 인라인]→[뒤 결과 서술](#254). 없으면 통짜 배달.
             JsonObject inlineDice = (player != null && player.isOnline()) ? ai.parseDiceTag(raw) : null;
+            // ★결정타 등록(감사 B)★: 이 굴림이 결정타(명시 decisive / CLEAR 동봉 stash / 고DC / 고위협)면 해소될 때까지
+            //   전역 게이트에 올린다 — 이 동안 도착하는 어떤 CLEAR도 판정 확정 전엔 처리되지 않는다.
+            if (inlineDice != null && isDecisiveDice(player, inlineDice)) unresolvedDecisiveDice.add(player.getUniqueId());
             if (inlineDice != null) deliverNarrativeWithInlineDice(player, raw, inlineDice);
             else deliverNarrative(player, raw);
             // ★체력·정신 소모 안내는 관련 서술(공격받았다 등) '뒤'에 출력★(요청): 서술을 배달(큐 적재)한 직후
@@ -8365,7 +8387,10 @@ public class TRPGGameManager {
                 if (trimmed.isBlank() || trimmed.startsWith("§c")) return;
                 // deliver() 내부에서 format()이 호출되므로 여기서 중복 호출하지 않는다
                 narrativeDelivery.deliver(p, trimmed);
-                gameLogger.logGmOutput(p.getName() + "(대기)", trimmed);
+                // ★계정명 노출 금지★ — 대기(미등장) 서술 로그도 캐릭터명으로(없으면 중립 라벨). p.getName()은 계정명이라 뷰어에 그대로 샜다.
+                PlayerData wpd = state.getPlayer(p);
+                String wname = (wpd != null && wpd.charName != null && !wpd.charName.isEmpty()) ? wpd.charName : "대기 참가자";
+                gameLogger.logGmOutput(wname + "(대기)", trimmed);
             }));
     }
 
@@ -14260,11 +14285,29 @@ public class TRPGGameManager {
     /** ★#254 인라인 주사위★: 서술을 <DICE> 위치에서 쪼개 [앞 서술]→[주사위 결과 인라인]→[뒤 결과 서술] 순으로 배달한다.
      *  주사위 결과는 computePreRollNote가 미리 굴려둔 값(공정)으로 showInlineDice가 표시. 태그를 못 찾으면 통짜 배달+기존 연출로 폴백. */
     private void deliverNarrativeWithInlineDice(Player player, String raw, JsonObject dice) {
+        // ★종결 결정타 산문 폐기(감사 B·Q1)★: GM이 decisive를 명시했거나 CLEAR를 동봉(stash)한 굴림은, GM이 판정
+        //   결과를 모른 채 쓴 서술(태그 앞이든 뒤든 — 5스테이지 실측: '완전 구조' 성공 서술이 태그 ★앞★에 왔다)을
+        //   통째로 정본에서 제외한다. 시도 라인은 시스템이 결정론으로 내고(저모델이 형식을 안 지켜도 안전),
+        //   결과 서술은 followUpDiceResult가 ★실제 판정값★으로 쓴다. (고DC·고위협 '추정' 결정타는 산문 유지 —
+        //   과폐기 방지 — 대신 전역 CLEAR 게이트만 적용.)
+        if (isHardDecisiveDice(player, dice)) {
+            PlayerData dpd = state.getPlayer(player);
+            String reason = dice.has("reason") && !dice.get("reason").isJsonNull() ? dice.get("reason").getAsString().trim() : "";
+            String who = dpd != null ? dpd.gmDisplayName() : player.getName();
+            deliverNarrative(player, "§f" + who + " — " + (reason.isEmpty() ? "결정적 시도" : reason) + ". §7모든 것이 이 순간에 걸렸다.");
+            narrativeDelivery.runAfterDelivery(player, () ->
+                showInlineDice(player, dice, outcome -> {
+                    if (player.isOnline()) followUpDiceResult(player, dice, outcome); // 결과는 항상 실제 판정값으로 재서술
+                    else resolveDecisiveDice(player, outcome);                        // 오프라인 — 게이트만 해소(교착 방지)
+                }));
+            return;
+        }
         int s = raw.indexOf("<DICE>");
         int e = raw.indexOf("</DICE>");
         if (s < 0 || e < 0 || e < s) { // 태그 형태가 어긋나면 안전 폴백
             deliverNarrative(player, raw);
-            if (player.isOnline()) present(() -> { if (player.isOnline()) showInlineDice(player, dice, null); });
+            if (player.isOnline()) present(() -> { if (player.isOnline()) showInlineDice(player, dice, outcome -> resolveDecisiveDice(player, outcome)); });
+            else resolveDecisiveDice(player, "실패"); // 오프라인 — 게이트 해소(보류 CLEAR는 폐기 경로)
             return;
         }
         String before = raw.substring(0, s);
@@ -14275,10 +14318,62 @@ public class TRPGGameManager {
             showInlineDice(player, dice, outcome -> {
                 if (player.isOnline() && !ai.stripTags(fAfter).isBlank()) {
                     deliverNarrative(player, fAfter);          // GM이 결과를 이어 썼음
-                    completeDeferredClear(player, outcome);    // ★미뤄둔 결정타 클리어를 이 판정 성공 시 그 자리에서 매듭
+                    if (completeDeferredClear(player, outcome)) { // ★미뤄둔 결정타 클리어를 이 판정 성공 시 그 자리에서 매듭
+                        heldCrossClear = null; heldCrossClearBy = null; // stash가 매듭 — 보류분은 중복이라 정리
+                    }
+                    resolveDecisiveDice(player, outcome);      // ★전역 게이트 해소 — 보류된 타 응답 CLEAR 적용/폐기
                 } else if (player.isOnline())
                     followUpDiceResult(player, dice, outcome); // ★결과 서술 없음 → 자동 후속★(주사위만 굴리고 방치 방지; 미뤄둔 클리어도 여기서 처리)
+                else resolveDecisiveDice(player, outcome);     // 오프라인 — 게이트만 해소
             }));
+    }
+
+    /** ★결정타 판별(감사 B)★ — 전역 CLEAR 게이트 등록 기준. 명시(decisive)·CLEAR 동봉(stash)·고DC(14+)·고위협(70+)이면
+     *  이 굴림이 해소될 때까지 어떤 CLEAR도 처리하지 않는다. 저모델이 decisive를 안 붙여도 뒤 세 추론이 백스톱. */
+    private boolean isDecisiveDice(Player player, JsonObject dice) {
+        if (dice == null || player == null) return false;
+        if (isHardDecisiveDice(player, dice)) return true;
+        try { if (dice.has("dc") && !dice.get("dc").isJsonNull() && dice.get("dc").getAsInt() >= 14) return true; } catch (Exception ignored) {}
+        return state.getThreat() >= 70;
+    }
+
+    /** ★종결 결정타(산문 폐기 대상)★ — GM이 명시(decisive=1/true)했거나 같은 응답에 CLEAR를 동봉(stash)한 굴림만.
+     *  (고DC·고위협 추정분까지 산문을 폐기하면 정상 서술 손실이 커서, 폐기는 '종결 의도가 명시된' 굴림에 한정한다.) */
+    private boolean isHardDecisiveDice(Player player, JsonObject dice) {
+        if (dice == null || player == null) return false;
+        if (pendingDecisiveClear.containsKey(player.getUniqueId())) return true; // DICE+CLEAR 동봉 → stash됨
+        if (dice.has("decisive") && !dice.get("decisive").isJsonNull()) {
+            try {
+                String d = dice.get("decisive").getAsString().trim();
+                if ("1".equals(d) || "true".equalsIgnoreCase(d) || "yes".equalsIgnoreCase(d)) return true;
+            } catch (Exception e) {
+                try { if (dice.get("decisive").getAsBoolean()) return true; } catch (Exception ignored) {}
+            }
+        }
+        return false;
+    }
+
+    /** ★전역 결정타 게이트 해소(감사 B)★ — 이 플레이어의 미해결 결정타를 내리고, 모든 결정타가 해소됐으면
+     *  보류된 CLEAR(heldCrossClear)를 판정 결과에 따라 적용(성공/대성공)하거나 폐기+GM 교정(부분성공·실패)한다. */
+    private void resolveDecisiveDice(Player player, String outcome) {
+        if (player == null) return;
+        if (!unresolvedDecisiveDice.remove(player.getUniqueId())) return; // 결정타로 등록된 굴림이 아니었음
+        if (!unresolvedDecisiveDice.isEmpty()) return;                    // 다른 결정타가 아직 공중에 — 보류 유지
+        JsonObject held = heldCrossClear;
+        Player by = heldCrossClearBy;
+        heldCrossClear = null; heldCrossClearBy = null;
+        if (held == null) return;
+        boolean success = "성공".equals(outcome) || "대성공".equals(outcome);
+        if (!success) {
+            gameLogger.logEvent("[CLEAR 폐기] 결정타 " + (outcome == null ? "미확정" : outcome) + " — 보류된 종결 무효");
+            ai.injectGmSystem("[판정 정합] 방금 결정타 판정이 ★" + (outcome == null ? "실패" : outcome) + "★로 확정됐다 — 상황은 종결되지 않았다. "
+                + "앞서 성공·해결된 것처럼 서술된 부분이 있다면 다음 서술에서 대가·미완으로 바로잡아라. <CLEAR>는 실제로 매듭지어졌을 때만 다시 내라.");
+        } else if (currentPhase == Phase.HORROR) {
+            gameLogger.logEvent("[CLEAR 해소] 결정타 성공 확정 — 보류된 종결 적용");
+            applyClearTag(by != null && by.isOnline() ? by : player, held);
+        } else {
+            gameLogger.logEvent("[CLEAR 보류분 정리] 이미 종결 진행 중 — 중복 종결 생략"); // deferredClear 등이 먼저 매듭지음
+        }
     }
 
     /** ★판정 결과 자동 후속 서술★: GM이 <DICE>만 내고 결과 서술을 안 붙이면(2단계 의도·저품질 모델), 그 판정 결과로
@@ -14286,7 +14381,7 @@ public class TRPGGameManager {
      *  플레이어가 방치돼(두 턴 내리 주사위만 굴림), '행동 전달 좀…' 같은 요청이 나왔다. */
     private void followUpDiceResult(Player player, JsonObject dice, String outcome) {
         PlayerData pd = player != null ? state.getPlayer(player) : null;
-        if (pd == null || !player.isOnline()) return;
+        if (pd == null || !player.isOnline()) { resolveDecisiveDice(player, outcome); return; } // 게이트 누수 방지
         // ★미뤄둔 결정타 클리어★: 이 판정이 성공이면 원 GM이 정한 클리어 태그를 꺼내(1회성) 결과 서술 뒤 매듭짓는다.
         //   (실패·부분성공이면 stash는 폐기되고, 아래 서술은 대가·전개로 흐른다.)
         JsonObject deferredClear = takeDeferredClearOnSuccess(player, outcome);
@@ -14299,8 +14394,26 @@ public class TRPGGameManager {
             + (deferredClear != null ? " 이 성공으로 상황이 ★실제로 해결·종결★되었다 — 그 매듭이 드러나게 서술하라(종료 처리는 시스템이 이어서 한다). <CLEAR>는 직접 내지 마라." : "");
         ai.callGmAiOnce(gmSystemPrompt, sys).thenAccept(resp ->
             plugin.getServer().getScheduler().runTask(plugin, () -> {
-                if (player.isOnline() && resp != null && !ai.stripTags(resp).isBlank()) deliverNarrative(player, resp);
-                if (deferredClear != null) applyClearTag(player, deferredClear); // 결과 서술 뒤 시스템이 매듭
+                // ★위상 가드(감사 B)★: 엔딩·종결 처리 후 도착한 후속은 배달하지 않는다 — 5스테이지 실측: 클리어 선포
+                //   '뒤'에 '차복만이 물에 빠졌다' 후속이 새어 나와 엔딩과 모순. 게이트는 조용히 해소만 한다.
+                if (currentPhase == Phase.GAMEOVER || currentPhase == Phase.CLEAR
+                    || currentPhase == Phase.IDLE || concludingEnding) {
+                    unresolvedDecisiveDice.remove(player.getUniqueId());
+                    heldCrossClear = null; heldCrossClearBy = null;
+                    return;
+                }
+                boolean ok = player.isOnline() && resp != null && !resp.startsWith("§c") && !ai.stripTags(resp).isBlank();
+                if (ok) {
+                    // ★후속 응답도 상태를 실제로 반영(감사 B)★ — 예전엔 서술만 배달해 '얼음물에 빠졌다' HP 피해가 미적용.
+                    for (JsonObject su : ai.parseAllStateUpdates(resp)) applyStateUpdate(su);
+                    flushPendingVitalMsgs();
+                    deliverNarrative(player, resp);
+                }
+                if (deferredClear != null) {
+                    heldCrossClear = null; heldCrossClearBy = null; // 원 GM stash가 매듭짓는다 — 보류분은 중복이라 정리
+                    applyClearTag(player, deferredClear);           // 결과 서술 뒤 시스템이 매듭
+                }
+                resolveDecisiveDice(player, outcome); // ★전역 게이트 해소 — 보류된 타 응답 CLEAR 적용/폐기
             }));
     }
 
