@@ -181,6 +181,16 @@ description: >-
   창작+전 문장 도배★하던 버그(게부라 ending_style '~라구/~다구' → 실제 '왔냐구/거라구/있으라구'로 의문문까지 '~구' 도배, 단어 망가뜨림).
   restyle sys에 3중 가드 추가: ①★스펙 명시 어미만·새 어미 창작 금지★(안 맞는 문장은 원형 유지) ②의문·감탄·외침·부름은 원형 유지+단어
   망가뜨려 도배 금지 ③'자가검수'를 평서문 일부로 완화(전 문장 도배 아님). ★ending_style은 어미를 '얹는' 것이지 새 말투 창작이 아니다.★
+- **★생성 후 타임라인 정합 자동 보정(save() 직전, GPT 지적: 검증기가 존재 여부만 봄)★**: `GdamGenerator.repairTimelineConsistency()`가
+  `save()`에서 `finalizeNpcSpeech` 직전 실행 — 거부 아닌 '보정'(repairZoneRefs 철학, 재생성 비용 0). ①종료(is_end) 사건 시각을 end_time에
+  스냅 ②end_time 지나 예정된 main_event를 창 안(end_time)으로 당김 ③★시간창 폭주 보정★: 단일 연속 창(날짜 없음·≤16h)에서
+  `(end−start)÷minutes_per_turn`이 스케일별 '괴담 턴' 예산(로컬 6~9…코즈믹 24~30, `room` 기반 `expectedHorrorTurns`)에서 넉넉한 허용대
+  (×0.75~×1.5) 밖이면 mpt 재계산 — ★main_events는 절대시각이라 mpt만 바꿔도 사건 시각 유지★(창 축소 안 함=사건 좌초 방지). ★주의: daily_turns는
+  '일상 파트' 턴 수지(엔진 `consumeDailyTurn`) 괴담 창 예산 아님★ — 괴담 창은 clockMinutes가 매 턴 mpt씩 흘러 end_time 도달. 다중일(날짜 박힌
+  start/end)은 `<TIME_SKIP>` 구조라 ②③ skip. ★생성 프롬프트 자기검증 규칙 1번도 정정★: `daily_turns×mpt≈창`(오개념) → `창÷mpt≈괴담턴`.
+  GPT 제안 7검사 중 결정론 가능한 2건(is_end 시각·페이스)만 엔진화, 나머지(시대·직업 / 코어롤 균형 / 해결 경로)는 의미판단 필요라 프롬프트 자기검증
+  (GDAM 837~841)에 유지 — '엔진=기계검사, 프롬프트=의미검사' 분업. 검증: scratch `TimelineRepairTest` 10케이스(측신540·역병360 보정·빨간종이120 무변경·
+  is_end스냅·창밖클램프·다중일무변·코즈믹슬랙·과속·거대창가드) 통과.
 - **★세피라 말투 캐논 강제(생성기 임의창작 덮어씀)★**: 세피라 말투는 `ProjectMoonLore.SEPHIRAH`에 다 지정했는데 생성기가 npc의
   speech_style·ending_style을 새로 창작해 페르소나가 깨지던 문제(게부라 ending_style '~라구/~다구' 창작→도배). `finalizeNpcSpeech`가
   familiar_kind면 early-return이라 방치됐음 → ★그 앞에 `applySephirahCanonSpeech(gdam)` 추가★(familiar 여부 무관·이름 매칭).

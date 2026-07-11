@@ -833,7 +833,7 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
 → meeting_design.physically_possible 반드시 true로 설정
 
 ## ★★ 설계 정합성 최종 자기검증 (출력 전 필수 — 어긴 필드가 있으면 고쳐서 재출력) ★★
-1. ★시간창=턴예산 정합★: timeline의 daily_turns × minutes_per_turn ≈ (end_time − start_time). 밤 한 세션이면 그 밤 길이에 맞춰라 — 6턴×20분=2시간인데 창이 10시간처럼 어긋나면 클럭이 폭주한다. 둘을 맞추거나 daily_turns를 시간창÷mpt로 다시 잡아라.
+1. ★시간창=괴담턴 정합★: 단일 연속 창(한 밤 등, 날짜 없이 HH:MM만)이면 (end_time − start_time) ÷ minutes_per_turn ≈ ★스케일별 '괴담 턴' 예산(로컬 6~9 … 코즈믹 24~30 — 위 분량 가이드)★가 되게 하라. ※ daily_turns(일상 파트 턴 ≈3~6)와 혼동하지 마라 — 그건 괴담 창 예산이 아니다. 창이 10시간인데 mpt가 15분이면 40턴으로 질질 끌린다 → mpt를 '창÷목표턴'으로 키워 맞춰라(main_events는 절대 시각이라 mpt만 바꿔도 사건 시각은 유지된다). 여러 날을 다루는 큰 스케일이면 start/end에 날짜를 넣어 <TIME_SKIP>로 건너뛴다(연속 창 아님).
 2. ★인원수 스케일(코어 롤)★: 실제 플레이는 보통 3인이다. is_core:true 배역이 인원보다 많으면(예: 4개), ★정서 코어·핵심 서브플롯·필수 해결 지식을 미사용될 배역 하나에 몰아넣지 마라★ — 그 콘텐츠는 배역이 빠지면 통째로 증발한다. 핵심 훅·해결 지식은 3인 안에서 완결되게 배분하고, 여분 배역은 '있으면 좋은' 보조로.
 3. ★아이템 시대·표시명 정합★: common_items·start_item·key_items의 id/이름이 era와 맞는가(1980년대에 스마트폰·인터넷 검색 금지 — 그 시대엔 유선전화·인터폰·무전기). 그리고 ★영문 스키마 id(smartphone 등)나 마인크래프트 물리 id(IRON_SWORD 등)를 '이름'으로 쓰지 마라★ — 이름은 반드시 한국어 표시명. era에서 통신모델을 정교히 짰으면 그걸 무력화하는 만능 기기를 전원에게 쥐여주지 마라.
 4. ★지오그래피 교차검증★: 모든 아이템·main_events·clue의 위치(층·구역·방 이름)가 zones에 ★실제로 존재★하는가. 사건 시작점·핵심 단서가 zones에 없는 층/방을 가리키면 도달 불가다. 잠금(열쇠·gated_zones)의 unlock 대상이 ★의도한 그 존★인지 확인(옥상열쇠가 음악실을 여는 식의 오배선 금지). 존명과 key_items 위치 명칭을 일치시켜라(특별동↔별관 혼용 금지).
@@ -2043,7 +2043,139 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
         return id + "|" + nm;
     }
 
+    // ──────────────────────────────────────────────────────────────
+    //  ★생성 후 타임라인 정합 자동 검사·보정★ (GPT 지적: 검증기가 존재 여부만 보고 정합은 안 봄)
+    //  거부가 아니라 '보정'한다(repairZoneRefs와 같은 철학 — 재생성 비용 없이 결정론적으로 고친다).
+    // ──────────────────────────────────────────────────────────────
+
+    /**
+     * 저장 직전 타임라인 정합을 결정론적으로 보정한다.
+     *  ① 종료(is_end) 사건 시각을 실제 end_time에 스냅 — 마지막 사건이 제한 시각과 어긋나면 클럭 종료와 불일치.
+     *  ② end_time을 지나 예정된 main_event는 발화 못 하므로 end_time으로 당겨 붙인다(단일 연속 창에서만).
+     *  ③ ★시간창 폭주 보정★: 단일 연속 창(날짜 없음·≤16h)에서 (창÷mpt)로 나온 '괴담 턴 수'가 스케일 설계
+     *     예산(로컬 6~9 … 코즈믹 24~30)에서 크게 벗어나면 minutes_per_turn을 재계산한다. main_events는 절대
+     *     시각이라 mpt만 바꿔도 사건 시각은 그대로 — 페이스만 설계 의도대로 맞춘다(클럭 폭주/질질 끌림 방지).
+     *  ★주의★ daily_turns는 '일상 파트' 턴 수(엔진: dailyPhase 소비)라 괴담 창 예산이 아니다. 괴담 창은
+     *  clockMinutes가 매 턴 minutes_per_turn씩 흘러 end_time에 닿는 구조 → 여기선 창÷mpt를 실제 지표로 쓴다.
+     *  다중일(start/end에 날짜) 시나리오는 &lt;TIME_SKIP&gt;로 시간을 건너뛰므로 ②③을 건너뛴다(연속 클럭이 아님).
+     */
+    private void repairTimelineConsistency(JsonObject g) {
+        try {
+            if (g == null || !g.has("timeline") || !g.get("timeline").isJsonObject()) return;
+            JsonObject tl = g.getAsJsonObject("timeline");
+            String startS = tlStr(tl, "start_time");
+            String endS   = tlStr(tl, "end_time");
+            int startMin  = hhmmToMin(startS);
+            int endMin    = hhmmToMin(endS);
+            JsonArray events = (tl.has("main_events") && tl.get("main_events").isJsonArray())
+                ? tl.getAsJsonArray("main_events") : null;
+
+            // ① 종료 사건 시각 → end_time 스냅 (배열 순서상 마지막 is_end 사건)
+            if (events != null && endMin >= 0 && !endS.isBlank()) {
+                JsonObject lastEnd = null;
+                for (JsonElement ee : events) {
+                    if (ee == null || !ee.isJsonObject()) continue;
+                    JsonObject ev = ee.getAsJsonObject();
+                    if (ev.has("is_end") && !ev.get("is_end").isJsonNull() && ev.get("is_end").getAsBoolean())
+                        lastEnd = ev;
+                }
+                if (lastEnd == null) {
+                    logger.warning("[gdam] 종료(is_end) 사건 없음 — 클럭 종료가 end_time 도달·단계 종료에만 의존.");
+                } else if (hhmmToMin(tlStr(lastEnd, "time")) != endMin) {
+                    logger.warning("[gdam] 종료 사건 시각 보정: '" + tlStr(lastEnd, "time") + "' → end_time '" + endS + "'");
+                    lastEnd.addProperty("time", endS);
+                }
+            }
+
+            // 단일 연속 창에서만 ②③ (다중일·비정상 시각은 여기서 종료)
+            if (hasDateToken(startS) || hasDateToken(endS) || startMin < 0 || endMin < 0) return;
+            int endAbs = (endMin <= startMin) ? endMin + 1440 : endMin; // 자정 넘김 허용
+            int windowMin = endAbs - startMin;
+            if (windowMin <= 0 || windowMin > 960) return; // 16h 초과 = 사실상 다중 세션 → 건너뜀
+
+            // ② end_time 지나 예정된 사건을 창 안(end_time)으로 당김
+            if (events != null) {
+                for (JsonElement ee : events) {
+                    if (ee == null || !ee.isJsonObject()) continue;
+                    JsonObject ev = ee.getAsJsonObject();
+                    int m = hhmmToMin(tlStr(ev, "time"));
+                    if (m < 0) continue;
+                    int abs = (m < startMin) ? m + 1440 : m;
+                    if (abs > endAbs) {
+                        logger.warning("[gdam] 창 밖 사건 시각 보정: '" + tlStr(ev, "time") + "' → end_time '" + endS + "'");
+                        ev.addProperty("time", endS);
+                    }
+                }
+            }
+
+            // ③ 시간창=괴담 턴 페이스 보정 (mpt 재계산 — 사건 절대 시각은 불변)
+            int mpt = 15;
+            try { if (tl.has("minutes_per_turn") && !tl.get("minutes_per_turn").isJsonNull())
+                mpt = Math.max(1, tl.get("minutes_per_turn").getAsInt()); } catch (Exception ignore) {}
+            int[] band = expectedHorrorTurns(g);
+            double implied = (double) windowMin / mpt;
+            if (implied < band[0] * 0.75 || implied > band[1] * 1.5) { // 넉넉한 허용대(가이드=고정 아님) 밖일 때만
+                double target = (band[0] + band[1]) / 2.0;
+                int newMpt = Math.max(8, Math.min(90, (int) Math.round(windowMin / target)));
+                if (newMpt != mpt) {
+                    logger.warning("[gdam] 시간창 페이스 보정: 창 " + windowMin + "분 ÷ mpt " + mpt
+                        + " = 괴담 " + Math.round(implied) + "턴 (스케일 예산 " + band[0] + "~" + band[1] + "턴) → mpt "
+                        + newMpt + " (≈" + Math.round((double) windowMin / newMpt) + "턴)");
+                    tl.addProperty("minutes_per_turn", newMpt);
+                }
+            }
+        } catch (Exception e) {
+            logger.warning("[gdam] repairTimelineConsistency 예외(무시): " + e.getMessage());
+        }
+    }
+
+    /** 스케일(room)별 설계상 '괴담 턴' 예산 [lo, hi] — lengthGuideFor 표와 일치. room 미상이면 사건 수로 근사. */
+    private int[] expectedHorrorTurns(JsonObject g) {
+        int room = -1;
+        try { if (g.has("room") && !g.get("room").isJsonNull()) room = g.get("room").getAsInt(); } catch (Exception ignore) {}
+        if (room >= 1) {
+            return switch (room) {
+                case 1 -> new int[]{6, 9};
+                case 2 -> new int[]{10, 14};
+                case 3 -> new int[]{14, 18};
+                case 4 -> new int[]{18, 24};
+                default -> new int[]{24, 30}; // 5=코즈믹, 6+=복합
+            };
+        }
+        int ev = 4;
+        try {
+            JsonObject tl = g.getAsJsonObject("timeline");
+            if (tl != null && tl.has("main_events") && tl.get("main_events").isJsonArray())
+                ev = Math.max(2, tl.getAsJsonArray("main_events").size());
+        } catch (Exception ignore) {}
+        return new int[]{ Math.max(4, ev * 3 - 3), ev * 3 + 1 }; // 설계표: 사건 3→6~9 … 6→24~30 (≈×3)
+    }
+
+    /** timeline HH:MM 문자열 → 자정 기준 분(0~1439). GameStateManager.parseHhmm와 동일 규칙. 없으면 -1. */
+    private static int hhmmToMin(String s) {
+        if (s == null) return -1;
+        try {
+            java.util.regex.Matcher mt = java.util.regex.Pattern.compile("(\\d{1,2})\\s*:\\s*(\\d{2})").matcher(s);
+            if (mt.find()) {
+                int h = Integer.parseInt(mt.group(1)), m = Integer.parseInt(mt.group(2));
+                return ((h % 24) * 60 + m + 1440) % 1440;
+            }
+        } catch (Exception ignore) {}
+        return -1;
+    }
+
+    /** start/end_time에 'YYYY-MM-DD' 날짜가 박혀 있으면 다중일 타임라인(연속 클럭 아님)으로 본다. */
+    private static boolean hasDateToken(String s) {
+        return s != null && java.util.regex.Pattern.compile("\\d{4}-\\d{1,2}-\\d{1,2}").matcher(s).find();
+    }
+
+    /** JsonObject의 문자열 필드 안전 추출(null·부재 시 ""). */
+    private static String tlStr(JsonObject o, String k) {
+        return (o != null && o.has(k) && !o.get(k).isJsonNull()) ? o.get(k).getAsString() : "";
+    }
+
     public void save(String seed, JsonObject gdam) throws Exception {
+        repairTimelineConsistency(gdam); // ★생성 후 타임라인 정합 자동 보정★ — 종료 사건 시각·창 밖 사건·시간창 페이스(GPT 지적: 검증이 존재 여부만 봄)
         finalizeNpcSpeech(gdam); // 저장 직전 NPC 말투 후처리 — D1: 개성 어미 최소 1명 보장 · D2: 그 인물 나이 12~35
         File file = new File(gdamDir, seed + ".gdam");
         String encrypted = encrypt(gdam.toString());
