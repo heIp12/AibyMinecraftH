@@ -8659,13 +8659,16 @@ public class TRPGGameManager {
             // ★role_type은 내부 설계 라벨(약화된열쇠·발생원+수상한자 등)이라 노출 금지★. zone도 zone_id가 아니라 표시명으로(메타 누출 방지).
             String zone = zoneDisplayName(npcZones.getOrDefault(getStr(npc, "id"), getStr(npc, "zone")));
             sb.append(zone == null || zone.isBlank() || "?".equals(zone) ? "." : " — " + zone + "에서 시작.");
-            // 지금 하는 일 (schedule 첫 항목: action 우선, 없으면 goal)
-            if (npc.has("schedule") && npc.get("schedule").isJsonArray() && npc.getAsJsonArray("schedule").size() > 0
-                    && npc.getAsJsonArray("schedule").get(0).isJsonObject()) {
-                JsonObject s = npc.getAsJsonArray("schedule").get(0).getAsJsonObject();
-                String action = getStr(s, "action"), goal = getStr(s, "goal");
-                String doing = !action.isBlank() ? action : goal;
-                if (!doing.isBlank()) sb.append(" 지금 하는 일: ").append(doing).append(doing.endsWith(".") ? "" : ".");
+            // 지금 하는 일 (schedule 중 ★열려 있는★ 첫 항목: action 우선, 없으면 goal — 잠긴 후반 예정은 건너뜀(감사 F))
+            if (npc.has("schedule") && npc.get("schedule").isJsonArray()) {
+                for (JsonElement sel : npc.getAsJsonArray("schedule")) {
+                    if (!sel.isJsonObject()) continue;
+                    JsonObject s = sel.getAsJsonObject();
+                    if (scheduleItemLocked(s)) continue;
+                    String action = getStr(s, "action"), goal = getStr(s, "goal");
+                    String doing = !action.isBlank() ? action : goal;
+                    if (!doing.isBlank()) { sb.append(" 지금 하는 일: ").append(doing).append(doing.endsWith(".") ? "" : "."); break; }
+                }
             }
             // 아는 것 (knowledge 최대 2개 — 그 NPC 시점에만 보이므로 스포일러 무관)
             if (npc.has("knowledge") && npc.get("knowledge").isJsonArray()) {
@@ -9057,6 +9060,7 @@ public class TRPGGameManager {
             for (JsonElement el : npcObj.getAsJsonArray("schedule")) {
                 if (!el.isJsonObject()) continue;
                 JsonObject s = el.getAsJsonObject();
+                if (scheduleItemLocked(s)) continue; // ★하드 게이트(감사 F)★ 단계·단서 조건 미충족 예정은 NPC에게 아예 안 보임
                 String goal = getStr(s, "goal"); // A: 의도(안정). action은 그 목표를 향한 '지금 계획'(가변).
                 sb.append("  · [").append(getStr(s, "time")).append("] ");
                 if (!goal.isBlank()) sb.append("목표: ").append(goal).append(" · 지금 계획: ").append(getStr(s, "action"));
@@ -9506,6 +9510,48 @@ public class TRPGGameManager {
         return "";
     }
 
+    /** ★스케줄 하드 게이트(감사 F)★ — min_timeline_stage 미도달 또는 requires_clues 미발견이면 잠긴 예정:
+     *  NPC 프롬프트·의도 요약 어디에도 노출하지 않는다(NPC가 후반 전개를 앞당겨 실행·발설하던 문제 차단). */
+    private boolean scheduleItemLocked(JsonObject s) {
+        if (s == null) return false;
+        try {
+            if (s.has("min_timeline_stage") && s.get("min_timeline_stage").isJsonPrimitive()
+                    && state.getTimelineStage() < s.get("min_timeline_stage").getAsInt()) return true;
+            if (s.has("requires_clues") && s.get("requires_clues").isJsonArray()) {
+                for (JsonElement re : s.getAsJsonArray("requires_clues")) {
+                    String cid = re.isJsonPrimitive() ? re.getAsString().trim() : "";
+                    if (!cid.isEmpty() && !authoredClueDiscovered(cid)) return true;
+                }
+            }
+        } catch (Exception ignored) {}
+        return false;
+    }
+
+    /** authored 단서(id)가 실제 발견됐는지 근사 판정 — 발견 단서 자유문과 그 단서 content의 포함/토큰 겹침으로.
+     *  id가 clues에 없거나 content가 비면 게이트를 풀어 준다(생성 오류에 예정이 영영 인질 잡히지 않게 — 안전측). */
+    private boolean authoredClueDiscovered(String clueId) {
+        JsonObject gdam = state.getGdamData();
+        if (gdam == null || !gdam.has("clues") || !gdam.get("clues").isJsonArray()) return true;
+        String content = null;
+        for (JsonElement ce : gdam.getAsJsonArray("clues")) {
+            if (!ce.isJsonObject()) continue;
+            JsonObject c = ce.getAsJsonObject();
+            if (clueId.equals(getStr(c, "id"))) { content = getStr(c, "content"); break; }
+        }
+        if (content == null || content.isBlank()) return true;
+        java.util.List<String> found = state.getDiscoveredClues();
+        if (found == null || found.isEmpty()) return false;
+        for (String f : found) {
+            if (f == null || f.isBlank()) continue;
+            if (f.contains(content) || content.contains(f)) return true;
+            int overlap = 0;
+            for (String tok : content.split("[^가-힣A-Za-z0-9]+"))
+                if (tok.length() >= 2 && f.contains(tok)) overlap++;
+            if (overlap >= 3) return true;
+        }
+        return false;
+    }
+
     /** NPC의 현재 예정 의도를 짧게 요약(막후 진행 주입용). schedule의 goal(없으면 action) 우선 → NPC goal → role_type. */
     private String npcScheduleIntent(JsonObject npcObj) {
         if (npcObj == null) return "";
@@ -9513,6 +9559,7 @@ public class TRPGGameManager {
             for (JsonElement el : npcObj.getAsJsonArray("schedule")) {
                 if (!el.isJsonObject()) continue;
                 JsonObject s = el.getAsJsonObject();
+                if (scheduleItemLocked(s)) continue; // 잠긴 예정은 의도 요약에서도 숨김(감사 F)
                 String goal = getStr(s, "goal"), action = getStr(s, "action");
                 String v = !goal.isBlank() ? goal : action;
                 if (!v.isBlank()) { String cond = getStr(s, "condition"); return v + (cond.isBlank() ? "" : " (조건:" + cond + ")"); }
@@ -13382,14 +13429,29 @@ public class TRPGGameManager {
                 String access = getStr(c, "access"); // easy|normal|hard(얻는 난이도)
                 String gate   = getStr(c, "gate");   // always|puppet|doomed(획득 조건)
                 if (content.isBlank() && subj.isBlank()) continue;
+                // ★capstone 게이트(감사 E)★: 정답을 사실상 완성하는 종결 단서는 requires_clues의 선행 단서가
+                //   전부 발견되기 전엔 ★내용 자체를 GM에게도 봉인★한다(위치·존재만) — GM이 앞당겨 흘릴 수 없게.
+                boolean capstone = c.has("capstone") && c.get("capstone").isJsonPrimitive()
+                    && c.get("capstone").getAsBoolean();
+                boolean capstoneSealed = false;
+                if (capstone && c.has("requires_clues") && c.get("requires_clues").isJsonArray()) {
+                    for (JsonElement pre : c.getAsJsonArray("requires_clues")) {
+                        String rid = pre.isJsonPrimitive() ? pre.getAsString().trim() : "";
+                        if (!rid.isEmpty() && !authoredClueDiscovered(rid)) { capstoneSealed = true; break; }
+                    }
+                }
                 sb.append("- ").append(mislead ? "[거짓] " : "");
+                if (capstone) sb.append("[종결단서] ");
                 if ("hard".equalsIgnoreCase(access)) sb.append("[어려움] ");
                 else if ("easy".equalsIgnoreCase(access)) sb.append("[쉬움] ");
                 if ("puppet".equalsIgnoreCase(gate)) sb.append("[조종중에만] ");
                 else if ("doomed".equalsIgnoreCase(gate)) sb.append("[파국국면에만] ");
                 if (!subj.isBlank()) sb.append("(").append(subj).append(") ");
-                sb.append(content.isBlank() ? subj : content);
+                if (capstoneSealed) sb.append("★봉인★ 선행 단서 확보 전 — 내용 비공개(시스템이 감춤). 존재·장소만 암시 가능, 내용을 지어내 대신 채우지 마라");
+                else sb.append(content.isBlank() ? subj : content);
                 if (!loc.isBlank()) sb.append(" — 위치: ").append(loc);
+                String gmNote = getStr(c, "gm_note");
+                if (!gmNote.isBlank() && !capstoneSealed) sb.append(" (운영 노트: ").append(gmNote).append(")");
                 sb.append("\n");
             }
             sb.append("- 위 단서를 해당 위치·대상에 ★실제로 배치★하고, 플레이어가 그곳을 탐색하거나 관련 NPC·사물과 상호작용하면 그 단서를 ★분명히 드러내라★(먼저 떠먹이진 말되, 닿으면 확실히 보여줄 것).\n");
