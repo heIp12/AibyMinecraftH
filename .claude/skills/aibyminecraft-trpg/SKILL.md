@@ -145,6 +145,21 @@ description: >-
   상시 갱신(효율 될 만한 지식은 항상 등록).
 
 ## 최근 추가된 아키텍처 사실 (회귀 방지)
+- **★성장·직업밸런스 개편(2026-07, 2fad1c9~b35d329)★**:
+  ▸**기여도(contribution) 통화 제거**: 강화 게이팅·플레이어 표시 삭제(보상은 성과등급·약체보정만으로 결정).
+  `tryStrengthen`은 무조건 적용. 캠페인 최종 총평 인플레 방지만 ★비노출 내부값★ `PlayerData.stageGradeSum`
+  으로 유지(`recordStageGrades`, 옛 `accrueContribution`) — 강화·표시에 절대 쓰지 말 것.
+  ▸**초기 특성 발동형 능력 허용**: `CharacterGenerator.generateInitialTraits`가 이제 `buildAiCatalog` 포함 +
+  effect_type/effect_params 파싱(옛 E3 강제 스트립 제거). 예산=등급, `enforcePowerBudget`가 능력 코스트를
+  빼고 ★남는 만큼만 스탯★(RARE=능력 투자·저스탯 / COMMON 강능력=대가 자동). tierRules: 일반=양날 발동형 가끔,
+  희귀=능력우선+약점필수. ★엔진 안전망★: `applyDefaults`에서 유효 effect_type 없으면 `active=false` 강제
+  (active+effect만 있고 기계효과 없는 '공짜 서술형 능동'이 스탯예산까지 먹던 이중문제 차단 — 초기·성장 공통).
+  ▸**직업티어 격차는 성장으로 안 좁혀짐(설계 사실)**: 약체 역전성장은 `baseStr`(주사위 원값, snapshotBase가
+  reapplyTraitStats 이전 고정)만 봄 → 특성 스탯(`str`)은 안 잡힘. 그래서 위 '능력에 예산 투자'로 티어 파워를
+  ★always-on 스탯→제약 있는 능력★으로 옮겨 밸런스(스탯 격차 자체를 줄임).
+  ▸**다음 괴담 지정 채팅 입력(IDLE 버그)**: 설정단계(phase=IDLE)에선 `ChatListener.onChat`이 `!isActive()`로
+  채팅을 버려 괴담 이름이 씹혔다 → `isAwaitingChatInput(player)`(=`pendingEntityReserveInput` 대기)면 IDLE이라도
+  라우팅. 설정 전 채팅 캡처가 더 생기면 이 predicate에 등록.
 - **★실플레이(저사양 GPT GM) 감사 배치(2026-07, 2a72dc9~db99b33)★ — 약한 모델 방어 원칙**:
   ▸**인기척 알림**: 수 반영 단일 문구(1=낯선 인기척·2=두 사람의·3+=여러), `[접근]` 주입에 반복금지.
   ★이름 공개 기준 = `moved.everKnownNpcContacts`(그 플레이어 면식/연락처)★ — `npcLoggedZone`(전역 등장 로그)

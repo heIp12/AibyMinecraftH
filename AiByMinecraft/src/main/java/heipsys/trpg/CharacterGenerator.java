@@ -480,31 +480,32 @@ public class CharacterGenerator {
     private CompletableFuture<List<TraitData>> generateInitialTraits(PlayerData pd, String roleContext, JobTier tier) {
         String tierRules = switch (tier) {
             case STRONG -> """
-- grade: A 또는 B 사용 (해결사·전문 능력자이므로 강한 스탯 총합)
-- 사명감·오랜 훈련·특수 기술에서 비롯된 ★상시(패시브) 특성★으로 작성. ★active는 항상 false★ — 초기 특성은 발동 능력이 아니라 스탯·기질이다(발동 능력은 게임 진행 보상으로 얻는다).
-- 강한 등급인 만큼 스탯 총합(A=5·B=3)을 그 강점이 드러나게 배분하라(예: 응급구조사 A → 근력·영감에 몰아주기).
+- grade: A 또는 B 사용 (해결사·전문 능력자 — 강한 등급)
+- 패시브 스탯 특성도 좋고, ★발동형 능력(effect_type)도 좋다★ — 오랜 훈련·전문 기술에서 나온 능력을 발동형으로 줘도 된다(예: 응급구조사 → 소생 발동, 격투가 → 제압 발동, 형사 → 통찰 발동). 카탈로그의 effect_type을 활용하라.
+- A=5·B=3 예산을 스탯에, 또는 능력에, 또는 섞어서 배분한다(발동형이면 시스템이 능력 코스트를 예산에서 빼고 남는 만큼만 스탯에 준다).
 - 개수: 1~2개
 """;
             case RARE -> """
-- grade: S 또는 A 사용 (초자연적 직종 — 스탯 총합이 극히 크다: S=10·A=5)
-- ★상시(패시브) 특성★으로 작성. ★active는 항상 false★(발동 능력·비용 없음 — 초기 파워는 오직 스탯으로). 초자연적 기질을 강한 스탯으로 표현하라(예: 예민한 직감 → 영감·행운↑).
-- 강점이 극단적인 만큼 뚜렷한 약점·부작용 특성도 1개 ★반드시★ 추가 (grade D 또는 F, 순합 음수).
-- 개수: ★정확히 2~3개★ (강점 1~2 + 약점 1). 그 이상 만들지 마라 — 한 직업 설정을 조각내 필러 특성을 늘리지 말 것.
+- grade: S 또는 A 사용 (초자연적 직종 — 예산이 크다: S=10·A=5)
+- ★예산을 순수 스탯보다 '능력(effect_type)'에 더 투자하라★ — 초자연적 힘을 ★강력한 발동형/조건부 능력 1개★로 표현하는 것이 핵심이다(카탈로그 참고). 남는 예산만 스탯에 준다. 예산을 스탯에 전부 몰지 마라 — 밸런스상 초자연 직종은 '한 방 능력 + 평범한 몸'이 맞다(항상 켜진 고스탯보다, 제약 있는 강한 능력이 공정하다).
+- 강력한 만큼 뚜렷한 약점·부작용 1개 ★반드시★ 추가 — grade D 또는 F(순합 음수)이거나, 강한 능력에 대가(effect_params의 cost_stun 사용 후 행동불능 / cost_threat 괴담 진행)를 붙여라.
+- 개수: ★정확히 2~3개★ (핵심 능력 1~2 + 약점 1). 그 이상 만들지 마라 — 한 직업 설정을 조각내 필러 특성을 늘리지 말 것.
 """;
             default -> """
-- grade: C·D·F 중 ★하나만★ 사용 (초기 캐릭터이므로 강한 특성 없음. 'D/F'처럼 여러 글자로 쓰지 말고 한 등급만)
+- grade: C·D·F 중 ★하나만★ 사용 (한 등급만. 'D/F'처럼 여러 글자로 쓰지 마라)
+- 대부분은 소소한 스탯/패시브지만, ★가끔 '부작용이 있는 강한 발동형 능력'을 줘도 된다★ — 낮은 등급 예산으로 강한 능력(effect_type)을 넣으면 시스템이 자동으로 대가(음수 스탯·행동불능 cost_stun 등)를 붙여 균형을 맞춘다. 평범한 사람이 위기에 각성한 '양날의 힘' 컨셉이 어울린다(예: 분노하면 괴력이 나오지만 이후 탈진, 겁에 질리면 순간 도약하지만 정신력 소모).
 - 개수: 1~2개
 """;
         };
 
         String system = "너는 TRPG 캐릭터 초기 특성 생성기야.\n"
             + "아래 JSON 배열 형식으로만 응답 (다른 텍스트 금지):\n"
-            + "[{\"active\":false,\"effect\":\"\",\"concept\":\"\",\"name\":\"\",\"description\":\"\","
-            + "\"grade\":\"C\",\"cooldownTurns\":0,"
+            + "[{\"active\":false,\"effect_type\":\"\",\"effect_params\":{},\"effect\":\"\",\"concept\":\"\",\"name\":\"\",\"description\":\"\","
+            + "\"grade\":\"C\",\"cooldown_turns\":0,"
             + "\"str_add\":0,\"cha_add\":0,\"luk_add\":0,\"spr_add\":0,\"hp_max_add\":0,\"san_max_add\":0},...]\n\n"
             + "공통 규칙:\n"
             + "- 직업·나이에서 자연스럽게 연결되는 능력/약점\n"
-            + "- ★스탯 보정(등급=실제 파워)★: 특성 grade에 맞춰 스탯 보정 총합을 준다 — 양의 총합 예산 F=-2·E=-1·D=0·C=1·B=3·A=5·S=10. 다른 스탯에 -를 주면 그만큼 +를 더 줄 수 있다(예: B급 근력+4·행운-1=순합3). 체력최대·정신력최대(hp_max_add·san_max_add)도 같은 1점=1로 계산(표시만 %). ★초기 특성은 기계 능동/패시브 효과 없이 스탯으로만 파워를 낸다★ — 그 등급이 실제 스탯으로 뒷받침되게 하라(희귀 직업 A/S면 스탯 총합을 그만큼 크게, 약점 특성 D/F면 순합을 음수로).\n"
+            + "- ★등급=예산(파워 총량)★: 특성 grade의 예산을 F=-2·E=-1·D=0·C=1·B=3·A=5·S=10으로 삼는다. 이 예산을 ①스탯 보정에, ②기계 능력(effect_type)에, 또는 ③섞어서 쓴다. 발동/기계 능력을 넣으면 시스템이 능력 코스트를 예산에서 ★먼저 빼고 남는 만큼만 스탯★을 준다(둘 다 최대로 주려 하지 마라 — 초과하면 시스템이 스탯을 깎거나 대가를 붙인다). 다른 스탯에 -를 주면 그만큼 예산이 늘어난다(예: B급 근력+4·행운-1). 능력이 필요 없으면 순수 스탯 특성(effect_type=\"\")도 좋다. 아래 ★능력 카탈로그★에서 effect_type·파라미터를 고른다.\n"
             + "- hidden_info에 해결 수단(아이템·경로·조작법)이 포함되면, 그 '존재·방법'만 알게 하고 '왜 필요한지(괴담 약점·해법과의 연결)'는 캐릭터가 인지하지 못한 상태로 설계하라. 정답을 처음부터 쥐여주지 마라(용도는 플레이 중 발견).\n"
             + "- description과 effect에 스탯 숫자·스탯 약어(STR/HP/SAN/CHA/LUK/SPR) 절대 사용 금지\n"
             + "- effect: 한 문장으로 간결하게 (수동이면 판정에서 발휘되는 식, 능동이면 사용 효과)\n"
@@ -519,6 +520,7 @@ public class CharacterGenerator {
             + "- 마지막 점검: 이름을 소리 내어 읽어 한국인이 뜻을 바로 못 알아들으면 버리고 평범한 단어로 다시 지어라.\n"
             + "- 한국어, 창의적\n\n"
             + "직업 등급별 규칙:\n" + tierRules
+            + "\n" + SystemTraitRegistry.buildAiCatalog()
             + (scenarioFlavor.isBlank() ? "" : "\n" + scenarioFlavor);
 
         String prompt = "나이: " + pd.age + "세, 직업: " + pd.job
@@ -545,9 +547,9 @@ public class CharacterGenerator {
                     td.description = obj.has("description") ? obj.get("description").getAsString() : "";
                     td.active        = obj.has("active")       && obj.get("active").getAsBoolean();
                     td.effect        = obj.has("effect")       ? obj.get("effect").getAsString()       : "";
-                    td.cooldownTurns = obj.has("cooldownTurns") ? obj.get("cooldownTurns").getAsInt()  : 0;
-                    // ★E3: 초기 특성도 스탯 예산 적용★ — 예전엔 스탯·예산을 아예 안 봐서 희귀 직업 S/A가 '무료 서술형'이었다.
-                    //   스탯 필드를 파싱하고 effectType=""로 applyDefaults → enforcePowerBudget가 스탯을 등급 예산에 클램프(기계효과는 없음).
+                    td.cooldownTurns = obj.has("cooldown_turns") ? obj.get("cooldown_turns").getAsInt()
+                                     : obj.has("cooldownTurns")  ? obj.get("cooldownTurns").getAsInt()  : 0;
+                    // 스탯 보정 파싱 (등급 예산의 일부 — 능력 코스트를 뺀 나머지가 스탯으로 클램프된다)
                     try {
                         if (obj.has("str_add"))     td.str_add    = obj.get("str_add").getAsInt();
                         if (obj.has("cha_add"))     td.cha_add    = obj.get("cha_add").getAsInt();
@@ -556,12 +558,18 @@ public class CharacterGenerator {
                         if (obj.has("hp_max_add"))  td.hp_max_add = obj.get("hp_max_add").getAsInt();
                         if (obj.has("san_max_add")) td.san_max_add= obj.get("san_max_add").getAsInt();
                     } catch (Exception ignore) { /* 잘못된 스탯 필드는 0 유지 — 특성 전체를 폴백시키지 않음 */ }
-                    // ★E3: 초기 특성 = 스탯 전용 패시브★ — 기계효과(effectType)뿐 아니라 활성(active)·쿨다운도 비운다.
-                    //   예전엔 effectType만 비워, active:true·effect가 남은 '공짜 서술형 능동'(차원문 열기·시간 되감기 등)이
-                    //   스탯 예산과 ★이중으로★ 붙었다(스탯 전용이라는 프롬프트와 모순). 초기 파워는 스탯으로만 — 능동 능력은 클리어 보상에서.
-                    td.effectType = "";
-                    td.active = false;      // 활성 능력 제거(발동 버튼·서술형 능동 차단) → effect는 패시브 설명(연출)으로만 남음
-                    td.cooldownTurns = 0;    // 패시브는 쿨다운 없음
+                    // ★초기 특성도 발동/기계 능력(effect_type)을 가질 수 있다★ — effect_type·effect_params를 파싱해
+                    //   applyDefaults에 맡긴다. 유효한 effect_type이면 능력 코스트가 예산에서 빠지고(스탯은 남는 만큼),
+                    //   저등급(C·D·F)에 강한 능력이면 enforcePowerBudget가 대가(음수 스탯·쿨다운)를 붙여 균형을 맞춘다.
+                    //   유효 effect_type이 없으면 applyDefaults가 active=false로 강제(공짜 서술형 능동 차단 — 순수 스탯 패시브).
+                    if (obj.has("effect_type") && !obj.get("effect_type").isJsonNull())
+                        td.effectType = obj.get("effect_type").getAsString().trim();
+                    if (obj.has("effect_params") && obj.get("effect_params").isJsonObject()) {
+                        if (td.effectParams == null) td.effectParams = new java.util.HashMap<>();
+                        for (java.util.Map.Entry<String, JsonElement> en : obj.getAsJsonObject("effect_params").entrySet()) {
+                            try { td.effectParams.put(en.getKey(), en.getValue().getAsInt()); } catch (Exception ignore) {}
+                        }
+                    }
                     SystemTraitRegistry.applyDefaults(td);
                     result.add(td);
                 }

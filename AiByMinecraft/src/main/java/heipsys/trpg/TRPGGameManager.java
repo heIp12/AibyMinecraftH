@@ -438,6 +438,15 @@ public class TRPGGameManager {
     public boolean isActive() { return currentPhase != Phase.IDLE; }
 
     /**
+     * 게임이 비활성(IDLE·설정 단계)이어도 이 플레이어의 채팅을 ★handleChat로 소비해야 하는★ 대기 상태인지.
+     * 예: '다음 괴담 지정'을 설정 다이얼로그/명령으로 켜면 게임 시작 전이라 isActive()=false인데,
+     *     ChatListener가 isActive()만 보고 채팅을 버려 괴담 이름 입력이 씹히던 버그를 막는다.
+     */
+    public boolean isAwaitingChatInput(Player player) {
+        return player != null && pendingEntityReserveInput.contains(player.getUniqueId());
+    }
+
+    /**
      * 무력화 워치독: 살아있고 등장한 플레이어 ★전원★이 행동 불가(완전잠식·기절)면,
      * AI(GM) 호출 없이 ★시스템★이 한 턴씩 시간을 진행시킨다(턴·시계·회복 카운터).
      * → 아무도 입력할 수 없어 게임이 영영 멈추던 문제 해결. 한 명이라도 행동 가능해지면 자동으로 멈춘다.
@@ -3564,7 +3573,7 @@ public class TRPGGameManager {
 
     /**
      * 모든 스테이지를 완주(최종 클리어)하면 게임을 끝내고 ★전 스테이지 총합 평가·피드백★을 낸 뒤 세션을 종료한다.
-     * 누적 기여도 총평 → 최종 스테이지 평가 → 전말 공개 → endSession.
+     * 참가자 목록 → 최종 스테이지 평가 → 전말 공개 → endSession.
      */
     private void concludeWholeGame(Player admin) {
         if (currentPhase == Phase.GAMEOVER) return;
@@ -3577,12 +3586,11 @@ public class TRPGGameManager {
         broadcast("§6§l═══ 모든 시나리오를 끝까지 헤쳐나왔습니다 (총 " + cleared + "스테이지 완주) ═══");
         broadcast("§e§l[전체 여정 총평]");
         List<PlayerData> parts = state.getAllPlayers().stream()
-            .filter(pd -> pd.roleAssigned || pd.contribution != 0)
+            .filter(pd -> pd.roleAssigned || pd.stageGradeSum != 0)
             .collect(Collectors.toList());
         if (parts.isEmpty()) parts = new ArrayList<>(state.getAllPlayers());
         for (PlayerData pd : parts)
-            broadcast("§f " + pd.gmDisplayName() + " §7— 누적 기여도 §f" + pd.contribution
-                + " §8(" + contributionLabel(pd.contribution) + ")");
+            broadcast("§f · " + pd.gmDisplayName()); // 개인별 최종 등급은 아래 총평(runScenarioEvaluation)에서 매겨진다
         if (!retriedThisRun)
             broadcast("§6 ★ 무결 완주(리트라이 0회) — 최고의 여정 ★");
         broadcast("§8 ");
@@ -3592,15 +3600,6 @@ public class TRPGGameManager {
                 concludingEnding = false;
                 endSession(true);
             }));
-    }
-
-    /** 누적 기여도 → 한 줄 평. 스테이지당 보상치(0~2) 누적 기준. */
-    private static String contributionLabel(int c) {
-        if (c >= 8) return "전설적 활약";
-        if (c >= 5) return "핵심 공헌자";
-        if (c >= 3) return "견실한 기여";
-        if (c >= 1) return "참여";
-        return "미미한 기여";
     }
 
     /**
@@ -3756,7 +3755,7 @@ public class TRPGGameManager {
 
         if (pd != null) {
             if (selected.replacesId != null) {
-                tryStrengthen(player, pd, selected, "특성을 강화했습니다"); // A1: 기여도 게이팅
+                tryStrengthen(player, pd, selected, "특성을 강화했습니다"); // 강화는 항상 적용(구 기여도 게이팅 제거)
             } else {
                 traitMan.addTrait(pd, selected);
                 player.sendMessage("§a특성 '§f" + selected.name + "§a'을(를) 획득했습니다!");
@@ -3778,25 +3777,18 @@ public class TRPGGameManager {
         scoreMan.update(player, pd, state.getRoomNumber());
     }
 
-    /** 강화(레벨업) 적용 — 기여도(contribution)를 비용으로 소비. 부족하면 보류(원본 유지). (능력 Phase C / A1) */
+    /** 강화(레벨업) 적용 — 클리어 성장 3선택지에서 고른 강화는 항상 적용한다(구 기여도 통화 게이팅 제거).
+     *  보상 위력은 이미 성과등급(표시등급 상한)·약체보정으로 결정되고, 강화는 스테이지당 1선택으로 제한되므로 별도 비용이 불필요. */
     private boolean tryStrengthen(Player player, PlayerData pd, TraitData upg, String label) {
         if (upg == null || upg.replacesId == null) return false;
         TraitData orig = pd.traits.stream().filter(t -> t.id.equals(upg.replacesId)).findFirst().orElse(null);
         int newLevel = (orig != null ? orig.level : 1) + 1;
-        int cost = (newLevel - 1) * 3; // 강화 단계당 +3 (Lv2=3, Lv3=6, Lv4=9) — 1회 좋은 클리어(B+=3)로 첫 강화 가능
-        if (pd.contribution < cost) {
-            player.sendMessage("§c[강화 보류] 기여도 부족 — 필요 " + cost + ", 보유 " + pd.contribution
-                + ". 원래 특성을 유지합니다. §8(기여도는 스테이지 평가로 쌓입니다)");
-            return false;
-        }
-        pd.contribution -= cost;
         upg.level    = newLevel;
         upg.maxLevel = Math.max(orig != null ? orig.maxLevel : 1, newLevel);
         traitMan.removeTrait(pd, upg.replacesId);
         upg.roleSpecific = false;
         traitMan.addTrait(pd, upg);
-        player.sendMessage("§6" + label + " → §f" + upg.name + " §7(" + upg.grade + " Lv." + upg.level
-            + ") §8[기여도 -" + cost + ", 잔여 " + pd.contribution + "]");
+        player.sendMessage("§6" + label + " → §f" + upg.name + " §7(" + upg.grade + " Lv." + upg.level + ")");
         scoreMan.update(player, pd, state.getRoomNumber());
         return true;
     }
@@ -3825,7 +3817,7 @@ public class TRPGGameManager {
             case 1 -> {
                 TraitData upg = choices.myUpgrade();
                 if (upg != null && upg.replacesId != null) {
-                    tryStrengthen(player, pd, upg, "내 특성을 강화했습니다"); // A1: 기여도 게이팅
+                    tryStrengthen(player, pd, upg, "내 특성을 강화했습니다"); // 강화는 항상 적용(구 기여도 게이팅 제거)
                 } else if (upg != null) {
                     traitMan.addTrait(pd, upg); // 강화 대상 없어 새 특성으로 생성된 경우
                     player.sendMessage("§a새 특성을 획득했습니다 → §f" + upg.name + " §7(" + upg.grade + ")");
@@ -7064,21 +7056,21 @@ public class TRPGGameManager {
         }
         boolean haveAny = !fullLog.isBlank() || perPlayer.length() > 0;
 
-        // ★평가 정합성 — 스테이지 평균으로 정규화★: 최종 총평(campaignWide)은 스테이지별 등급 누적치를
-        //   ★스테이지 수로 나눈 평균★을 권위 근거로 받는다. 그냥 누적 총점을 쓰면 5~6스테이지에선 누구나
-        //   총점이 커져(D만 받아도 6점=핵심공헌자) 전원이 영웅으로 인플레되고, 캠페인 로그 300캡으로 초반
+        // ★평가 정합성 — 스테이지 평균으로 정규화★: 최종 총평(campaignWide)은 스테이지별 평가 등급 점수 누적치
+        //   (stageGradeSum, 비노출 내부값)를 ★스테이지 수로 나눈 평균★을 권위 근거로 받는다. 그냥 누적 총점을 쓰면
+        //   5~6스테이지에선 누구나 총점이 커져(D만 받아도 6점) 전원이 영웅으로 인플레되고, 캠페인 로그 300캡으로 초반
         //   활약이 잘려 재평가가 뒤집히던 문제(A→C)도 남는다. 평균 기준이면 둘 다 해결(잘한 사람은 유지, 평범한
-        //   사람은 스테이지가 많아도 평범).
+        //   사람은 스테이지가 많아도 평범). ※이 값은 평가 정합성 전용이며 능력 강화 게이팅·플레이어 표시엔 쓰지 않는다.
         String stageBasis = "";
         if (campaignWide) {
             int stages = Math.max(1, state.getRoomNumber());
             StringBuilder sb2 = new StringBuilder();
             for (PlayerData pd : allPd) {
-                if (!pd.roleAssigned && pd.contribution == 0) continue;
-                double avg = pd.contribution / (double) stages;
+                if (!pd.roleAssigned && pd.stageGradeSum == 0) continue;
+                double avg = pd.stageGradeSum / (double) stages;
                 sb2.append("- ").append(pd.gmDisplayName()); // 계정명 미전송
-                sb2.append(": 스테이지 평균 기여 ").append(String.format("%.1f", avg)).append("/5")
-                   .append(" (누적 ").append(pd.contribution).append("점 ÷ ").append(stages).append("스테이지)\n");
+                sb2.append(": 스테이지 평균 평가 ").append(String.format("%.1f", avg)).append("/5")
+                   .append(" (누적 ").append(pd.stageGradeSum).append("점 ÷ ").append(stages).append("스테이지)\n");
             }
             if (sb2.length() > 0)
                 stageBasis = "★스테이지별 기존 평가 요약 — 최종은 이 ★스테이지 평균★과 일관되게 매겨라★:\n" + sb2
@@ -7153,7 +7145,7 @@ public class TRPGGameManager {
         ai.callGmAiOnce(gmSystemPrompt, prompt)
             .thenAccept(raw -> plugin.getServer().getScheduler().runTask(plugin, () -> {
                 EvalResult result = parseEvaluation(raw);
-                accrueContribution(result.grades()); // 능력 Phase C: 평가 등급→기여도 누적
+                recordStageGrades(result.grades()); // 평가 정합성 전용: 스테이지 등급 점수 누적(최종 총평 평균 계산용)
                 awardEndStats(result.grades(), result.growth()); // 행동 기반 종료 스텟(S=3·A=2·B=0~1)
                 // CODE-16: 한 줄씩 가변 딜레이 출력. 줄당 delay = clamp(1초,5초, 글자수/12).
                 long accDelay = 0;
@@ -11164,12 +11156,13 @@ public class TRPGGameManager {
         return !gatePassReason(pd, zoneId).isEmpty();
     }
 
-    /** 평가 등급을 기여도 점수로 누적 (S=5..F=0) — 능력 Phase C */
-    private void accrueContribution(Map<String, String> grades) {
+    /** ★평가 정합성 전용★ — 스테이지 평가 등급 점수(S=5..F=0)를 비노출 내부값에 누적한다.
+     *  캠페인 최종 총평의 '스테이지 평균' 계산에만 쓰이며, 강화 게이팅·플레이어 표시엔 사용하지 않는다(구 기여도 통화 제거). */
+    private void recordStageGrades(Map<String, String> grades) {
         if (grades == null) return;
         grades.forEach((name, g) -> {
-            PlayerData pd = findAnyByName(name); // 사망(자기희생)자도 기여도 반영 — findByName은 사망자 제외
-            if (pd != null) pd.contribution += gradeToPoints(g);
+            PlayerData pd = findAnyByName(name); // 사망(자기희생)자도 반영 — findByName은 사망자 제외
+            if (pd != null) pd.stageGradeSum += gradeToPoints(g);
         });
     }
 
