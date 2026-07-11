@@ -12540,6 +12540,10 @@ public class TRPGGameManager {
         if (gdam == null || !gdam.has("zones")) return zone; // 구역 정보 없으면 검증 불가 — 그대로
         String raw = zone.trim();
         String stripped = raw.startsWith("zone_") ? raw.substring(5) : raw; // "zone_뒷간" 접두어 오남용 관대 처리
+        // ★공백 무시★: GM이 표시명의 공백을 지운 채 "zone_비상대피구"·"제4격리실"처럼 보내면 name("비상 대피구"·"제4 격리실")과
+        //   글자만 같고 공백 때문에 매칭 실패해 이동이 통째로 버려졌다(제보 로그). 이하 비교는 공백을 제거해 견줘 흡수한다.
+        String rawNs = raw.replaceAll("\\s+", "");
+        String strippedNs = stripped.replaceAll("\\s+", "");
         String byName = null, byContains = null;
         for (JsonElement el : gdam.getAsJsonArray("zones")) {
             if (!el.isJsonObject()) continue;
@@ -12548,12 +12552,17 @@ public class TRPGGameManager {
             if (raw.equals(id)) return id;                                      // 유효한 zone_id
             String idStrip = id.startsWith("zone_") ? id.substring(5) : id;
             if (stripped.equals(id) || stripped.equals(idStrip)) return id;     // 접두어만 어긋난 경우
+            String idNs = id.replaceAll("\\s+", ""), idStripNs = idStrip.replaceAll("\\s+", "");
+            if (strippedNs.equals(idNs) || strippedNs.equals(idStripNs)) return id; // 공백만 어긋난 id
             String nm = z.has("name") ? z.get("name").getAsString() : "";
-            if (!nm.isBlank() && (nm.equals(raw) || nm.equals(stripped))) byName = id; // 표시명 일치
-            // ★근사 매칭(#1)★: GM이 "안채 마당"·"뒷간 앞"처럼 구역명을 품은 세부장소를 zone에 넣으면 그 구역으로 흡수
-            //   (없는 zone으로 이동 실패시키지 않는다). 단 확실할 때만 — 짧은 구역명이 다른 구역에 우연히 안 걸리게 3자+에서만.
-            if (byContains == null && !nm.isBlank() && nm.length() >= 2
-                && (raw.contains(nm) || (idStrip.length() >= 2 && raw.contains(idStrip)))) byContains = id;
+            if (!nm.isBlank()) {
+                String nmNs = nm.replaceAll("\\s+", "");
+                if (nm.equals(raw) || nm.equals(stripped) || nmNs.equals(rawNs) || nmNs.equals(strippedNs)) byName = id; // 표시명 일치(공백 무시)
+                // ★근사 매칭(#1)★: GM이 "안채 마당"·"뒷간 앞"처럼 구역명을 품은 세부장소를 zone에 넣으면 그 구역으로 흡수
+                //   (없는 zone으로 이동 실패시키지 않는다). 단 확실할 때만 — 짧은 구역명이 다른 구역에 우연히 안 걸리게 2자+에서만(공백 무시).
+                if (byContains == null && nmNs.length() >= 2
+                    && (rawNs.contains(nmNs) || (idStripNs.length() >= 2 && rawNs.contains(idStripNs)))) byContains = id;
+            }
         }
         return byName != null ? byName : byContains;                            // 이름>근사 매칭 id, 없으면 null(무효)
     }
