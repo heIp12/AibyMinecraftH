@@ -124,6 +124,12 @@ description: >-
   같은 구역 NPC는 그 발화를 듣고 반응(proximityBroadcast→notifyLocalWitnesses)하므로 미지 NPC 소통도 유지.
 - **괴담 이름(친숙 모드)**: 실존 괴담은 한국 통용 명칭 우선(빨간마스크(口裂け女) 등), 의역 금지,
   확신 없으면 원어(발음). 회차 시드 번호를 이름에 넣지 말 것.
+- **★'모두 무작위' 카테고리 제외(서버 영속)★**: `GdamGenerator.RANDOM_KIND_POOL`을 `resolveFamiliarKind`가 굴릴 때
+  `randomExcluded`(로보토미·코즈믹·SCP 기본 제외, `.random_excluded` 파일 영속)를 뺀다. 시작 흐름 '모두 무작위' 선택 시
+  `showRandomExcludeChoice`(포함/제외 토글, 서버 저장)를 먼저 띄운 뒤 품질 선택으로. 전부 제외되면 `"random"`(일반 세계전설) 폴백.
+- **★다음 괴담 임의 지정(1회)★**: `/trpg setting entity <이름>`(또는 설정 다이얼로그 버튼→채팅 입력) → `reservedNextEntity`.
+  생성 직전 `applyReservedEntity`가 `gdamGen.setForcedEntity`로 넘겨 1회 소비 → `generateFamiliarConcept`가 scope/criterion을
+  그 이름으로 덮어 강제(중복금지·카탈로그 무시). 지정 시 `clearPregen`으로 기존 사전생성분 폐기. 해제=off/none/없음. #228 시드 예약과 별개.
 - **모델 티어**: GM=medium(sonnet), NPC=mini(haiku). 정밀 1회성은 callAssistantHiFi. 정밀 대형
   설계는 사용자 승인 하에 Fable5(claude-fable-5) 다중에이전트 Workflow("울트라코드").
 

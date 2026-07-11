@@ -137,6 +137,10 @@ public class TRPGGameManager {
     private String familiarFilter = "random";
     /** ★#228★ 다음 스테이지에 '생성' 대신 불러올 특정 괴담(.gdam 씨드) 예약. 빈 값=예약 없음. /trpg next에서 1회 소비. */
     private String reservedNextSeed = "";
+    /** ★다음 괴담 임의 지정★ — 다음 생성(사전생성·즉석)에 강제할 괴담 이름(예: "쿠네쿠네"). 빈 값=지정 없음. 1회 소비. */
+    private String reservedNextEntity = "";
+    /** 다음 괴담 이름을 채팅으로 입력받는 중인 플레이어(설정 다이얼로그 버튼 → 채팅 캡처). */
+    private final java.util.Set<UUID> pendingEntityReserveInput = ConcurrentHashMap.newKeySet();
     /** ★#151 §2.2-4 완급★ 현재 행동 페이스. slow=중요 순간 시간이 천천히(행동 소요 분↓ → 상대적으로 여러 행동). GM <PACE>로 설정. */
     private String actionPace = "normal";
     /** 완급 배수: slow=0.5(행동이 절반의 시간만 소모) / fast=1.6 / normal=1.0. durEff에 곱해 시계·busy 진행에 반영. */
@@ -715,16 +719,31 @@ public class TRPGGameManager {
                 () -> beginSession(initiator, AiManager.Quality.MEDIUM, false, "random"),
                 () -> beginSession(initiator, AiManager.Quality.HIGH,   false, "random"),
                 () -> beginSession(initiator, AiManager.Quality.EFFICIENT, false, "random")),
-            // 친숙 모드 → 괴담 범위(필터) 선택 → 품질 선택 순서
-            () -> dialogMan.showFamiliarFilter(initiator, filter ->
-                dialogMan.showQualityChoice(initiator,
-                    ai.providerLabel(), ai.hourlyCostLabel(AiManager.Quality.LOW, np),
-                    ai.hourlyCostLabel(AiManager.Quality.MEDIUM, np), ai.hourlyCostLabel(AiManager.Quality.HIGH, np),
-                    ai.hourlyCostLabel(AiManager.Quality.EFFICIENT, np),
-                    () -> beginSession(initiator, AiManager.Quality.LOW,    true, filter),
-                    () -> beginSession(initiator, AiManager.Quality.MEDIUM, true, filter),
-                    () -> beginSession(initiator, AiManager.Quality.HIGH,   true, filter),
-                    () -> beginSession(initiator, AiManager.Quality.EFFICIENT, true, filter))));
+            // 친숙 모드 → 괴담 범위(필터) 선택 → ('모두 무작위'면 카테고리 제외 토글) → 품질 선택 순서
+            () -> dialogMan.showFamiliarFilter(initiator, filter -> {
+                if ("random".equals(filter)) showRandomExcludeThenQuality(initiator, np); // 랜덤 → 제외 다이얼로그 먼저
+                else showFamiliarQualityChoice(initiator, np, filter);
+            }));
+    }
+
+    /** 친숙 모드 필터 확정 후 → AI 품질 선택 → beginSession(친숙, filter). */
+    private void showFamiliarQualityChoice(Player initiator, int np, String filter) {
+        dialogMan.showQualityChoice(initiator,
+            ai.providerLabel(), ai.hourlyCostLabel(AiManager.Quality.LOW, np),
+            ai.hourlyCostLabel(AiManager.Quality.MEDIUM, np), ai.hourlyCostLabel(AiManager.Quality.HIGH, np),
+            ai.hourlyCostLabel(AiManager.Quality.EFFICIENT, np),
+            () -> beginSession(initiator, AiManager.Quality.LOW,    true, filter),
+            () -> beginSession(initiator, AiManager.Quality.MEDIUM, true, filter),
+            () -> beginSession(initiator, AiManager.Quality.HIGH,   true, filter),
+            () -> beginSession(initiator, AiManager.Quality.EFFICIENT, true, filter));
+    }
+
+    /** ★'모두 무작위' 제외 토글★ — 카테고리별 포함/제외(서버 영속) → '이대로 시작' → 품질 선택. 토글하면 이 창을 다시 연다. */
+    private void showRandomExcludeThenQuality(Player initiator, int np) {
+        dialogMan.showRandomExcludeChoice(initiator,
+            cat -> gdamGen.isRandomExcluded(cat),
+            cat -> { gdamGen.toggleRandomExcluded(cat); showRandomExcludeThenQuality(initiator, np); },
+            () -> showFamiliarQualityChoice(initiator, np, "random"));
     }
 
     private static String familiarFilterLabel(String key) {
@@ -778,6 +797,7 @@ public class TRPGGameManager {
         // 비용 집계 시작점: 새 세션이면 세션·스테이지 모두, 아니면 스테이지만 0부터(생성 비용 포함)
         if (freshSession) ai.markSessionStart(); else ai.markStageStart();
 
+        applyReservedEntity(); // ★다음 괴담 지정★이 걸려 있으면 이번(시작) 시나리오를 그 괴담으로(1회 소비)
         gdamGen.generate(room, familiarMode, familiarFilter, step -> plugin.getServer().getScheduler().runTask(plugin, () -> {
             switch (step) {
                 case "컨셉" -> stepLoadingBar("컨셉 생성 완료", 0.20f);
@@ -1289,6 +1309,14 @@ public class TRPGGameManager {
                         + (conceptTypeHint.isEmpty() ? "§7무작위(기본)" : "§d" + conceptTypeHint) + " §7— 다음 생성부터 적용");
                 });
             }
+        } else if (key.equals("entity") || key.equals("괴담지정") || key.equals("지정") || key.equals("다음괴담")) {
+            // ★다음 괴담 임의 지정★ — 인자 있으면 그 이름으로(해제: off/none/없음), 없으면 채팅 입력 모드.
+            if (sub.length >= 2) {
+                setReservedNextEntity(player, String.join(" ", java.util.Arrays.copyOfRange(sub, 1, sub.length)).trim());
+            } else {
+                pendingEntityReserveInput.add(player.getUniqueId());
+                player.sendMessage("§6[다음 괴담] 채팅으로 지정할 괴담 이름을 입력하세요. §7(예: §f쿠네쿠네§7 · 취소: §f취소§7 · 해제: §foff§7)");
+            }
         } else if (key.equals("turnmode") || key.equals("턴모드") || key.equals("턴")) {
             // ★#151★ 턴 진행 방식: 0=고정(턴당 minutesPerTurn) / 1=가변(행동 DUR로 시계 진행, 기본) / 2=비동기 busy(각자 소요만큼 '행동 중' 잠금 → 시계 점프).
             if (sub.length >= 2) {
@@ -1357,6 +1385,7 @@ public class TRPGGameManager {
     /** 현재 시작 설정 — 다이얼로그로 열어 자동생성·시작 스테이지·괴담 유형을 클릭으로 고른다(/trpg setting, /trpg s s). */
     public void openStartSettings(Player player) {
         dialogMan.showStartSettings(player, autoPregen, startStage, conceptTypeHint, gdamGen.getFamePool(),
+            reservedNextEntityLabel(),
             state.isGroupTurn(),
             () -> { // 자동 사전생성 토글
                 autoPregen = !autoPregen;
@@ -1390,6 +1419,10 @@ public class TRPGGameManager {
                     ? "§a단체턴 §7(전원 행동 후 GM 1회 통합 — 일관성↑·비용↓)"
                     : "§e개별턴 §7(행동마다 즉시 GM 호출 — 응답 빠름·비용↑)"));
                 openStartSettings(player);
+            },
+            () -> { // ★다음 괴담 지정★ — 채팅으로 이름 입력받기(취소: '취소', 해제: 'off')
+                pendingEntityReserveInput.add(player.getUniqueId());
+                player.sendMessage("§6[다음 괴담] 채팅으로 지정할 괴담 이름을 입력하세요. §7(예: §f쿠네쿠네§7 · 취소: §f취소§7 · 해제: §foff§7)");
             });
     }
 
@@ -1494,6 +1527,7 @@ public class TRPGGameManager {
         int target = current + 1;
         if (pregenFuture != null && pregenRoom == target) return; // 이미 진행/완료된 것이 있음
         pregenRoom   = target;
+        applyReservedEntity(); // ★다음 괴담 지정★이 걸려 있으면 이 사전생성이 그 괴담으로 나오게 넘긴다(1회 소비)
         pregenFuture = gdamGen.generate(target, familiarMode, familiarFilter, step -> {}, castHintFor(target)) // 진행 콜백 없음(조용히), 피날레면 복귀 캐스트 시드
             .exceptionally(ex -> {
                 plugin.getLogger().warning("[gdam] 다음 스테이지 사전 생성 실패 — /trpg next에서 즉석 생성으로 폴백: "
@@ -1528,6 +1562,49 @@ public class TRPGGameManager {
         gameLogger.logEvent("[예약] 다음 스테이지 예약 설정: 시드 " + s);
         admin.sendMessage("§a[예약] 다음 스테이지(/trpg next)에 시드 §f" + s + " §a시나리오를 불러오도록 예약했습니다.");
         admin.sendMessage("§7  · 1회성(넘긴 뒤 자동 해제) · 취소 §f/trpg reserve off §7· 스포일러 방지로 괴담 이름은 표시하지 않습니다.");
+    }
+
+    /** ★다음 괴담 지정★이 걸려 있으면 생성기에 넘기고 1회 소비한다(각 생성 직전에 호출). */
+    private void applyReservedEntity() {
+        if (reservedNextEntity != null && !reservedNextEntity.isBlank()) {
+            gdamGen.setForcedEntity(reservedNextEntity);
+            reservedNextEntity = "";
+        }
+    }
+
+    /** 현재 지정된 '다음 괴담' 이름(없으면 ""). 설정 다이얼로그 라벨용 — 아직 미소비(reservedNextEntity)든, 생성기로
+     *  넘어가 소비 대기 중(forcedEntity)이든 둘 중 하나라도 있으면 그 이름을 보여준다. */
+    public String reservedNextEntityLabel() {
+        if (reservedNextEntity != null && !reservedNextEntity.isEmpty()) return reservedNextEntity;
+        String fe = gdamGen.getForcedEntity();
+        return fe == null ? "" : fe;
+    }
+
+    /**
+     * ★다음 괴담 임의 지정★ — 다음 생성(사전생성·즉석·새 게임 시작)에 강제할 괴담 이름을 지정한다(예: "쿠네쿠네").
+     * 1회성(적용 후 자동 해제). 해제: 빈/off/none/없음. 미리 만들어 둔 사전생성분은 버려 지정 괴담으로 다시 만든다.
+     */
+    public void setReservedNextEntity(Player admin, String name) {
+        String n = name == null ? "" : name.trim();
+        boolean clear = n.isEmpty() || n.equalsIgnoreCase("off") || n.equalsIgnoreCase("none")
+            || n.equals("없음") || n.equals("해제") || n.equals("취소");
+        if (clear) {
+            reservedNextEntity = "";
+            gdamGen.setForcedEntity("");
+            clearPregen();                         // 지정 괴담용 사전생성분 폐기 → 정상 무작위로 되돌림
+            if (isActive()) startPregenNext();     // 정상 생성으로 다시 사전생성
+            if (admin != null) admin.sendMessage("§7[다음 괴담] 지정을 해제했습니다(정상 생성으로 진행).");
+            return;
+        }
+        reservedNextEntity = n;
+        gdamGen.setForcedEntity("");               // 아직 소비 전 — 이전 잔여 강제값 정리(생성 직전 applyReservedEntity가 다시 넣음)
+        clearPregen();                             // 지정 전 만들어 둔(정상) 사전생성분 폐기 → 지정 괴담으로 다시 생성
+        if (isActive()) startPregenNext();         // ★즉시 지정 괴담으로 사전생성(applyReservedEntity가 소비)
+        gameLogger.logEvent("[다음 괴담] 지정: " + n);
+        if (admin != null) {
+            admin.sendMessage("§a[다음 괴담] 다음 생성 괴담을 §f" + n + " §a(으)로 지정했습니다.");
+            admin.sendMessage("§7  · 다음 스테이지(또는 새 게임 시작)에 1회 적용 후 자동 해제 · 해제 §f/trpg setting entity off");
+        }
     }
 
     /**
@@ -1567,6 +1644,7 @@ public class TRPGGameManager {
 
     /** 로딩바 진행 콜백을 단 즉석 시나리오 생성(친숙 모드 필터 유지). */
     private CompletableFuture<JsonObject> freshGenerate(int nextRoom) {
+        applyReservedEntity(); // ★다음 괴담 지정★ 1회 소비(사전생성 없이 즉석 생성할 때)
         return gdamGen.generate(nextRoom, familiarMode, familiarFilter, step ->
             plugin.getServer().getScheduler().runTask(plugin, () -> {
                 switch (step) {
@@ -1590,6 +1668,13 @@ public class TRPGGameManager {
     // ══════════════════════════════════════════════════════════════
 
     public void handleChat(Player player, String message) {
+        // ★다음 괴담 지정★ 채팅 입력 대기 중이면 이 입력을 괴담 이름으로 소비한다(게임 상태와 무관하게 최우선).
+        if (pendingEntityReserveInput.remove(player.getUniqueId())) {
+            String m = message == null ? "" : message.trim();
+            if (m.isEmpty() || m.equals("취소") || m.equalsIgnoreCase("cancel")) player.sendMessage("§7[다음 괴담] 입력을 취소했습니다.");
+            else setReservedNextEntity(player, m);
+            return;
+        }
         switch (currentPhase) {
             case CHAR_CREATION -> handleCharCreationChat(player, message);
             case DAILY, HORROR -> handleGameChat(player, message);
