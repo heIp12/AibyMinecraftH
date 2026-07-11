@@ -3952,7 +3952,10 @@ public class TRPGGameManager {
     /** 입력형/정보형 능력 — '맡기기/직접입력' 선택 없이 바로 다이얼로그 입력창으로 받는 효과들. */
     private static boolean isInputAbility(TraitData t) {
         return switch (t.effectType == null ? "" : t.effectType) {
-            case "ai_query", "area_scan", "remote_sense", "foresight", "link_ally" -> true;
+            case "ai_query", "area_scan", "remote_sense", "foresight", "link_ally",
+                 // 신규 입력형(대상·내용을 다이얼로그로 받는다)
+                 "fear_transfer", "debt", "name_steal", "witness_pact", "feed_entity",
+                 "last_words", "vanish", "illusion", "item_create" -> true;
             default -> false;
         };
     }
@@ -4126,8 +4129,252 @@ public class TRPGGameManager {
             case DOMINATE      -> activateDominate(player, pd, td);
             case FATE          -> activateFate(player, pd, td);
             case GROUP_REWIND  -> activateGroupRewind(player, pd, td);
+            case TRUTH_READ    -> activateTruthRead(player, pd, td);
+            case PITFALL_REVEAL -> activatePitfallReveal(player, pd, td);
+            case MAD_CLARITY   -> activateMadClarity(player, pd, td);
+            case FEAR_TRANSFER -> activateFearTransfer(player, pd, td);
+            case DEBT          -> activateDebt(player, pd, td);
+            case NAME_STEAL    -> activateNameSteal(player, pd, td);
+            case WITNESS_PACT  -> activateWitnessPact(player, pd, td);
+            case FUTURE_SIGHT  -> activateFutureSight(player, pd, td);
+            case CAUSAL_DEBT   -> activateCausalDebt(player, pd, td);
+            case RULE_INVERT   -> activateRuleInvert(player, pd, td);
+            case FEED_ENTITY   -> activateFeedEntity(player, pd, td);
+            case LAST_WORDS    -> activateLastWords(player, pd, td);
+            case EMPTY_CHAIR   -> activateEmptyChair(player, pd, td);
+            case VANISH        -> activateVanish(player, pd, td);
+            case ILLUSION      -> activateIllusion(player, pd, td);
+            case ITEM_CREATE   -> activateItemCreate(player, pd, td);
             default            -> player.sendMessage("§7이 특성은 상시(패시브)로 적용됩니다.");
         }
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  신규 특이 능력 — 전부 엔진 최소 처리 + GM 지시 주입(세부·강도·결과는 GM 재량)
+    // ──────────────────────────────────────────────────────────────
+
+    /** 반향 — 가장 최근 NPC 발언의 진위(진실/거짓/오염)를 뉘앙스로 드러낸다. 남용 시 NPC 함구. */
+    private void activateTruthRead(Player player, PlayerData pd, TraitData td) {
+        ai.injectGmSystem("[능력 발동] " + pd.gmDisplayName() + "이(가) '" + td.name + "'으로 ★가장 최근 NPC의 발언★의 진위를 읽는다. "
+            + "그 발언이 시나리오 사실에 비추어 진실/거짓/반쯤 진실/괴담에 오염된 정보 중 무엇인지 ★그 인물의 태도·목소리·정황의 미묘한 결로★ 은근히 드러내라(색·수치·확언 금지, 뉘앙스로). "
+            + "여러 번 썼다면 그 NPC가 '읽히는' 걸 느껴 경계·함구할 수 있다. 세부 판정·서술 강도는 GM 재량.");
+        applyTraitUsed(pd, td.id, state.getCurrentTurn());
+        player.sendMessage("§7[" + td.name + "] 방금 그 말의 결을 읽습니다...");
+    }
+
+    /** 오답노트 — '절대 하면 안 되는 것' 하나를 확정 폭로. 대가로 위협 소폭 상승(표적화). */
+    private void activatePitfallReveal(Player player, PlayerData pd, TraitData td) {
+        state.adjustThreat(3);
+        ai.injectGmSystem("[능력 발동] " + pd.gmDisplayName() + "이(가) '" + td.name + "'으로 이번 사건의 '★절대 하면 안 되는 것★' 하나를 꿰뚫어 본다. "
+            + "가짜 규칙·함정 지시·치명 금기 중 ★진짜 하나★를 골라 확정으로(애매하지 않게) 짚어 줘라 — 단 그것 하나만(정답 전체·해결절차는 금지). "
+            + "그 대가로 괴담이 '규칙을 아는 자'인 발동자를 더 주시한다(다음 전개에 은근한 표적화). 어느 함정을 폭로할지는 GM 재량.");
+        applyTraitUsed(pd, td.id, state.getCurrentTurn());
+        player.sendMessage("§7[" + td.name + "] 하면 안 될 것 하나를 꿰뚫어 봅니다...");
+    }
+
+    /** 광기의 명료 — 정신력을 태워 괴담 규칙 조각 하나를 본다. SAN 낮을수록 선명. */
+    private void activateMadClarity(Player player, PlayerData pd, TraitData td) {
+        int cost = Math.max(1, Math.min((int) Math.ceil(pd.san[1] * 0.5), td.param("cost", 5)));
+        int before = pd.san[0];
+        pd.san[0] = Math.max(0, pd.san[0] - cost);
+        updateAllScoreboards();
+        gameLogger.logVital(pd.gmDisplayName(), 0, pd.hp[0], pd.hp[1], pd.san[0] - before, pd.san[0], pd.san[1], "능력 대가: " + td.name);
+        boolean lowSan = pd.san[0] <= Math.max(1, pd.san[1] / 3);
+        ai.injectGmSystem("[능력 발동] " + pd.gmDisplayName() + "이(가) 정신력을 태워 '" + td.name + "'으로 괴담(" + getEntityName() + ")의 ★규칙 조각 하나★를 또렷이 본다. "
+            + (lowSan ? "지금 정신이 벼랑 끝이라 통찰이 ★유난히 선명★하다 — 규칙의 급소에 더 가깝게 짚어라. " : "규칙의 한 조각을 짧고 또렷하게 짚어라(정답 전체는 금지). ")
+            + "광기와 통찰이 뒤섞인 어조로. 무엇을 보여줄지는 GM 재량.");
+        applyTraitUsed(pd, td.id, state.getCurrentTurn());
+        player.sendMessage("§d[" + td.name + "] 정신력 " + cost + " 소모 — 광기 속에서 무언가 또렷해집니다...");
+    }
+
+    /** 공포 전가 — 자신의 공포를 대상에게 떠넘긴다(아군=위축·NPC=도주·괴담=주춤+분노). */
+    private void activateFearTransfer(Player player, PlayerData pd, TraitData td) {
+        dialogMan.showTextInput(player, Component.text("[" + td.name + "] 공포 전가"),
+            Component.text("누구에게 공포를 떠넘길지 입력하세요 (아군 이름·NPC 이름·'괴담')."),
+            "대상", Component.text("전가하기"),
+            target -> {
+                String t = target == null ? "" : target.trim();
+                if (t.contains("괴담") || t.equalsIgnoreCase(getEntityName())) state.adjustAnger(8, "fear_transfer 도발");
+                ai.injectGmSystem("[능력 발동] " + pd.gmDisplayName() + "이(가) '" + td.name + "'으로 자신의 공포를 ★" + t + "★에게 떠넘긴다. "
+                    + "아군이면 그가 갑자기 위축·주저(잠깐의 배신적 효과), 적/중립 NPC면 도주·붕괴, ★괴담이면 잠깐 주춤하되 곧 분노가 치솟는다(도발)★. "
+                    + "대상·상황에 맞는 반응과 강도는 GM 재량으로 서술하라.");
+                applyTraitUsed(pd, td.id, state.getCurrentTurn());
+                player.sendMessage("§7[" + td.name + "] " + t + "에게 공포를 떠넘깁니다...");
+            });
+    }
+
+    /** 빚문서 — 도운 아군이 빚을 진다(위기 시 1회 강제 조력). */
+    private void activateDebt(Player player, PlayerData pd, TraitData td) {
+        dialogMan.showTextInput(player, Component.text("[" + td.name + "] 빚문서"),
+            Component.text("누구에게 '빚'을 지울지 아군 이름을 입력하세요."),
+            "아군 이름", Component.text("빚 지우기"),
+            target -> {
+                String t = target == null ? "" : target.trim();
+                ai.injectGmSystem("[능력 발동] " + pd.gmDisplayName() + "이(가) '" + td.name + "'으로 ★" + t + "★에게 갚아야 할 '빚'을 지운다. "
+                    + "이후 발동자가 위기(부상·표적·고립 등)에 처하면 " + t + "은(는) ★1회 강제로 그를 돕게 된다★(주저해도 몸이 움직인다). "
+                    + "빚을 저버리고 돕지 않으면 " + t + "에게 불이익(낙인·불운)이 따른다. 언제·어떻게 빚이 발동하는지는 GM이 상황에 맞게 판정하라.");
+                applyTraitUsed(pd, td.id, state.getCurrentTurn());
+                player.sendMessage("§7[" + td.name + "] " + t + "에게 빚을 지웠습니다.");
+            });
+    }
+
+    /** 이름 도둑 — NPC 이름을 빌려 그 사람 행세(발각 시 대가). */
+    private void activateNameSteal(Player player, PlayerData pd, TraitData td) {
+        int turns = Math.max(1, Math.min(3, td.param("turns", 2)));
+        dialogMan.showTextInput(player, Component.text("[" + td.name + "] 이름 도둑"),
+            Component.text("누구의 이름을 빌릴지 NPC 이름을 입력하세요."),
+            "NPC 이름", Component.text("행세하기"),
+            target -> {
+                String t = target == null ? "" : target.trim();
+                ai.injectGmSystem("[능력 발동] " + pd.gmDisplayName() + "이(가) '" + td.name + "'으로 약 " + turns + "턴간 ★" + t + "★의 이름을 빌려 그 사람 행세를 한다 — "
+                    + "다른 인물들은 발동자를 " + t + "(으)로 인식·대우한다. 단 ★모순(그 사람을 아는 이가 눈치채거나 발동자가 티를 내면) 발각★될 수 있고, 발각 시 큰 대가·표적화가 따른다. "
+                    + "누가 언제 의심하는지, 사칭이 통하는 범위는 GM 재량.");
+                applyTraitUsed(pd, td.id, state.getCurrentTurn());
+                player.sendMessage("§7[" + td.name + "] 이제 '" + t + "' 행세를 합니다 (" + turns + "턴).");
+            });
+    }
+
+    /** 증인 계약 — 두 대상 간 강제 계약(먼저 어긴 쪽이 괴담 표적). */
+    private void activateWitnessPact(Player player, PlayerData pd, TraitData td) {
+        dialogMan.showTextInput(player, Component.text("[" + td.name + "] 증인 계약"),
+            Component.text("두 대상과 계약 내용을 입력하세요 (예: 'A와 B — 서로 배신하지 않는다')."),
+            "계약 내용", Component.text("계약 성립"),
+            terms -> {
+                String tm = terms == null ? "" : terms.trim();
+                ai.injectGmSystem("[능력 발동] " + pd.gmDisplayName() + "이(가) '" + td.name + "'으로 강제 계약을 성립시킨다 — 내용: \"" + tm + "\". "
+                    + "이 계약은 초자연적 구속력을 지녀 ★먼저 어긴 쪽이 괴담의 표적★이 된다. 계약 당사자·성립 여부·위반 판정과 그 결과는 GM이 상황에 맞게 다룬다(무리한 계약이면 성립 안 될 수도).");
+                applyTraitUsed(pd, td.id, state.getCurrentTurn());
+                player.sendMessage("§7[" + td.name + "] 계약을 성립시켰습니다.");
+            });
+    }
+
+    /** 미래시 — 확정된 다음 사건(다가오는 전개)을 예지로 미리 본다. */
+    private void activateFutureSight(Player player, PlayerData pd, TraitData td) {
+        int depth = Math.max(1, Math.min(3, td.param("depth", 2)));
+        ai.injectGmSystem(GAME_FICTION_FRAME + "[능력 발동] " + pd.gmDisplayName() + "이(가) '" + td.name + "'으로 ★확정된 미래★를 미리 본다 — "
+            + "곧 반드시 닥칠 ★다음 사건/전개(다가오는 타임라인 국면)★를 생생한 예지·전조로 보여줘라. 발동자가 '만드는' 미래가 아니라 '이미 정해진' 미래를 보는 것이다. "
+            + "선명도(depth=" + depth + "): 1=흐릿한 조짐·단편, 2=한 장면, 3=또렷한 전조. ★정답·해결법은 제외하고, 무슨 일이 닥치는지(위험·사건)를★ 예지로 전한다. "
+            + "실제 전개의 세부·시점은 GM이 조정할 수 있다(예지는 큰 줄기, 세부는 유동적).");
+        applyTraitUsed(pd, td.id, state.getCurrentTurn());
+        player.sendMessage("§b[" + td.name + "] 정해진 미래의 한 조각이 스칩니다...");
+    }
+
+    /** 인과 담보 — 다음 행동 확정 대성공, 대가는 N턴 뒤 재앙(후불). */
+    private void activateCausalDebt(Player player, PlayerData pd, TraitData td) {
+        int turns = Math.max(2, Math.min(4, td.param("turns", 3)));
+        ai.injectGmSystem("[능력 발동] " + pd.gmDisplayName() + "이(가) '" + td.name + "'으로 인과를 담보 잡힌다 — ★다음 행동 1회를 확정 대성공★으로 판정하라(주사위·실패 무시, 극적으로 성공). "
+            + "대신 그 값이 '미래의 빚'으로 남아, 약 " + turns + "턴 뒤 ★그만큼의 재앙★이 발동자에게 자동으로 닥친다(얻은 이득에 비례하는 대가 — 부상·표적·자원 손실·사건 악화 등). "
+            + "재앙의 형태·정확한 시점은 GM이 상황에 맞게 정하되 반드시 닥치게 하라(공짜 아님).");
+        applyTraitUsed(pd, td.id, state.getCurrentTurn());
+        player.sendMessage("§6[" + td.name + "] 다음 행동은 반드시 성공합니다 — 대가는 " + turns + "턴 뒤에...");
+    }
+
+    /** 규칙 뒤집기 — 괴담 규칙 1개를 N턴 거꾸로(대가: 나머지 규칙 격화·분노↑). */
+    private void activateRuleInvert(Player player, PlayerData pd, TraitData td) {
+        int turns = Math.max(1, Math.min(2, td.param("turns", 1)));
+        state.adjustAnger(10, "rule_invert 규칙 왜곡");
+        ai.injectGmSystem("[능력 발동] " + pd.gmDisplayName() + "이(가) '" + td.name + "'으로 괴담(" + getEntityName() + ")의 규칙 1개를 " + turns + "턴간 ★거꾸로 뒤집는다★ "
+            + "(예: '보면 죽는다'→'봐야 산다', '소리 내면 안 된다'→'소리 내야 안전하다'). 어떤 규칙을 뒤집을지는 GM이 이 시나리오에 맞게 고른다. "
+            + "판을 통째로 엎는 강수인 만큼 그 대가로 ★나머지 규칙은 더 사납고 치명적★이 되고 괴담의 분노가 치솟는다. 지속 후 원래대로 돌아온다.");
+        applyTraitUsed(pd, td.id, state.getCurrentTurn());
+        player.sendMessage("§5[" + td.name + "] 규칙 하나가 " + turns + "턴간 거꾸로 뒤집힙니다!");
+    }
+
+    /** 먹이 주기 — 제물로 괴담을 잠시 진정(대가: 괴담 성장). */
+    private void activateFeedEntity(Player player, PlayerData pd, TraitData td) {
+        int turns = Math.max(1, Math.min(2, td.param("turns", 1)));
+        dialogMan.showTextInput(player, Component.text("[" + td.name + "] 먹이 주기"),
+            Component.text("괴담에게 무엇을 바칠지 입력하세요 (단서·물건·기억 등)."),
+            "바칠 것", Component.text("바치기"),
+            offer -> {
+                String of = offer == null ? "" : offer.trim();
+                state.adjustThreat(-8);
+                ai.injectGmSystem("[능력 발동] " + pd.gmDisplayName() + "이(가) '" + td.name + "'으로 괴담(" + getEntityName() + ")에게 ★" + of + "★을(를) 바쳐 약 " + turns + "턴간 온순하게 만든다 — "
+                    + "그동안 괴담은 공격·추적을 멈춘다. ★단 괴담이 그 제물을 먹고 성장한다(양날)★ — 이후 더 강해지거나 새 힘·정보를 얻은 듯 굴게 하라. "
+                    + "무엇을 얼마나 받아들이는지, 성장의 형태는 GM 재량(부적절한 제물이면 안 통할 수도).");
+                applyTraitUsed(pd, td.id, state.getCurrentTurn());
+                player.sendMessage("§7[" + td.name + "] " + of + "을(를) 바쳐 잠시 진정시킵니다...");
+            });
+    }
+
+    /** 마지막 유언 — 확정 단서를 남겨 아군/다음 스테이지에 전달. */
+    private void activateLastWords(Player player, PlayerData pd, TraitData td) {
+        dialogMan.showTextInput(player, Component.text("[" + td.name + "] 마지막 유언"),
+            Component.text("남길 유언 한마디를 입력하세요 — 확정 단서로 전달됩니다."),
+            "유언", Component.text("남기기"),
+            words -> {
+                String w = words == null ? "" : words.trim();
+                ai.injectGmSystem("[능력 발동] " + pd.gmDisplayName() + "이(가) '" + td.name + "'으로 유언을 남긴다: \"" + w + "\". "
+                    + "이 말은 ★확정 단서★로 가까운 아군(또는 다음 스테이지의 누군가)에게 반드시 전달된다 — 쪽지·환청·기록 등 상황에 맞는 방법으로 GM이 전하라. "
+                    + "발동자가 죽기 직전이라면 그 죽음을 정보로 승화시켜라. 전달 방법·수신자는 GM 재량이되 내용은 왜곡 없이 전한다.");
+                applyTraitUsed(pd, td.id, state.getCurrentTurn());
+                player.sendMessage("§7[" + td.name + "] 유언을 남깁니다 — 반드시 누군가에게 닿습니다.");
+            });
+    }
+
+    /** 빈 의자 — 허수 인원으로 괴담의 표적을 분산(N턴). */
+    private void activateEmptyChair(Player player, PlayerData pd, TraitData td) {
+        int turns = Math.max(2, Math.min(4, td.param("turns", 3)));
+        ai.injectGmSystem("[능력 발동] " + pd.gmDisplayName() + "이(가) '" + td.name + "'으로 파티에 보이지 않는 '한 명'을 더한다 — 약 " + turns + "턴간 괴담·적대 존재가 ★인원수를 착각★해 "
+            + "표적·추적을 헛것(빈 자리)에게 분산시킨다(발동자·아군이 노려질 확률↓, 헛발질 유도). 어떻게 인원을 오인하고 표적이 어디로 새는지는 GM이 자연스럽게 서술하라(지나친 만능은 금지).");
+        applyTraitUsed(pd, td.id, state.getCurrentTurn());
+        player.sendMessage("§7[" + td.name + "] 보이지 않는 한 명이 자리를 채웁니다 (" + turns + "턴).");
+    }
+
+    /** 소실 — 지정 대상의 인식에서 N턴 사라짐. S급이면 괴담에게도 적용. */
+    private void activateVanish(Player player, PlayerData pd, TraitData td) {
+        int turns = Math.max(1, Math.min(3, td.param("turns", 2)));
+        boolean sGrade = "S".equalsIgnoreCase(td.grade);
+        dialogMan.showTextInput(player, Component.text("[" + td.name + "] 소실"),
+            Component.text("누구의 인식에서 사라질지 대상을 입력하세요" + (sGrade ? " (S급 — '괴담'도 지정 가능)." : " (사람·NPC 대상, 괴담은 불가).")),
+            "대상", Component.text("사라지기"),
+            target -> {
+                String t = target == null ? "" : target.trim();
+                boolean toEntity = t.contains("괴담") || t.equalsIgnoreCase(getEntityName());
+                if (toEntity && !sGrade) {
+                    ai.injectGmSystem("[능력 발동] " + pd.gmDisplayName() + "이(가) '" + td.name + "'으로 사라지려 했으나 ★이 등급으로는 괴담의 인식은 피하지 못한다★ — "
+                        + "사람·NPC의 눈은 속여도 괴담은 여전히 발동자를 어렴풋이 느낀다. 그 한계를 서술로 드러내라.");
+                } else {
+                    ai.injectGmSystem("[능력 발동] " + pd.gmDisplayName() + "이(가) '" + td.name + "'으로 약 " + turns + "턴간 ★" + t + "의 인식에서 사라진다★ — "
+                        + "그 대상은 발동자를 보거나 찾지 못하고 표적·추적에서 발동자를 놓친다" + (toEntity ? "(★S급이라 괴담에게도 통한다★)" : "") + ". "
+                        + "완전 무적이 아니라 '인식에서 지워짐'이다 — 큰 소리·직접 공격 등 뚜렷한 흔적을 내면 다시 들킬 수 있다. 한계·해제 조건은 GM 재량.");
+                }
+                applyTraitUsed(pd, td.id, state.getCurrentTurn());
+                player.sendMessage("§7[" + td.name + "] " + t + "의 인식에서 사라집니다 (" + turns + "턴).");
+            });
+    }
+
+    /** 환영·현혹 — 대상에게 환영을 보여주거나 약하게 조종(완전 지배 아님, 괴담 본체 무효). */
+    private void activateIllusion(Player player, PlayerData pd, TraitData td) {
+        int power = Math.max(1, Math.min(2, td.param("power", 1)));
+        dialogMan.showTextInput(player, Component.text("[" + td.name + "] 환영·현혹"),
+            Component.text("누구에게 무엇을 보여주거나 시킬지 입력하세요 (예: 'NPC에게 불타는 복도를 보여줌' / '경비를 잠들게 유도')."),
+            "환영/암시", Component.text("현혹하기"),
+            spec -> {
+                String sp = spec == null ? "" : spec.trim();
+                ai.injectGmSystem("[능력 발동] " + pd.gmDisplayName() + "이(가) '" + td.name + "'으로 대상에게 ★환영을 보여주거나 약하게 조종★한다: \"" + sp + "\". "
+                    + "강도(power=" + power + "): 1=가벼운 착시·오인, 2=뚜렷한 환영·잠깐의 충동 유도. ★완전 지배가 아니다★ — 대상의 의지에 반하는 큰 행동(자해·동료 살해 등)은 저항하거나 깨어난다. "
+                    + "괴담 본체에는 통하지 않는다(잔챙이·NPC·사람에게만). 대상의 성격·경계심에 따라 통할지, 언제 환영을 눈치채는지는 GM 재량.");
+                applyTraitUsed(pd, td.id, state.getCurrentTurn());
+                player.sendMessage("§7[" + td.name + "] 환영을 드리웁니다...");
+            });
+    }
+
+    /** 아이템 창조 — 도움되는 아이템을 GM이 자유롭게 생성·지급(ITEM_GRANT). */
+    private void activateItemCreate(Player player, PlayerData pd, TraitData td) {
+        int power = Math.max(1, Math.min(3, td.param("power", 2)));
+        dialogMan.showTextInput(player, Component.text("[" + td.name + "] 아이템 창조"),
+            Component.text("어떤 아이템을 원하는지 입력하세요 (비워도 됨 — GM이 상황에 맞게 정합니다). 예: '괴물을 막을 무기', '높은 곳에 오를 갈고리'."),
+            "원하는 아이템(선택)", Component.text("만들기"),
+            wish -> {
+                String w = wish == null ? "" : wish.trim();
+                ai.injectGmSystem("[능력 발동] " + pd.gmDisplayName() + "이(가) '" + td.name + "'으로 ★도움이 되는 아이템 하나를 만들어 손에 넣는다★. "
+                    + (w.isEmpty() ? "지금 상황에 가장 쓸모 있는 것을(도구·무기·방어구·통신구 등) " : "발동자가 원하는 것은 \"" + w + "\" — 그 취지에 맞는 아이템을 ")
+                    + "GM이 자유롭게 정해 ★실제로 생성·지급하라(ITEM_GRANT로 발동자에게 지급)★. 위력(power=" + power + "): 1=소소한 도구, 2=쓸만한 장비, 3=강력한 병기. "
+                    + "괴담 자체를 즉사시키는 만능품·게임을 깨는 물건은 금지(상황을 돕는 수준). 무엇을 만들지·이름·성능은 GM 재량.");
+                applyTraitUsed(pd, td.id, state.getCurrentTurn());
+                player.sendMessage("§a[" + td.name + "] 아이템을 만들어냅니다...");
+            });
     }
 
     /** ★일시 능력치 버프 특성(temp_buff)★ — 몇 턴간 지정 스탯을 올린다(집중·각성·비약 등). 세션 종료 시 휘발.

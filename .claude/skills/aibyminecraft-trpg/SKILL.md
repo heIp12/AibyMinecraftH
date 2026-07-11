@@ -339,6 +339,14 @@ description: >-
   스테이지 채널 개설(secretChannels: owner→SecretChannel) → 멤버는 채팅 앞 `!`로 은밀 송수신(handleGameChat 최상단 훅
   handleSecretChannelChat, 채널 없으면 false→일반채팅 폴백). deliverSecretText가 logComm(kind=whisper,via=밀담) +
   detect면 noteEntityIntel·GM주입. secretChannels는 스테이지 리셋 시 clear. reduceOneParam에 'direction' 추가(초과 시 대화창→청취→일방 강등).
+- **★신규 특이 능력 16종(effect_type)★**: `SystemTraitRegistry.Effect`에 enum 추가 → buildAiCatalog가 `Effect.values()`로
+  자동 노출(생성기가 인지). 런타임=`handleSystemTraitActivation` switch case → `activateXxx`. ★전부 엔진 최소 처리 +
+  `ai.injectGmSystem` 지시 주입(세부·강도·결과는 GM 재량)★. 목록: truth_read(발언 진위·남용시 함구)·pitfall_reveal(금기1폭로+위협↑)·
+  mad_clarity(SAN소모→규칙조각, SAN낮을수록 선명)·fear_transfer(공포전가, 괴담대상=분노↑)·debt(빚→위기시 강제조력)·
+  name_steal(사칭)·witness_pact(강제계약, 위반자=표적)·future_sight(★확정 미래=다음 사건 예지, 예약 아님★)·
+  causal_debt(확정성공+N턴뒤 재앙)·rule_invert(규칙1 역전+분노↑)·feed_entity(제물→진정+괴담 성장)·last_words(확정 유언단서)·
+  empty_chair(허수 인원→표적 분산)·vanish(대상 인식서 소실, ★S급이면 td.grade로 괴담까지★)·illusion(환영·약한조종, 괴담본체 무효)·
+  item_create(ITEM_GRANT로 GM 자유 지급). 입력형 9종(대상·내용 다이얼로그)은 `isInputAbility`에 등록.
 - **뷰어 재생**: buildQueue→queue/qi, step()↔renderQueueItem(instant), seekTo(구간 슬라이더), evHtmlSplit
   (전체·시점 공통 — GM서술 내 [이름]대사 분리), headHtml 'other'클래스(타인=우측정렬), mapZoom(지도 확대),
   #infoResize(정보창 폭·--ifs 글씨 스케일).
