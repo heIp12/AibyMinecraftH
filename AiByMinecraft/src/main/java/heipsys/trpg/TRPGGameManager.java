@@ -406,6 +406,7 @@ public class TRPGGameManager {
 
     public TRPGGameManager(AICraft plugin, AiManager ai) {
         this.plugin     = plugin;
+        this.swearAllowed = plugin.getConfig().getBoolean("trpg.swear-allowed", false); // ★NPC 욕설 허용(기본 off)★ — config.yml 영속
         this.ai         = ai;
         this.gdamGen    = new GdamGenerator(plugin, ai);
         this.state      = new GameStateManager();
@@ -1295,6 +1296,16 @@ public class TRPGGameManager {
     /** 시작 설정: 다음 생성 괴담의 유형/성격 힌트(종류별 테스트용, ""=무작위). GdamGenerator에 즉시 반영. */
     private String conceptTypeHint = "";
 
+    /** ★NPC 욕설·비속어 허용 여부★ — 기본 off(순화된 표현만). config.yml(trpg.swear-allowed)에 영속. */
+    private boolean swearAllowed = false;
+    public boolean isSwearAllowed() { return swearAllowed; }
+    /** 욕설 허용 토글 — 값을 바꾸고 config.yml에 저장(서버 자동 저장). */
+    public void setSwearAllowed(boolean v) {
+        swearAllowed = v;
+        plugin.getConfig().set("trpg.swear-allowed", v);
+        plugin.saveConfig();
+    }
+
     /** /trpg setting [pregen on|off | stage N | type <유형>] — 인자 없으면 현재 설정 표시. */
     public void handleStartSetting(Player player, String[] sub) {
         if (sub == null || sub.length == 0) { openStartSettings(player); return; }
@@ -1398,6 +1409,17 @@ public class TRPGGameManager {
             player.sendMessage("§6[설정] 단체턴 서술 팬아웃: " + (state.isGroupFanout()
                 ? "§a켜짐 §7(통합 서술을 라운드 동료에게 결정적 전달 — 기본)"
                 : "§c꺼짐 §7(GM의 WITNESS 재량에만 의존 — 동료 장면 누락 가능)") + " §7— 즉시 적용");
+        } else if (key.equals("swear") || key.equals("욕설") || key.equals("욕")) {
+            // ★NPC 욕설·비속어 허용 토글★ — 기본 off(순화된 표현만). config.yml(trpg.swear-allowed)에 서버 저장.
+            boolean nv;
+            if (sub.length >= 2) {
+                String v = sub[1].toLowerCase();
+                if (v.equals("on") || v.equals("켜기") || v.equals("켬") || v.equals("허용") || v.equals("true") || v.equals("1")) nv = true;
+                else if (v.equals("off") || v.equals("끄기") || v.equals("끔") || v.equals("금지") || v.equals("false") || v.equals("0")) nv = false;
+                else { player.sendMessage("§c사용법: §f/trpg setting swear <on|off>"); return; }
+            } else nv = !swearAllowed; // 값 없으면 토글
+            setSwearAllowed(nv);
+            player.sendMessage("§6[설정] NPC 욕설·비속어: " + (nv ? "§a허용" : "§c금지 §7(기본 — 순화된 표현만)") + " §7— 서버 저장·즉시 적용");
         } else {
             openStartSettings(player);
         }
@@ -1407,7 +1429,7 @@ public class TRPGGameManager {
     public void openStartSettings(Player player) {
         dialogMan.showStartSettings(player, autoPregen, startStage, conceptTypeHint, gdamGen.getFamePool(),
             reservedNextEntityLabel(),
-            state.isGroupTurn(),
+            state.isGroupTurn(), swearAllowed,
             () -> { // 자동 사전생성 토글
                 autoPregen = !autoPregen;
                 player.sendMessage("§6[설정] 자동 사전생성: " + (autoPregen ? "§a켜짐" : "§c꺼짐 §7(/trpg next에서 즉석 생성)"));
@@ -1444,6 +1466,11 @@ public class TRPGGameManager {
             () -> { // ★다음 괴담 지정★ — 채팅으로 이름 입력받기(취소: '취소', 해제: 'off')
                 pendingEntityReserveInput.add(player.getUniqueId());
                 player.sendMessage("§6[다음 괴담] 채팅으로 지정할 괴담 이름을 입력하세요. §7(예: §f쿠네쿠네§7 · 취소: §f취소§7 · 해제: §foff§7)");
+            },
+            () -> { // ★NPC 욕설 on/off 토글★ (config.yml 서버 저장)
+                setSwearAllowed(!swearAllowed);
+                player.sendMessage("§6[설정] NPC 욕설·비속어: " + (swearAllowed ? "§a허용" : "§c금지 §7(순화된 표현만)") + " §7— 서버 저장");
+                openStartSettings(player);
             });
     }
 
@@ -8800,6 +8827,10 @@ public class TRPGGameManager {
     /** 말투 ⑤ 욕설·비속어 — 독립 3축(발동 trigger P1~P7 · 강도 intensity · 돌려까기 burn).
      *  생성기가 성격에서 정해 swear 필드에 박고(있으면 그대로), 없으면 성격에서 스스로 고른다(구작 호환). P2·P3·P4는 게임 상태 연동. */
     private void npcProfanityBlock(StringBuilder sb, JsonObject npcObj) {
+        if (!swearAllowed) { // ★서버 설정: 욕설 금지(기본 off)★ — 성향(swear 필드) 무관 전원 순화
+            sb.append("- 욕설·비속어: ★쓰지 않는다★ — 격한 인물이라도 순화된 표현으로만. 거친 감정은 어조·태도·짧은 행동으로 드러내라.\n");
+            return;
+        }
         JsonObject sw = (npcObj != null && npcObj.has("swear") && npcObj.get("swear").isJsonObject())
             ? npcObj.getAsJsonObject("swear") : null;
         String tg = sw != null && sw.has("trigger") ? sw.get("trigger").getAsString() : "";

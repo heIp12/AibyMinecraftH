@@ -36,6 +36,11 @@ gm-model-high: ""
 logic-level: 1
 rp-mode: true
 
+# [TRPG 괴담] 게임 설정
+trpg:
+  # NPC 욕설·비속어 허용 여부 (기본 false = 순화된 표현만). /trpg setting 다이얼로그의 'NPC 욕설' 버튼으로도 토글됩니다.
+  swear-allowed: false
+
 # 전투 종료 후 AI가 전투 로그를 바탕으로 소설 형식의 영웅기를 집필할지 여부
 # false로 설정하면 AI 호출(토큰 소모)을 생략하고 실제 전투 기록만 책으로 남깁니다.
 generate-epic-story: true
