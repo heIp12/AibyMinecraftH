@@ -416,8 +416,14 @@ public class CharacterGenerator {
             }
             List<String> fitting = new ArrayList<>();
             for (String j : pool) if (jobFitsAge(j, pd.age)) fitting.add(j);
-            pd.job = pickUnusedJob(pd.uuid, fitting.isEmpty() ? pool : fitting);
-            if (fitting.isEmpty() || !jobFitsAge(pd.job, pd.age)) pd.job = ageFallbackJob(pd.age); // 계층 풀 전멸 시 안전 직업
+            if (fitting.isEmpty()) {
+                // 계층 풀이 나이와 전멸 → 연령대 안전 직업으로 폴백하되 ★티어도 COMMON으로 강등★(외부 감사 P2 —
+                // '초등학생'이 희귀직업 특성 예산 3개를 받는 티어-직업 불일치 방지).
+                pd.job = ageFallbackJob(pd.age);
+                tier = JobTier.COMMON;
+            } else {
+                pd.job = pickUnusedJob(pd.uuid, fitting);
+            }
         }
 
         // 총합 23을 6개 스탯에 배분(기본 무작위 총합 -2 — 시작을 살짝 더 약하게)

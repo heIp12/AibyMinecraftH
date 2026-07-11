@@ -196,6 +196,11 @@ public class TRPGGameManager {
      *  이 집합이 비어있지 않은 동안 ★어느 플레이어의 <CLEAR>든★ 보류된다(heldCrossClear). 5스테이지 실측 버그:
      *  차복만의 결정타(부분성공)가 착지하기 전에 옥분의 병렬 응답 CLEAR가 통과해 A급 종결 → 판정 결과와 엔딩이 모순. */
     private final java.util.Set<UUID> unresolvedDecisiveDice = ConcurrentHashMap.newKeySet();
+    /** 마지막으로 ★성공/대성공★ 판정이 나온 턴 — 무판정 즉시 CLEAR 게이트(위협 높음 + 최근 성공 굴림 없음 → 종결 보류)용. */
+    private volatile int lastDiceSuccessTurn = -999;
+    /** 발견된 authored 단서 id(단조 증가) — GM의 자유문 new_clue를 clues[].id에 대응시켜 기록. capstone 봉인 해제·
+     *  스케줄 requires_clues 판정이 이 집합을 우선 보므로, 한 번 매칭된 단서는 표현이 달라져도 다시 잠기지 않는다. */
+    private final java.util.Set<String> discoveredAuthoredClueIds = ConcurrentHashMap.newKeySet();
     /** 결정타 미해결 중 도착해 보류된 타 응답의 CLEAR 태그(최신 1개)와 그 발신 플레이어. 판정 성공 시 적용, 아니면 폐기. */
     private JsonObject heldCrossClear = null;
     private Player heldCrossClearBy = null;
@@ -1029,6 +1034,7 @@ public class TRPGGameManager {
         unresolvedDecisiveDice.clear(); heldCrossClear = null; heldCrossClearBy = null; // 결정타 게이트 리셋(감사 B)
         locationDesynced.clear(); // 구역 desync 표식 리셋(감사 C)
         npcAutoStateSig.clear(); npcAutoStateTime.clear(); // 자율 NPC 상태서명 스로틀 리셋(감사 J)
+        lastDiceSuccessTurn = -999; discoveredAuthoredClueIds.clear(); // 무판정 CLEAR 게이트·capstone 해제 추적 리셋
         resetOverviewCache();
         preSpawnCallCounts.clear();
         preSpawnLastBeat.clear();
@@ -2391,6 +2397,7 @@ public class TRPGGameManager {
         unresolvedDecisiveDice.clear(); heldCrossClear = null; heldCrossClearBy = null; // 결정타 게이트도 스테이지 리셋(감사 B)
         locationDesynced.clear(); // 구역 desync 표식도 스테이지 리셋(감사 C — 새 스테이지 = 새 구역 배치)
         npcAutoStateSig.clear(); npcAutoStateTime.clear(); // 자율 NPC 상태서명 스로틀도 스테이지 리셋(감사 J — 새 NPC·새 시계)
+        lastDiceSuccessTurn = -999; discoveredAuthoredClueIds.clear(); // 무판정 CLEAR 게이트·capstone 해제 추적도 스테이지 리셋
         commBypassTurn.clear(); commBypassStealth.clear(); // 통신 개방도 스테이지 넘어 유지 안 됨(턴 번호 재사용 오작동 방지)
         resetOverviewCache(); // 새 스테이지 = 새 괴담 → 시나리오 개요 캐시 초기화(다음 사용 시 재생성)
         loadForbiddenWord(); // 금지워드형 괴담의 금지어 로드(entity.forbidden_word)
@@ -2958,6 +2965,17 @@ public class TRPGGameManager {
                         + "함께 내지 마라(굴림이 무시된다). 이 판정이 성공이면 ★그 결과로 실제 무슨 일이 벌어졌는지 서술만★ 이어서 하라"
                         + "(종결 처리는 시스템이 이어서 한다), 실패·부분성공이면 대가·전개를 주고 끝내지 마라.");
                     clearTag = null; // 이 턴은 클리어 보류 — 아래로 흘러 <DICE> 굴림을 실제로 수행하고, 성공 시 stash가 매듭짓는다.
+                }
+                // ★무판정 종결 게이트(외부 감사 P1)★: DICE 없이 CLEAR만 온 응답 — 프롬프트의 '자동성공' 예외는
+                //   '조건 완전 충족 + 위협도 낮음'일 때만이다. 위협이 높은데(≥40) 최근 3턴 내 성공 판정도 없이
+                //   서술만으로 끝내려 하면 종결을 보류하고 결정타 판정을 요구한다(주사위 0회 클리어 재발 방지 — 엔진 집행).
+                if (clearTag != null && ai.parseDiceTag(raw) == null && state.getThreat() >= 40
+                        && state.getCurrentTurn() - lastDiceSuccessTurn > 3) {
+                    gameLogger.logEvent("[CLEAR 보류: 무판정] 위협도 " + state.getThreat() + " — 결정타 판정 요구");
+                    ai.injectGmSystem("[종결 보류 — 판정 필요] 방금 <CLEAR>는 판정 없이 서술만으로 종결하려 했다. 위협도가 낮지 않아 자동성공 요건이 아니다. "
+                        + "종결로 이어지는 결정적 행동을 ★<DICE>(\"decisive\":\"1\")로 먼저 굴려라★ — 성공으로 확정되면 그때 <CLEAR>를 다시 내라. "
+                        + "(조건을 완전히 갖춘 정석 해결이라도 위협이 이만큼 남아 있으면 실행의 성패는 굴림으로 가른다.)");
+                    clearTag = null;
                 }
                 // ★전역 결정타 게이트(감사 B)★: 다른 응답의 결정타 판정이 아직 미해결이면 이 CLEAR를 보류한다.
                 //   (같은 응답 DICE+CLEAR는 위 stash가 처리 — 여기는 '타 플레이어/후속 응답'의 CLEAR가 판정을 앞지르는 경쟁 차단.)
@@ -3543,6 +3561,7 @@ public class TRPGGameManager {
                     state.discoverClue(clue);
                     state.log("clue", pd.name, "단서 발견: " + clue);
                     gameLogger.logItem("clue", pd.gmDisplayName(), clue, ""); // 뷰어: 단서 뱃지 + 재생 진행연동 상태패널
+                    recordAuthoredClueMatch(clue); // ★capstone 동적 해제(외부 감사 P1)★ — authored 단서 id 대응 기록 + 봉인 재평가
                     // CODE-15: 발견 단서를 '발견 사실'로 표식(엔딩 공개 필터용).
                     state.markFactDiscovered(clue);
                     // 단서에 괴담 이름이 등장하면 'name' 사실도 발견 처리(이름 알아냄).
@@ -9539,9 +9558,11 @@ public class TRPGGameManager {
         return false;
     }
 
-    /** authored 단서(id)가 실제 발견됐는지 근사 판정 — 발견 단서 자유문과 그 단서 content의 포함/토큰 겹침으로.
+    /** authored 단서(id)가 실제 발견됐는지 — ★매칭 id 집합(단조) 우선★, 없으면 발견 단서 자유문과 content의
+     *  포함/토큰 겹침 근사(세이브 복원 등으로 집합이 비었을 때의 폴백 — 매칭되면 집합에도 승격 기록).
      *  id가 clues에 없거나 content가 비면 게이트를 풀어 준다(생성 오류에 예정이 영영 인질 잡히지 않게 — 안전측). */
     private boolean authoredClueDiscovered(String clueId) {
+        if (discoveredAuthoredClueIds.contains(clueId)) return true;
         JsonObject gdam = state.getGdamData();
         if (gdam == null || !gdam.has("clues") || !gdam.get("clues").isJsonArray()) return true;
         String content = null;
@@ -9555,13 +9576,62 @@ public class TRPGGameManager {
         if (found == null || found.isEmpty()) return false;
         for (String f : found) {
             if (f == null || f.isBlank()) continue;
-            if (f.contains(content) || content.contains(f)) return true;
-            int overlap = 0;
-            for (String tok : content.split("[^가-힣A-Za-z0-9]+"))
-                if (tok.length() >= 2 && f.contains(tok)) overlap++;
-            if (overlap >= 3) return true;
+            if (clueTextMatches(f, content)) { discoveredAuthoredClueIds.add(clueId); return true; }
         }
         return false;
+    }
+
+    /** 발견 자유문 ↔ authored content 근사 매칭(포함 또는 2글자+ 토큰 3개 겹침). */
+    private static boolean clueTextMatches(String found, String content) {
+        if (found.contains(content) || content.contains(found)) return true;
+        int overlap = 0;
+        for (String tok : content.split("[^가-힣A-Za-z0-9]+"))
+            if (tok.length() >= 2 && found.contains(tok)) overlap++;
+        return overlap >= 3;
+    }
+
+    /** 선행 단서가 아직 안 채워져 ★봉인 상태★인 capstone 단서 수. */
+    private int sealedCapstoneCount(JsonArray clues) {
+        int n = 0;
+        for (JsonElement ce : clues) {
+            if (!ce.isJsonObject()) continue;
+            JsonObject c = ce.getAsJsonObject();
+            if (!(c.has("capstone") && c.get("capstone").isJsonPrimitive() && c.get("capstone").getAsBoolean())) continue;
+            if (!c.has("requires_clues") || !c.get("requires_clues").isJsonArray()) continue;
+            for (JsonElement pre : c.getAsJsonArray("requires_clues")) {
+                String rid = pre.isJsonPrimitive() ? pre.getAsString().trim() : "";
+                if (!rid.isEmpty() && !authoredClueDiscovered(rid)) { n++; break; }
+            }
+        }
+        return n;
+    }
+
+    /** ★capstone 동적 해제(외부 감사 P1)★ — new_clue 자유문을 authored clues id에 대응시켜 기록하고,
+     *  이 발견으로 capstone 봉인이 풀렸으면 gmSystemPrompt를 즉시 재생성 + 해제를 일회 주입한다.
+     *  (예전엔 프롬프트가 스테이지 시작에만 빌드되어, 선행 단서를 다 찾아도 봉인 렌더가 계속 남았다 — 소프트락 위험.) */
+    private void recordAuthoredClueMatch(String freeText) {
+        try {
+            if (freeText == null || freeText.isBlank()) return;
+            JsonObject gdam = state.getGdamData();
+            if (gdam == null || !gdam.has("clues") || !gdam.get("clues").isJsonArray()) return;
+            JsonArray clues = gdam.getAsJsonArray("clues");
+            int sealedBefore = sealedCapstoneCount(clues);
+            boolean added = false;
+            for (JsonElement ce : clues) {
+                if (!ce.isJsonObject()) continue;
+                JsonObject c = ce.getAsJsonObject();
+                String id = getStr(c, "id"), content = getStr(c, "content");
+                if (id.isBlank() || content.isBlank() || discoveredAuthoredClueIds.contains(id)) continue;
+                if (clueTextMatches(freeText, content)) { discoveredAuthoredClueIds.add(id); added = true; }
+            }
+            if (!added || sealedBefore == 0) return;
+            if (sealedCapstoneCount(clues) < sealedBefore) {
+                gmSystemPrompt = buildGmPrompt(gdam);
+                gameLogger.logEvent("[종결단서 봉인 해제] 선행 단서 충족 — capstone 내용 공개 가능");
+                ai.injectGmSystem("[종결 단서 해제] 봉인돼 있던 종결 단서의 선행 조건이 충족됐다 — 이제 그 단서의 내용을 "
+                    + "배치된 위치·조건에서 정상 공개할 수 있다(여전히 먼저 떠먹이진 말고, 탐색이 닿으면 분명히 드러내라).");
+            }
+        } catch (Exception ignored) {}
     }
 
     /** NPC의 현재 예정 의도를 짧게 요약(막후 진행 주입용). schedule의 goal(없으면 action) 우선 → NPC goal → role_type. */
@@ -14222,6 +14292,7 @@ public class TRPGGameManager {
             outcome = success ? "성공" : partial ? "부분성공" : "실패";
             col = success ? NamedTextColor.GREEN : fail ? NamedTextColor.RED : NamedTextColor.GOLD;
         }
+        if (success) lastDiceSuccessTurn = state.getCurrentTurn(); // 무판정 CLEAR 게이트용(최근 성공 굴림 추적)
         // '왜 굴리는지'를 먼저 알려준다(요청 사항) — 관전자에게도 함께
         msgToWatchers(player, "§e[판정] " + (reason.isEmpty() ? "행동 판정" : reason)
             + " §7— 주사위 d" + max + " (" + effDc + " 이상 성공)"   // ★실제 성공기준(effDc) 표시★ — 영감 완화·난이도 가산 반영, dc와 어긋나던 문제 해소
@@ -14520,6 +14591,19 @@ public class TRPGGameManager {
         if (held == null) return;
         boolean success = "성공".equals(outcome) || "대성공".equals(outcome);
         if (!success) {
+            // ★오귀속 방지(외부 감사 P1)★: 보류 CLEAR와 방금 실패한 판정은 actionId로 묶여 있지 않다 —
+            //   ★다른 플레이어★의 CLEAR였다면 그 종결은 이 판정과 무관한 독립 해결일 수 있으므로 기계 폐기하지 않고
+            //   GM에게 재검증을 위임한다(같은 플레이어의 CLEAR만 '그 판정의 결과 선서술'로 보고 폐기).
+            boolean sameActor = by != null && by.getUniqueId().equals(player.getUniqueId());
+            if (!sameActor) {
+                String byName = null;
+                if (by != null) { PlayerData bpd = state.getPlayer(by); byName = bpd != null ? bpd.gmDisplayName() : null; }
+                gameLogger.logEvent("[CLEAR 재검증 위임] 타 플레이어 종결 보류분 — 실패한 결정타와 무관할 수 있음");
+                ai.injectGmSystem("[보류된 종결 재확인] " + (byName == null ? "다른 플레이어" : byName) + "의 <CLEAR>가 병행 판정 대기로 보류되어 있었다. "
+                    + "방금 결정타 판정은 ★" + (outcome == null ? "실패" : outcome) + "★로 확정됐다 — 그 실패를 반영한 지금 상황에서도 "
+                    + "그 종결(독립적 해결)이 여전히 성립하면 다음 응답에서 <CLEAR>를 다시 내고, 성립하지 않으면 내지 마라.");
+                return;
+            }
             gameLogger.logEvent("[CLEAR 폐기] 결정타 " + (outcome == null ? "미확정" : outcome) + " — 보류된 종결 무효");
             ai.injectGmSystem("[판정 정합] 방금 결정타 판정이 ★" + (outcome == null ? "실패" : outcome) + "★로 확정됐다 — 상황은 종결되지 않았다. "
                 + "앞서 성공·해결된 것처럼 서술된 부분이 있다면 다음 서술에서 대가·미완으로 바로잡아라. <CLEAR>는 실제로 매듭지어졌을 때만 다시 내라.");
@@ -14586,8 +14670,10 @@ public class TRPGGameManager {
                 if (ok) {
                     // ★후속 응답도 상태를 실제로 반영(감사 B)★ — 예전엔 서술만 배달해 '얼음물에 빠졌다' HP 피해가 미적용.
                     for (JsonObject su : ai.parseAllStateUpdates(resp)) applyStateUpdate(su);
-                    flushPendingVitalMsgs();
+                    // 본경로(§4)와 동일 순서: 서술을 먼저 배달(큐 적재)한 ★뒤★ 소모 안내 플러시 — 원인 서술보다
+                    //   '체력 감소'가 먼저 뜨던 역전(외부 감사 P2) 교정. flush는 runAfterDelivery로 서술 뒤 배출된다.
                     deliverNarrative(player, resp);
+                    flushPendingVitalMsgs();
                 }
                 if (deferredClear != null) {
                     heldCrossClear = null; heldCrossClearBy = null; // 원 GM stash가 매듭짓는다 — 보류분은 중복이라 정리
@@ -14647,7 +14733,10 @@ public class TRPGGameManager {
         dc = Math.max(2, Math.min(20, dc));
         // ★결정타 DC 하한(감사 D)★ — 5판 실측: 스테이지 1~5의 DC가 10~15 무상관(난이도 평탄). 일반 판정은 GM 재량을
         //   존중하되, ★종결·결정타★만은 스테이지 격에 맞는 최소 난이도를 기계로 보장한다(GM이 낮게 불러도 끌어올림).
-        if (isDecisiveDice(player, dice)) {
+        // ★적용 범위 주의(외부 감사 P1)★: isDecisiveDice의 광의 판별(위협≥70이면 전부)은 CLEAR 보류 게이트용이다 —
+        //   그걸 하한에도 쓰면 위협 70+에서 탐색·응급처치·문 열기까지 일괄 DC 15가 되어 불공정. 하한은
+        //   ★명시 결정타(hard: decisive attr·CLEAR 동봉)★와 ★GM이 스스로 어렵다고 부른 굴림(dc≥14)★에만 건다.
+        if (isHardDecisiveDice(player, dice) || dc >= 14) {
             int room = state.getRoomNumber();
             int floor = room <= 2 ? 12 : room == 3 ? 13 : room == 4 ? 14 : room == 5 ? 15 : 16;
             if (state.getThreat() >= 90) floor += 1; // 극한 국면 가산
@@ -14667,6 +14756,7 @@ public class TRPGGameManager {
         boolean fail    = crit == -1 || (crit != 1 && val < dc - band);
         boolean partial = !success && !fail;
         String outcome = crit == 1 ? "대성공" : crit == -1 ? "대실패" : success ? "성공" : partial ? "부분성공" : "실패";
+        if (success) lastDiceSuccessTurn = state.getCurrentTurn(); // 무판정 CLEAR 게이트용(최근 성공 굴림 추적)
         NamedTextColor col = crit == 1 ? NamedTextColor.AQUA : crit == -1 ? NamedTextColor.DARK_RED
                            : success ? NamedTextColor.GREEN : partial ? NamedTextColor.GOLD : NamedTextColor.RED;
         String label = diceStatLabel(statKey);
