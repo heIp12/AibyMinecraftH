@@ -1049,6 +1049,23 @@ public class GameStateManager {
         return null;
     }
 
+    /** 엔딩 사실 정본용 — 이 플레이어의 가장 최근 action 로그 1건(계정명·캐릭터명 어느 쪽으로 기록됐든). 없으면 null. */
+    public String lastActionDisplayOf(PlayerData pd) {
+        if (pd == null) return null;
+        synchronized (eventLog) {
+            for (int i = eventLog.size() - 1; i >= 0; i--) {
+                EventLogEntry e = eventLog.get(i);
+                if (!"action".equals(e.type)) continue;
+                if (pd.name.equals(e.player)
+                        || (pd.charName != null && !pd.charName.isEmpty() && pd.charName.equals(e.player))) {
+                    String c = e.content;
+                    return (c != null && c.length() > 70) ? c.substring(0, 70) + "…" : c;
+                }
+            }
+        }
+        return null;
+    }
+
     /** Entity/NPC AI용 — 행동 로그만, 스탯/특성 없음 */
     public String buildEntityLog(int limit) {
         StringBuilder sb = new StringBuilder();

@@ -199,6 +199,11 @@ public class TRPGGameManager {
     /** 결정타 미해결 중 도착해 보류된 타 응답의 CLEAR 태그(최신 1개)와 그 발신 플레이어. 판정 성공 시 적용, 아니면 폐기. */
     private JsonObject heldCrossClear = null;
     private Player heldCrossClearBy = null;
+
+    /** ★위치 desync(감사 C)★ — GM이 존재하지 않는 구역 id로 이동시켜 거부된 뒤, <ZONE_UPDATE>로 교정될 때까지
+     *  엔진상 위치를 신뢰할 수 없는 플레이어. 이 동안 근처 발화·목격·대면 통신의 결정적 전달에서 제외한다
+     *  (5스테이지 실측: zone_fen 거부 후 낡은 위치로 원거리 대화가 [근처] 처리). 유효 구역 확정 시 해제. */
+    private final java.util.Set<UUID> locationDesynced = ConcurrentHashMap.newKeySet();
     /** ★체력·정신 소모 메시지 지연 큐★ — STATE_UPDATE(공격받음 등)로 생긴 vital 변화 안내를 ★관련 서술이 나온 뒤★
      *  출력하려고 모아둔다(주사위 결과처럼). applyStateUpdate가 적립 → 서술 전달 후 flushPendingVitalMsgs가 배출. */
     private final Map<UUID, java.util.List<String>> pendingVitalMsgs = new ConcurrentHashMap<>();
@@ -1018,6 +1023,7 @@ public class TRPGGameManager {
         possessingNpc.clear();
         activeTimedEffects.clear();
         unresolvedDecisiveDice.clear(); heldCrossClear = null; heldCrossClearBy = null; // 결정타 게이트 리셋(감사 B)
+        locationDesynced.clear(); // 구역 desync 표식 리셋(감사 C)
         resetOverviewCache();
         preSpawnCallCounts.clear();
         preSpawnLastBeat.clear();
@@ -2377,6 +2383,7 @@ public class TRPGGameManager {
         morphTurns.clear(); observerTurns.clear(); animalForm.clear(); stunTurns.clear(); possessingNpc.clear(); // 변신·관조·동물형태·행동불능·빙의는 스테이지 넘어 유지되지 않음
         activeTimedEffects.clear(); // 지속형 능력 효과(카운트다운·상시)도 스테이지 넘어 유지되지 않음
         unresolvedDecisiveDice.clear(); heldCrossClear = null; heldCrossClearBy = null; // 결정타 게이트도 스테이지 리셋(감사 B)
+        locationDesynced.clear(); // 구역 desync 표식도 스테이지 리셋(감사 C — 새 스테이지 = 새 구역 배치)
         commBypassTurn.clear(); commBypassStealth.clear(); // 통신 개방도 스테이지 넘어 유지 안 됨(턴 번호 재사용 오작동 방지)
         resetOverviewCache(); // 새 스테이지 = 새 괴담 → 시나리오 개요 캐시 초기화(다음 사용 시 재생성)
         loadForbiddenWord(); // 금지워드형 괴담의 금지어 로드(entity.forbidden_word)
@@ -3036,6 +3043,16 @@ public class TRPGGameManager {
             // 3b. ITEM_USE 파싱·적용 (기계 효과 아이템 사용 — 아이템 Phase II) — ★#4 다대상★
             for (JsonObject itemUse : ai.parseAllItemUses(raw)) applyItemUse(itemUse);
             maybeAutoSave(); // ★#8★ 상태·아이템 적용 뒤 저장 — 중단 후 이어하기가 이번 턴 결과까지 반영(예전엔 적용 전 저장)
+
+            // 3c. ★구역 태그 사전검사(감사 C)★ — 서술 '배달 전에' 무효 구역을 감지한다(5d에서만 알면 잘못된 위치를
+            //   전제한 목격·근처 전달이 이미 나간 뒤다). 무효면 desync 표시 + 다음 GM 응답에 일회성 교정 주입.
+            //   (의미 추측 자동매핑(zone_fen→습지)은 오매핑 위험 > 이득이라 안 한다 — GM이 유효 id로 재지정하는 루프.)
+            for (String[] zuPre : ai.parseZoneUpdateTags(raw)) {
+                if (resolveZoneId(zuPre[1]) != null) continue;
+                PlayerData zpd = findAnyByName(zuPre[0]);
+                if (zpd != null) locationDesynced.add(zpd.uuid);
+                injectZoneCorrection(zpd, zuPre[0], zuPre[1]);
+            }
 
             // 4. 서술 배달 — <DICE>가 있으면 그 위치에서 쪼개 [앞 서술]→[주사위 인라인]→[뒤 결과 서술](#254). 없으면 통짜 배달.
             JsonObject inlineDice = (player != null && player.isOnline()) ? ai.parseDiceTag(raw) : null;
@@ -7463,6 +7480,28 @@ public class TRPGGameManager {
      *                   false면 개요+뒷이야기만(생존 재도전 등 — 같은 스테이지 재플레이 스포 방지).
      * @param onDone 에필로그·해설 공개가 끝난 뒤 실행할 콜백 (없으면 null)
      */
+    /** ★엔딩 사실 정본(감사 K)★ — 후일담 AI가 실제 결과와 다른 결말을 재구성(없던 '함께 구조'·합류·이동,
+     *  생존/사망 뒤집기)하는 것을 막기 위한 확정 사실 목록. 5스테이지 실측: 격리실에 갇힌 채 끝난 캐릭터가
+     *  후일담에서 '함께 구조되어 걸어나온' 것으로 재작성됨 → 최종 위치·생사·마지막 행동을 정본으로 못박는다. */
+    private String endingFactSnapshot() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("\n## ★사실 정본(재구성 금지)★ — 아래는 시스템이 확정한 실제 결과다. 후일담은 이와 모순되면 안 된다.\n");
+        sb.append("실제로 없었던 '함께 구조됨'·'마지막에 합류'·위치 이동·생존/사망 뒤집기를 만들어내지 마라. ")
+          .append("위치 불명자는 행방을 단정하지 말고 '행방이 확인되지 않았다'는 여운으로 다뤄라.\n");
+        for (PlayerData pd : state.getAllPlayers()) {
+            String where = locationDesynced.contains(pd.uuid)
+                ? "위치 불명(추적 끊김 — 마지막 위치를 단정하지 마라)"
+                : ((pd.zone == null || pd.zone.isEmpty()) ? "위치 기록 없음" : zoneDisplayName(pd.zone));
+            String last = state.lastActionDisplayOf(pd);
+            sb.append("- ").append(pd.gmDisplayName())
+              .append(" · ").append(pd.isDead ? "사망" : "생존")
+              .append(" · 최종 위치: ").append(where);
+            if (last != null && !last.isBlank()) sb.append(" · 마지막 행동: ").append(last);
+            sb.append("\n");
+        }
+        return sb.toString();
+    }
+
     private void concludeWithReveal(String endingLabel, boolean fullReveal, Runnable onDone) {
         String recentLog = state.buildEntityLog(15);
         // CODE-15: '플레이어가 실제로 발견한 것'만 공개하도록 발견 목록을 컨텍스트로 주입.
@@ -7483,6 +7522,7 @@ public class TRPGGameManager {
         String prompt = "게임이 끝났다. 결말 유형: " + endingLabel + ".\n"
             + (recentLog.isBlank() ? "" : "플레이어들의 주요 행동 기록:\n" + recentLog + "\n")
             + discovered
+            + endingFactSnapshot()
             + "\n이 사건의 '뒷이야기'를 소설풍 에필로그로 써줘. "
             + "★ 통합 엔딩 서술(후일담): 전 플레이어를 '하나의 통합 서사'로 보여준다(개별 후일담 나열 금지). "
             + "메인 해결 주체(들) 중심으로 서술하고, 비(非)주체 캐릭터는 한 줄로 간략히 다룬다. "
@@ -7776,6 +7816,7 @@ public class TRPGGameManager {
                     PlayerData mpd = state.getPlayer(mu);
                     if (mpd == null || mpd.isDead || !spawnedPlayers.contains(mu)) continue;
                     if (!actorZone.isEmpty() && !actorZone.equals(mpd.zone)) continue;
+                    if (locationDesynced.contains(mu) || (actor != null && locationDesynced.contains(actor.getUniqueId()))) continue; // 위치 불확정 — 오배달 방지(감사 C)
                     Player mp = Bukkit.getPlayer(mu);
                     if (mp == null || !mp.isOnline()) continue;
                     narrativeDelivery.deliver(mp, grpNarrative);
@@ -7794,6 +7835,13 @@ public class TRPGGameManager {
                 .filter(pd -> spawnedPlayers.contains(pd.uuid) && matchesPlayerName(pd, pName))
                 .findFirst().orElse(null);
             if (wpd == null) continue;
+            // ★위치 불확정 게이트(감사 C)★: 행동자/목격자의 위치가 desync면 같은구역·인접 기반 목격을 신뢰할 수 없다
+            //   — far(멀리 퍼지는 큰 사건)만 통과(위치 무관), 나머지는 교정 전까지 차단.
+            if (!gmMarkedFar && (locationDesynced.contains(wpd.uuid)
+                    || (actor != null && locationDesynced.contains(actor.getUniqueId())))) {
+                gameLogger.write("목격", "", "[WITNESS 차단: " + pName + " — 위치 불확정(구역 교정 대기)]");
+                continue;
+            }
             if (!witnessReaches(actorZone, wpd.zone, gmMarkedFar)) { // 먼 구역인데 GM이 far 표시 안 함 → 차단
                 gameLogger.write("목격", "", "[원거리 WITNESS 차단: " + pName + " — 먼 구역·GM far 미표시(작은 행동)]");
                 continue;
@@ -9746,6 +9794,7 @@ public class TRPGGameManager {
         java.util.List<String> heardNames = new java.util.ArrayList<>();
         for (PlayerData pd : state.getAllPlayers()) {
             if (pd.isDead || !spawnedPlayers.contains(pd.uuid) || !npcZone.equals(pd.zone)) continue;
+            if (locationDesynced.contains(pd.uuid)) continue; // 위치 불확정 — 낡은 좌표 기반 근처 전달 방지(감사 C)
             Player tp = Bukkit.getPlayer(pd.uuid);
             if (tp == null || !tp.isOnline()) continue;
             msgToWatchers(tp, "§a[근처] §f" + npcName + ": " + speech); // 본인+관전자(별도 sendMessage 시 이중 출력)
@@ -10149,7 +10198,8 @@ public class TRPGGameManager {
                                          boolean dialedByNumber, Player sender) {
         if (dialedByNumber) return false;                        // 번호 다이얼 = 원격 전자
         if (targetPd != null)                                    // 플레이어: 같은(비어있지 않은) 구역이면 대면
-            return !senderPd.zone.isEmpty() && senderPd.zone.equals(targetPd.zone);
+            return !locationDesynced.contains(senderPd.uuid) && !locationDesynced.contains(targetPd.uuid) // 위치 불확정이면 대면 아님(감사 C)
+                && !senderPd.zone.isEmpty() && senderPd.zone.equals(targetPd.zone);
         if (npcObj != null) {                                    // NPC: 10175 규칙(위치 불명·같은 구역=대면) + 최근 조우
             String npcZone = npcZones.getOrDefault(getStr(npcObj, "id"), getStr(npcObj, "zone"));
             boolean sameZone = senderPd.zone.isEmpty() || npcZone.isEmpty() || senderPd.zone.equals(npcZone);
@@ -10370,7 +10420,8 @@ public class TRPGGameManager {
         // 도달 가능성 판정 (viaDevice = 기기 통신 여부, written = 전자통신 대신 필담/편지)
         boolean viaDevice;
         boolean written = false;
-        if (!senderPd.zone.isEmpty() && senderPd.zone.equals(targetPd.zone)) {
+        if (!locationDesynced.contains(senderPd.uuid) && !locationDesynced.contains(targetPd.uuid) // 위치 불확정이면 대면 아님(감사 C — 낡은 좌표로 원거리 대화가 [근처] 처리되던 버그)
+            && !senderPd.zone.isEmpty() && senderPd.zone.equals(targetPd.zone)) {
             viaDevice = false; // 같은 구역 → 대면 (번호 불필요)
             // ★면전 소통수단★: 선언(#177)이 있으면 우선(음성=소리내어/글=필담), 없으면 소리 위험 시 자동 필담.
             written = resolveInPersonWritten(senderPd);
@@ -12853,6 +12904,7 @@ public class TRPGGameManager {
             moved.travelPath.clear(); moved.travelDest = "";
         }
         moved.zone = newZone;
+        locationDesynced.remove(moved.uuid); // ★위치 확정 — desync 해제(감사 C)★: 유효 구역으로 실제 이동/갱신됨
         moved.visitedZones.add(newZone); // 방문 기록 (직접 그린 약도에 반영)
         // ★실시간 뷰어 위치★: 첫 배치(스폰)가 아닌 실제 구역 이동만 기록 → 상태패널 '현재 위치' 갱신.
         if (zoneChanged && !firstAssignment && spawnedPlayers.contains(moved.uuid))
@@ -14374,6 +14426,31 @@ public class TRPGGameManager {
         } else {
             gameLogger.logEvent("[CLEAR 보류분 정리] 이미 종결 진행 중 — 중복 종결 생략"); // deferredClear 등이 먼저 매듭지음
         }
+    }
+
+    /** ★구역 교정 주입(감사 C)★ — GM이 무효 구역 id를 내 이동이 무시될 때, 다음 GM 호출에 유효 구역 목록과
+     *  엔진상 확정 위치를 일회성(injectGmSystem — 캐시 안전)으로 주입해 GM이 스스로 <ZONE_UPDATE>로 재지정하게 한다. */
+    private void injectZoneCorrection(PlayerData pd, String whoRaw, String badZone) {
+        String who = pd != null ? pd.gmDisplayName() : whoRaw;
+        String cur = (pd != null && pd.zone != null && !pd.zone.isEmpty()) ? zoneDisplayName(pd.zone) : "불명";
+        StringBuilder ids = new StringBuilder();
+        try {
+            JsonObject g = state.getGdamData();
+            if (g != null && g.has("zones") && g.get("zones").isJsonArray()) {
+                for (JsonElement ze : g.getAsJsonArray("zones")) {
+                    if (!ze.isJsonObject()) continue;
+                    JsonObject zo = ze.getAsJsonObject();
+                    String zid = zo.has("zone_id") && !zo.get("zone_id").isJsonNull() ? zo.get("zone_id").getAsString() : "";
+                    if (zid.isEmpty()) continue;
+                    if (ids.length() > 0) ids.append(", ");
+                    ids.append(zid).append('=')
+                       .append(zo.has("name") && !zo.get("name").isJsonNull() ? zo.get("name").getAsString() : "");
+                }
+            }
+        } catch (Exception ignored) {}
+        ai.injectGmSystem("[구역 교정] 방금 '" + badZone + "'은(는) 존재하지 않는 구역 id라 " + who + "의 이동이 무시됐다. "
+            + who + "의 엔진상 확정 위치는 '" + cur + "'다. 네 서술이 다른 장소를 전제했다면 ★다음 응답에서 <ZONE_UPDATE>로 "
+            + "아래 유효 id 중 하나를 재지정★하라 — 교정 전까지 이 인물의 근처 대화·목격은 전달되지 않는다. 유효 구역: " + ids);
     }
 
     /** ★판정 결과 자동 후속 서술★: GM이 <DICE>만 내고 결과 서술을 안 붙이면(2단계 의도·저품질 모델), 그 판정 결과로
