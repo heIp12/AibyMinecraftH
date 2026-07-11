@@ -628,12 +628,84 @@ public class SystemTraitRegistry {
                 td.effectParams.putIfAbsent("uses", 0);
                 clamp(td, "power", 1, 3); clamp(td, "uses", 0, 3);
             }
+            // ─── 신규 특이 능력 16종 (예전엔 default로 빠져 uses 미보장·미클램프 → 무제한 발동·등급 오산) ───
+            case TRUTH_READ -> {
+                td.effectParams.putIfAbsent("uses", 2);
+                clamp(td, "uses", 1, 3);
+            }
+            case PITFALL_REVEAL, FEAR_TRANSFER, DEBT, WITNESS_PACT -> {
+                td.effectParams.putIfAbsent("uses", 1);
+                clamp(td, "uses", 1, 2);
+            }
+            case LAST_WORDS -> {
+                td.effectParams.putIfAbsent("uses", 1);
+                clamp(td, "uses", 1, 1);
+            }
+            case MAD_CLARITY -> {
+                td.effectParams.putIfAbsent("cost", 5);
+                td.effectParams.putIfAbsent("uses", 1);
+                clamp(td, "cost", 2, 12); clamp(td, "uses", 1, 2);   // 실차감은 min(SAN최대×0.5, cost)로 상한
+            }
+            case FUTURE_SIGHT -> {
+                td.effectParams.putIfAbsent("depth", 2);
+                td.effectParams.putIfAbsent("uses", 1);
+                clamp(td, "depth", 1, 3); clamp(td, "uses", 1, 2);
+            }
+            case NAME_STEAL -> {
+                td.effectParams.putIfAbsent("turns", 2);
+                td.effectParams.putIfAbsent("uses", 1);
+                clamp(td, "turns", 1, 3); clamp(td, "uses", 1, 1);
+            }
+            case CAUSAL_DEBT -> {
+                td.effectParams.putIfAbsent("turns", 3);
+                td.effectParams.putIfAbsent("uses", 1);
+                clamp(td, "turns", 2, 4); clamp(td, "uses", 1, 1);
+            }
+            case RULE_INVERT -> {
+                td.effectParams.putIfAbsent("turns", 1);
+                td.effectParams.putIfAbsent("uses", 1);
+                clamp(td, "turns", 1, 2); clamp(td, "uses", 1, 1);
+            }
+            case FEED_ENTITY -> {
+                td.effectParams.putIfAbsent("turns", 1);
+                td.effectParams.putIfAbsent("uses", 1);
+                clamp(td, "turns", 1, 2); clamp(td, "uses", 1, 2);
+            }
+            case EMPTY_CHAIR -> {
+                td.effectParams.putIfAbsent("turns", 3);
+                td.effectParams.putIfAbsent("uses", 1);
+                clamp(td, "turns", 2, 4); clamp(td, "uses", 1, 2);
+            }
+            case VANISH -> {
+                td.effectParams.putIfAbsent("turns", 2);
+                td.effectParams.putIfAbsent("uses", 1);
+                clamp(td, "turns", 1, 3); clamp(td, "uses", 1, 2);
+            }
+            case ILLUSION -> {
+                td.effectParams.putIfAbsent("power", 1);
+                td.effectParams.putIfAbsent("uses", 1);
+                clamp(td, "power", 1, 2); clamp(td, "uses", 1, 2);
+            }
+            case ITEM_CREATE -> {
+                td.effectParams.putIfAbsent("power", 1);
+                td.effectParams.putIfAbsent("uses", 1);
+                clamp(td, "power", 1, 3); clamp(td, "uses", 1, 2);
+            }
             default -> {}
         }
         // ★대가 스케일 준수★: cost_hp/cost_san은 체력·정신 스케일(1~20·평균 5)을 넘을 수 없다 — 있을 때만 상한 5로 클램프
         //   (저장값을 여기서 한 번 깎아 표시(annotateCost)와 실제 차감(applyActivationCost)이 같은 값을 쓰게 한다).
         if (td.effectParams.containsKey("cost_hp"))  clamp(td, "cost_hp", 0, 5);
         if (td.effectParams.containsKey("cost_san")) clamp(td, "cost_san", 0, 5);
+        // ★음의 스텟(단점) 하한 −6★: AI가 str_add=-50처럼 극단 음수를 넣으면 negSum이 부풀어 등급 예산이
+        //   무한정 늘어나(코스트 우회 → 초강 능력이 저등급에서 무료로 나옴) → 스텟당 -6로 제한(1~20·평균5 스케일에
+        //   비해 이미 가혹). 엔진 자체 단점(applyBudgetDrawback: san/spr/str에 최대 -2씩)은 이 뒤에 별도로 더해진다.
+        td.str_add     = Math.max(-6, td.str_add);
+        td.cha_add     = Math.max(-6, td.cha_add);
+        td.luk_add     = Math.max(-6, td.luk_add);
+        td.spr_add     = Math.max(-6, td.spr_add);
+        td.hp_max_add  = Math.max(-6, td.hp_max_add);
+        td.san_max_add = Math.max(-6, td.san_max_add);
         enforcePowerBudget(td); // 파라미터 확정 후: 능력 코스트 + 스텟 합을 등급 예산에 맞춰 강제
         annotateCost(td);       // 대가/비용이 있으면 description에 명시(플레이어가 사용 전 비용 인지)
     }
@@ -664,6 +736,13 @@ public class SystemTraitRegistry {
                 case GROUP_REWIND  -> "직전 국면으로 되감김 — 그 사이의 진전이 사라짐";
                 case PAST_EDIT     -> "GM이 개연성을 판정 — 무리한 개찬은 무효";
                 case DOMINATE      -> "괴담 본체·핵심 존재에는 통하지 않음";
+                case MAD_CLARITY   -> "사용 시 정신력 최대 " + Math.max(1, Math.min(12, td.param("cost", 5)))
+                                      + " 소모 (정신력이 낮을수록 통찰↑)";
+                case CAUSAL_DEBT   -> "약 " + td.param("turns", 3) + "턴 뒤 얻은 이득만큼 재앙이 자동으로 닥침 (후불 대가)";
+                case RULE_INVERT   -> "나머지 괴담 규칙이 더 사나워지고 분노 급등";
+                case FEED_ENTITY   -> "괴담이 제물을 먹고 성장함 (양날)";
+                case PITFALL_REVEAL-> "괴담이 발동자를 '규칙을 아는 자'로 우선 표적화";
+                case NAME_STEAL    -> "사칭이 발각되면 큰 대가·표적화";
                 default            -> "";
             };
             if (!c.isEmpty()) parts.add(c);
@@ -766,13 +845,27 @@ public class SystemTraitRegistry {
             case POSSESS_NPC      -> 10;
             case NPC_BIND         -> 5;
             case TIME_REWIND      -> 10;
+            // ─── 신규 특이 능력 16종 (예전엔 default=3으로 전부 B 취급 → 확정대성공·규칙뒤집기가 C까지 하락) ───
+            case CAUSAL_DEBT, RULE_INVERT -> 10; // 확정 대성공(후불)·괴담 규칙 뒤집기 = 판을 엎는 최상위 → S 게이팅
+            case ITEM_CREATE      -> { int p = td.param("power", 1); yield p >= 3 ? 10 : p >= 2 ? 5 : 3; } // 강력 병기 생성=S
+            case PITFALL_REVEAL   -> 5; // 함정 확정 폭로(표적화 대가)
+            case VANISH           -> 5; // N턴 인식 이탈(S면 괴담에게까지)
+            case ILLUSION         -> td.param("power", 1) >= 2 ? 5 : 3; // 뚜렷한 환영·약한 조종=A
+            case FUTURE_SIGHT     -> td.param("depth", 2) >= 3 ? 5 : 3;
+            case LAST_WORDS       -> 2; // 확정 단서지만 상황·죽음 한정
+            case TRUTH_READ, MAD_CLARITY, FEAR_TRANSFER, DEBT,
+                 NAME_STEAL, WITNESS_PACT, FEED_ENTITY, EMPTY_CHAIR -> 3; // 정보·사회·양날 계열=기본 B
             default               -> 3; // passive_gm·show_progress 등 텍스트 의존 = 기본 B
         };
         int discount = 0;
-        if (td.cooldownTurns == -1)     discount += 3; // 스테이지당 1회 = 가장 큰 제약
-        else if (td.cooldownTurns >= 5) discount += 2;
-        else if (td.cooldownTurns >= 2) discount += 1;
-        if (uses == 1)                  discount += 1; // 최소 횟수 제한(1회). uses=0(무제한 패시브)은 할인 제외.
+        // ★쿨다운·1회 할인은 능동(active)만★ — 패시브(항상 켜짐)는 '스테이지 1회·쿨다운'이 실제로 제약이 안 되므로
+        //   할인을 주면 실효 파워가 등급보다 세진다(passive_gm이 C 예산에 −3 할인으로 끼어 상시 B급이 되던 문제).
+        if (td.active) {
+            if (td.cooldownTurns == -1)     discount += 3; // 스테이지당 1회 = 가장 큰 제약
+            else if (td.cooldownTurns >= 5) discount += 2;
+            else if (td.cooldownTurns >= 2) discount += 1;
+            if (uses == 1)                  discount += 1; // 최소 횟수 제한(1회). uses=0(무제한)은 할인 제외.
+        }
         return Math.max(1, base - discount);
     }
 
@@ -822,7 +915,7 @@ public class SystemTraitRegistry {
         int neg = (int) negSum(td);
         int ec = abilityCost(td);
         if (ec > budget + neg && Effect.byKey(td.effectType) != null) {
-            if (td.cooldownTurns != -1) { td.cooldownTurns = -1; ec = abilityCost(td); } // 제약 추가로 할인
+            if (td.active && td.cooldownTurns != -1) { td.cooldownTurns = -1; ec = abilityCost(td); } // 제약 추가로 할인(능동만 — 패시브는 쿨다운 무의미)
             int guard = 0;
             while (ec > budget + neg && reduceOneParam(td) && guard++ < 24) ec = abilityCost(td);
             if (ec > budget + neg) { // 최소 형태로도 초과
@@ -868,7 +961,10 @@ public class SystemTraitRegistry {
                  GET_CONTACTS, FORCE_ENCOUNTER, DECOY, DELAY, ONE_WAY_CALL,
                  TELEPORT, RALLY, EVADE_SENSE,
                  OBSERVER_SIGHT, PACT, PAST_EDIT, GDAM_MORPH, PHASE_OUT, POSSESS_NPC, MIMIC, NPC_BIND,
-                 TIME_REWIND, TEMP_BUFF -> td.param("uses", 1);
+                 TIME_REWIND, TEMP_BUFF,
+                 TRUTH_READ, PITFALL_REVEAL, MAD_CLARITY, FEAR_TRANSFER, DEBT, NAME_STEAL, WITNESS_PACT,
+                 FUTURE_SIGHT, CAUSAL_DEBT, RULE_INVERT, FEED_ENTITY, LAST_WORDS, EMPTY_CHAIR, VANISH,
+                 ILLUSION, ITEM_CREATE -> td.param("uses", 1);
             default -> 0;
         };
     }

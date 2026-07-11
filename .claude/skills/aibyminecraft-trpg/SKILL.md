@@ -181,6 +181,16 @@ description: >-
   창작+전 문장 도배★하던 버그(게부라 ending_style '~라구/~다구' → 실제 '왔냐구/거라구/있으라구'로 의문문까지 '~구' 도배, 단어 망가뜨림).
   restyle sys에 3중 가드 추가: ①★스펙 명시 어미만·새 어미 창작 금지★(안 맞는 문장은 원형 유지) ②의문·감탄·외침·부름은 원형 유지+단어
   망가뜨려 도배 금지 ③'자가검수'를 평서문 일부로 완화(전 문장 도배 아님). ★ending_style은 어미를 '얹는' 것이지 새 말투 창작이 아니다.★
+- **★생성 후 타임라인 정합 자동 보정(save() 직전, GPT 지적: 검증기가 존재 여부만 봄)★**: `GdamGenerator.repairTimelineConsistency()`가
+  `save()`에서 `finalizeNpcSpeech` 직전 실행 — 거부 아닌 '보정'(repairZoneRefs 철학, 재생성 비용 0). ①종료(is_end) 사건 시각을 end_time에
+  스냅 ②end_time 지나 예정된 main_event를 창 안(end_time)으로 당김 ③★시간창 폭주 보정★: 단일 연속 창(날짜 없음·≤16h)에서
+  `(end−start)÷minutes_per_turn`이 스케일별 '괴담 턴' 예산(로컬 6~9…코즈믹 24~30, `room` 기반 `expectedHorrorTurns`)에서 넉넉한 허용대
+  (×0.75~×1.5) 밖이면 mpt 재계산 — ★main_events는 절대시각이라 mpt만 바꿔도 사건 시각 유지★(창 축소 안 함=사건 좌초 방지). ★주의: daily_turns는
+  '일상 파트' 턴 수지(엔진 `consumeDailyTurn`) 괴담 창 예산 아님★ — 괴담 창은 clockMinutes가 매 턴 mpt씩 흘러 end_time 도달. 다중일(날짜 박힌
+  start/end)은 `<TIME_SKIP>` 구조라 ②③ skip. ★생성 프롬프트 자기검증 규칙 1번도 정정★: `daily_turns×mpt≈창`(오개념) → `창÷mpt≈괴담턴`.
+  GPT 제안 7검사 중 결정론 가능한 2건(is_end 시각·페이스)만 엔진화, 나머지(시대·직업 / 코어롤 균형 / 해결 경로)는 의미판단 필요라 프롬프트 자기검증
+  (GDAM 837~841)에 유지 — '엔진=기계검사, 프롬프트=의미검사' 분업. 검증: scratch `TimelineRepairTest` 10케이스(측신540·역병360 보정·빨간종이120 무변경·
+  is_end스냅·창밖클램프·다중일무변·코즈믹슬랙·과속·거대창가드) 통과.
 - **★세피라 말투 캐논 강제(생성기 임의창작 덮어씀)★**: 세피라 말투는 `ProjectMoonLore.SEPHIRAH`에 다 지정했는데 생성기가 npc의
   speech_style·ending_style을 새로 창작해 페르소나가 깨지던 문제(게부라 ending_style '~라구/~다구' 창작→도배). `finalizeNpcSpeech`가
   familiar_kind면 early-return이라 방치됐음 → ★그 앞에 `applySephirahCanonSpeech(gdam)` 추가★(familiar 여부 무관·이름 매칭).
@@ -347,6 +357,62 @@ description: >-
   causal_debt(확정성공+N턴뒤 재앙)·rule_invert(규칙1 역전+분노↑)·feed_entity(제물→진정+괴담 성장)·last_words(확정 유언단서)·
   empty_chair(허수 인원→표적 분산)·vanish(대상 인식서 소실, ★S급이면 td.grade로 괴담까지★)·illusion(환영·약한조종, 괴담본체 무효)·
   item_create(ITEM_GRANT로 GM 자유 지급). 입력형 9종(대상·내용 다이얼로그)은 `isInputAbility`에 등록.
+- **★특이 능력 16종 uses/코스트 정합(GPT 감사)★**: enum·activate는 넣었지만 ★3개 표(applyDefaults·maxUsesPerStage·
+  abilityCost)에 미등록★이라 (a)uses 미보장·미클램프 (b)maxUsesPerStage=0→개별 activate에 uses 가드도 없어 무제한 발동
+  (c)abilityCost=default 3→uses1·cooldown-1 할인으로 규칙뒤집기·확정대성공이 C까지 하락. 수정: ①applyDefaults에 16 case
+  (uses·turns·power·depth·cost 기본+클램프) ②maxUsesPerStage 16 등록 ③abilityCost 16 base(causal_debt·rule_invert=10,
+  item_create=power스케일 3/5/10, pitfall/vanish=5 …) ④costText에 mad_clarity(SAN)·causal_debt·rule_invert·feed_entity·
+  pitfall·name_steal 대가 표기. ★중앙 사용횟수 게이트★: `handleSystemTraitActivation` 최상단에 `mx=maxUsesPerStage(td);
+  if(mx>0 && usedThisStage>=mx) 차단`(발동·소모 전, 단일 분기점) — 16종 개별 가드 불필요. ★mx==0=무제한(one_way_call uses=0
+  ·쿨다운관리)이라 건드리면 안 됨→반드시 `mx>0` 조건★. ⑤음의 스텟 하한 −6(str_add=-50식 negSum 부풀려 예산 우회 차단).
+  ⑥remote_sense·foresight 이중 applyTraitUsed(다이얼로그 콜백+핸들러) → 콜백 것 제거(핸들러가 입력 도착 시 1회 소모;
+  chat 경로 2501~는 원래 핸들러 의존이라 정상). 검증: scratch `TraitRegTest` 42케이스(16 uses·클램프·음수·C강등/제거·S생존·costText).
+  (이어하기·시간회귀 상태 복원은 사용자 지시로 보류 — 지속효과 세이브 직렬화도 함께 보류.)
+- **★지속형 능력 효과 엔진(감사 마지막 축)★**: 예전엔 vanish·causal_debt·rule_invert·feed_entity·empty_chair·name_steal·
+  debt·witness_pact가 `injectGmSystem` 1회 스냅샷에만 의존해 다음 GM 호출 뒤 잊혔다(재앙 미발동·지속 망각). →
+  `TRPGGameManager.TimedEffect{key,owner,turnsLeft,ongoing,expiry}` + `activeTimedEffects` 레지스트리.
+  ▸`registerTimedEffect(key,owner,turns,ongoing,expiry)` — turns>0=카운트다운, turns<=0=상시(debt·witness_pact).
+    각 activateXxx의 injectGmSystem 뒤에 등록(입력형은 콜백 안, vanish는 실패 시 미등록).
+  ▸`tickTimedEffects()` — `maybeCaptureRewind`(턴 가드, 턴당 1회, morphTurns·phaseOut 틱과 동일 지점)에서 카운트다운,
+    0 도달 시 expiry를 injectGmSystem(causal_debt 재앙·rule_invert 원복·vanish 해제 등)하고 제거. 상시(-1)는 자동만료 없음.
+  ▸`activeEffectsGmContext()` — ★캐시된 gmSystemPrompt 아니라 per-call gmCtx(threatAngerGmContext 옆, 2660)에 매 턴 재주입★
+    → GM이 잊지 않게. 남은 턴 표시.
+  ▸상시효과 종료: GM이 `<EFFECT_END key="debt|witness_pact"/>`를 내면 `applyGuardConsumeTags`가 key로 제거(빚 갚음·계약 위반 시).
+  ▸스테이지 전환·게임 리셋에서 `activeTimedEffects.clear()`(스테이지 넘어 유지 안 됨). 검증: scratch TimedEffectTest 9케이스.
+- **★패시브·초기특성 정합(감사 A~E)★**:
+  ▸**C(trigger_freq)**: buildGmPrompt 트리거 블록에 '발동 빈도 잦음/보통/드묾'(trigger_freq 3/2/1) 추가 — 예산엔 쓰는데 GM엔
+    강도만 줘 빈도가 비용과 무관했다.
+  ▸**B(passive 예산 할인)**: `abilityCost` 쿨다운·uses==1 할인을 ★active일 때만★ 적용 + `enforcePowerBudget`도 패시브엔
+    cooldown=-1 안 붙임. 예전엔 passive_gm이 C 예산에 -3(스테이지1회) 할인으로 끼어 상시 B급이었다(패시브는 '1회'가 무의미).
+    → 저등급 패시브는 파라미터·스탯으로만 등급을 맞춤(passive_gm@C는 스탯 -단점 부과).
+  ▸**A(protect)·D(fatal_guard)**: 'GM이 세는 소진형 패시브' 공통 처리 — AiManager `parseProtectUsedTags`/`parseFatalGuardUsedTags`,
+    onGmResponse `applyGuardConsumeTags`(findAnyByName로 배역 해소 → usedThisStage++, 소진 시 injectGmSystem 통보). buildGmPrompt
+    방어 블록에 `<PROTECT_USED player=".."/>`·fatalBlock(미소진자만)에 `<FATAL_GUARD_USED player=".."/>` 지시. ★캐시된 gmSystemPrompt는
+    스테이지 시작에만 재빌드 → 중간 소진 피드백은 반드시 injectGmSystem(전송 채널)로★. 예전엔 프롬프트에 'N회 한정'을 표시만 하고 안 셌다.
+  ▸**E3(초기특성 스탯 예산)**: CharacterGenerator generateInitialTraits — 스키마에 스탯 필드 추가 + 파서가 stat 파싱 후 effectType=""로
+    `applyDefaults`(enforcePowerBudget가 스탯을 등급 예산에 클램프). 예전엔 applyDefaults 미호출로 희귀 S/A가 '무료 서술형'이었다. ★초기특성은
+    기계 능동/패시브 없이 스탯으로만 파워★(사용자 결정 E3). 클리어 보상(effect_type 있음)과 구분. 검증: scratch TraitReg2Test 5케이스.
+- **★발동 전 행동중 게이트(감사 #4)★**: 발동형 특성이 `applyTraitUsed`(소모·대가)→`turnMan.handleAction` 순이라
+  handleAction이 false(사망·`turnState==ACTING`)를 반환해도 환불이 없어 ★특성·대가만 날아가던★ 문제(응답 지연·호출 겹침
+  환경). 15개 activateXxx에 환불을 붙이는 대신 ★소모 전 단일 게이트★: `TurnManager.canAct(player)`(handleAction과 동일
+  조건) 신설 → `handleTraitUse`에서 쿨다운·uses 검사 직후·모든 발동 분기(입력형 3927/시스템 3943/서술형 showTraitActivation)
+  ★위★에서 `if(!turnMan.canAct) {안내;return}`. 행동 중이면 소모 없이 막고 재시도 가능. (ACTING 창 ~1-2초라 정보/즉시
+  능력도 잠깐 대기 — 허용 가능한 제약.)
+- **★성장(클리어 보상) 상속 정합(감사 #6·#7 — TraitManager)★**: ①`preserveActiveNature`가 원본 effect_type만 유지하고
+  applyDefaults로 파라미터를 기본값으로 덮어써 area_scan(scope=3,uses=2) 강화가 scope=2·uses=1로 ★약화★됐다 →
+  원본 effect_params를 바닥값으로 상속(누락=원본값, 이득 파라미터 `UPGRADE_BENEFIT_PARAMS`={uses·scope·power·depth·range·
+  choices·count·scale·dice·intensity·trigger_freq·buff_amount·buff_turns}는 원본 미만 금지=강화≥원본), 그 뒤 applyDefaults로
+  새 등급 예산 재적용. cost·turns 등 하방·양날 파라미터는 상속만·플로어 안 함. ②`generateStageEndChoices`가 성장 JSON 파싱
+  실패 시 null 반환→보상 조용히 소실 → `fallbackStageEndChoices`(결정론적 new_trait 1개, pd.contribution로 3종 로테이션,
+  clampGrade("C",maxGrade), parseStageEndTrait 재사용) 지급. 두 실패 지점(브레이스 없음·예외) 모두 폴백.
+- **★초기 특성 이름·개수 품질(저모델 리플레이 감사)★**: `CharacterGenerator.generateInitialTraits`. 어색한 이름(틈겁·눈치결·
+  '무덤 위성' 직업명 복사·필러 4~5개)은 클리어 보상 아닌 ★초기 특성★(id=init_)에서 발생. 원인: ①name '2~7자' 강제가 저모델을
+  억지 조어로 몰고 자기 예시('물러서지 않는 다리' 8자)와 모순 ②좋은 예시가 문학형 편향 ③RARE '2개 이상'=상한 없음 ④파서 개수·
+  직업명복사 미검사. 수정: ★엔진(결정론)=개수 상한(파서 RARE≤3·그외≤2 truncate + RARE 프롬프트 '정확히 2~3개')★,
+  ★프롬프트(Fable5 작성)=이름 자연스러움★ — 글자수 강제 해제(실단어 우선, 2~5자·필요시 두 단어), 억지조어 금지(틈겁·눈치결 나쁜예),
+  평범 실단어 예시 대량(손재주·길눈·눈썰미·담력·뚝심·잔꾀…) + 결있는표현 소수, 직업설정 조각내기·직업명 복사 금지, name↔description
+  역할분리(조사 살린 설명, 압축 명사구 금지). ★분업 원칙 동일: 엔진=개수(기계), 프롬프트=이름(의미)★. 네이밍 프롬프트는 스킬 규약대로
+  Fable5 Agent로 초안(model:fable, 27k토큰). generateStageEndChoices(클리어 보상)의 '18자 명사구'는 별개라 미변경.
 - **뷰어 재생**: buildQueue→queue/qi, step()↔renderQueueItem(instant), seekTo(구간 슬라이더), evHtmlSplit
   (전체·시점 공통 — GM서술 내 [이름]대사 분리), headHtml 'other'클래스(타인=우측정렬), mapZoom(지도 확대),
   #infoResize(정보창 폭·--ifs 글씨 스케일).

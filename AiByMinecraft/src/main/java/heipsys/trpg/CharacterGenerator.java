@@ -490,7 +490,7 @@ public class CharacterGenerator {
 - 반드시 큰 대가·위험부담 수반: 쿨다운 3턴 이상 또는 체력·정신력 소모 또는 특정 조건 하에서만 발동
 - 능동 특성(active:true) 필수 포함. cooldownTurns 2~4 설정
 - 강점이 극단적인 만큼 뚜렷한 약점이나 부작용 특성도 1개 추가 (grade D 또는 F)
-- 개수: 2개 이상 (강점 + 약점/부작용)
+- 개수: ★정확히 2~3개★ (강점 1~2 + 약점/부작용 1). 그 이상 만들지 마라 — 한 직업 설정을 조각내 필러 특성을 늘리지 말 것.
 """;
             default -> """
 - grade: C·D·F 중 ★하나만★ 사용 (초기 캐릭터이므로 강한 특성 없음. 'D/F'처럼 여러 글자로 쓰지 말고 한 등급만)
@@ -501,16 +501,23 @@ public class CharacterGenerator {
         String system = "너는 TRPG 캐릭터 초기 특성 생성기야.\n"
             + "아래 JSON 배열 형식으로만 응답 (다른 텍스트 금지):\n"
             + "[{\"active\":false,\"effect\":\"\",\"concept\":\"\",\"name\":\"\",\"description\":\"\","
-            + "\"grade\":\"C\",\"cooldownTurns\":0},...]\n\n"
+            + "\"grade\":\"C\",\"cooldownTurns\":0,"
+            + "\"str_add\":0,\"cha_add\":0,\"luk_add\":0,\"spr_add\":0,\"hp_max_add\":0,\"san_max_add\":0},...]\n\n"
             + "공통 규칙:\n"
             + "- 직업·나이에서 자연스럽게 연결되는 능력/약점\n"
+            + "- ★스탯 보정(등급=실제 파워)★: 특성 grade에 맞춰 스탯 보정 총합을 준다 — 양의 총합 예산 F=-2·E=-1·D=0·C=1·B=3·A=5·S=10. 다른 스탯에 -를 주면 그만큼 +를 더 줄 수 있다(예: B급 근력+4·행운-1=순합3). 체력최대·정신력최대(hp_max_add·san_max_add)도 같은 1점=1로 계산(표시만 %). ★초기 특성은 기계 능동/패시브 효과 없이 스탯으로만 파워를 낸다★ — 그 등급이 실제 스탯으로 뒷받침되게 하라(희귀 직업 A/S면 스탯 총합을 그만큼 크게, 약점 특성 D/F면 순합을 음수로).\n"
             + "- hidden_info에 해결 수단(아이템·경로·조작법)이 포함되면, 그 '존재·방법'만 알게 하고 '왜 필요한지(괴담 약점·해법과의 연결)'는 캐릭터가 인지하지 못한 상태로 설계하라. 정답을 처음부터 쥐여주지 마라(용도는 플레이 중 발견).\n"
             + "- description과 effect에 스탯 숫자·스탯 약어(STR/HP/SAN/CHA/LUK/SPR) 절대 사용 금지\n"
-            + "- description: 아주 짧은 명사구 한 줄(최대 18자). 예: \"빠른 처치 손길\", \"겁 많은 성격\"\n"
             + "- effect: 한 문장으로 간결하게 (수동이면 판정에서 발휘되는 식, 능동이면 사용 효과)\n"
-            + "- 직업명을 그대로 쓰지 말고 구체적 능력으로 작성\n"
-            + "- ★생성 순서★: 먼저 effect(작용)를 정하고 → concept(핵심 한 줄, 내부용) → name(concept를 2~7자 한국어 특성명으로) → description(name의 짧은 부제) 순으로 만들어라. 셋은 ★같은 능력★을 가리킨다.\n"
-            + "- name은 자연스러운 한국어 이름 — 무관한 단어 짜깁기·게임 은어(리젠·버프·쿨)·뜬금없는 단어(교통사고) 금지. 좋은 예: \"밤눈\", \"물러서지 않는 다리\".\n"
+            + "- ★생성 순서★: effect(작용 한 문장) → concept(핵심 한 줄, 내부용) → name → description 순. 넷은 ★같은 능력 하나★를 가리킨다.\n"
+            + "- name: concept를 글자 수에 맞춰 줄이지 마라. '이 능력을 가진 사람을 옆에서 보면 뭐라 부를까'를 생각해 ★실제로 쓰는 자연스러운 한국어★를 골라라. 보통 2~5자 한 단어, 필요하면 띄어쓰기 있는 두 단어까지 — 자연스러움이 길이보다 우선.\n"
+            + "- ★억지 조어 금지★: 사전에 없는 압축어·신조어를 만들지 마라. 나쁜 예: \"틈겁\", \"눈치결\"('-겁'·'-결' 같은 접미사를 붙인 가짜 단어). 한 단어로 안 줄면 두 단어로 풀어 써라.\n"
+            + "- 이름은 흔히 쓰는 능력·성향 단어를 ★우선★. 좋은 예: \"손재주\",\"길눈\",\"눈썰미\",\"담력\",\"뚝심\",\"잔꾀\",\"배짱\",\"넉살\",\"억척\",\"붙임성\",\"말주변\",\"잠귀\",\"눈대중\",\"맷집\",\"요령\",\"임기응변\".\n"
+            + "- 결 있는 표현은 소수만: \"밤눈\",\"굳은 심지\" 정도. 이름 전부를 \"젖은 손\"·\"떨리는 손끝\"·\"흐려진 이름\"처럼 '꾸미는 말+신체/사물' 시 제목투로 만들지 마라.\n"
+            + "- 특성들은 ★서로 다른 능력★. 한 직업 설정을 조각내 여러 특성(\"매장 좌표\",\"신호 잡음\"…)으로 흩뿌리는 '설정집 만들기' 금지. 같은 소재(손·이름·신호·눈)를 반복 말고 몸·감각·성격·습관에서 골고루 뽑아라.\n"
+            + "- 직업명·직업 고유명사를 이름에 그대로(일부라도) 넣지 마라. 나쁜 예: 직업 \"무덤 위성 소환사\"→특성 \"무덤 위성\". 직업은 능력이 생긴 이유일 뿐 이름 재료가 아니다.\n"
+            + "- name과 description 역할 분리: name=능력을 부르는 자연스러운 이름 하나, description=그 능력이 무엇인지 ★조사가 살아 있는 자연스러운 말★로 짧게 한 줄. 이름을 또 압축한 명사구·조사 생략 금지. 나쁜 예: \"틈열기\"/\"숨은 길 열기\". 좋은 예: \"길눈\"/\"한 번 지난 길은 잊지 않는다\", \"담력\"/\"끔찍한 걸 보고도 다리가 풀리지 않는다\".\n"
+            + "- 마지막 점검: 이름을 소리 내어 읽어 한국인이 뜻을 바로 못 알아들으면 버리고 평범한 단어로 다시 지어라.\n"
             + "- 한국어, 창의적\n\n"
             + "직업 등급별 규칙:\n" + tierRules
             + (scenarioFlavor.isBlank() ? "" : "\n" + scenarioFlavor);
@@ -540,8 +547,24 @@ public class CharacterGenerator {
                     td.active        = obj.has("active")       && obj.get("active").getAsBoolean();
                     td.effect        = obj.has("effect")       ? obj.get("effect").getAsString()       : "";
                     td.cooldownTurns = obj.has("cooldownTurns") ? obj.get("cooldownTurns").getAsInt()  : 0;
+                    // ★E3: 초기 특성도 스탯 예산 적용★ — 예전엔 스탯·예산을 아예 안 봐서 희귀 직업 S/A가 '무료 서술형'이었다.
+                    //   스탯 필드를 파싱하고 effectType=""로 applyDefaults → enforcePowerBudget가 스탯을 등급 예산에 클램프(기계효과는 없음).
+                    try {
+                        if (obj.has("str_add"))     td.str_add    = obj.get("str_add").getAsInt();
+                        if (obj.has("cha_add"))     td.cha_add    = obj.get("cha_add").getAsInt();
+                        if (obj.has("luk_add"))     td.luk_add    = obj.get("luk_add").getAsInt();
+                        if (obj.has("spr_add"))     td.spr_add    = obj.get("spr_add").getAsInt();
+                        if (obj.has("hp_max_add"))  td.hp_max_add = obj.get("hp_max_add").getAsInt();
+                        if (obj.has("san_max_add")) td.san_max_add= obj.get("san_max_add").getAsInt();
+                    } catch (Exception ignore) { /* 잘못된 스탯 필드는 0 유지 — 특성 전체를 폴백시키지 않음 */ }
+                    td.effectType = ""; // 초기 특성은 서술형(시스템 기계효과 없음) — 스탯만 등급에 맞춘다
+                    SystemTraitRegistry.applyDefaults(td);
                     result.add(td);
                 }
+                // ★개수 상한(저모델 필러 방지)★: RARE=3, 그 외=2. 저모델이 낯선 직업 설정어를 조각내 4~5개
+                //   비슷한 필러 이름(신호 잡음·흐려진 이름…)을 뽑던 문제 → 초과분은 앞에서부터 유지(핵심 강점 우선).
+                int cap = (tier == JobTier.RARE) ? 3 : 2;
+                if (result.size() > cap) result = new ArrayList<>(result.subList(0, cap));
                 return result.isEmpty() ? staticFallbackTraits(pd) : result;
             } catch (Exception ex) {
                 return staticFallbackTraits(pd);
