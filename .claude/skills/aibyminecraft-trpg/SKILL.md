@@ -369,7 +369,13 @@ description: >-
   chat 경로 2501~는 원래 핸들러 의존이라 정상). 검증: scratch `TraitRegTest` 42케이스(16 uses·클램프·음수·C강등/제거·S생존·costText).
   ★남은 감사(미착수·설계 요함)★: 패시브 protect uses 미집행·passive_gm 상시화 / 지속형(debt·vanish·rule_invert 등) 엔진 상태
   없이 injectGmSystem 1회 스냅샷 의존 / 이어하기·시간회귀가 변신·행동불능·발견단서 상태 미복원(대가만 남음) /
-  초기특성 CharacterGenerator 예산 미적용 / 발동형 AI 실패(handleAction=false) 시 특성·대가 미환불(#4, 미착수).
+  초기특성 CharacterGenerator 예산 미적용.
+- **★발동 전 행동중 게이트(감사 #4)★**: 발동형 특성이 `applyTraitUsed`(소모·대가)→`turnMan.handleAction` 순이라
+  handleAction이 false(사망·`turnState==ACTING`)를 반환해도 환불이 없어 ★특성·대가만 날아가던★ 문제(응답 지연·호출 겹침
+  환경). 15개 activateXxx에 환불을 붙이는 대신 ★소모 전 단일 게이트★: `TurnManager.canAct(player)`(handleAction과 동일
+  조건) 신설 → `handleTraitUse`에서 쿨다운·uses 검사 직후·모든 발동 분기(입력형 3927/시스템 3943/서술형 showTraitActivation)
+  ★위★에서 `if(!turnMan.canAct) {안내;return}`. 행동 중이면 소모 없이 막고 재시도 가능. (ACTING 창 ~1-2초라 정보/즉시
+  능력도 잠깐 대기 — 허용 가능한 제약.)
 - **★성장(클리어 보상) 상속 정합(감사 #6·#7 — TraitManager)★**: ①`preserveActiveNature`가 원본 effect_type만 유지하고
   applyDefaults로 파라미터를 기본값으로 덮어써 area_scan(scope=3,uses=2) 강화가 scope=2·uses=1로 ★약화★됐다 →
   원본 effect_params를 바닥값으로 상속(누락=원본값, 이득 파라미터 `UPGRADE_BENEFIT_PARAMS`={uses·scope·power·depth·range·

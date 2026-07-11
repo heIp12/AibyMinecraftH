@@ -106,6 +106,13 @@ public class TurnManager {
         return true;
     }
 
+    /** 지금 이 플레이어가 새 행동/발동을 시작할 수 있는가 — handleAction의 사전 게이트(사망·ACTING)와 동일 조건.
+     *  특성 발동 전에 이걸로 미리 막으면 handleAction이 false를 반환해 특성·대가만 소모되는 것을 방지한다(#4). */
+    public boolean canAct(Player player) {
+        PlayerData pd = state.getPlayer(player);
+        return pd != null && !pd.isDead && pd.turnState != TurnState.ACTING;
+    }
+
     /**
      * ★단체턴(같은 구역 묶음, 증분 2a)★ 여러 명의 행동을 GM 1회 호출로 통합 처리한다.
      * - 개별 행동 로그(eventLog·narrativeLog)는 호출 측(flushGroupZone)에서 이미 남겼다 — 여기선 다시 남기지 않는다.
