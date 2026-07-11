@@ -830,7 +830,7 @@ public class TRPGGameManager {
             + "  §7[모드] " + (familiar ? "§d친숙한 친구들 (" + familiarFilterLabel(familiarFilter) + ")" : "§eAI 창작"));
 
         boolean freshSession = !state.isSessionActive();
-        if (freshSession) retriedThisRun = false; // 새 게임 — 무리트라이 보너스 추적 초기화
+        if (freshSession) { retriedThisRun = false; gdamGen.clearCampaignArchetypes(); } // 새 게임 — 무리트라이 추적 + world_rules 캠페인 중복방지 초기화
         int room = state.isSessionActive() ? state.getRoomNumber() + 1 : Math.max(1, Math.min(6, startStage)); // 신규 세션은 설정된 시작 스테이지부터
         broadcast("§e§l═══ TRPG 세션 시작 (스테이지 " + room + ") ═══");
         broadcast("§7.gdam 파일을 생성 중입니다...");

@@ -652,6 +652,7 @@ critical NPC는 한자리 고정이 아니다 — 메인/사이드 사건에 참
     //   rage_break=분노 극한에서 ★제 규칙을 깨고★ 표적을 죽이는 절정 — 그 순간 붕괴창이 열린다는 점까지(양날).
   },
   "world_rules": {
+    "archetype": "",              // ★이번 판 주 구조의 표준 id★(위 world_rules 후보에 쓰인 id 그대로 — 정보격리형·시간·인과율형·역할극강제형 등). 캠페인 중복방지 기록용이니 ★새 이름 창작 금지★, 반드시 표준 id로.
     "core": "",
     "details": [],
     "hidden": true,
@@ -1654,7 +1655,7 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
             + "constraints(era/phone_usable/outside_contact/can_leave_scene/map_available/comms_monitored/comms_dangerous/noninterference/gated_zones/written_comm/postal/silence_required/comm_media/notes), "
             + "timeline(단계별 start_time/end_time/main_events 포함)★ 만 하나의 JSON 객체로 생성하라.\n"
             + "이 네 가지 최상위 필드만 출력하고 zones·npcs·roles·key_items 등 다른 필드는 절대 포함하지 마라."
-            + ScenarioArchetypes.worldRulesBlock(roomNumber, conceptTypeHint) // 외부화·샘플링: 세계 규칙 후보 소수(1~2스테이지 기본만) + 운영 유형 고정 반영
+            + ScenarioArchetypes.worldRulesPick(roomNumber, conceptTypeHint, campaignArchetypes).prompt() // 세계 규칙 후보 + ★캠페인 중복방지 제외★(엔진 샘플링)
             + typeFirstDirective(roomNumber)
             + coexistenceDirective(roomNumber)   // 공존 괴담(1~4 가변): 보조는 같은 출처·결의 함정으로 엮음
             + "\n\n## ★검증 (출력 전 자기점검)\n최종 JSON을 내기 전 스스로 확인하고, 아니면 고쳐서 출력하라:\n- 고른 행동양식(entity.type)이 world_rules·timeline.main_events에 실제로 반영됐는가?\n- 성향(ai_context.disposition)이 initial_pattern·personality로 구체화됐는가?\n- 스케일이 영향 범위·시간 규모에 반영됐는가?\n- 아키타입의 ★필수산출★ 항목을 다 채웠는가?";
@@ -2014,6 +2015,42 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
     private volatile String conceptTypeHint = "";
     public void setConceptTypeHint(String hint) { this.conceptTypeHint = hint == null ? "" : hint.trim(); }
 
+    /** ★캠페인 내 world_rules 주 아키타입 중복방지(GPT)★ — 이번 캠페인(1~5+스테이지)에서 이미 쓴 주 구조 id.
+     *  worldRulesPick에 넘겨 엔진 샘플링 단계에서 제외. 새 게임 시작 시 clearCampaignArchetypes()로 초기화(캠페인 스코프). */
+    private final java.util.Set<String> campaignArchetypes = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    public void clearCampaignArchetypes() { campaignArchetypes.clear(); }
+    /** 저장(성공적 파싱) 후에만 기록(GPT 디테일2) — 모델 신고 archetype을 표준 id로 정규화, 없으면 core 키워드로 근사. */
+    private void recordCampaignArchetype(JsonObject core) {
+        try {
+            if (core == null || !core.has("world_rules") || !core.get("world_rules").isJsonObject()) return;
+            JsonObject wr = core.getAsJsonObject("world_rules");
+            String declared = wr.has("archetype") && !wr.get("archetype").isJsonNull() ? wr.get("archetype").getAsString() : "";
+            String id = normalizeArchId(declared);
+            if (id.isEmpty()) { // 신고 없음/무효 → core 문장 키워드로 표준 id 근사(자유서술 대비 폴백)
+                String core2 = wr.has("core") && !wr.get("core").isJsonNull() ? wr.get("core").getAsString() : "";
+                id = fuzzyArchIdFromText(declared + " " + core2);
+            }
+            if (!id.isEmpty()) campaignArchetypes.add(id);
+        } catch (Exception ignore) {}
+    }
+    /** 신고 문자열이 표준 RULE id 집합에 (공백 무시) 정확 매칭되면 그 id, 아니면 "". */
+    private static String normalizeArchId(String declared) {
+        if (declared == null || declared.isBlank()) return "";
+        String d = declared.replaceAll("\\s+", "");
+        for (String id : ScenarioArchetypes.ruleArchIds()) if (id.equals(d)) return id;
+        return "";
+    }
+    /** 표준 id 앞 3~4글자가 텍스트에 포함되면 그 id로 근사(예: '정보격리'→정보격리형). 애매하면 "". */
+    private static String fuzzyArchIdFromText(String text) {
+        if (text == null || text.isBlank()) return "";
+        String t = text.replaceAll("\\s+", "");
+        for (String id : ScenarioArchetypes.ruleArchIds()) {
+            String key = id.endsWith("형") ? id.substring(0, id.length() - 1) : id; // '형' 뗀 어근
+            if (key.length() >= 3 && t.contains(key)) return id;
+        }
+        return "";
+    }
+
     /** 1단계: 전 세계 실존 전설·도시괴담에서 자유롭게 선택하거나 완전 창작한다. */
     private CompletableFuture<String> generateEntityConcept() {
         // 매 호출마다 다른 숫자를 넘겨 AI의 내부 탐색 방향을 분산시킨다.
@@ -2070,7 +2107,7 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
         String prompt = "스테이지 번호: " + roomNumber + "\n스케일: " + scale + "\n"
             + lengthGuideFor(roomNumber)
             + conceptBlock
-            + ScenarioArchetypes.worldRulesBlock(roomNumber, conceptTypeHint) + ScenarioArchetypes.rolesBlock(roomNumber) + typeFirstDirective(roomNumber) // 폴백 단일생성도 후보 주입(운영 유형 고정 반영)
+            + ScenarioArchetypes.worldRulesPick(roomNumber, conceptTypeHint, campaignArchetypes).prompt() + ScenarioArchetypes.rolesBlock(roomNumber) + typeFirstDirective(roomNumber) // 폴백 단일생성도 후보 주입 + 캠페인 중복방지
             + "\n\n위 스키마 형식의 .gdam JSON을 생성해줘. seed는 빈 문자열로 두면 됩니다.";
 
         return aiManager.callGmAiLarge(GDAM_SYSTEM_PROMPT, prompt)
@@ -2446,6 +2483,7 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
     }
 
     public void save(String seed, JsonObject gdam) throws Exception {
+        recordCampaignArchetype(gdam); // ★캠페인 중복방지 기록(GPT 디테일2: 성공 저장 시에만)★ — 이 판의 주 world_rules 아키타입을 캠페인 사용 목록에 추가
         repairTimelineConsistency(gdam); // ★생성 후 타임라인 정합 자동 보정★ — 종료 사건 시각·창 밖 사건·시간창 페이스(GPT 지적: 검증이 존재 여부만 봄)
         finalizeNpcSpeech(gdam); // 저장 직전 NPC 말투 후처리 — D1: 개성 어미 최소 1명 보장 · D2: 그 인물 나이 12~35
         File file = new File(gdamDir, seed + ".gdam");
