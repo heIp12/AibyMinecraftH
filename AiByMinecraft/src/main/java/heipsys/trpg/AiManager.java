@@ -718,6 +718,10 @@ public class AiManager {
      */
     public String restyleDialogue(String dialogue, String styleSpec) {
         if (dialogue == null || dialogue.isBlank() || styleSpec == null || styleSpec.isBlank()) return dialogue;
+        // ★짧은 외침·부름·감탄 파편엔 개성 어미를 얹지 않는다★(과적용·비문 방지: '놔'→'놔라니까', '잘 커'→'잘 커라니까' 차단)
+        //   — 괄호 지문·문장부호·공백을 뺀 실질 글자가 3자 이하면 원형 그대로.
+        String bare = dialogue.replaceAll("\\([^)]*\\)", "").replaceAll("[\\s…·.!?~\"'\\-–—]+", "");
+        if (bare.length() <= 3) return dialogue;
         try {
             String sys = "너는 '대사 말투 변환기'다. 아래 [원본 대사]의 ★내용·정보·의미·감정·문장 수·괄호 지문(예: (문을 밀며))·줄바꿈·문장부호는 조금도 바꾸지 말고★, "
                 + "오직 ★문장을 맺는 말투(어미)★만 [스타일]대로 고쳐라.\n"
@@ -726,15 +730,35 @@ public class AiManager {
                 + "③괄호 지문과 태그처럼 보이는 부분은 손대지 마라. ④★어미가 문법상 안 맞는 문장은 억지로 비틀지 마라★ — 의문('왔어?')·감탄·짧은 외침('비켜!'·'뭐야?')·부름은 원래 형태를 지키고, 지정 어미는 그게 자연스럽게 붙는 평서문에만 얹어라. ★단어를 망가뜨리며(예: '왔냐'→'왔냐구') 모든 문장을 같은 소리로 도배하면 사람이 아니라 고장 난 기계처럼 들린다 — 절대 그러지 마라★. 억지로 다 비틀어 어색하면 핵심 평서문에만 적용하라. "
                 + "⑤★감정 강도별 조절★: 평상시엔 말투를 또렷이 살리되 긴장·짜증이면 약간 완화하고, 공포·패닉·울음처럼 원본이 이미 흐트러지거나 짧게 끊긴 문장은 그 흐트러짐을 살려 최소한(핵심 어미 흔적만)으로 적용하라 — 고정 어미를 억지로 덧씌워 감정을 납작하게 만들지 마라(격한 순간엔 캐릭터 어미가 약해지는 게 자연스럽다). "
                 + "★마무리 자가검수★: 내보내기 전에, 표준 평서형 어미(~요/~다/~어/~습니다)로 밋밋하게 끝난 ★평서문★이 남았으면 지정 어미로 살려 개성이 드러나게 하라 — 단 ④의 의문·감탄·외침·부름과 ⑤의 격한 감정 문장은 원형을 존중하라(★전 문장 도배가 목적이 아니라 '이 인물다움'이 드러나면 충분★). "
-                + "출력은 ★변환된 대사 본문만★(따옴표·머리말·해설·목록 금지).\n"
+                + "출력은 ★변환된 대사 본문만★(따옴표·머리말·해설·목록 금지). ★네 판단·이유·'원본'/'지정 어미' 언급을 괄호로도 절대 쓰지 마라 — 어미를 안 붙이기로 했으면 원문을 그대로(설명 한 마디 없이) 내라★. ★3인칭 서술·지문(예: '그는 ~한다', 인물이 자기 이름으로 3인칭 서술되는 문장)엔 어미를 얹지 말고 실제 대사에만 적용하라.★\n"
                 + "[스타일] " + styleSpec;
             List<JsonObject> m = List.of(msg("user", "[원본 대사]\n" + dialogue));
             String out = send(npcModel(), sys, m, ASST_MAX_TOKENS, npcEffort);
             out = out == null ? "" : out.trim();
-            return (out.isEmpty() || out.startsWith("§c")) ? dialogue : out;
+            if (out.isEmpty() || out.startsWith("§c")) return dialogue;
+            return stripRestyleMeta(out, dialogue); // 변환기 자기해설(메타)이 대사로 새는 것 제거
         } catch (Exception e) {
             return dialogue; // 변환 실패해도 원본 대사로 전달(전달 보장)
         }
+    }
+
+    /** restyleDialogue 후처리 — 변환기(미니 모델)가 대사에 섞어 뱉은 ★자기 판단·이유 메타★를 제거한다.
+     *  실제 사례: "(원본이 공포·패닉 상황의 짧게 끊긴 감정 표현으로… 원형을 유지하는 것이…)"가 대사로 누출.
+     *  정상 지문 '(문을 밀며)'는 보존(메타 키워드가 없으므로). 제거 후 남는 게 없으면 원본을 돌려준다(전달 보장). */
+    private static String stripRestyleMeta(String out, String original) {
+        if (out == null || out.isBlank()) return original;
+        java.util.regex.Matcher mm = java.util.regex.Pattern.compile("\\([^)]*\\)").matcher(out);
+        StringBuffer sb = new StringBuffer();
+        while (mm.find()) {
+            String seg = mm.group();
+            boolean meta = seg.contains("원본") || seg.contains("지정 어미") || seg.contains("덧씌우")
+                || seg.contains("원형") || seg.contains("변환") || seg.contains("스타일")
+                || seg.contains("어미를") || seg.contains("캐릭터") || seg.contains("문장 구조") || seg.contains("전달");
+            mm.appendReplacement(sb, meta ? "" : java.util.regex.Matcher.quoteReplacement(seg));
+        }
+        mm.appendTail(sb);
+        String cleaned = sb.toString().replaceAll("[ \\t]+(?=\\n)", "").replaceAll("\\n{3,}", "\n\n").trim();
+        return cleaned.isBlank() ? original : cleaned;
     }
 
     // ======================================================
