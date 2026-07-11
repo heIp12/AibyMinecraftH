@@ -3935,11 +3935,10 @@ public class TRPGGameManager {
             player.sendMessage("§e⚠ 이번 스테이지에서 이미 " + trait.usedThisStage + "회 사용 — 효과가 감소하거나 역효과가 있을 수 있습니다.");
         }
 
-        // Paper Dialog로 발동 선택지 표시
-        dialogMan.showTraitActivation(player, trait, zoneDisplayName(pd.zone),
-            () -> commitTrait(player),
-            () -> player.sendMessage("§7채팅으로 행동을 입력하면 특성과 함께 처리됩니다. §8[취소: /trpg _trait_cancel]")
-        );
+        // ★즉시 발동★: '특성에 맡기기 / 행동 직접 입력' 선택 다이얼로그를 띄우지 않고 곧장 발동한다.
+        //   추가입력·턴소모 유무와 무관하게 능동 특성은 바로 발동 — 입력형 능력은 위에서 이미 전용 입력창으로 갔고,
+        //   그 외 서술형·효과형은 여기서 커밋한다(commitTrait → 시스템 효과면 handleSystemTraitActivation, 아니면 행동 처리).
+        commitTrait(player);
     }
 
     /** 입력형/정보형 능력 — '맡기기/직접입력' 선택 없이 바로 다이얼로그 입력창으로 받는 효과들. */
