@@ -302,6 +302,17 @@ public class TRPGGameManager {
     private final Map<UUID, Integer> morphTurns = new ConcurrentHashMap<>();
     /** 관조자의 눈(observer_sight) 지속 중인 플레이어의 남은 턴 수 (uuid → turns). ★1턴 고정이라 실제로는 지속 등록되지 않지만, 구형 세이브 호환을 위해 틱 처리는 유지한다. */
     private final Map<UUID, Integer> observerTurns = new ConcurrentHashMap<>();
+    /** ★지속형 능력 효과 레지스트리★ — vanish·causal_debt·rule_invert·feed_entity·empty_chair·name_steal(N턴 카운트다운),
+     *  debt·witness_pact(상시, 조건 충족까지). 예전엔 injectGmSystem 1회 스냅샷에만 의존해 다음 GM 호출 뒤 잊혔다.
+     *  매 턴(maybeCaptureRewind) 카운트다운하며 진행 문구를 GM 문맥에 재상기(activeEffectsGmContext)하고, 0에 도달하면 결과(expiry)를 발동한다. */
+    private static final class TimedEffect {
+        final String key, owner, ongoing, expiry;
+        int turnsLeft; // >0=남은 턴, -1=상시(자동 만료 없음, 스테이지 끝까지 재상기)
+        TimedEffect(String key, String owner, int turnsLeft, String ongoing, String expiry) {
+            this.key = key; this.owner = owner; this.turnsLeft = turnsLeft; this.ongoing = ongoing; this.expiry = expiry;
+        }
+    }
+    private final java.util.List<TimedEffect> activeTimedEffects = new java.util.ArrayList<>();
     /** 통신 개방 능력(gm_directive 통신형) — 이 '턴 번호'에 발동한 플레이어는 그 턴 동안 통신 제한(두절·기기부재)을 무시하고 @발신 가능. */
     private final Map<UUID, Integer> commBypassTurn = new ConcurrentHashMap<>();
     /** 통신 개방이 '은밀형'인지(uuid → true). true면 그 통신을 괴담이 감지하지 못한다(통신 유인·추적 반응 억제). */
@@ -987,6 +998,7 @@ public class TRPGGameManager {
         animalForm.clear();
         stunTurns.clear();
         possessingNpc.clear();
+        activeTimedEffects.clear();
         resetOverviewCache();
         preSpawnCallCounts.clear();
         preSpawnLastBeat.clear();
@@ -2318,6 +2330,7 @@ public class TRPGGameManager {
             });
 
         morphTurns.clear(); observerTurns.clear(); animalForm.clear(); stunTurns.clear(); possessingNpc.clear(); // 변신·관조·동물형태·행동불능·빙의는 스테이지 넘어 유지되지 않음
+        activeTimedEffects.clear(); // 지속형 능력 효과(카운트다운·상시)도 스테이지 넘어 유지되지 않음
         commBypassTurn.clear(); commBypassStealth.clear(); // 통신 개방도 스테이지 넘어 유지 안 됨(턴 번호 재사용 오작동 방지)
         resetOverviewCache(); // 새 스테이지 = 새 괴담 → 시나리오 개요 캐시 초기화(다음 사용 시 재생성)
         loadForbiddenWord(); // 금지워드형 괴담의 금지어 로드(entity.forbidden_word)
@@ -2658,6 +2671,10 @@ public class TRPGGameManager {
 
         // ★괴담 세력 게이지(위협도·분노도) GM 전용★ — 현재 세력을 알려 그에 맞게 서술·증분하게 한다(플레이어·로그 미노출).
         gmCtx.append(threatAngerGmContext());
+
+        // ★진행 중 지속형 능력 효과(vanish·rule_invert·causal_debt 등) 재상기 GM 전용★ — 매 턴 재주입해
+        //   다음 GM 호출 뒤 잊히지 않게 한다(캐시된 시스템 프롬프트 대신 per-call 문맥).
+        gmCtx.append(activeEffectsGmContext());
 
         // ★#266 NPC 종결 상태(제압·결박·봉인·격퇴·사망·퇴장) GM 전용★ — 매 턴 재주입해 대화 압축으로도
         //   '이미 무력화됨'이 사라지지 않게 한다(GM이 제압된 NPC를 다시 멀쩡히 싸우게 하는 회귀 차단).
@@ -4232,6 +4249,9 @@ public class TRPGGameManager {
                     + "이후 발동자가 위기(부상·표적·고립 등)에 처하면 " + t + "은(는) ★1회 강제로 그를 돕게 된다★(주저해도 몸이 움직인다). "
                     + "빚을 저버리고 돕지 않으면 " + t + "에게 불이익(낙인·불운)이 따른다. 언제·어떻게 빚이 발동하는지는 GM이 상황에 맞게 판정하라.");
                 applyTraitUsed(pd, td.id, state.getCurrentTurn());
+                registerTimedEffect("debt", pd.gmDisplayName(), -1, // 상시(조건: 발동자 위기) — 강제 조력 1회로 소진되면 <EFFECT_END key="debt"/>
+                    "빚: " + t + "은(는) " + pd.gmDisplayName() + "이(가) 위기(부상·표적·고립)에 처하면 ★1회 강제로 돕는다★(저버리면 " + t + "에게 낙인·불운). 발동돼 소진되면 <EFFECT_END key=\"debt\"/>를 내라",
+                    "");
                 player.sendMessage("§7[" + td.name + "] " + t + "에게 빚을 지웠습니다.");
             });
     }
@@ -4248,6 +4268,9 @@ public class TRPGGameManager {
                     + "다른 인물들은 발동자를 " + t + "(으)로 인식·대우한다. 단 ★모순(그 사람을 아는 이가 눈치채거나 발동자가 티를 내면) 발각★될 수 있고, 발각 시 큰 대가·표적화가 따른다. "
                     + "누가 언제 의심하는지, 사칭이 통하는 범위는 GM 재량.");
                 applyTraitUsed(pd, td.id, state.getCurrentTurn());
+                registerTimedEffect("name_steal", pd.gmDisplayName(), turns,
+                    pd.gmDisplayName() + "이(가) '" + t + "' 행세 중 — 다른 이들은 발동자를 " + t + "(으)로 인식·대우한다(모순 시 발각 가능)",
+                    "[사칭 종료] " + pd.gmDisplayName() + "의 '" + t + "' 사칭 시간이 끝났다 — 정체가 원래대로 인식되기 시작한다.");
                 player.sendMessage("§7[" + td.name + "] 이제 '" + t + "' 행세를 합니다 (" + turns + "턴).");
             });
     }
@@ -4262,6 +4285,9 @@ public class TRPGGameManager {
                 ai.injectGmSystem("[능력 발동] " + pd.gmDisplayName() + "이(가) '" + td.name + "'으로 강제 계약을 성립시킨다 — 내용: \"" + tm + "\". "
                     + "이 계약은 초자연적 구속력을 지녀 ★먼저 어긴 쪽이 괴담의 표적★이 된다. 계약 당사자·성립 여부·위반 판정과 그 결과는 GM이 상황에 맞게 다룬다(무리한 계약이면 성립 안 될 수도).");
                 applyTraitUsed(pd, td.id, state.getCurrentTurn());
+                registerTimedEffect("witness_pact", pd.gmDisplayName(), -1, // 상시(조건: 계약 위반) — 위반 판정으로 소진되면 <EFFECT_END key="witness_pact"/>
+                    "증인 계약 유효: \"" + tm + "\" — 먼저 어긴 쪽이 괴담의 표적이 된다. 위반이 판정돼 결말지어지면 <EFFECT_END key=\"witness_pact\"/>를 내라",
+                    "");
                 player.sendMessage("§7[" + td.name + "] 계약을 성립시켰습니다.");
             });
     }
@@ -4284,6 +4310,9 @@ public class TRPGGameManager {
             + "대신 그 값이 '미래의 빚'으로 남아, 약 " + turns + "턴 뒤 ★그만큼의 재앙★이 발동자에게 자동으로 닥친다(얻은 이득에 비례하는 대가 — 부상·표적·자원 손실·사건 악화 등). "
             + "재앙의 형태·정확한 시점은 GM이 상황에 맞게 정하되 반드시 닥치게 하라(공짜 아님).");
         applyTraitUsed(pd, td.id, state.getCurrentTurn());
+        registerTimedEffect("causal_debt", pd.gmDisplayName(), turns,
+            "인과의 빚 — " + pd.gmDisplayName() + "이(가) 얻은 확정 대성공의 대가가 곧 재앙으로 청구된다",
+            "[인과의 빚 청구] " + pd.gmDisplayName() + "에게 앞서 얻은 확정 대성공의 값만큼 ★재앙이 지금 닥친다★ — 부상·표적·자원 손실·사건 악화 중 상황에 맞게, 반드시 실현하라(공짜 아님).");
         player.sendMessage("§6[" + td.name + "] 다음 행동은 반드시 성공합니다 — 대가는 " + turns + "턴 뒤에...");
     }
 
@@ -4295,6 +4324,9 @@ public class TRPGGameManager {
             + "(예: '보면 죽는다'→'봐야 산다', '소리 내면 안 된다'→'소리 내야 안전하다'). 어떤 규칙을 뒤집을지는 GM이 이 시나리오에 맞게 고른다. "
             + "판을 통째로 엎는 강수인 만큼 그 대가로 ★나머지 규칙은 더 사납고 치명적★이 되고 괴담의 분노가 치솟는다. 지속 후 원래대로 돌아온다.");
         applyTraitUsed(pd, td.id, state.getCurrentTurn());
+        registerTimedEffect("rule_invert", pd.gmDisplayName(), turns,
+            "괴담(" + getEntityName() + ") 규칙 1개가 뒤집혀 있다(대신 나머지 규칙은 더 사납고 치명적)",
+            "[규칙 원복] 뒤집혔던 괴담(" + getEntityName() + ") 규칙이 원래대로 돌아왔다 — 이제 정상 규칙으로 판정하라.");
         player.sendMessage("§5[" + td.name + "] 규칙 하나가 " + turns + "턴간 거꾸로 뒤집힙니다!");
     }
 
@@ -4311,6 +4343,9 @@ public class TRPGGameManager {
                     + "그동안 괴담은 공격·추적을 멈춘다. ★단 괴담이 그 제물을 먹고 성장한다(양날)★ — 이후 더 강해지거나 새 힘·정보를 얻은 듯 굴게 하라. "
                     + "무엇을 얼마나 받아들이는지, 성장의 형태는 GM 재량(부적절한 제물이면 안 통할 수도).");
                 applyTraitUsed(pd, td.id, state.getCurrentTurn());
+                registerTimedEffect("feed_entity", pd.gmDisplayName(), turns,
+                    "괴담(" + getEntityName() + ")이 제물을 먹고 잠시 온순하다(공격·추적 멈춤)",
+                    "[온순 종료] 괴담(" + getEntityName() + ")의 온순함이 끝났다 — 먹은 제물로 성장한 채 다시 적대적으로 돌아선다.");
                 player.sendMessage("§7[" + td.name + "] " + of + "을(를) 바쳐 잠시 진정시킵니다...");
             });
     }
@@ -4336,6 +4371,9 @@ public class TRPGGameManager {
         ai.injectGmSystem("[능력 발동] " + pd.gmDisplayName() + "이(가) '" + td.name + "'으로 파티에 보이지 않는 '한 명'을 더한다 — 약 " + turns + "턴간 괴담·적대 존재가 ★인원수를 착각★해 "
             + "표적·추적을 헛것(빈 자리)에게 분산시킨다(발동자·아군이 노려질 확률↓, 헛발질 유도). 어떻게 인원을 오인하고 표적이 어디로 새는지는 GM이 자연스럽게 서술하라(지나친 만능은 금지).");
         applyTraitUsed(pd, td.id, state.getCurrentTurn());
+        registerTimedEffect("empty_chair", pd.gmDisplayName(), turns,
+            "허수 인원 한 명이 파티에 섞여 괴담이 인원수를 착각한다(표적·추적이 빈 자리로 분산)",
+            "[허수 소멸] 허수 인원(빈 자리)이 사라졌다 — 괴담이 인원을 바로 세어 표적 분산이 끝난다.");
         player.sendMessage("§7[" + td.name + "] 보이지 않는 한 명이 자리를 채웁니다 (" + turns + "턴).");
     }
 
@@ -4358,6 +4396,9 @@ public class TRPGGameManager {
                         + "완전 무적이 아니라 '인식에서 지워짐'이다 — 큰 소리·직접 공격 등 뚜렷한 흔적을 내면 다시 들킬 수 있다. 한계·해제 조건은 GM 재량.");
                 }
                 applyTraitUsed(pd, td.id, state.getCurrentTurn());
+                if (!(toEntity && !sGrade)) registerTimedEffect("vanish", pd.gmDisplayName(), turns, // 실패(등급 부족·괴담 대상)면 미등록
+                    pd.gmDisplayName() + "은(는) '" + t + "'의 인식에서 사라져 있다(그 대상은 발동자를 놓치고 표적에서 뺀다)",
+                    "[소실 해제] " + pd.gmDisplayName() + "의 소실이 풀렸다 — '" + t + "'이(가) 다시 발동자를 인식하기 시작한다.");
                 player.sendMessage("§7[" + td.name + "] " + t + "의 인식에서 사라집니다 (" + turns + "턴).");
             });
     }
@@ -5463,8 +5504,42 @@ public class TRPGGameManager {
         // 위상 이탈 무적 턴 감소(턴당 1회) — 0 이하면 해제
         phaseOutTurns.entrySet().removeIf(e -> { int t = e.getValue() - 1; if (t <= 0) return true; e.setValue(t); return false; });
         tickRestrictionStates(); // 변신·관조 지속 턴 감소(턴당 1회)
+        tickTimedEffects();      // ★지속형 능력 효과 카운트다운(턴당 1회)★ — 0 도달 시 결과(재앙·해제)를 GM에 지시
         // ★분노도 자연 감쇠(턴당 1회)★ — 분노는 휘발성. 이번 턴 도발이 있으면 뒤이어 <ANGER>로 다시 오른다(순감).
         state.decayAnger(15);
+    }
+
+    /** ★지속형 능력 효과 등록★. turns>0=N턴 카운트다운, turns<=0=상시(조건 충족까지, 자동 만료 없음). */
+    private void registerTimedEffect(String key, String owner, int turns, String ongoing, String expiry) {
+        activeTimedEffects.add(new TimedEffect(key, owner == null ? "" : owner, turns > 0 ? turns : -1,
+            ongoing == null ? "" : ongoing, expiry == null ? "" : expiry));
+    }
+
+    /** 매 턴(1회) 지속 효과 카운트다운 — 0에 도달하면 결과(expiry)를 GM에 지시하고 제거. 상시(-1)는 건드리지 않는다. */
+    private void tickTimedEffects() {
+        if (activeTimedEffects.isEmpty()) return;
+        java.util.Iterator<TimedEffect> it = activeTimedEffects.iterator();
+        while (it.hasNext()) {
+            TimedEffect te = it.next();
+            if (te.turnsLeft < 0) continue; // 상시 — 자동 만료 없음(스테이지 종료 시 일괄 clear)
+            if (--te.turnsLeft <= 0) {
+                if (!te.expiry.isBlank()) ai.injectGmSystem(te.expiry);
+                gameLogger.logEvent("[지속효과 종료] " + te.key + (te.owner.isBlank() ? "" : "(" + te.owner + ")"));
+                it.remove();
+            }
+        }
+    }
+
+    /** 진행 중 지속 효과를 매 행동 GM 문맥에 재상기(캐시된 시스템 프롬프트 대신 per-call 채널 — threatAngerGmContext와 동일). */
+    private String activeEffectsGmContext() {
+        if (activeTimedEffects.isEmpty() || currentPhase != Phase.HORROR) return "";
+        StringBuilder sb = new StringBuilder("\n[진행 중 능력 효과(GM 전용 — 매 턴 반영, 직접 언급·메타 노출 금지):");
+        for (TimedEffect te : activeTimedEffects) {
+            sb.append("\n · ").append(te.ongoing);
+            if (te.turnsLeft > 0) sb.append(" (남은 ").append(te.turnsLeft).append("턴)");
+        }
+        sb.append("]");
+        return sb.toString();
     }
 
     /** ★괴담 세력 게이지(위협도·분노도)★ GM 전용 컨텍스트 — 플레이어·로그 미노출. 매 행동 입력 앞단에 주입해
@@ -10567,6 +10642,13 @@ public class TRPGGameManager {
             t.usedThisStage++;
             gameLogger.logAbilityResult(pd.gmDisplayName(), t.name, "치명 무효화 소진 (1/1)");
             ai.injectGmSystem("[보호 소진] " + pd.gmDisplayName() + "의 치명 무효화가 방금 소진됐다 — 이후엔 정상 판정한다(재사용 불가).");
+        }
+        // 상시 지속효과 종료(EFFECT_END) — debt·witness_pact 등이 조건 충족으로 소진되면 GM이 종료 태그를 낸다.
+        for (String key : ai.parseEffectEndTags(raw)) {
+            String k = key == null ? "" : key.trim();
+            if (k.isEmpty()) continue;
+            if (activeTimedEffects.removeIf(te -> te.key.equalsIgnoreCase(k)))
+                gameLogger.logEvent("[지속효과 종료] " + k + " (GM EFFECT_END)");
         }
     }
 

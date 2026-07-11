@@ -1624,6 +1624,11 @@ public class AiManager {
         return parseSelfClosingAttr(response, "<FATAL_GUARD_USED ", "player");
     }
 
+    /** <EFFECT_END key="X"/> 모두 파싱 → [X, ...] — 상시 지속효과(debt·witness_pact 등)를 조건 충족 시 종료. */
+    public java.util.List<String> parseEffectEndTags(String response) {
+        return parseSelfClosingAttr(response, "<EFFECT_END ", "key");
+    }
+
     /** <ZONE_UPDATE player="X" zone="Y" spot="Z" forced="true"/> 파싱 → [{player, zone, spot, forced}, ...]
      *  forced=강제 이동(납치·공격에 날아감·붕괴 등; 잠긴 게이트도 무시). 없으면 "". */
     public java.util.List<String[]> parseZoneUpdateTags(String response) {

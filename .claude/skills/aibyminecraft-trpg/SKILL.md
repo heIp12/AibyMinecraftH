@@ -367,8 +367,18 @@ description: >-
   ·쿨다운관리)이라 건드리면 안 됨→반드시 `mx>0` 조건★. ⑤음의 스텟 하한 −6(str_add=-50식 negSum 부풀려 예산 우회 차단).
   ⑥remote_sense·foresight 이중 applyTraitUsed(다이얼로그 콜백+핸들러) → 콜백 것 제거(핸들러가 입력 도착 시 1회 소모;
   chat 경로 2501~는 원래 핸들러 의존이라 정상). 검증: scratch `TraitRegTest` 42케이스(16 uses·클램프·음수·C강등/제거·S생존·costText).
-  ★남은 감사(미착수·설계 요함)★: 지속형(debt·vanish·rule_invert 등) 엔진 상태 없이 injectGmSystem 1회 스냅샷 의존(대규모).
-  (이어하기·시간회귀 상태 복원은 사용자 지시로 보류.)
+  (이어하기·시간회귀 상태 복원은 사용자 지시로 보류 — 지속효과 세이브 직렬화도 함께 보류.)
+- **★지속형 능력 효과 엔진(감사 마지막 축)★**: 예전엔 vanish·causal_debt·rule_invert·feed_entity·empty_chair·name_steal·
+  debt·witness_pact가 `injectGmSystem` 1회 스냅샷에만 의존해 다음 GM 호출 뒤 잊혔다(재앙 미발동·지속 망각). →
+  `TRPGGameManager.TimedEffect{key,owner,turnsLeft,ongoing,expiry}` + `activeTimedEffects` 레지스트리.
+  ▸`registerTimedEffect(key,owner,turns,ongoing,expiry)` — turns>0=카운트다운, turns<=0=상시(debt·witness_pact).
+    각 activateXxx의 injectGmSystem 뒤에 등록(입력형은 콜백 안, vanish는 실패 시 미등록).
+  ▸`tickTimedEffects()` — `maybeCaptureRewind`(턴 가드, 턴당 1회, morphTurns·phaseOut 틱과 동일 지점)에서 카운트다운,
+    0 도달 시 expiry를 injectGmSystem(causal_debt 재앙·rule_invert 원복·vanish 해제 등)하고 제거. 상시(-1)는 자동만료 없음.
+  ▸`activeEffectsGmContext()` — ★캐시된 gmSystemPrompt 아니라 per-call gmCtx(threatAngerGmContext 옆, 2660)에 매 턴 재주입★
+    → GM이 잊지 않게. 남은 턴 표시.
+  ▸상시효과 종료: GM이 `<EFFECT_END key="debt|witness_pact"/>`를 내면 `applyGuardConsumeTags`가 key로 제거(빚 갚음·계약 위반 시).
+  ▸스테이지 전환·게임 리셋에서 `activeTimedEffects.clear()`(스테이지 넘어 유지 안 됨). 검증: scratch TimedEffectTest 9케이스.
 - **★패시브·초기특성 정합(감사 A~E)★**:
   ▸**C(trigger_freq)**: buildGmPrompt 트리거 블록에 '발동 빈도 잦음/보통/드묾'(trigger_freq 3/2/1) 추가 — 예산엔 쓰는데 GM엔
     강도만 줘 빈도가 비용과 무관했다.
