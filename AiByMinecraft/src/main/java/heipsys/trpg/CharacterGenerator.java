@@ -490,7 +490,7 @@ public class CharacterGenerator {
 - 반드시 큰 대가·위험부담 수반: 쿨다운 3턴 이상 또는 체력·정신력 소모 또는 특정 조건 하에서만 발동
 - 능동 특성(active:true) 필수 포함. cooldownTurns 2~4 설정
 - 강점이 극단적인 만큼 뚜렷한 약점이나 부작용 특성도 1개 추가 (grade D 또는 F)
-- 개수: 2개 이상 (강점 + 약점/부작용)
+- 개수: ★정확히 2~3개★ (강점 1~2 + 약점/부작용 1). 그 이상 만들지 마라 — 한 직업 설정을 조각내 필러 특성을 늘리지 말 것.
 """;
             default -> """
 - grade: C·D·F 중 ★하나만★ 사용 (초기 캐릭터이므로 강한 특성 없음. 'D/F'처럼 여러 글자로 쓰지 말고 한 등급만)
@@ -542,6 +542,10 @@ public class CharacterGenerator {
                     td.cooldownTurns = obj.has("cooldownTurns") ? obj.get("cooldownTurns").getAsInt()  : 0;
                     result.add(td);
                 }
+                // ★개수 상한(저모델 필러 방지)★: RARE=3, 그 외=2. 저모델이 낯선 직업 설정어를 조각내 4~5개
+                //   비슷한 필러 이름(신호 잡음·흐려진 이름…)을 뽑던 문제 → 초과분은 앞에서부터 유지(핵심 강점 우선).
+                int cap = (tier == JobTier.RARE) ? 3 : 2;
+                if (result.size() > cap) result = new ArrayList<>(result.subList(0, cap));
                 return result.isEmpty() ? staticFallbackTraits(pd) : result;
             } catch (Exception ex) {
                 return staticFallbackTraits(pd);
