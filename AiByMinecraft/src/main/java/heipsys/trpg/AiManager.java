@@ -1213,13 +1213,27 @@ public class AiManager {
         return Math.max(-3, Math.min(3, sum));
     }
 
-    /** <MAP_GRANT player="name"/> 태그들에서 플레이어명 목록 추출 (지도 전체 입수) */
-    public java.util.List<String> parseMapGrantTags(String response) {
-        java.util.List<String> out = new java.util.ArrayList<>();
+    /** <MAP_GRANT player="name" [area="..."] [zones="a,b,c"]/> 태그들 파싱.
+     *  반환: 각 태그마다 [player, area, zones] (없는 속성은 ""). area·zones가 모두 비면 전체 입수, 하나라도 있으면 부분 공개. */
+    public java.util.List<String[]> parseMapGrantTags(String response) {
+        java.util.List<String[]> out = new java.util.ArrayList<>();
+        if (response == null) return out;
         java.util.regex.Matcher m = java.util.regex.Pattern
-            .compile("<MAP_GRANT\\s+player=\"([^\"]+)\"\\s*/?>").matcher(response);
-        while (m.find()) out.add(m.group(1));
+            .compile("<MAP_GRANT\\b([^>]*?)/?>").matcher(response);
+        while (m.find()) {
+            String attrs = m.group(1);
+            String player = mapGrantAttr(attrs, "player");
+            if (player.isEmpty()) continue;
+            out.add(new String[]{ player, mapGrantAttr(attrs, "area"), mapGrantAttr(attrs, "zones") });
+        }
         return out;
+    }
+
+    /** MAP_GRANT 속성 문자열에서 key="value" 값 추출 (없으면 ""). */
+    private static String mapGrantAttr(String attrs, String key) {
+        java.util.regex.Matcher m = java.util.regex.Pattern
+            .compile(key + "\\s*=\\s*\"([^\"]*)\"").matcher(attrs);
+        return m.find() ? m.group(1).trim() : "";
     }
 
     /** <SPAWN player="name"/> 태그에서 플레이어명 추출 */

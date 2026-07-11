@@ -62,6 +62,7 @@ description: >-
 - **trpg/AiManager.java**: AI 호출(callGmAi/callGmAiOnce/callNpcAi/callAssistant), 태그 파싱(parseTag/parseDiceTag/…), injectGmSystem.
 - **trpg/DialogManager.java**: Paper Dialog UI(시작설정·유형선택·기록·지도·소통수단 등).
 - **trpg/MapManager.java**: 구역/약도(zones·area·connections·distances), MapView 렌더(시점별 visitedZones 게이팅), knownAreaNames/sameArea.
+  ★지도 3형태★: 방문분(자동 그림) / 부분(`<MAP_GRANT player area="대분류"|zones="a,b">`→pd.mapRevealedZones, resolveGrantZones로 id·표시명·대분류 해석) / 전체(범위없는 `<MAP_GRANT>`→pd.hasFullMap). visibleZones/visibleAreas=방문 ∪ mapRevealedZones. **mapAvailable()**(constraints.map_available 기본true) false면 시작약도·MAP_GRANT·/trpg map 전부 무효(지도 없는 세계).
 - **trpg/GameLogger.java**: 이중 로그(.txt + .events.jsonl) — logVital/logItem/logComm/logMove/logAbilityResult/section.
 - **trpg/model/PlayerData.java**: 스탯(hp[]/san[]/str/cha/luk/spr, 1~20 스케일 5=평균), status, 소통수단 선언, zone/visitedZones.
 - **ChatListener.java**: 채팅·우클릭(정보/기록/지도/통신기기)·드롭/설치 차단.
@@ -94,13 +95,41 @@ description: >-
   등장인물명단(charName)·능력 injectGmSystem(gmDisplayName). 평가는 프롬프트엔 gmDisplayName 보내고
   parseEvaluation이 grades/growth 키를 epd.name으로 ★정규화★해 보상 귀속을 유지(다운스트림 계정명 키 불변).
   새 프롬프트 작성 시 pd.name/actor.getName()/player.getName() 직접 삽입 금지.
+- **★NPC 인지 = 행동+발화+결과★**: `buildEntityLog(limit,zone)`는 같은 구역 `action`(행동시도)+`comm[근처]`(발화)+
+  **`result`(확정 결과)**만 NPC에 보인다. 능력 판정 결과는 `deliverNarrative`가 `state.log("result",…)`로 남겨야 근처 NPC가
+  목격한다(안 남기면 NPC가 실제 능력결과를 "헛소리"로 부정 — 저품질 함정). npcCorePrompt에 ★목격사실 부정금지 + 자기 신체결함
+  임의생성 금지('고글 파손' 류)★ 가드 있음. 뷰어 `visibleTo`는 `kind==="ability"`를 **overt만** 같은구역 노출(은밀 감지·정보능력은
+  시전자 전용) — `logAbilityResult(…,overt=true)`는 주사위·물리 판정·행동불능만.
+- **★성별 인식★**: pd.gender/npcs[].gender를 프롬프트에 실제 주입해야 대명사·호칭이 안 뒤섞인다 — GM 등장인물명단(rosterGenderTag),
+  toTurnLine, npcCorePrompt(자기 성별), handleNpcDirectComm 머리말(상대 성별)에 주입. npcs[]에도 gender 필수(생성기 스키마).
+- **★배역 초과·성별·시대 정합★**: `ensureEnoughRoles`(플레이어>배역)는 ①비핵심·비플롯(true_role/knowledge 없음)·성인 NPC를
+  플레이 배역으로 ★우선 승격★(`isPromotableNpc`/`npcToRole`, npcs에서 제거) ②남으면 ★시대·성별 맞춤 합성★(`periodName`/`periodJob`,
+  `isPastEra` — 조선=전통명·직업, 여성역=여성명; '휘말린 피해자' 라벨 금지). 배정 성별 벌점은 ★하드(10000)★(doPreAssign·RoleManager)
+  — 같은 성별 배역 있으면 반드시 그쪽. **시대 말투**: `eraRegisterHint`(조선=현대 어미 금지)를 npcCorePrompt⑥·GM 프롬프트에 주입.
+- **★약체 역전 성장★**: `awardEndStats`가 등급 보상 + `weaknessGrowthPoints`(0~3) 합산 → 약하게 시작할수록 매 스테이지 영구 스탯을
+  더 얻어 ★최종적으로 강자를 뛰어넘는다★(수렴 아님). ★핵심★: 현재 스탯이 아니라 **`pd.origStartPow`(1스테이지 원시작 파워, 최초 1회
+  고정·reset 안 함)**로 약세를 재므로 성장해도 보정이 안 사라진다(6스테이지×3=최대+18로 유계). 발동능력 없으면 +1. 등급만 보던 예전엔 격차 고정.
+- **★위협도/분노도 경합★**: adjustThreat/adjustAnger/get/set은 ★synchronized★(비동기 턴 동시 조정 시 갱신 유실→표기 비단조 방지).
+  종료 사건(is_end)은 하나 뜨면 이후 무시(이중 '끝' 방지, good=이른 시각 우선). `resolveZoneId`는 접두어(zone_)·구역명 품은
+  세부장소("안채 마당"→마당) 근사 매칭 + ★공백 무시★(GM이 "zone_비상대피구"처럼 name "비상 대피구"의 공백을 지워 보내도
+  흡수 — 안 그러면 '[무시: 알 수 없는 구역]'으로 이동이 통째 버려짐). GM엔 '없는 구역 지어내기 금지' 가드.
 - **스포일러 금지**: 미발견 구역·괴담 정체/약점 사전 노출 금지(지도 다이얼로그·프롤로그 등).
 - **뷰어 시점 가시성 = "실제로 닿은 것만"**: `visibleTo` — 본인/지목수신(to)/system은 표시,
   근처·방송은 같은 구역만, '전체(전역)'는 플레이어만(NPC 미표시). GM/시스템 안내방송은 플레이어 전원.
 - **통신 모델**: @전체=아는 번호 플레이어만(NPC 미수신·비용). @NPC 1:1은 가능. 대면은 소통수단
   선언(#177) 우선(음성/필담), 없으면 소리위험 시 자동 필담. 위치 불명 NPC는 대면 취급.
+- **★근처 채팅 첫 단어 보존★**: `handleDirectComm`에서 `@` 대상 지정은 ★알려진 이름·번호·관계호칭(resolveHonorificNpc)★
+  일 때만. 예전 `resolveTempNameNpc`(아무 첫 단어나 근처 유일 NPC에 임시이름으로 묶어 1:1)는 근처에 NPC가 있으면
+  '@안녕하세요 여러분'의 첫 단어를 대상으로 오인해 잘라먹어서 폐지. 미매칭 `@…`·`@ …`(공백)은 근처 발화(content 전체),
+  같은 구역 NPC는 그 발화를 듣고 반응(proximityBroadcast→notifyLocalWitnesses)하므로 미지 NPC 소통도 유지.
 - **괴담 이름(친숙 모드)**: 실존 괴담은 한국 통용 명칭 우선(빨간마스크(口裂け女) 등), 의역 금지,
   확신 없으면 원어(발음). 회차 시드 번호를 이름에 넣지 말 것.
+- **★'모두 무작위' 카테고리 제외(서버 영속)★**: `GdamGenerator.RANDOM_KIND_POOL`을 `resolveFamiliarKind`가 굴릴 때
+  `randomExcluded`(로보토미·코즈믹·SCP 기본 제외, `.random_excluded` 파일 영속)를 뺀다. 시작 흐름 '모두 무작위' 선택 시
+  `showRandomExcludeChoice`(포함/제외 토글, 서버 저장)를 먼저 띄운 뒤 품질 선택으로. 전부 제외되면 `"random"`(일반 세계전설) 폴백.
+- **★다음 괴담 임의 지정(1회)★**: `/trpg setting entity <이름>`(또는 설정 다이얼로그 버튼→채팅 입력) → `reservedNextEntity`.
+  생성 직전 `applyReservedEntity`가 `gdamGen.setForcedEntity`로 넘겨 1회 소비 → `generateFamiliarConcept`가 scope/criterion을
+  그 이름으로 덮어 강제(중복금지·카탈로그 무시). 지정 시 `clearPregen`으로 기존 사전생성분 폐기. 해제=off/none/없음. #228 시드 예약과 별개.
 - **모델 티어**: GM=medium(sonnet), NPC=mini(haiku). 정밀 1회성은 callAssistantHiFi. 정밀 대형
   설계는 사용자 승인 하에 Fable5(claude-fable-5) 다중에이전트 Workflow("울트라코드").
 
@@ -310,6 +339,14 @@ description: >-
   스테이지 채널 개설(secretChannels: owner→SecretChannel) → 멤버는 채팅 앞 `!`로 은밀 송수신(handleGameChat 최상단 훅
   handleSecretChannelChat, 채널 없으면 false→일반채팅 폴백). deliverSecretText가 logComm(kind=whisper,via=밀담) +
   detect면 noteEntityIntel·GM주입. secretChannels는 스테이지 리셋 시 clear. reduceOneParam에 'direction' 추가(초과 시 대화창→청취→일방 강등).
+- **★신규 특이 능력 16종(effect_type)★**: `SystemTraitRegistry.Effect`에 enum 추가 → buildAiCatalog가 `Effect.values()`로
+  자동 노출(생성기가 인지). 런타임=`handleSystemTraitActivation` switch case → `activateXxx`. ★전부 엔진 최소 처리 +
+  `ai.injectGmSystem` 지시 주입(세부·강도·결과는 GM 재량)★. 목록: truth_read(발언 진위·남용시 함구)·pitfall_reveal(금기1폭로+위협↑)·
+  mad_clarity(SAN소모→규칙조각, SAN낮을수록 선명)·fear_transfer(공포전가, 괴담대상=분노↑)·debt(빚→위기시 강제조력)·
+  name_steal(사칭)·witness_pact(강제계약, 위반자=표적)·future_sight(★확정 미래=다음 사건 예지, 예약 아님★)·
+  causal_debt(확정성공+N턴뒤 재앙)·rule_invert(규칙1 역전+분노↑)·feed_entity(제물→진정+괴담 성장)·last_words(확정 유언단서)·
+  empty_chair(허수 인원→표적 분산)·vanish(대상 인식서 소실, ★S급이면 td.grade로 괴담까지★)·illusion(환영·약한조종, 괴담본체 무효)·
+  item_create(ITEM_GRANT로 GM 자유 지급). 입력형 9종(대상·내용 다이얼로그)은 `isInputAbility`에 등록.
 - **뷰어 재생**: buildQueue→queue/qi, step()↔renderQueueItem(instant), seekTo(구간 슬라이더), evHtmlSplit
   (전체·시점 공통 — GM서술 내 [이름]대사 분리), headHtml 'other'클래스(타인=우측정렬), mapZoom(지도 확대),
   #infoResize(정보창 폭·--ifs 글씨 스케일).

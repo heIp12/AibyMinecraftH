@@ -236,6 +236,7 @@ public class MapManager {
     public void giveMapItem(Player p) {
         PlayerData pd = state.getPlayer(p);
         if (pd == null)             { p.sendMessage("§c참여 중인 캐릭터가 없습니다."); return; }
+        if (!mapAvailable())        { p.sendMessage("§7이곳은 지도라 할 것이 없다 — 스스로 길을 익히는 수밖에 없다."); return; }
         if (zoneOrder.isEmpty())    { p.sendMessage("§7아직 지도로 그릴 장소 정보가 없습니다."); return; }
         if (pd.zone != null && !pd.zone.isBlank()) pd.visitedZones.add(pd.zone);
         if (hasOurMap(p)) {
@@ -249,18 +250,79 @@ public class MapManager {
     /** 시작 시 자동 지급 — 이미 소지 중이면 재렌더만 트리거. 에러 메시지 없음. */
     public void giveStartMap(Player p) {
         if (!hasZones()) return;
+        if (!mapAvailable()) return; // ★지도 없는 세계(constraints.map_available=false)★ — 시작 약도 자동지급도 하지 않는다
         lastSig.remove(p.getUniqueId());
         if (hasOurMap(p)) return;
         give(p, buildMapItem(state.getPlayer(p), defaultView(p.getWorld()), "전체"));
     }
 
-    /** &lt;MAP_GRANT&gt; — 스토리에서 전체 지도 입수. */
+    /** 시나리오에 '지도'라는 물건 자체가 존재하는가 — constraints.map_available (기본 true). false면 시작 약도·MAP_GRANT 모두 무효. */
+    public boolean mapAvailable() {
+        JsonObject gdam = state.getGdamData();
+        if (gdam != null && gdam.has("constraints") && gdam.get("constraints").isJsonObject()) {
+            JsonObject c = gdam.getAsJsonObject("constraints");
+            if (c.has("map_available")) {
+                try { return c.get("map_available").getAsBoolean(); } catch (Exception ignored) {}
+            }
+        }
+        return true;
+    }
+
+    /** &lt;MAP_GRANT&gt;(범위 속성 없음) — 스토리에서 전체 지도 입수. */
     public void grantFullMap(Player p) {
         PlayerData pd = state.getPlayer(p); if (pd == null) return;
+        if (!mapAvailable()) return; // 지도 없는 세계 — 입수 자체가 불가
         pd.hasFullMap = true;
         lastSig.remove(p.getUniqueId());
         if (!hasOurMap(p)) give(p, buildMapItem(pd, defaultView(p.getWorld()), "전체"));
         p.sendMessage("§a지도를 입수했습니다. §7전체 구역이 약도에 드러납니다.");
+    }
+
+    /** &lt;MAP_GRANT area/zones&gt; — 스토리에서 일부 구역만 지도에 공개(부분 지도). zoneIds는 resolveGrantZones로 해석된 실제 zone_id들. */
+    public void grantPartialMap(Player p, java.util.List<String> zoneIds) {
+        PlayerData pd = state.getPlayer(p); if (pd == null) return;
+        if (!mapAvailable()) return;
+        if (zoneIds == null || zoneIds.isEmpty()) return;
+        int before = pd.mapRevealedZones.size();
+        for (String z : zoneIds) if (z != null && zoneNames.containsKey(z)) pd.mapRevealedZones.add(z);
+        if (pd.mapRevealedZones.size() == before) return; // 새로 드러난 게 없음
+        lastSig.remove(p.getUniqueId());
+        if (!hasOurMap(p)) give(p, buildMapItem(pd, defaultView(p.getWorld()), "전체"));
+        p.sendMessage("§a지도 일부를 손에 넣었습니다. §7새로 드러난 구역이 약도에 표시됩니다.");
+    }
+
+    /** MAP_GRANT의 area/zones 속성 → 실제 zone_id 목록. area=대분류(그 안 모든 zone), zones=CSV(개별 zone).
+     *  id 직매칭 우선, 실패 시 표시명(zoneNames 값)·대분류명으로도 관대하게 매칭한다. 아무것도 못 찾으면 빈 목록. */
+    public java.util.List<String> resolveGrantZones(String area, String zonesCsv) {
+        java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>();
+        if (zonesCsv != null && !zonesCsv.isBlank()) {
+            for (String tok : zonesCsv.split(",")) {
+                String z = resolveZoneToken(tok.trim());
+                if (z != null) out.add(z);
+            }
+        }
+        if (area != null && !area.isBlank()) {
+            String a = resolveAreaToken(area.trim());
+            if (a != null) { for (String z : zoneOrder) if (a.equals(zoneArea.get(z))) out.add(z); }
+            else { String z = resolveZoneToken(area.trim()); if (z != null) out.add(z); } // area가 사실 zone명일 수도
+        }
+        return new java.util.ArrayList<>(out);
+    }
+
+    /** 토큰(zone_id 또는 표시명)을 zone_id로. 못 찾으면 null. */
+    private String resolveZoneToken(String tok) {
+        if (tok == null || tok.isEmpty()) return null;
+        if (zoneNames.containsKey(tok)) return tok;                     // id 직매칭
+        for (Map.Entry<String, String> e : zoneNames.entrySet())       // 표시명 매칭
+            if (tok.equalsIgnoreCase(e.getValue())) return e.getKey();
+        return null;
+    }
+
+    /** 토큰을 대분류(area)명으로. 못 찾으면 null. */
+    private String resolveAreaToken(String tok) {
+        if (tok == null || tok.isEmpty()) return null;
+        for (String a : areaOrder) if (tok.equalsIgnoreCase(a)) return a;
+        return null;
     }
 
     /**
@@ -430,7 +492,10 @@ public class MapManager {
         //   같은 대분류·realm의 인접 구역(눈에 보이는 길목)'을 넣어두므로, 이것만으로 방문+인접이 그려진다.
         //   (예전엔 단일 구역이면 zoneOrder 전체를 깔아, 한 건물 시나리오에서 안 가본 방까지 다 보였다.)
         Set<String> base = full ? new LinkedHashSet<>(zoneOrder) : new LinkedHashSet<>(pd.visitedZones);
-        if (!full && pd.zone != null && !pd.zone.isEmpty()) base.add(pd.zone); // 현위치는 방문기록 누락에 대비해 항상 포함
+        if (!full) {
+            if (pd.mapRevealedZones != null) base.addAll(pd.mapRevealedZones); // ★부분 지도★ 스토리에서 공개된(안 가본) 구역도 노출
+            if (pd.zone != null && !pd.zone.isEmpty()) base.add(pd.zone); // 현위치는 방문기록 누락에 대비해 항상 포함
+        }
         base.retainAll(zoneNames.keySet());
         if (filterArea != null) base.removeIf(z -> !filterArea.equals(zoneArea.get(z)));
         return base;
@@ -440,6 +505,8 @@ public class MapManager {
         if (full) return new LinkedHashSet<>(areaOrder);
         Set<String> areas = new LinkedHashSet<>();
         for (String z : pd.visitedZones) { String a = zoneArea.get(z); if (a != null) areas.add(a); }
+        if (pd.mapRevealedZones != null)                                  // ★부분 지도★ 공개된 구역이 속한 대분류도 노출
+            for (String z : pd.mapRevealedZones) { String a = zoneArea.get(z); if (a != null) areas.add(a); }
         if (pd.zone != null) { String a = zoneArea.get(pd.zone); if (a != null) areas.add(a); }
         return areas;
     }

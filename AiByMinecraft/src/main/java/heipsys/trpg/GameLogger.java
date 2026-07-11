@@ -172,10 +172,17 @@ public class GameLogger {
 
     /** 능력 결과/설명(능력으로 드러난 정보·서술) — 발동(logAbility)과 구분되는 '결과' 이벤트로 남긴다. */
     public void logAbilityResult(String caster, String ability, String text) {
+        logAbilityResult(caster, ability, text, false);
+    }
+
+    /** overt=true면 ★겉으로 드러난 물리적 행동·판정 결과★(주사위 판정·제압·쓰러짐 등) — 같은 구역 인원이 목격 가능(뷰어 시점 노출).
+     *  false(기본)는 은밀한 감지·정보 능력(탐색·예지·원격감지·질문 등) — 시전자 시점 전용. */
+    public void logAbilityResult(String caster, String ability, String text, boolean overt) {
         if (text == null || text.isBlank()) return;
         JsonObject extra = new JsonObject();
         extra.addProperty("kind", "ability");
         extra.addProperty("phase", "result");
+        if (overt) extra.addProperty("overt", true);
         if (caster  != null && !caster.isEmpty())  extra.addProperty("actor", caster);
         if (ability != null && !ability.isEmpty()) extra.addProperty("ability", ability);
         String cat = "능력" + (ability != null && !ability.isEmpty() ? "(" + ability + ")" : "");

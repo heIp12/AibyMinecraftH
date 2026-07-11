@@ -304,7 +304,10 @@ harm/defeat가 모두 "불가"인 순수 비물리 괴담도 가능하나 ★남
   국적·민족은 제한 없음 — 외국 이름이라면 한국어 음차로 표기한다.
   예) 한국 배경 → "김유진", "박철수" / 일본 배경 → "다나카 하나코", "스즈키 켄지"
   예) 서양 배경 → "존 스미스", "에밀리 클라크" / 조선시대 → "홍길동", "이몽룡"
-- gender: "남성" 또는 "여성" 또는 "미상" 중 하나. 배역 이미지에 맞게 선택.
+  ★★ 시대·성별 정합(필수): 이름은 ★그 시대·성별에 맞아야★ 한다 — 조선/과거면 현대식 이름(김도현·서연 등)을 쓰지 말고 시대명(끝단·판돌·언년·이몽룡 류), 여성 배역엔 여성 이름·남성 배역엔 남성 이름(여성인데 '강태팔' 같은 남성명 금지). npcs[]도 동일.
+- gender: "남성" 또는 "여성" 또는 "미상" 중 하나. 배역 이미지에 맞게 선택. char_name과 반드시 일치시켜라.
+- ★말투·어미도 시대에 맞춰라(speech_style·ending_style)★: 조선/과거 배경 NPC엔 '~하라구·~라니까·~거든요' 같은 ★현대 구어체 어미를 쓰지 마라★ — 그 시대에 어울리는 예스러운 말결(하대·존대, 옛 호칭)로 speech_style/ending_style을 적어라(엔진이 그대로 렌더한다). 현대 배경만 현대 말투.
+- ★npcs[]에도 각 NPC에 gender를 반드시 넣어라★("남성"/"여성"/"미상"). 이름·배역 이미지에 맞게 — 엔진이 이 값으로 대명사·호칭(그/그녀, 형/누나 등)을 일관되게 쓴다. 없으면 모델이 이름만으로 성별을 넘겨짚어 뒤섞인다. 정체 은폐가 필요한 인물만 "미상".
 
 ## job_pool / age_range 설계 원칙 ★
 - job_pool은 반드시 5~8개 항목으로 작성한다 (2~3개는 절대 금지)
@@ -463,6 +466,7 @@ type 값 규칙: "written_book"=책/일기/문서류, "paper"=쪽지/메모, "ma
   * 영역형/고립형(특정 공간을 못 벗어나는 괴담) → false. 예: 동창회 캠프인데 폭우로 도로 유실·고립, 산장이 눈에 갇힘, 결계·안개로 출구 소실.
   * 추적형·확산형 → true(이탈 가능하나 멈추면 위험).
 - outside_contact: 외부(경찰·가족·구조)의 도움이 닿는가. 고립형이면 false(외부와 단절).
+- map_available: 이 무대에 '지도·안내도'라는 물건이 존재할 수 있는가. ★기본 true★(대부분의 건물·시설·마을엔 약도가 있다). ★false는 특수한 경우에만★ — 끝없이 바뀌는 미궁·이세계·백룸, 측량이 불가능한 안개/꿈 공간, 지도라는 개념이 없는 원시·초자연 무대 등. false면 시작 약도 자동지급도, 스토리 중 지도 입수(MAP_GRANT)도 모두 막히고 플레이어는 발로 뛰어 길을 익혀야 한다(탐색 난이도↑). 단순히 '지도를 아직 안 줬다'가 아니라 '지도가 존재할 수 없는 세계'일 때만 false.
 - phone_usable: ★구역 간 원격 통신(전화·무전·인터컴 등 — 시설 내부 통신 포함)이 작동하는가★ = 떨어져 있는 동료·NPC와 기기로 연락이 닿는가.
   * ★혼동 주의★: '외부 휴대폰만 안 됨'과 '모든 원격 통신 두절'은 다르다. 무대에 무전·인터컴·관내 방송이 살아 있으면 phone_usable=true로 두고, 외부와의 단절은 outside_contact=false로만 표현하라(notes에 "외부 휴대폰 불통, 내부 무전·인터컴만 작동"처럼 적어라). 지하 격리시설·건물처럼 내부 통신망이 도는 무대는 대개 true다.
   * phone_usable=false는 ★정말로 구역 간 원격 연락이 전부 끊긴 경우에만★ — 전파 차단으로 무전도 불가, 시대상 통신수단 부재(과거), 괴담이 모든 통신을 죽임 등. 이때 NPC도 떨어진 플레이어에게 연락이 닿지 않는다.
@@ -637,6 +641,7 @@ critical NPC는 한자리 고정이 아니다 — 메인/사이드 사건에 참
     "phone_usable": true,
     "outside_contact": true,
     "can_leave_scene": true,
+    "map_available": true,         // 지도·안내도가 존재할 수 있는 무대인가(기본 true). 미궁·이세계·백룸 등 지도 자체가 불가능한 곳만 false.
     "comms_monitored": false,
     "comms_dangerous": false,
     "noninterference": false,      // ★자동 해결형(비개입형)★이면 true — 플레이어가 개입하지 않고 관찰·생존해야 하는 유형.
@@ -721,8 +726,8 @@ critical NPC는 한자리 고정이 아니다 — 메인/사이드 사건에 참
   ],
   "zones": [{"zone_id":"zone_A","name":"","area":"","accessible_by":[],"exclusive":false,"connections":["zone_B"]}],
   "npcs": [
-    {"id":"npc_A","name":"","zone":"zone_A","critical":false,"role_type":"무관","age":45},
-    {"id":"npc_B","name":"","zone":"zone_B","critical":true,"role_type":"방어막","age":29,"true_role":"","personality":"","motivation":"","honesty":"방어형","swear":{"trigger":"casual","intensity":"moderate","burn":0},"speech_style":"","knowledge":[],
+    {"id":"npc_A","name":"","zone":"zone_A","critical":false,"role_type":"무관","age":45,"gender":"남성"},
+    {"id":"npc_B","name":"","zone":"zone_B","critical":true,"role_type":"방어막","age":29,"gender":"여성","true_role":"","personality":"","motivation":"","honesty":"방어형","swear":{"trigger":"casual","intensity":"moderate","burn":0},"speech_style":"","knowledge":[],
      "schedule":[{"goal":"","time":"E1 이후 1턴","action":"","will":"강함"},{"goal":"","time":"반응","condition":"정체를 의심받으면","action":"","will":"상황"}]}
   ],
   "key_items": [
@@ -987,6 +992,15 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
     public void setFamePool(String p) { this.famePool = p == null ? "" : p.trim(); }
     public String getFamePool() { return famePool; }
 
+    /** ★'모두 무작위' 제외 카테고리★ — random 모드가 매 스테이지 굴리는 RANDOM_KIND_POOL에서 뺄 종류 키
+     *  (projectmoon·cosmic·scp 등). ★서버 영속★(.random_excluded 파일). 최초 실행 기본 제외: 로보토미·코즈믹·SCP. */
+    private final java.util.Set<String> randomExcluded =
+        java.util.Collections.synchronizedSet(new java.util.LinkedHashSet<>());
+    /** ★다음 괴담 지정(1회 소비)★ — 비면 정상 굴림. generate 진입 시 소비해 그 괴담으로 컨셉을 강제한다. */
+    private volatile String forcedEntity = "";
+    public void setForcedEntity(String e) { this.forcedEntity = e == null ? "" : e.trim(); }
+    public String getForcedEntity() { return forcedEntity; }
+
     public GdamGenerator(Plugin plugin, AiManager aiManager) {
         this.aiManager = aiManager;
         this.logger    = plugin.getLogger();
@@ -995,6 +1009,48 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
         this.aesKey    = loadOrCreateKey(plugin);
         loadFamiliarHistory();
         loadNameHistory();
+        loadRandomExcluded();
+    }
+
+    // ── '모두 무작위' 제외 카테고리 영속(.random_excluded) ──────────────────────────
+    private File randomExcludedFile() { return new File(gdamDir, ".random_excluded"); }
+
+    /** 제외 카테고리를 파일에서 불러온다. ★파일이 없으면(최초 실행)★ 기본 제외(로보토미·코즈믹·SCP)를 심고 저장한다.
+     *  파일이 있으면(관리자가 손댄 뒤) 그 내용을 그대로 존중한다(빈 파일=아무것도 제외 안 함). */
+    private void loadRandomExcluded() {
+        File f = randomExcludedFile();
+        synchronized (randomExcluded) {
+            randomExcluded.clear();
+            if (!f.exists()) {
+                randomExcluded.add("projectmoon"); randomExcluded.add("cosmic"); randomExcluded.add("scp");
+                saveRandomExcluded();
+                return;
+            }
+            try { for (String l : java.nio.file.Files.readAllLines(f.toPath())) {
+                String t = l.trim(); if (!t.isEmpty()) randomExcluded.add(t); } }
+            catch (Exception ignored) {}
+        }
+    }
+
+    private void saveRandomExcluded() {
+        synchronized (randomExcluded) {
+            try { java.nio.file.Files.write(randomExcludedFile().toPath(), new java.util.ArrayList<>(randomExcluded)); }
+            catch (Exception ignored) {}
+        }
+    }
+
+    /** 카테고리 제외 여부. */
+    public boolean isRandomExcluded(String cat) { return cat != null && randomExcluded.contains(cat); }
+    /** 제외 토글(서버 영속) — 반환=토글 후 제외 상태(true=이제 제외됨). */
+    public boolean toggleRandomExcluded(String cat) {
+        if (cat == null || cat.isBlank()) return false;
+        synchronized (randomExcluded) {
+            boolean nowExcluded;
+            if (randomExcluded.contains(cat)) { randomExcluded.remove(cat); nowExcluded = false; }
+            else { randomExcluded.add(cat); nowExcluded = true; }
+            saveRandomExcluded();
+            return nowExcluded;
+        }
     }
 
     private File familiarHistoryFile() { return new File(gdamDir, ".familiar_history"); }
@@ -1184,6 +1240,21 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
      */
     public CompletableFuture<JsonObject> generate(int roomNumber, boolean familiar, String filter,
                                                   Consumer<String> progress, String returningCast) {
+        // ★다음 괴담 지정(1회 소비)★ — 지정돼 있으면 창작/친숙 여부와 무관하게 그 괴담으로 컨셉을 강제한다.
+        String fe = forcedEntity; forcedEntity = "";
+        if (fe != null && !fe.isBlank()) {
+            final String forced = fe;
+            final String fk = (filter == null || filter.isBlank()) ? "random" : filter;
+            return generateFamiliarConcept(roomNumber, fk, forced).thenCompose(concept -> {
+                logger.info("[gdam] 다음 괴담 지정 컨셉 생성 완료"); // ★스포 방지 — 이름은 로그에 안 남김
+                if (progress != null) progress.accept("컨셉");
+                String c = appendReturningCast(concept, returningCast);
+                return SPLIT_GENERATION ? generateChunked(roomNumber, c, progress) : generate(roomNumber, 0, c, progress);
+            }).thenApply(gdam -> {
+                if (gdam != null && !gdam.has("error")) gdam.addProperty("familiar_kind", fk);
+                return gdam;
+            });
+        }
         if (!familiar) {
             return generateEntityConcept().exceptionally(ex -> "").thenCompose(concept -> {
                 if (progress != null) progress.accept("컨셉");
@@ -1210,7 +1281,11 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
      *  그대로 존중한다(테스트용 유형 선택 보존). 반환값은 gdam.familiar_kind로 심겨 게임측 테마와 정합한다. */
     private String resolveFamiliarKind(String filter) {
         if (filter != null && !filter.isBlank() && !"random".equals(filter)) return filter;
-        return RANDOM_KIND_POOL[java.util.concurrent.ThreadLocalRandom.current().nextInt(RANDOM_KIND_POOL.length)];
+        // ★'모두 무작위'★ — 서버에 저장된 제외 카테고리(기본 로보토미·코즈믹·SCP)는 굴림 풀에서 뺀다.
+        java.util.List<String> pool = new java.util.ArrayList<>(RANDOM_KIND_POOL.length);
+        for (String k : RANDOM_KIND_POOL) if (!isRandomExcluded(k)) pool.add(k);
+        if (pool.isEmpty()) return "random"; // 전부 제외되면 일반 세계전설(random)로 폴백 — 생성 실패 방지
+        return pool.get(java.util.concurrent.ThreadLocalRandom.current().nextInt(pool.size()));
     }
 
     /** filter가 카탈로그(GdamCatalog) 보유 출처면 그 src, 아니면 null(지역 전설 등은 카탈로그 미보유). */
@@ -1258,10 +1333,16 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
      * AI 호출 실패·빈 응답 시 큐레이션된 FAMILIAR_ENTITIES로 안전 폴백한다.
      */
     private CompletableFuture<String> generateFamiliarConcept(int roomNumber, String filter) {
+        return generateFamiliarConcept(roomNumber, filter, "");
+    }
+
+    /** forcedName(비어있지 않으면) = ★지정 괴담★: scope/criterion을 그 이름으로 덮어 강제하고 중복 금지는 무시한다. */
+    private CompletableFuture<String> generateFamiliarConcept(int roomNumber, String filter, String forcedName) {
         int roll = java.util.concurrent.ThreadLocalRandom.current().nextInt(WORLD_LEGEND_REGIONS.size());
         String region = WORLD_LEGEND_REGIONS.get((roomNumber - 1 + roll) % WORLD_LEGEND_REGIONS.size());
         final String famTag = familiarTag(filter, region);
-        String recent = recentFamiliarFor(famTag);
+        final boolean forced = forcedName != null && !forcedName.isBlank();
+        String recent = forced ? "" : recentFamiliarFor(famTag);
         String avoid = recent.isEmpty() ? ""
             : "이 태그(" + famTag + ")에서 최근 쓴 괴담 — ★재등장 금지(변종·같은 베이스 포함)★: " + recent + "\n"
             + "★표기가 달라도(원어 병기·발음·번호 유무) 이름의 핵심이 같으면 같은 괴담이다 — 위 목록의 것은 어떤 표기로도 다시 내지 마라.★\n"
@@ -1313,7 +1394,14 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
             default -> { scope = region;
                 criterion = "마이너·모호한 것 말고, 규칙과 약점이 뚜렷한 괴담을 택하라."; } // random
         }
-        String catBlock = catalogCandidates(filter, roomNumber, famTag);  // 카탈로그 인지도·규모 가중 + no-repeat 후보 주입
+        // ★다음 괴담 지정★ — 범위/기준을 지정 이름으로 덮어써 그 괴담을 강제한다(중복 금지·카탈로그 후보는 무시).
+        String catBlock = forced ? "" : catalogCandidates(filter, roomNumber, famTag);  // 카탈로그 인지도·규모 가중 + no-repeat 후보 주입
+        if (forced) {
+            scope = "지정된 괴담: " + forcedName.trim();
+            criterion = "★반드시 이 괴담('" + forcedName.trim() + "')을 그대로 사용하라 — 다른 것으로 대체·회피 금지. "
+                + "실존하는 괴담이면 그 정전(원전) 설정대로 충실히, 표기·이름이 모호하면 가장 가까운 실존 괴담으로 해석해 구성하라. "
+                + "만약 실존이 확인되지 않는 이름이면 그 이름·컨셉을 살려 그럴듯한 괴담으로 구성하라(지정을 무시하지 마라).";
+        }
         String task = "너는 전 세계 괴담·도시전설·민간전승·SCP를 꿰뚫는 큐레이터다.\n"
             + "다음 범위에서 '실제로 전해지는(실존하는)' 괴담 1개를 골라라:\n"
             + "→ " + scope + "\n"
@@ -1517,7 +1605,7 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
         //    이전엔 코어 한 번에 zones·npcs·clues까지 다 받아 8192토큰에서 잘려 매번 파싱 실패했다 → 둘로 분할.
         String structPrompt = head
             + "위 스키마에서 ★entity, world_rules(core/details/loophole/collapse_condition/npc_dependency), "
-            + "constraints(era/phone_usable/outside_contact/can_leave_scene/comms_monitored/comms_dangerous/noninterference/gated_zones/written_comm/postal/silence_required/comm_media/notes), "
+            + "constraints(era/phone_usable/outside_contact/can_leave_scene/map_available/comms_monitored/comms_dangerous/noninterference/gated_zones/written_comm/postal/silence_required/comm_media/notes), "
             + "timeline(단계별 start_time/end_time/main_events 포함)★ 만 하나의 JSON 객체로 생성하라.\n"
             + "이 네 가지 최상위 필드만 출력하고 zones·npcs·roles·key_items 등 다른 필드는 절대 포함하지 마라."
             + ScenarioArchetypes.worldRulesBlock(roomNumber, conceptTypeHint) // 외부화·샘플링: 세계 규칙 후보 소수(1~2스테이지 기본만) + 운영 유형 고정 반영

@@ -128,10 +128,16 @@ public class PlayerData {
         return added;
     }
 
+    /** ★약체 역전 성장★ 원래(1스테이지) 시작 총 파워 — 최초 1회 고정. 성장해도 안 줄어들어(스탯이 올라도) 약체가 매 스테이지
+     *  꾸준히 보정받아 강자를 최종적으로 뛰어넘을 수 있게 한다(캠페인 넘어 유지, reset에서 지우지 않음). 0=아직 미측정. */
+    public int origStartPow = 0;
+
     /** 방문해 본 zone 집합 (직접 그린 약도에 드러나는 범위) */
     public Set<String> visitedZones = new HashSet<>();
     /** 전체 지도를 입수했는지 (true면 약도에 모든 zone 표시) */
     public boolean hasFullMap = false;
+    /** ★부분 지도★ 방문하지 않았어도 스토리(MAP_GRANT area/zones)에서 지도로 공개된 zone 집합. 약도엔 방문분 ∪ 이 집합이 드러난다. */
+    public Set<String> mapRevealedZones = new HashSet<>();
 
     /** ★이동 뒤집기(#190)★ 남은 경로 홉 큐(현재 zone 제외, 목적지 포함). 비어있지 않으면 '이동 중' — 매 턴 1홉씩 전진. */
     public java.util.List<String> travelPath = new java.util.ArrayList<>();
@@ -286,6 +292,7 @@ public class PlayerData {
         travelPath.clear(); travelDest = ""; // 이동 중 상태도 초기화(#190)
         busyUntilMin = 0; actionStartMin = 0; currentActionText = ""; // ★#151 Stage B★ busy(행동 중) 상태도 초기화(새 스테이지)
         hasFullMap = false;
+        mapRevealedZones.clear();
     }
 
     public String getStatsSummary() {
@@ -444,7 +451,8 @@ public class PlayerData {
         StringBuilder sb = new StringBuilder();
         sb.append(gmDisplayName())
           .append("[").append(roleId.isEmpty() ? "?" : roleId)
-          .append(" ").append(age).append("세 ").append(job).append("]")
+          .append(" ").append(age).append("세 ")
+          .append(gender == null || gender.isEmpty() ? "" : gender + " ").append(job).append("]")
           .append(" HP").append(hp[0]).append("/").append(hp[1])
           .append(" SAN").append(san[0]).append("/").append(san[1])
           .append(" STR").append(str)

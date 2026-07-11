@@ -137,6 +137,10 @@ public class TRPGGameManager {
     private String familiarFilter = "random";
     /** ★#228★ 다음 스테이지에 '생성' 대신 불러올 특정 괴담(.gdam 씨드) 예약. 빈 값=예약 없음. /trpg next에서 1회 소비. */
     private String reservedNextSeed = "";
+    /** ★다음 괴담 임의 지정★ — 다음 생성(사전생성·즉석)에 강제할 괴담 이름(예: "쿠네쿠네"). 빈 값=지정 없음. 1회 소비. */
+    private String reservedNextEntity = "";
+    /** 다음 괴담 이름을 채팅으로 입력받는 중인 플레이어(설정 다이얼로그 버튼 → 채팅 캡처). */
+    private final java.util.Set<UUID> pendingEntityReserveInput = ConcurrentHashMap.newKeySet();
     /** ★#151 §2.2-4 완급★ 현재 행동 페이스. slow=중요 순간 시간이 천천히(행동 소요 분↓ → 상대적으로 여러 행동). GM <PACE>로 설정. */
     private String actionPace = "normal";
     /** 완급 배수: slow=0.5(행동이 절반의 시간만 소모) / fast=1.6 / normal=1.0. durEff에 곱해 시계·busy 진행에 반영. */
@@ -715,16 +719,31 @@ public class TRPGGameManager {
                 () -> beginSession(initiator, AiManager.Quality.MEDIUM, false, "random"),
                 () -> beginSession(initiator, AiManager.Quality.HIGH,   false, "random"),
                 () -> beginSession(initiator, AiManager.Quality.EFFICIENT, false, "random")),
-            // 친숙 모드 → 괴담 범위(필터) 선택 → 품질 선택 순서
-            () -> dialogMan.showFamiliarFilter(initiator, filter ->
-                dialogMan.showQualityChoice(initiator,
-                    ai.providerLabel(), ai.hourlyCostLabel(AiManager.Quality.LOW, np),
-                    ai.hourlyCostLabel(AiManager.Quality.MEDIUM, np), ai.hourlyCostLabel(AiManager.Quality.HIGH, np),
-                    ai.hourlyCostLabel(AiManager.Quality.EFFICIENT, np),
-                    () -> beginSession(initiator, AiManager.Quality.LOW,    true, filter),
-                    () -> beginSession(initiator, AiManager.Quality.MEDIUM, true, filter),
-                    () -> beginSession(initiator, AiManager.Quality.HIGH,   true, filter),
-                    () -> beginSession(initiator, AiManager.Quality.EFFICIENT, true, filter))));
+            // 친숙 모드 → 괴담 범위(필터) 선택 → ('모두 무작위'면 카테고리 제외 토글) → 품질 선택 순서
+            () -> dialogMan.showFamiliarFilter(initiator, filter -> {
+                if ("random".equals(filter)) showRandomExcludeThenQuality(initiator, np); // 랜덤 → 제외 다이얼로그 먼저
+                else showFamiliarQualityChoice(initiator, np, filter);
+            }));
+    }
+
+    /** 친숙 모드 필터 확정 후 → AI 품질 선택 → beginSession(친숙, filter). */
+    private void showFamiliarQualityChoice(Player initiator, int np, String filter) {
+        dialogMan.showQualityChoice(initiator,
+            ai.providerLabel(), ai.hourlyCostLabel(AiManager.Quality.LOW, np),
+            ai.hourlyCostLabel(AiManager.Quality.MEDIUM, np), ai.hourlyCostLabel(AiManager.Quality.HIGH, np),
+            ai.hourlyCostLabel(AiManager.Quality.EFFICIENT, np),
+            () -> beginSession(initiator, AiManager.Quality.LOW,    true, filter),
+            () -> beginSession(initiator, AiManager.Quality.MEDIUM, true, filter),
+            () -> beginSession(initiator, AiManager.Quality.HIGH,   true, filter),
+            () -> beginSession(initiator, AiManager.Quality.EFFICIENT, true, filter));
+    }
+
+    /** ★'모두 무작위' 제외 토글★ — 카테고리별 포함/제외(서버 영속) → '이대로 시작' → 품질 선택. 토글하면 이 창을 다시 연다. */
+    private void showRandomExcludeThenQuality(Player initiator, int np) {
+        dialogMan.showRandomExcludeChoice(initiator,
+            cat -> gdamGen.isRandomExcluded(cat),
+            cat -> { gdamGen.toggleRandomExcluded(cat); showRandomExcludeThenQuality(initiator, np); },
+            () -> showFamiliarQualityChoice(initiator, np, "random"));
     }
 
     private static String familiarFilterLabel(String key) {
@@ -778,6 +797,7 @@ public class TRPGGameManager {
         // 비용 집계 시작점: 새 세션이면 세션·스테이지 모두, 아니면 스테이지만 0부터(생성 비용 포함)
         if (freshSession) ai.markSessionStart(); else ai.markStageStart();
 
+        applyReservedEntity(); // ★다음 괴담 지정★이 걸려 있으면 이번(시작) 시나리오를 그 괴담으로(1회 소비)
         gdamGen.generate(room, familiarMode, familiarFilter, step -> plugin.getServer().getScheduler().runTask(plugin, () -> {
             switch (step) {
                 case "컨셉" -> stepLoadingBar("컨셉 생성 완료", 0.20f);
@@ -1289,6 +1309,14 @@ public class TRPGGameManager {
                         + (conceptTypeHint.isEmpty() ? "§7무작위(기본)" : "§d" + conceptTypeHint) + " §7— 다음 생성부터 적용");
                 });
             }
+        } else if (key.equals("entity") || key.equals("괴담지정") || key.equals("지정") || key.equals("다음괴담")) {
+            // ★다음 괴담 임의 지정★ — 인자 있으면 그 이름으로(해제: off/none/없음), 없으면 채팅 입력 모드.
+            if (sub.length >= 2) {
+                setReservedNextEntity(player, String.join(" ", java.util.Arrays.copyOfRange(sub, 1, sub.length)).trim());
+            } else {
+                pendingEntityReserveInput.add(player.getUniqueId());
+                player.sendMessage("§6[다음 괴담] 채팅으로 지정할 괴담 이름을 입력하세요. §7(예: §f쿠네쿠네§7 · 취소: §f취소§7 · 해제: §foff§7)");
+            }
         } else if (key.equals("turnmode") || key.equals("턴모드") || key.equals("턴")) {
             // ★#151★ 턴 진행 방식: 0=고정(턴당 minutesPerTurn) / 1=가변(행동 DUR로 시계 진행, 기본) / 2=비동기 busy(각자 소요만큼 '행동 중' 잠금 → 시계 점프).
             if (sub.length >= 2) {
@@ -1357,6 +1385,7 @@ public class TRPGGameManager {
     /** 현재 시작 설정 — 다이얼로그로 열어 자동생성·시작 스테이지·괴담 유형을 클릭으로 고른다(/trpg setting, /trpg s s). */
     public void openStartSettings(Player player) {
         dialogMan.showStartSettings(player, autoPregen, startStage, conceptTypeHint, gdamGen.getFamePool(),
+            reservedNextEntityLabel(),
             state.isGroupTurn(),
             () -> { // 자동 사전생성 토글
                 autoPregen = !autoPregen;
@@ -1390,6 +1419,10 @@ public class TRPGGameManager {
                     ? "§a단체턴 §7(전원 행동 후 GM 1회 통합 — 일관성↑·비용↓)"
                     : "§e개별턴 §7(행동마다 즉시 GM 호출 — 응답 빠름·비용↑)"));
                 openStartSettings(player);
+            },
+            () -> { // ★다음 괴담 지정★ — 채팅으로 이름 입력받기(취소: '취소', 해제: 'off')
+                pendingEntityReserveInput.add(player.getUniqueId());
+                player.sendMessage("§6[다음 괴담] 채팅으로 지정할 괴담 이름을 입력하세요. §7(예: §f쿠네쿠네§7 · 취소: §f취소§7 · 해제: §foff§7)");
             });
     }
 
@@ -1494,6 +1527,7 @@ public class TRPGGameManager {
         int target = current + 1;
         if (pregenFuture != null && pregenRoom == target) return; // 이미 진행/완료된 것이 있음
         pregenRoom   = target;
+        applyReservedEntity(); // ★다음 괴담 지정★이 걸려 있으면 이 사전생성이 그 괴담으로 나오게 넘긴다(1회 소비)
         pregenFuture = gdamGen.generate(target, familiarMode, familiarFilter, step -> {}, castHintFor(target)) // 진행 콜백 없음(조용히), 피날레면 복귀 캐스트 시드
             .exceptionally(ex -> {
                 plugin.getLogger().warning("[gdam] 다음 스테이지 사전 생성 실패 — /trpg next에서 즉석 생성으로 폴백: "
@@ -1528,6 +1562,49 @@ public class TRPGGameManager {
         gameLogger.logEvent("[예약] 다음 스테이지 예약 설정: 시드 " + s);
         admin.sendMessage("§a[예약] 다음 스테이지(/trpg next)에 시드 §f" + s + " §a시나리오를 불러오도록 예약했습니다.");
         admin.sendMessage("§7  · 1회성(넘긴 뒤 자동 해제) · 취소 §f/trpg reserve off §7· 스포일러 방지로 괴담 이름은 표시하지 않습니다.");
+    }
+
+    /** ★다음 괴담 지정★이 걸려 있으면 생성기에 넘기고 1회 소비한다(각 생성 직전에 호출). */
+    private void applyReservedEntity() {
+        if (reservedNextEntity != null && !reservedNextEntity.isBlank()) {
+            gdamGen.setForcedEntity(reservedNextEntity);
+            reservedNextEntity = "";
+        }
+    }
+
+    /** 현재 지정된 '다음 괴담' 이름(없으면 ""). 설정 다이얼로그 라벨용 — 아직 미소비(reservedNextEntity)든, 생성기로
+     *  넘어가 소비 대기 중(forcedEntity)이든 둘 중 하나라도 있으면 그 이름을 보여준다. */
+    public String reservedNextEntityLabel() {
+        if (reservedNextEntity != null && !reservedNextEntity.isEmpty()) return reservedNextEntity;
+        String fe = gdamGen.getForcedEntity();
+        return fe == null ? "" : fe;
+    }
+
+    /**
+     * ★다음 괴담 임의 지정★ — 다음 생성(사전생성·즉석·새 게임 시작)에 강제할 괴담 이름을 지정한다(예: "쿠네쿠네").
+     * 1회성(적용 후 자동 해제). 해제: 빈/off/none/없음. 미리 만들어 둔 사전생성분은 버려 지정 괴담으로 다시 만든다.
+     */
+    public void setReservedNextEntity(Player admin, String name) {
+        String n = name == null ? "" : name.trim();
+        boolean clear = n.isEmpty() || n.equalsIgnoreCase("off") || n.equalsIgnoreCase("none")
+            || n.equals("없음") || n.equals("해제") || n.equals("취소");
+        if (clear) {
+            reservedNextEntity = "";
+            gdamGen.setForcedEntity("");
+            clearPregen();                         // 지정 괴담용 사전생성분 폐기 → 정상 무작위로 되돌림
+            if (isActive()) startPregenNext();     // 정상 생성으로 다시 사전생성
+            if (admin != null) admin.sendMessage("§7[다음 괴담] 지정을 해제했습니다(정상 생성으로 진행).");
+            return;
+        }
+        reservedNextEntity = n;
+        gdamGen.setForcedEntity("");               // 아직 소비 전 — 이전 잔여 강제값 정리(생성 직전 applyReservedEntity가 다시 넣음)
+        clearPregen();                             // 지정 전 만들어 둔(정상) 사전생성분 폐기 → 지정 괴담으로 다시 생성
+        if (isActive()) startPregenNext();         // ★즉시 지정 괴담으로 사전생성(applyReservedEntity가 소비)
+        gameLogger.logEvent("[다음 괴담] 지정: " + n);
+        if (admin != null) {
+            admin.sendMessage("§a[다음 괴담] 다음 생성 괴담을 §f" + n + " §a(으)로 지정했습니다.");
+            admin.sendMessage("§7  · 다음 스테이지(또는 새 게임 시작)에 1회 적용 후 자동 해제 · 해제 §f/trpg setting entity off");
+        }
     }
 
     /**
@@ -1567,6 +1644,7 @@ public class TRPGGameManager {
 
     /** 로딩바 진행 콜백을 단 즉석 시나리오 생성(친숙 모드 필터 유지). */
     private CompletableFuture<JsonObject> freshGenerate(int nextRoom) {
+        applyReservedEntity(); // ★다음 괴담 지정★ 1회 소비(사전생성 없이 즉석 생성할 때)
         return gdamGen.generate(nextRoom, familiarMode, familiarFilter, step ->
             plugin.getServer().getScheduler().runTask(plugin, () -> {
                 switch (step) {
@@ -1590,6 +1668,13 @@ public class TRPGGameManager {
     // ══════════════════════════════════════════════════════════════
 
     public void handleChat(Player player, String message) {
+        // ★다음 괴담 지정★ 채팅 입력 대기 중이면 이 입력을 괴담 이름으로 소비한다(게임 상태와 무관하게 최우선).
+        if (pendingEntityReserveInput.remove(player.getUniqueId())) {
+            String m = message == null ? "" : message.trim();
+            if (m.isEmpty() || m.equals("취소") || m.equalsIgnoreCase("cancel")) player.sendMessage("§7[다음 괴담] 입력을 취소했습니다.");
+            else setReservedNextEntity(player, m);
+            return;
+        }
         switch (currentPhase) {
             case CHAR_CREATION -> handleCharCreationChat(player, message);
             case DAILY, HORROR -> handleGameChat(player, message);
@@ -2989,14 +3074,25 @@ public class TRPGGameManager {
                     bmp.sendMessage("§c[이동 저지] " + (bm[1] == null || bm[1].isEmpty() ? "무언가가 앞을 막아섭니다." : bm[1]));
             }
 
-            // 5d-2. 지도 입수(전체 공개) — 플레이어가 스토리에서 지도를 구함
-            ai.parseMapGrantTags(raw).forEach(pName -> {
-                PlayerData mp = findAnyByName(pName);
-                if (mp == null) return;
-                Player mpp = Bukkit.getPlayer(mp.uuid);
-                if (mpp != null && mpp.isOnline()) mapMan.grantFullMap(mpp);
-                else mp.hasFullMap = true;
-            });
+            // 5d-2. 지도 입수(전체 또는 부분 공개) — 플레이어가 스토리에서 지도(전체/일부)를 구함.
+            //   area="대분류"/zones="a,b,c" 속성이 있으면 그 구역만(부분 지도), 없으면 전체 입수. 지도 없는 세계(map_available=false)면 통째로 무시.
+            if (mapMan.mapAvailable()) {
+                for (String[] g : ai.parseMapGrantTags(raw)) {
+                    PlayerData mp = findAnyByName(g[0]);
+                    if (mp == null) continue;
+                    Player mpp = Bukkit.getPlayer(mp.uuid);
+                    boolean online = mpp != null && mpp.isOnline();
+                    boolean partial = !g[1].isEmpty() || !g[2].isEmpty();
+                    if (partial) {
+                        java.util.List<String> zoneIds = mapMan.resolveGrantZones(g[1], g[2]);
+                        if (online) mapMan.grantPartialMap(mpp, zoneIds);
+                        else mp.mapRevealedZones.addAll(zoneIds);
+                    } else {
+                        if (online) mapMan.grantFullMap(mpp);
+                        else mp.hasFullMap = true;
+                    }
+                }
+            }
 
             // 5d-3. ★쪽지 두고가기(#211)★: 플레이어가 '장소에 쪽지를 쓴다/둔다'고 선언하면 GM이 <DROP_NOTE>로 실물 쪽지를
             //   그 구역에 남긴다(그곳에 오는 사람·괴담이 발견). @통신으로 부치는 건 통신일 뿐 실물이 아니다 — 장소에 둘 때만 실물.
@@ -3839,17 +3935,27 @@ public class TRPGGameManager {
             player.sendMessage("§e⚠ 이번 스테이지에서 이미 " + trait.usedThisStage + "회 사용 — 효과가 감소하거나 역효과가 있을 수 있습니다.");
         }
 
-        // Paper Dialog로 발동 선택지 표시
-        dialogMan.showTraitActivation(player, trait, zoneDisplayName(pd.zone),
-            () -> commitTrait(player),
-            () -> player.sendMessage("§7채팅으로 행동을 입력하면 특성과 함께 처리됩니다. §8[취소: /trpg _trait_cancel]")
-        );
+        // ★시스템 효과 능력(행운 주사위·탐색·버프·순간이동 등 정해진 기계 효과)은 '맡기기/직접입력' 선택 없이 즉시 발동★
+        //   — 효과가 이미 정해져 있어 커스텀 행동이 무의미하다(행운=행동 아님, 탐색=행동 그 자체). commitTrait가
+        //   handleSystemTraitActivation으로 넘겨 대가·턴까지 처리한다. 입력형 능력은 위에서 이미 전용 입력창으로 갔다.
+        //   ★순수 서술형 특성(effect_type 없음)만★ 맡기기/직접입력 선택을 제공한다(자유 행동 서술이 의미 있는 경우).
+        if (systemEffect) {
+            commitTrait(player);
+        } else {
+            dialogMan.showTraitActivation(player, trait, zoneDisplayName(pd.zone),
+                () -> commitTrait(player),
+                () -> player.sendMessage("§7채팅으로 행동을 입력하면 특성과 함께 처리됩니다. §8[취소: /trpg _trait_cancel]")
+            );
+        }
     }
 
     /** 입력형/정보형 능력 — '맡기기/직접입력' 선택 없이 바로 다이얼로그 입력창으로 받는 효과들. */
     private static boolean isInputAbility(TraitData t) {
         return switch (t.effectType == null ? "" : t.effectType) {
-            case "ai_query", "area_scan", "remote_sense", "foresight", "link_ally" -> true;
+            case "ai_query", "area_scan", "remote_sense", "foresight", "link_ally",
+                 // 신규 입력형(대상·내용을 다이얼로그로 받는다)
+                 "fear_transfer", "debt", "name_steal", "witness_pact", "feed_entity",
+                 "last_words", "vanish", "illusion", "item_create" -> true;
             default -> false;
         };
     }
@@ -3914,7 +4020,7 @@ public class TRPGGameManager {
         if (stun > 0) {
             stunTurns.merge(pd.uuid, stun, Math::max); // 행동불능 강제(입력 차단)
             if (p != null && p.isOnline()) p.sendMessage("§c[대가] 다음 " + stun + "턴간 스스로 행동할 수 없습니다.");
-            gameLogger.logAbilityResult(commDisplayName(pd), td.name, "대가: 행동불능 " + stun + "턴");
+            gameLogger.logAbilityResult(commDisplayName(pd), td.name, "대가: 행동불능 " + stun + "턴", true); // overt=쓰러짐이 눈에 보임
         }
         StringBuilder sb = new StringBuilder("[능력 대가] " + commDisplayName(pd) + "의 '" + td.name + "' 발동 대가");
         sb.append(cost.isEmpty() ? "가 발생했다. " : ": " + cost + ". ");
@@ -4023,8 +4129,252 @@ public class TRPGGameManager {
             case DOMINATE      -> activateDominate(player, pd, td);
             case FATE          -> activateFate(player, pd, td);
             case GROUP_REWIND  -> activateGroupRewind(player, pd, td);
+            case TRUTH_READ    -> activateTruthRead(player, pd, td);
+            case PITFALL_REVEAL -> activatePitfallReveal(player, pd, td);
+            case MAD_CLARITY   -> activateMadClarity(player, pd, td);
+            case FEAR_TRANSFER -> activateFearTransfer(player, pd, td);
+            case DEBT          -> activateDebt(player, pd, td);
+            case NAME_STEAL    -> activateNameSteal(player, pd, td);
+            case WITNESS_PACT  -> activateWitnessPact(player, pd, td);
+            case FUTURE_SIGHT  -> activateFutureSight(player, pd, td);
+            case CAUSAL_DEBT   -> activateCausalDebt(player, pd, td);
+            case RULE_INVERT   -> activateRuleInvert(player, pd, td);
+            case FEED_ENTITY   -> activateFeedEntity(player, pd, td);
+            case LAST_WORDS    -> activateLastWords(player, pd, td);
+            case EMPTY_CHAIR   -> activateEmptyChair(player, pd, td);
+            case VANISH        -> activateVanish(player, pd, td);
+            case ILLUSION      -> activateIllusion(player, pd, td);
+            case ITEM_CREATE   -> activateItemCreate(player, pd, td);
             default            -> player.sendMessage("§7이 특성은 상시(패시브)로 적용됩니다.");
         }
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  신규 특이 능력 — 전부 엔진 최소 처리 + GM 지시 주입(세부·강도·결과는 GM 재량)
+    // ──────────────────────────────────────────────────────────────
+
+    /** 반향 — 가장 최근 NPC 발언의 진위(진실/거짓/오염)를 뉘앙스로 드러낸다. 남용 시 NPC 함구. */
+    private void activateTruthRead(Player player, PlayerData pd, TraitData td) {
+        ai.injectGmSystem("[능력 발동] " + pd.gmDisplayName() + "이(가) '" + td.name + "'으로 ★가장 최근 NPC의 발언★의 진위를 읽는다. "
+            + "그 발언이 시나리오 사실에 비추어 진실/거짓/반쯤 진실/괴담에 오염된 정보 중 무엇인지 ★그 인물의 태도·목소리·정황의 미묘한 결로★ 은근히 드러내라(색·수치·확언 금지, 뉘앙스로). "
+            + "여러 번 썼다면 그 NPC가 '읽히는' 걸 느껴 경계·함구할 수 있다. 세부 판정·서술 강도는 GM 재량.");
+        applyTraitUsed(pd, td.id, state.getCurrentTurn());
+        player.sendMessage("§7[" + td.name + "] 방금 그 말의 결을 읽습니다...");
+    }
+
+    /** 오답노트 — '절대 하면 안 되는 것' 하나를 확정 폭로. 대가로 위협 소폭 상승(표적화). */
+    private void activatePitfallReveal(Player player, PlayerData pd, TraitData td) {
+        state.adjustThreat(3);
+        ai.injectGmSystem("[능력 발동] " + pd.gmDisplayName() + "이(가) '" + td.name + "'으로 이번 사건의 '★절대 하면 안 되는 것★' 하나를 꿰뚫어 본다. "
+            + "가짜 규칙·함정 지시·치명 금기 중 ★진짜 하나★를 골라 확정으로(애매하지 않게) 짚어 줘라 — 단 그것 하나만(정답 전체·해결절차는 금지). "
+            + "그 대가로 괴담이 '규칙을 아는 자'인 발동자를 더 주시한다(다음 전개에 은근한 표적화). 어느 함정을 폭로할지는 GM 재량.");
+        applyTraitUsed(pd, td.id, state.getCurrentTurn());
+        player.sendMessage("§7[" + td.name + "] 하면 안 될 것 하나를 꿰뚫어 봅니다...");
+    }
+
+    /** 광기의 명료 — 정신력을 태워 괴담 규칙 조각 하나를 본다. SAN 낮을수록 선명. */
+    private void activateMadClarity(Player player, PlayerData pd, TraitData td) {
+        int cost = Math.max(1, Math.min((int) Math.ceil(pd.san[1] * 0.5), td.param("cost", 5)));
+        int before = pd.san[0];
+        pd.san[0] = Math.max(0, pd.san[0] - cost);
+        updateAllScoreboards();
+        gameLogger.logVital(pd.gmDisplayName(), 0, pd.hp[0], pd.hp[1], pd.san[0] - before, pd.san[0], pd.san[1], "능력 대가: " + td.name);
+        boolean lowSan = pd.san[0] <= Math.max(1, pd.san[1] / 3);
+        ai.injectGmSystem("[능력 발동] " + pd.gmDisplayName() + "이(가) 정신력을 태워 '" + td.name + "'으로 괴담(" + getEntityName() + ")의 ★규칙 조각 하나★를 또렷이 본다. "
+            + (lowSan ? "지금 정신이 벼랑 끝이라 통찰이 ★유난히 선명★하다 — 규칙의 급소에 더 가깝게 짚어라. " : "규칙의 한 조각을 짧고 또렷하게 짚어라(정답 전체는 금지). ")
+            + "광기와 통찰이 뒤섞인 어조로. 무엇을 보여줄지는 GM 재량.");
+        applyTraitUsed(pd, td.id, state.getCurrentTurn());
+        player.sendMessage("§d[" + td.name + "] 정신력 " + cost + " 소모 — 광기 속에서 무언가 또렷해집니다...");
+    }
+
+    /** 공포 전가 — 자신의 공포를 대상에게 떠넘긴다(아군=위축·NPC=도주·괴담=주춤+분노). */
+    private void activateFearTransfer(Player player, PlayerData pd, TraitData td) {
+        dialogMan.showTextInput(player, Component.text("[" + td.name + "] 공포 전가"),
+            Component.text("누구에게 공포를 떠넘길지 입력하세요 (아군 이름·NPC 이름·'괴담')."),
+            "대상", Component.text("전가하기"),
+            target -> {
+                String t = target == null ? "" : target.trim();
+                if (t.contains("괴담") || t.equalsIgnoreCase(getEntityName())) state.adjustAnger(8, "fear_transfer 도발");
+                ai.injectGmSystem("[능력 발동] " + pd.gmDisplayName() + "이(가) '" + td.name + "'으로 자신의 공포를 ★" + t + "★에게 떠넘긴다. "
+                    + "아군이면 그가 갑자기 위축·주저(잠깐의 배신적 효과), 적/중립 NPC면 도주·붕괴, ★괴담이면 잠깐 주춤하되 곧 분노가 치솟는다(도발)★. "
+                    + "대상·상황에 맞는 반응과 강도는 GM 재량으로 서술하라.");
+                applyTraitUsed(pd, td.id, state.getCurrentTurn());
+                player.sendMessage("§7[" + td.name + "] " + t + "에게 공포를 떠넘깁니다...");
+            });
+    }
+
+    /** 빚문서 — 도운 아군이 빚을 진다(위기 시 1회 강제 조력). */
+    private void activateDebt(Player player, PlayerData pd, TraitData td) {
+        dialogMan.showTextInput(player, Component.text("[" + td.name + "] 빚문서"),
+            Component.text("누구에게 '빚'을 지울지 아군 이름을 입력하세요."),
+            "아군 이름", Component.text("빚 지우기"),
+            target -> {
+                String t = target == null ? "" : target.trim();
+                ai.injectGmSystem("[능력 발동] " + pd.gmDisplayName() + "이(가) '" + td.name + "'으로 ★" + t + "★에게 갚아야 할 '빚'을 지운다. "
+                    + "이후 발동자가 위기(부상·표적·고립 등)에 처하면 " + t + "은(는) ★1회 강제로 그를 돕게 된다★(주저해도 몸이 움직인다). "
+                    + "빚을 저버리고 돕지 않으면 " + t + "에게 불이익(낙인·불운)이 따른다. 언제·어떻게 빚이 발동하는지는 GM이 상황에 맞게 판정하라.");
+                applyTraitUsed(pd, td.id, state.getCurrentTurn());
+                player.sendMessage("§7[" + td.name + "] " + t + "에게 빚을 지웠습니다.");
+            });
+    }
+
+    /** 이름 도둑 — NPC 이름을 빌려 그 사람 행세(발각 시 대가). */
+    private void activateNameSteal(Player player, PlayerData pd, TraitData td) {
+        int turns = Math.max(1, Math.min(3, td.param("turns", 2)));
+        dialogMan.showTextInput(player, Component.text("[" + td.name + "] 이름 도둑"),
+            Component.text("누구의 이름을 빌릴지 NPC 이름을 입력하세요."),
+            "NPC 이름", Component.text("행세하기"),
+            target -> {
+                String t = target == null ? "" : target.trim();
+                ai.injectGmSystem("[능력 발동] " + pd.gmDisplayName() + "이(가) '" + td.name + "'으로 약 " + turns + "턴간 ★" + t + "★의 이름을 빌려 그 사람 행세를 한다 — "
+                    + "다른 인물들은 발동자를 " + t + "(으)로 인식·대우한다. 단 ★모순(그 사람을 아는 이가 눈치채거나 발동자가 티를 내면) 발각★될 수 있고, 발각 시 큰 대가·표적화가 따른다. "
+                    + "누가 언제 의심하는지, 사칭이 통하는 범위는 GM 재량.");
+                applyTraitUsed(pd, td.id, state.getCurrentTurn());
+                player.sendMessage("§7[" + td.name + "] 이제 '" + t + "' 행세를 합니다 (" + turns + "턴).");
+            });
+    }
+
+    /** 증인 계약 — 두 대상 간 강제 계약(먼저 어긴 쪽이 괴담 표적). */
+    private void activateWitnessPact(Player player, PlayerData pd, TraitData td) {
+        dialogMan.showTextInput(player, Component.text("[" + td.name + "] 증인 계약"),
+            Component.text("두 대상과 계약 내용을 입력하세요 (예: 'A와 B — 서로 배신하지 않는다')."),
+            "계약 내용", Component.text("계약 성립"),
+            terms -> {
+                String tm = terms == null ? "" : terms.trim();
+                ai.injectGmSystem("[능력 발동] " + pd.gmDisplayName() + "이(가) '" + td.name + "'으로 강제 계약을 성립시킨다 — 내용: \"" + tm + "\". "
+                    + "이 계약은 초자연적 구속력을 지녀 ★먼저 어긴 쪽이 괴담의 표적★이 된다. 계약 당사자·성립 여부·위반 판정과 그 결과는 GM이 상황에 맞게 다룬다(무리한 계약이면 성립 안 될 수도).");
+                applyTraitUsed(pd, td.id, state.getCurrentTurn());
+                player.sendMessage("§7[" + td.name + "] 계약을 성립시켰습니다.");
+            });
+    }
+
+    /** 미래시 — 확정된 다음 사건(다가오는 전개)을 예지로 미리 본다. */
+    private void activateFutureSight(Player player, PlayerData pd, TraitData td) {
+        int depth = Math.max(1, Math.min(3, td.param("depth", 2)));
+        ai.injectGmSystem(GAME_FICTION_FRAME + "[능력 발동] " + pd.gmDisplayName() + "이(가) '" + td.name + "'으로 ★확정된 미래★를 미리 본다 — "
+            + "곧 반드시 닥칠 ★다음 사건/전개(다가오는 타임라인 국면)★를 생생한 예지·전조로 보여줘라. 발동자가 '만드는' 미래가 아니라 '이미 정해진' 미래를 보는 것이다. "
+            + "선명도(depth=" + depth + "): 1=흐릿한 조짐·단편, 2=한 장면, 3=또렷한 전조. ★정답·해결법은 제외하고, 무슨 일이 닥치는지(위험·사건)를★ 예지로 전한다. "
+            + "실제 전개의 세부·시점은 GM이 조정할 수 있다(예지는 큰 줄기, 세부는 유동적).");
+        applyTraitUsed(pd, td.id, state.getCurrentTurn());
+        player.sendMessage("§b[" + td.name + "] 정해진 미래의 한 조각이 스칩니다...");
+    }
+
+    /** 인과 담보 — 다음 행동 확정 대성공, 대가는 N턴 뒤 재앙(후불). */
+    private void activateCausalDebt(Player player, PlayerData pd, TraitData td) {
+        int turns = Math.max(2, Math.min(4, td.param("turns", 3)));
+        ai.injectGmSystem("[능력 발동] " + pd.gmDisplayName() + "이(가) '" + td.name + "'으로 인과를 담보 잡힌다 — ★다음 행동 1회를 확정 대성공★으로 판정하라(주사위·실패 무시, 극적으로 성공). "
+            + "대신 그 값이 '미래의 빚'으로 남아, 약 " + turns + "턴 뒤 ★그만큼의 재앙★이 발동자에게 자동으로 닥친다(얻은 이득에 비례하는 대가 — 부상·표적·자원 손실·사건 악화 등). "
+            + "재앙의 형태·정확한 시점은 GM이 상황에 맞게 정하되 반드시 닥치게 하라(공짜 아님).");
+        applyTraitUsed(pd, td.id, state.getCurrentTurn());
+        player.sendMessage("§6[" + td.name + "] 다음 행동은 반드시 성공합니다 — 대가는 " + turns + "턴 뒤에...");
+    }
+
+    /** 규칙 뒤집기 — 괴담 규칙 1개를 N턴 거꾸로(대가: 나머지 규칙 격화·분노↑). */
+    private void activateRuleInvert(Player player, PlayerData pd, TraitData td) {
+        int turns = Math.max(1, Math.min(2, td.param("turns", 1)));
+        state.adjustAnger(10, "rule_invert 규칙 왜곡");
+        ai.injectGmSystem("[능력 발동] " + pd.gmDisplayName() + "이(가) '" + td.name + "'으로 괴담(" + getEntityName() + ")의 규칙 1개를 " + turns + "턴간 ★거꾸로 뒤집는다★ "
+            + "(예: '보면 죽는다'→'봐야 산다', '소리 내면 안 된다'→'소리 내야 안전하다'). 어떤 규칙을 뒤집을지는 GM이 이 시나리오에 맞게 고른다. "
+            + "판을 통째로 엎는 강수인 만큼 그 대가로 ★나머지 규칙은 더 사납고 치명적★이 되고 괴담의 분노가 치솟는다. 지속 후 원래대로 돌아온다.");
+        applyTraitUsed(pd, td.id, state.getCurrentTurn());
+        player.sendMessage("§5[" + td.name + "] 규칙 하나가 " + turns + "턴간 거꾸로 뒤집힙니다!");
+    }
+
+    /** 먹이 주기 — 제물로 괴담을 잠시 진정(대가: 괴담 성장). */
+    private void activateFeedEntity(Player player, PlayerData pd, TraitData td) {
+        int turns = Math.max(1, Math.min(2, td.param("turns", 1)));
+        dialogMan.showTextInput(player, Component.text("[" + td.name + "] 먹이 주기"),
+            Component.text("괴담에게 무엇을 바칠지 입력하세요 (단서·물건·기억 등)."),
+            "바칠 것", Component.text("바치기"),
+            offer -> {
+                String of = offer == null ? "" : offer.trim();
+                state.adjustThreat(-8);
+                ai.injectGmSystem("[능력 발동] " + pd.gmDisplayName() + "이(가) '" + td.name + "'으로 괴담(" + getEntityName() + ")에게 ★" + of + "★을(를) 바쳐 약 " + turns + "턴간 온순하게 만든다 — "
+                    + "그동안 괴담은 공격·추적을 멈춘다. ★단 괴담이 그 제물을 먹고 성장한다(양날)★ — 이후 더 강해지거나 새 힘·정보를 얻은 듯 굴게 하라. "
+                    + "무엇을 얼마나 받아들이는지, 성장의 형태는 GM 재량(부적절한 제물이면 안 통할 수도).");
+                applyTraitUsed(pd, td.id, state.getCurrentTurn());
+                player.sendMessage("§7[" + td.name + "] " + of + "을(를) 바쳐 잠시 진정시킵니다...");
+            });
+    }
+
+    /** 마지막 유언 — 확정 단서를 남겨 아군/다음 스테이지에 전달. */
+    private void activateLastWords(Player player, PlayerData pd, TraitData td) {
+        dialogMan.showTextInput(player, Component.text("[" + td.name + "] 마지막 유언"),
+            Component.text("남길 유언 한마디를 입력하세요 — 확정 단서로 전달됩니다."),
+            "유언", Component.text("남기기"),
+            words -> {
+                String w = words == null ? "" : words.trim();
+                ai.injectGmSystem("[능력 발동] " + pd.gmDisplayName() + "이(가) '" + td.name + "'으로 유언을 남긴다: \"" + w + "\". "
+                    + "이 말은 ★확정 단서★로 가까운 아군(또는 다음 스테이지의 누군가)에게 반드시 전달된다 — 쪽지·환청·기록 등 상황에 맞는 방법으로 GM이 전하라. "
+                    + "발동자가 죽기 직전이라면 그 죽음을 정보로 승화시켜라. 전달 방법·수신자는 GM 재량이되 내용은 왜곡 없이 전한다.");
+                applyTraitUsed(pd, td.id, state.getCurrentTurn());
+                player.sendMessage("§7[" + td.name + "] 유언을 남깁니다 — 반드시 누군가에게 닿습니다.");
+            });
+    }
+
+    /** 빈 의자 — 허수 인원으로 괴담의 표적을 분산(N턴). */
+    private void activateEmptyChair(Player player, PlayerData pd, TraitData td) {
+        int turns = Math.max(2, Math.min(4, td.param("turns", 3)));
+        ai.injectGmSystem("[능력 발동] " + pd.gmDisplayName() + "이(가) '" + td.name + "'으로 파티에 보이지 않는 '한 명'을 더한다 — 약 " + turns + "턴간 괴담·적대 존재가 ★인원수를 착각★해 "
+            + "표적·추적을 헛것(빈 자리)에게 분산시킨다(발동자·아군이 노려질 확률↓, 헛발질 유도). 어떻게 인원을 오인하고 표적이 어디로 새는지는 GM이 자연스럽게 서술하라(지나친 만능은 금지).");
+        applyTraitUsed(pd, td.id, state.getCurrentTurn());
+        player.sendMessage("§7[" + td.name + "] 보이지 않는 한 명이 자리를 채웁니다 (" + turns + "턴).");
+    }
+
+    /** 소실 — 지정 대상의 인식에서 N턴 사라짐. S급이면 괴담에게도 적용. */
+    private void activateVanish(Player player, PlayerData pd, TraitData td) {
+        int turns = Math.max(1, Math.min(3, td.param("turns", 2)));
+        boolean sGrade = "S".equalsIgnoreCase(td.grade);
+        dialogMan.showTextInput(player, Component.text("[" + td.name + "] 소실"),
+            Component.text("누구의 인식에서 사라질지 대상을 입력하세요" + (sGrade ? " (S급 — '괴담'도 지정 가능)." : " (사람·NPC 대상, 괴담은 불가).")),
+            "대상", Component.text("사라지기"),
+            target -> {
+                String t = target == null ? "" : target.trim();
+                boolean toEntity = t.contains("괴담") || t.equalsIgnoreCase(getEntityName());
+                if (toEntity && !sGrade) {
+                    ai.injectGmSystem("[능력 발동] " + pd.gmDisplayName() + "이(가) '" + td.name + "'으로 사라지려 했으나 ★이 등급으로는 괴담의 인식은 피하지 못한다★ — "
+                        + "사람·NPC의 눈은 속여도 괴담은 여전히 발동자를 어렴풋이 느낀다. 그 한계를 서술로 드러내라.");
+                } else {
+                    ai.injectGmSystem("[능력 발동] " + pd.gmDisplayName() + "이(가) '" + td.name + "'으로 약 " + turns + "턴간 ★" + t + "의 인식에서 사라진다★ — "
+                        + "그 대상은 발동자를 보거나 찾지 못하고 표적·추적에서 발동자를 놓친다" + (toEntity ? "(★S급이라 괴담에게도 통한다★)" : "") + ". "
+                        + "완전 무적이 아니라 '인식에서 지워짐'이다 — 큰 소리·직접 공격 등 뚜렷한 흔적을 내면 다시 들킬 수 있다. 한계·해제 조건은 GM 재량.");
+                }
+                applyTraitUsed(pd, td.id, state.getCurrentTurn());
+                player.sendMessage("§7[" + td.name + "] " + t + "의 인식에서 사라집니다 (" + turns + "턴).");
+            });
+    }
+
+    /** 환영·현혹 — 대상에게 환영을 보여주거나 약하게 조종(완전 지배 아님, 괴담 본체 무효). */
+    private void activateIllusion(Player player, PlayerData pd, TraitData td) {
+        int power = Math.max(1, Math.min(2, td.param("power", 1)));
+        dialogMan.showTextInput(player, Component.text("[" + td.name + "] 환영·현혹"),
+            Component.text("누구에게 무엇을 보여주거나 시킬지 입력하세요 (예: 'NPC에게 불타는 복도를 보여줌' / '경비를 잠들게 유도')."),
+            "환영/암시", Component.text("현혹하기"),
+            spec -> {
+                String sp = spec == null ? "" : spec.trim();
+                ai.injectGmSystem("[능력 발동] " + pd.gmDisplayName() + "이(가) '" + td.name + "'으로 대상에게 ★환영을 보여주거나 약하게 조종★한다: \"" + sp + "\". "
+                    + "강도(power=" + power + "): 1=가벼운 착시·오인, 2=뚜렷한 환영·잠깐의 충동 유도. ★완전 지배가 아니다★ — 대상의 의지에 반하는 큰 행동(자해·동료 살해 등)은 저항하거나 깨어난다. "
+                    + "괴담 본체에는 통하지 않는다(잔챙이·NPC·사람에게만). 대상의 성격·경계심에 따라 통할지, 언제 환영을 눈치채는지는 GM 재량.");
+                applyTraitUsed(pd, td.id, state.getCurrentTurn());
+                player.sendMessage("§7[" + td.name + "] 환영을 드리웁니다...");
+            });
+    }
+
+    /** 아이템 창조 — 도움되는 아이템을 GM이 자유롭게 생성·지급(ITEM_GRANT). */
+    private void activateItemCreate(Player player, PlayerData pd, TraitData td) {
+        int power = Math.max(1, Math.min(3, td.param("power", 2)));
+        dialogMan.showTextInput(player, Component.text("[" + td.name + "] 아이템 창조"),
+            Component.text("어떤 아이템을 원하는지 입력하세요 (비워도 됨 — GM이 상황에 맞게 정합니다). 예: '괴물을 막을 무기', '높은 곳에 오를 갈고리'."),
+            "원하는 아이템(선택)", Component.text("만들기"),
+            wish -> {
+                String w = wish == null ? "" : wish.trim();
+                ai.injectGmSystem("[능력 발동] " + pd.gmDisplayName() + "이(가) '" + td.name + "'으로 ★도움이 되는 아이템 하나를 만들어 손에 넣는다★. "
+                    + (w.isEmpty() ? "지금 상황에 가장 쓸모 있는 것을(도구·무기·방어구·통신구 등) " : "발동자가 원하는 것은 \"" + w + "\" — 그 취지에 맞는 아이템을 ")
+                    + "GM이 자유롭게 정해 ★실제로 생성·지급하라(ITEM_GRANT로 발동자에게 지급)★. 위력(power=" + power + "): 1=소소한 도구, 2=쓸만한 장비, 3=강력한 병기. "
+                    + "괴담 자체를 즉사시키는 만능품·게임을 깨는 물건은 금지(상황을 돕는 수준). 무엇을 만들지·이름·성능은 GM 재량.");
+                applyTraitUsed(pd, td.id, state.getCurrentTurn());
+                player.sendMessage("§a[" + td.name + "] 아이템을 만들어냅니다...");
+            });
     }
 
     /** ★일시 능력치 버프 특성(temp_buff)★ — 몇 턴간 지정 스탯을 올린다(집중·각성·비약 등). 세션 종료 시 휘발.
@@ -4408,6 +4758,14 @@ public class TRPGGameManager {
     private static String oneLineTrim(String s, int max) {
         String t = oneLine(s);
         return t.length() <= max ? t : t.substring(0, Math.max(0, max)) + "…";
+    }
+
+    /** GM 등장인물 명단용 성별·나이 태그. 남성/여성만 "(성별[·N세])"로, '미상'·빈값은 ""(성별 확정 서술을 유도하지 않음). age<0이면 생략. */
+    private static String rosterGenderTag(String gender, int age) {
+        String g = gender == null ? "" : gender.trim();
+        boolean known = g.equals("남성") || g.equals("여성");
+        if (!known) return "";
+        return "(" + g + (age >= 0 ? "·" + age + "세" : "") + ")";
     }
 
     /** 시나리오 개요 캐시 초기화 — 새 스테이지/세션/로드 시 호출(다음 사용 때 현재 시나리오로 재생성). */
@@ -7256,6 +7614,14 @@ public class TRPGGameManager {
             if (apd != null) {
                 appendNarrativeLog(apd, narrative);
                 extractAndStoreInfo(narrative, apd);
+                // ★행동 결과를 같은 구역 NPC 인지 피드에 '확정 사실'로 남긴다★ — NPC가 행동 '시도'만 보고 그 결과(제압·구조
+                //   성공 등)를 못 봐 "정말 했냐"며 목격 자체를 의심하던 공백 보완(저품질 NPC 헛소리 방지). 발화 전용이던
+                //   목격창(notifyLocalWitnesses)을 '행위'로도 확장해, 같은 구역 NPC가 다음 서술에서 그 일에 반응하게 한다.
+                String resultDigest = oneLineTrim(narrative, 140);
+                if (!resultDigest.isBlank()) {
+                    state.log("result", apd.name, apd.gmDisplayName() + ": " + resultDigest);
+                    notifyLocalWitnesses(apd, resultDigest, "행동해 그 결과가 눈앞에 드러났다", null);
+                }
             }
         }
         // ★원거리 WITNESS 게이트★: 저품질 GM이 먼 구역 동료에게까지 '작은 행동'을 WITNESS로 뿌려
@@ -8278,6 +8644,24 @@ public class TRPGGameManager {
         }
     }
 
+    /** 시나리오 시대(constraints.era). 없으면 "". */
+    private String scenarioEra() {
+        JsonObject g = state.getGdamData();
+        if (g != null && g.has("constraints") && g.get("constraints").isJsonObject())
+            return getStr(g.getAsJsonObject("constraints"), "era");
+        return "";
+    }
+    /** ★시대 말투★ 힌트 — 조선·과거면 현대 어미·신조어 금지(사극체), 미래면 그에 맞게. 현대·미지정이면 빈 문자열(기본 말투). */
+    private static String eraRegisterHint(String era) {
+        if (era == null || era.isBlank()) return "";
+        if (isPastEra(era))
+            return "★시대 말투(" + era + ")★: ★현대 말씨·신조어·외래어 금지★ — 그 시대 사람답게 말하라. 옛 호칭(자네·게·소인·나리·마님·도련님·아씨·서방님 등)과 예스러운 어미를 자연스럽게 쓰고, "
+                + "'~하라구·~라니까·~거든요·~인 것 같아요·~하죠·~네요' 같은 현대 구어체 어미는 피하라(시대에 어울리는 결로).";
+        if (era.matches(".*(미래|근미래|SF|우주|사이버|가상|홀로).*"))
+            return "★시대 말투(" + era + ")★: 이 미래 배경에 어울리는 어휘·호칭으로 — 단 과도한 조어로 대사를 뒤덮지 마라(알아듣게).";
+        return ""; // 현대·근현대는 기본 말투
+    }
+
     /** 나이대에 맞는 말투·어휘 힌트(세대별 결). 존댓말 수준과 별개의 '세대 어휘·톤' 베이스라인 — 개성 말씨가 그 위에 얹힌다. */
     private static String ageRegisterHint(int age) {
         if (age < 0) return "세대 불명 — 평범한 현대 회화.";
@@ -8379,7 +8763,12 @@ public class TRPGGameManager {
     private String npcCorePrompt(JsonObject npcObj) {
         String name = npcObj.has("name") ? npcObj.get("name").getAsString() : "NPC";
         StringBuilder sb = new StringBuilder();
-        sb.append("너는 살아있는 사람 '").append(name).append("'다 — 정보 안내기가 아니라 감정·사정·성격이 있는 인물이다.\n\n");
+        sb.append("너는 살아있는 사람 '").append(name).append("'다 — 정보 안내기가 아니라 감정·사정·성격이 있는 인물이다.\n");
+        String npcGender = npcObj.has("gender") && !npcObj.get("gender").isJsonNull() ? npcObj.get("gender").getAsString() : "";
+        if (npcGender.equals("남성") || npcGender.equals("여성"))
+            sb.append("★너의 성별: ").append(npcGender)
+              .append("★ — 네 말투·자기 지칭·상대가 너를 부르는 호칭이 이 성별과 어긋나지 않게 하라(남성이면 '형·오빠·아저씨', 여성이면 '누나·언니·아주머니'로 불린다).\n");
+        sb.append("\n");
         // ── 응답 순서(RESPONSE PRIORITY): reaction-first. '하지 마라' 나열 대신 '사람이 대화하는 법'을 순서로 준다. ──
         sb.append("[응답 순서 — 말하기 전에 이 순서로 반응하라. 이 목록 자체는 절대 출력하지 마라]\n");
         sb.append("1) ★반응 먼저(reaction-first)★: 상대가 방금 한 말·행동에 사람으로서 즉각 반응한다. (\"여보세요?\"→\"네?\" / \"전화받아\"→\"어? 왜, 무슨 일인데?\") 곧장 설명·훈수·단서부터 꺼내지 마라.\n");
@@ -8397,6 +8786,9 @@ public class TRPGGameManager {
         sb.append("- 얼버무리기·발뺌·거짓말도 사람답게 OK(말 돌리기·헛웃음·핑계·발끈). 금지는 하나 — 암호 같은 수수께끼식 얼버무림.\n");
         sb.append("- ★없는 인연·연락을 지어내지 마라★: 실제로 만나거나 번호를 주고받은 적 없는 사람은 그 이름·얼굴·번호를 ★모른다★. 걸려온 적 없는 전화를 '받았다'고 하거나, 낯선 사람 이름이 화면·발신자에 떴다고 서술하지 마라. 처음 보는 상대는 낯선 사람으로 대하라(아는 척·이름 부르기 금지 — 통성명은 만나서 이름을 밝힌 뒤에). ★지금 너에게 실제로 전달된 말·상황(입력으로 주어진 것)에만 반응하라★ — 일어나지 않은 접촉을 상상해 만들지 마라.\n");
         sb.append("- ★네가 알 리 없는 걸 아는 척하지 마라(전지 금지)★: 너는 (a)원래 아는 것(위 knowledge·설정), (b)네가 ★직접 그 자리에서 목격한 것★, (c)누가 ★네게 직접 말해주거나 통신으로 알려준 것★ — 이 셋만 안다. 상대가 ★다른 곳에서 혼자 겪거나 발견한 일(찾은 쪽지·본 것·다녀온 장소)★은 ★네게 전해지지 않았으면 모른다★ — 먼저 아는 척 꺼내거나 '그 ○○ 이상했지?'처럼 넘겨짚지 마라(전달 경로가 없으면 모르는 게 정상). 궁금하면 물어라. 이건 정직/거짓말 성향과 무관한 '인지 한계'다.\n");
+        sb.append("- ★네 몸·감각·장비 상태를 스스로 지어내 고정하지 마라★ — 캐릭터 데이터·시스템이 준 상태(부상·기절·홀림 등)만 연기한다. "
+            + "'고글이 망가져 안 보인다'·'다리를 다쳐 못 움직인다' 같은 ★새 신체 결함을 네가 임의로 만들어★ 매 턴 되뇌며 아무것도 못 하는 핑계로 삼지 마라(저품질 함정). "
+            + "정말 그런 일이 있었으면 시스템·GM이 상태로 알려준다 — 없으면 너는 멀쩡하다.\n");
         sb.append("- ★네 성격·말투·기질은 '연기'하는 것이지 '설명'하는 게 아니다★ — 캐릭터 소개하듯 네 성향을 말로 풀지 마라. 누가 \"너 좀 이상해\"·\"평소랑 달라\" 해도 \"나 원래 좀 조용한 편이야\"·\"난 예민한 타입이라\" 같은 ★자기 성격 해설로 답하지 마라(설정 낭독 = 메타 누출)★. 대신 사람답게 반응하라 — 발끈하거나·되묻거나(\"뭐가?\")·얼버무리거나·시치미 떼거나. ★자신을 3인칭으로 관찰·규정하지 말고 그냥 그 사람으로 행동하라.★\n");
         // ── 말투·언어 수준(주사위) + 나이·존댓말 정합 ──
         String npcId0 = getStr(npcObj, "id");
@@ -8413,11 +8805,17 @@ public class TRPGGameManager {
         else                             npcFluencyBlock(sb, intel);             // ③ 유창도(주사위) 폴백
         npcAgeSpeechBlock(sb, npcAge);                                            // ④ 나이별 말투·어휘(항상)
         npcProfanityBlock(sb, npcObj);                                            // ⑤ 욕설·비속어(독립 3축: 발동·강도·돌려까기, ①~④ 위에 얹음)
+        // ⑥ ★시대 말투★(항상) — 조선/과거면 현대 어미 금지·사극체. speech_style·나이 결 위에 시대 결을 얹는다.
+        String eraHint = eraRegisterHint(scenarioEra());
+        if (!eraHint.isEmpty()) sb.append("- ").append(eraHint).append("\n");
         // ── 보편 규칙(양 모드 공통) ──
         sb.append("- 마크다운·메타 해설 금지(순수 대사·서술만). ★단 이 응답에서 쓰라고 따로 지시된 태그만 예외★ — 지시 없는 태그를 스스로 만들어 쓰지 마라.\n");
         sb.append("- ★일관성★: 지금까지 나눈 대화(부탁·약속·합의·경고·알려준 정보 등)를 기억하고 다음 태도에 반영하라 — 방금 한 말을 잊은 듯 모순되게 굴지 마라.\n");
         sb.append("- 입력(행동 로그·말 걸기)이 비거나 부족해도 '정보를 달라'고 묻지 마라(너는 시스템 도구가 아니다). 그럴 땐 네 성격·목적대로 자율 행동하라.\n");
-        sb.append("- 플레이어의 스탯·특성·GM 판정 내역은 모른다 — 겉으로 드러난 행동만 인지한다.\n\n");
+        sb.append("- 플레이어의 스탯·특성·주사위 수치 같은 ★뒤편 판정 내역★은 모른다 — 겉으로 드러난 행동만 인지한다.\n");
+        sb.append("- ★단, 행동 로그·장면 입력에 적힌 남의 행동과 '[확정 사실]'로 표시된 결과는 네 눈앞에서 실제로 일어난 일이다★ — "
+            + "\"정말 한 거 맞아?\"·\"장난이지?\"·\"헛소리\"라며 목격한 사실을 부정·의심하지 마라. 그 일은 정말 일어났으니 사람답게 반응하라(놀람·감탄·안도·공포·감사 등). "
+            + "의심해도 되는 건 ★멀리서 말·통신으로만 전해 들은 주장★뿐이다(그건 네 성향대로 믿거나 의심하라).\n\n");
         return sb.toString();
     }
 
@@ -9759,9 +10157,11 @@ public class TRPGGameManager {
             npcObj = (!dialedByNumber && targetPd == null) ? findNpcByName(token) : null;
             // ★#220★ 이름 매칭 실패 + 관계 호칭(형/누나 등)이면 같은 구역의 '관계 정의된' NPC 1명으로 연결(모호하면 근처 발화).
             if (npcObj == null && !dialedByNumber && targetPd == null) npcObj = resolveHonorificNpc(senderPd, token);
-            // ★임시이름(A)★: 여전히 미매칭이면 — 이름 모르는 눈앞(같은 구역) NPC를 서술적 임시이름으로 부른 것으로 보고 유일 후보로 연결.
-            //   id로 라우팅 + 로그는 NPC 실명(canonical)이라 임시이름이 별도 인물로 갈라지지 않는다(뷰어 포함). 모호하면 근처 발화로.
-            if (npcObj == null && !dialedByNumber && targetPd == null) npcObj = resolveTempNameNpc(senderPd, token);
+            // ★근처 채팅 첫 단어 보존★: 예전엔 여기서 '이름 모르는 눈앞 NPC 임시이름(A)'으로 ★아무 첫 단어나★ 근처의 유일
+            //   NPC에 묶어 1:1로 돌렸는데(resolveTempNameNpc), 그 탓에 근처에 NPC가 하나라도 있으면 '@안녕하세요 여러분'의
+            //   첫 단어('안녕하세요')를 대상 토큰으로 오인해 잘라먹었다(제보: @근처채팅 시 무조건 첫 띄어쓰기 전이 사라짐).
+            //   → 알려진 이름·번호·관계호칭이 아니면 대상 지정을 하지 않는다. 미매칭은 아래에서 근처 발화(content 전체)로
+            //   처리되고, 같은 구역 NPC는 어차피 그 발화를 듣고 반응하므로(proximityBroadcast→notifyLocalWitnesses) 소통도 유지된다.
         }
 
         // ★대화 방식별 제약★: @전체(전자 발신)는 위에서 이미 처리됨. 근처 무명발화는 content 전체가 내용.
@@ -10173,35 +10573,10 @@ public class TRPGGameManager {
         return hits == 1 ? uniq : null;
     }
 
-    /** 임시이름 별칭(A): 플레이어가 이름 모르는 근처 NPC를 서술적 임시이름(@말없는 스님)으로 부른 것 → 그 NPC id에 고정. ★한 개체=한 명★. */
-    private final Map<UUID, Map<String, String>> tempNpcAliases = new HashMap<>();
-
-    /** @X가 알려진 이름/번호와 안 맞을 때 — 같은 구역(눈앞)의 이름 모를 critical NPC가 ★유일하면★ 그 NPC로 연결하고 임시이름을 그 id에 고정.
-     *  이후 같은 임시이름은 (NPC가 이동해도) 같은 개체로 라우팅되고, 로그·뷰어엔 NPC 실명(canonical)만 남아 두 명으로 갈라지지 않는다. 모호(0·2명+)면 근처 발화 폴백. */
-    private JsonObject resolveTempNameNpc(PlayerData senderPd, String token) {
-        if (token == null || token.isBlank() || senderPd == null) return null;
-        String key = token.trim().toLowerCase();
-        Map<String, String> aliases = tempNpcAliases.get(senderPd.uuid);
-        if (aliases != null) { // 이미 맺은 임시이름 → 그 NPC(이동해도 동일 개체)
-            String boundId = aliases.get(key);
-            if (boundId != null)
-                for (JsonObject npc : getCriticalNpcs())
-                    if (boundId.equalsIgnoreCase(getStr(npc, "id")) && isNpcCommunicable(npc)) return npc;
-        }
-        if (senderPd.zone == null || senderPd.zone.isEmpty()) return null; // 눈앞 판정 불가
-        JsonObject cand = null; int hits = 0;
-        for (JsonObject npc : getCriticalNpcs()) {
-            String nid = getStr(npc, "id");
-            String nz  = npcZones.getOrDefault(nid, getStr(npc, "zone"));
-            if (!senderPd.zone.equals(nz) || !isNpcCommunicable(npc)) continue; // 같은 구역(눈앞)·말 통하는 상대만
-            String nm = getStr(npc, "name");
-            if (!nm.isBlank() && nm.equalsIgnoreCase(key)) return null; // 실명과 같으면 findNpcByName이 처리했어야 — 임시이름 아님
-            cand = npc; hits++;
-        }
-        if (hits != 1) return null; // 0명(없음)·2명+(모호) → 근처 발화 폴백(오연결 방지)
-        tempNpcAliases.computeIfAbsent(senderPd.uuid, k -> new HashMap<>()).put(key, getStr(cand, "id")); // 별칭 고정
-        return cand;
-    }
+    // ★임시이름(A) 그리디 바인딩 제거★: 예전 resolveTempNameNpc는 알려진 이름·번호가 아닌 ★아무 첫 단어나★ 근처의 유일
+    //   critical NPC에 임시이름으로 묶어 1:1로 돌렸다. 그 탓에 근처에 NPC가 있으면 '@안녕하세요 여러분' 같은 근처 발화의
+    //   첫 단어를 대상 토큰으로 오인해 잘라먹었다(제보). 미지 NPC와의 소통은 근처 발화(같은 구역이면 어차피 들림)로 충분하고,
+    //   관계 호칭은 resolveHonorificNpc가 처리하므로, 근처 채팅 첫 단어 보존을 위해 이 그리디 대상 지정을 폐지한다.
 
     /**
      * ② 플레이어 → NPC 직접 심문.
@@ -10313,6 +10688,7 @@ public class TRPGGameManager {
             : "[지금 " + (remote ? "네 주변에서" : "이곳에서") + " 일어나는 일(네가 직접 보고 들은 것)]\n" + sceneLog + "\n\n";
         String userMsg   = situation + "[" + senderPd.gmDisplayName() + (viaCall ? ("이/가 " + media + "로 말한다") : written ? ("이/가 " + media + "로 전한다") : "이/가 말한다")
             + " · 상대 나이: " + senderPd.age + "세"
+            + " · 상대 성별: " + (senderPd.gender == null || senderPd.gender.isEmpty() ? "불명" : senderPd.gender) // 성별에 맞는 호칭(형/오빠·누나/언니, 아저씨/아주머니)용
             + " · 상대의 설득력·존재감: " + chaControlNote(senderPd)
             + " · 너와의 관계: " + ((relLabel.isBlank() ? "모르는 사이(낯선 상대)" : relLabel) + trustPhrase(npcTrustOf(npcId, senderPd.uuid.toString())))
             + "] " + message;
@@ -10661,7 +11037,12 @@ public class TRPGGameManager {
         grades.forEach((name, g) -> {
             PlayerData pd = findAnyByName(name); // 사망(자기희생)자도 성장 스텟 반영 — findByName은 사망자 제외
             if (pd == null) return;
-            int pts = endStatPoints(g);
+            int base = endStatPoints(g);
+            // ★약체 역전 성장(#56 강화)★: 약하게 시작할수록(스탯·HP/SAN 바닥·발동능력 없음) 매 스테이지 영구 스탯을
+            //   ★더★ 얻는다 → 강한 직업을 후반에 따라잡거나 앞지를 수 있다. 성장하면 약세가 줄어 자연히 수렴(무한증폭 없음).
+            //   등급 보상(base)만 있던 예전엔 강자·약자가 같은 등급이면 같은 성장이라 격차가 영영 안 좁혀졌다.
+            int wk = weaknessGrowthPoints(pd);
+            int pts = base + wk;
             if (pts <= 0) return;
             java.util.List<String> stats = (growth != null) ? growth.getOrDefault(name, java.util.List.of())
                                                             : java.util.List.<String>of();
@@ -10674,11 +11055,25 @@ public class TRPGGameManager {
             }
             Player p = Bukkit.getPlayer(pd.uuid);
             if (p != null && p.isOnline()) {
-                p.sendMessage("§a[성장] §f" + g + "급§a 평가 — 시나리오 중 행동으로 단련된 스텟 "
-                    + pts + " 획득: §f" + gained.toString().trim());
+                p.sendMessage("§a[성장] §f" + g + "급§a 평가" + (wk > 0 ? " §e+약체 역전 보정 " + wk + "§a" : "")
+                    + " — 시나리오 중 단련된 스텟 " + pts + " 획득: §f" + gained.toString().trim());
                 scoreMan.update(p, pd, state.getRoomNumber());
             }
         });
+    }
+
+    /** ★약체 역전 성장 포인트★ — ★원래(시작) 약세★가 클수록 매 스테이지 영구 스탯을 더 준다(0~3).
+     *  ★핵심★: computeWeaknessBonus(현재 스탯)이 아니라 ★최초 1회 고정한 origStartPow★로 약세를 재므로, 성장해 스탯이 올라도
+     *  보정이 사라지지 않는다 → 약체가 6스테이지 내내 꾸준히 더 성장해 ★강자를 최종적으로 뛰어넘을 수 있다★(수렴이 아니라 역전).
+     *  발동(액티브) 능력이 없으면 +1 가중. baseStat이 무한히 오르진 않게 상한 3·캠페인 6스테이지 = 최대 +18로 유계. */
+    private int weaknessGrowthPoints(PlayerData pd) {
+        if (pd == null) return 0;
+        int cur = pd.baseStr + pd.baseCha + pd.baseLuk + pd.baseSpr + pd.baseHp[1] + pd.baseSan[1];
+        if (pd.origStartPow <= 0) pd.origStartPow = cur; // 최초 1회(1스테이지 종료 시점) 원시작 파워 고정
+        final int BASELINE = 33;                         // computeWeaknessBonus와 동일 기준(평균 시작 ~31)
+        int w = Math.max(0, Math.min(5, (BASELINE - pd.origStartPow + 2) / 3)); // 원래 시작 약세(0~5) — 안 줄어듦
+        if (pd.traits != null && pd.traits.stream().noneMatch(t -> t.active)) w += 1; // 발동능력 부재도 약세
+        return Math.min(3, w / 2); // 평균 시작(w~1)→0, 약체(w4~5)→2, 최약체·무액티브(w6)→3
     }
 
     /** 종료 보상 스텟 총량: S=3, A=2, B=0~1, 그 이하 0. */
@@ -12482,16 +12877,33 @@ public class TRPGGameManager {
         if (zone == null || zone.isBlank()) return null;
         JsonObject gdam = state.getGdamData();
         if (gdam == null || !gdam.has("zones")) return zone; // 구역 정보 없으면 검증 불가 — 그대로
-        String byName = null;
+        String raw = zone.trim();
+        String stripped = raw.startsWith("zone_") ? raw.substring(5) : raw; // "zone_뒷간" 접두어 오남용 관대 처리
+        // ★공백 무시★: GM이 표시명의 공백을 지운 채 "zone_비상대피구"·"제4격리실"처럼 보내면 name("비상 대피구"·"제4 격리실")과
+        //   글자만 같고 공백 때문에 매칭 실패해 이동이 통째로 버려졌다(제보 로그). 이하 비교는 공백을 제거해 견줘 흡수한다.
+        String rawNs = raw.replaceAll("\\s+", "");
+        String strippedNs = stripped.replaceAll("\\s+", "");
+        String byName = null, byContains = null;
         for (JsonElement el : gdam.getAsJsonArray("zones")) {
             if (!el.isJsonObject()) continue;
             JsonObject z = el.getAsJsonObject();
             String id = z.has("zone_id") ? z.get("zone_id").getAsString() : "";
-            if (zone.equals(id)) return id;                                     // 유효한 zone_id
+            if (raw.equals(id)) return id;                                      // 유효한 zone_id
+            String idStrip = id.startsWith("zone_") ? id.substring(5) : id;
+            if (stripped.equals(id) || stripped.equals(idStrip)) return id;     // 접두어만 어긋난 경우
+            String idNs = id.replaceAll("\\s+", ""), idStripNs = idStrip.replaceAll("\\s+", "");
+            if (strippedNs.equals(idNs) || strippedNs.equals(idStripNs)) return id; // 공백만 어긋난 id
             String nm = z.has("name") ? z.get("name").getAsString() : "";
-            if (!nm.isBlank() && nm.equals(zone)) byName = id;                  // GM이 표시명을 넣음 → 그 id로
+            if (!nm.isBlank()) {
+                String nmNs = nm.replaceAll("\\s+", "");
+                if (nm.equals(raw) || nm.equals(stripped) || nmNs.equals(rawNs) || nmNs.equals(strippedNs)) byName = id; // 표시명 일치(공백 무시)
+                // ★근사 매칭(#1)★: GM이 "안채 마당"·"뒷간 앞"처럼 구역명을 품은 세부장소를 zone에 넣으면 그 구역으로 흡수
+                //   (없는 zone으로 이동 실패시키지 않는다). 단 확실할 때만 — 짧은 구역명이 다른 구역에 우연히 안 걸리게 2자+에서만(공백 무시).
+                if (byContains == null && nmNs.length() >= 2
+                    && (rawNs.contains(nmNs) || (idStripNs.length() >= 2 && rawNs.contains(idStripNs)))) byContains = id;
+            }
         }
-        return byName;                                                          // 이름 매칭 id 또는 null(무효)
+        return byName != null ? byName : byContains;                            // 이름>근사 매칭 id, 없으면 null(무효)
     }
 
     private void openCommChannel(String nameA, String nameB) {
@@ -12588,19 +13000,26 @@ public class TRPGGameManager {
             if (rp.charName == null || rp.charName.isEmpty()) continue;
             roster.append("  · ").append(rp.charName);
             if (rp.job != null && !rp.job.isEmpty()) roster.append(" — ").append(rp.job);
+            String rg = rosterGenderTag(rp.gender, rp.age); // ★성별·나이★ — 대명사·호칭 일관성용
+            if (!rg.isEmpty()) roster.append(" ").append(rg);
             roster.append("\n");
         }
         if (gdam.has("npcs") && gdam.get("npcs").isJsonArray()) {
             for (JsonElement el : gdam.getAsJsonArray("npcs")) {
                 if (!el.isJsonObject()) continue;
                 String nm = getStr(el.getAsJsonObject(), "name");
-                if (!nm.isBlank()) roster.append("  · ").append(nm).append(" (NPC)\n");
+                if (nm.isBlank()) continue;
+                roster.append("  · ").append(nm).append(" (NPC)");
+                String ng = rosterGenderTag(getStr(el.getAsJsonObject(), "gender"), -1);
+                if (!ng.isEmpty()) roster.append(" ").append(ng);
+                roster.append("\n");
             }
         }
         if (roster.length() > 0) {
             sb.append("\n## 등장인물 이름 고정 (★표기 절대 불변)\n");
             sb.append("아래 인물들은 게임 내내 ★정확히 이 글자 그대로★ 칭하라. 한 번 쓴 이름을 다른 철자·이형 표기로 바꾸지 마라"
                 + "(예: '정해린'을 '정혜린'으로 쓰지 말 것). 같은 인물에게 새 이름을 임의로 지어 붙이지도 마라.\n");
+            sb.append("★성별 표기가 있는 인물은 그 성별에 맞는 대명사·호칭을 ★일관되게★ 쓰라(그/그녀, 사내/여자, 아저씨/아주머니, 형·오빠/누나·언니 등) — 이름만 보고 성별을 넘겨짚어 뒤섞지 마라. '미상'·표기 없음은 성별 확정 서술을 피하고 이름·호칭으로만 지칭하라.\n");
             sb.append(roster);
         }
 
@@ -12644,9 +13063,12 @@ public class TRPGGameManager {
             JsonObject c = gdam.getAsJsonObject("constraints");
             sb.append("\n## 배경·행동 제약 ★\n");
             String era = getStr(c, "era");
-            if (!era.isBlank())
+            if (!era.isBlank()) {
                 sb.append("- 시대 배경: ").append(era)
                   .append(" — 이 시대에 맞게 사물·언어·기술·통신을 묘사하라(무심코 현대 기준으로 서술 금지).\n");
+                String eh = eraRegisterHint(era);
+                if (!eh.isEmpty()) sb.append("  · ").append(eh).append(" ★네가 잠깐 내는 단역(NPC)의 대사도 이 결로.★\n");
+            }
             if (c.has("can_leave_scene") && !c.get("can_leave_scene").getAsBoolean())
                 sb.append("- 현장 이탈 불가: 플레이어는 이 공간을 벗어날 수 없다(자연스러운 이유로 막힘 — 폭우·고립·결계 등). 탈출 시도는 막힌 상황으로 서술하라.\n");
             if (c.has("outside_contact") && !c.get("outside_contact").getAsBoolean())
@@ -12654,6 +13076,8 @@ public class TRPGGameManager {
             if (c.has("phone_usable") && !c.get("phone_usable").getAsBoolean())
                 sb.append("- 통신기기 불능: 전화·무전 등이 작동하지 않는다(신호 없음/시대상 부재). 기기 통신에 의존하지 마라.\n"
                     + "- 번호 미보유 연락 시도: 연락 대상 번호를 모르더라도 시도 자체를 허용하라. 단, 상황상 연결 불가 사유(인프라 마비·신호 차단·대상 도달 불가)가 있으면 '연결 실패 + 우회 단서(다른 경로 안내)'로 처리할 수 있다. 시도를 막지도, 성공을 강제하지도 마라.\n");
+            if (c.has("map_available") && !c.get("map_available").getAsBoolean())
+                sb.append("- 지도 없는 세계 ★: 이곳엔 안내도·약도·지도라 할 물건이 없다(미궁·이세계·시대상 부재·측량 불가 등). 플레이어는 스스로 길을 익힐 뿐, 전체 배치를 담은 지도를 손에 넣을 수 없다 — ★<MAP_GRANT>를 출력하지 마라★. 길은 직접 걸어 보고 물어서만 알게 된다.\n");
             if (c.has("comms_monitored") && c.get("comms_monitored").getAsBoolean())
                 sb.append("- 도청 ★: 괴담은 기기 통신(통화·무전·메시지)뿐 아니라 ★대면 대화도 엿들을 수 있다 — 같은 zone 대면이 자동 안전채널이 아니다.\n"
                     + "  ★안전한 전달은 '그 괴담의 감지 양식으로 인지할 수 없는 수단'일 때만 성립한다. 예: 청각·통신 기반 괴담에게는 종이에 글/그림으로 적어 보여주기·수신호가 안전(소리를 내지 않으므로). 반면 시야·전지(全知)·빙의형 괴담은 그런 시각적 수단도 인지한다. seed의 괴담 감지 양식(청각/시각/통신/전지/접촉 등)에 따라 어떤 채널이 안전한지 GM이 판정하라 — 무엇이든 자동 안전이 아니다. 플레이어가 '도청 대비 수단(필담·암호·차폐)'을 쓰면, 그 수단이 해당 괴담 양식 밖일 때만 효과를 인정한다.\n"
@@ -13036,6 +13460,68 @@ public class TRPGGameManager {
             for (String n : EXTRA_CHAR_NAMES) { String c = n + k; if (used.add(c)) return c; }
     }
 
+    // ★시대·성별별 합성 배역 이름/직업 풀★ — 조선·과거는 전통 이름·직업, 그 외(현대·미래)는 현대 것. 성별-이름 일관 보장.
+    private static final String[] NAME_TRAD_M = {"돌쇠","만복","춘삼","덕배","칠성","판돌","삼동","병칠","막동","봉출","길만","점복","순돌","용팔","개똥이"};
+    private static final String[] NAME_TRAD_F = {"끝단","분이","언년","막딸","순덕","금옥","간난","곱단","월선","삼월","꽃분","말순","연분","봉녀","점순"};
+    private static final String[] NAME_MOD_M  = {"김도현","이준서","박지훈","최민재","정우진","강현우","윤성호","임재현","한동욱","조성민","서정한","오태경"};
+    private static final String[] NAME_MOD_F  = {"김서연","이지우","박하은","최수빈","정예린","강민서","윤채원","임소율","한지민","조유나","서다혜","오나경"};
+    private static final String[] JOB_TRAD    = {"장돌뱅이","나무꾼","보부상","주모","삯바느질꾼","대장장이","약초꾼","뱃사공","길손","마부","물지게꾼","방물장수","소작농","떠돌이 악사","옹기장수"};
+
+    /** 과거(전근대) 시대인가 — 합성 배역 이름·직업을 전통 것으로 낼지 판단. */
+    private static boolean isPastEra(String era) {
+        return era != null && era.matches(".*(조선|고려|삼국|신라|백제|고구려|가야|발해|고대|중세|근세|근대|개화|구한말|일제|한국전쟁|전근대|왕조|사극|과거).*");
+    }
+    /** 시대·성별에 맞는 합성 배역 이름(중복 방지). ★여성 배역엔 반드시 여성 이름★(성별-이름 불일치 방지). */
+    private String periodName(String era, String gender, java.util.Set<String> used) {
+        boolean fem = "여성".equals(gender);
+        String[] pool = isPastEra(era) ? (fem ? NAME_TRAD_F : NAME_TRAD_M) : (fem ? NAME_MOD_F : NAME_MOD_M);
+        for (String n : pool) if (used.add(n)) return n;
+        for (int k = 2; ; k++) for (String n : pool) { String c = n + k; if (used.add(c)) return c; }
+    }
+    /** 시대에 맞는 평범한 직업 하나(합성 배역용). '휘말린 피해자' 같은 라벨이 아니라 제 삶을 사는 직업. */
+    private String periodJob(String era) {
+        String[] pool = isPastEra(era) ? JOB_TRAD : EXTRA_BYSTANDER_JOBS;
+        return pool[ThreadLocalRandom.current().nextInt(pool.length)];
+    }
+
+    /** 조연 승격 가능 NPC인가 — 비핵심 + 플롯 정보(true_role/knowledge) 없음 + 비자율 + 말 통함 + 성인(13+). */
+    private boolean isPromotableNpc(JsonObject npc) {
+        if (npc == null) return false;
+        if (npc.has("critical") && npc.get("critical").getAsBoolean()) return false;         // 핵심 NPC = 플롯 구동 → 제외
+        if (npc.has("true_role") && !getStr(npc, "true_role").isBlank()) return false;        // 숨은 진상 보유 → 스포 위험
+        if (npc.has("knowledge") && npc.get("knowledge").isJsonArray() && npc.getAsJsonArray("knowledge").size() > 0) return false; // 핵심 지식 보유
+        if (npc.has("independent_ai") && npc.get("independent_ai").getAsBoolean()) return false;
+        if (npc.has("communicable") && !npc.get("communicable").getAsBoolean()) return false; // 말 안 통함 → 플레이 불가
+        int age = npc.has("age") && !npc.get("age").isJsonNull() ? npc.get("age").getAsInt() : 30;
+        if (age < 13) return false;                                                          // 어린이는 조연 유지
+        String rt = getStr(npc, "role_type");
+        if (rt.contains("가이드") || rt.contains("백과") || rt.contains("배신") || rt.contains("내부자") || rt.contains("흑막") || rt.contains("정보원")) return false; // 플롯 장치 역할
+        return true;
+    }
+    /** 조연 NPC를 플레이 배역으로 변환(char_name=NPC명·성격→initial_info). 스탯은 기본값(취약 배정 아님). */
+    private JsonObject npcToRole(JsonObject npc, String era, java.util.Set<String> used) {
+        JsonObject r = new JsonObject();
+        String nm = getStr(npc, "name");
+        r.addProperty("role_id", "role_" + getStr(npc, "id"));
+        r.addProperty("name", isPastEra(era) ? "동네 사람" : "이웃 주민");
+        r.addProperty("is_core", false);
+        String g = getStr(npc, "gender");
+        r.addProperty("char_name", nm.isBlank() ? periodName(era, g, used) : nm);
+        if (!g.isBlank()) r.addProperty("gender", g);
+        if (npc.has("zone")) r.addProperty("zone", npc.get("zone").getAsString());
+        int age = npc.has("age") && !npc.get("age").isJsonNull() ? npc.get("age").getAsInt() : 30;
+        JsonArray ar = new JsonArray(); ar.add(Math.max(18, age - 2)); ar.add(age + 2); r.add("age_range", ar);
+        JsonArray jp = new JsonArray(); for (int k = 0; k < 4; k++) jp.add(periodJob(era)); r.add("job_pool", jp);
+        r.addProperty("role_type", "bystander");
+        JsonArray info = new JsonArray();
+        String persona = getStr(npc, "personality");
+        info.add(persona.isBlank() ? "이 고장에서 제 삶을 꾸리며 살아온 평범한 사람이다." : ("평소 이런 사람이다: " + persona));
+        info.add("사건이 벌어지자 자연스레 그 자리에 얽혀 들어, 직접 겪으며 헤쳐 나가야 한다.");
+        r.add("initial_info", info);
+        r.addProperty("hidden_info", "원래 이 사건의 중심 인물은 아니었으나, 우연히 현장에 있어 직접 위협에 노출된다.");
+        return r;
+    }
+
     /**
      * 플레이어 수가 .gdam 배역 수보다 많으면, 부족한 만큼 '사건에 휘말리는 주변 인물' 배역을 gdam.roles에 추가한다.
      * → 남는 플레이어도 관전이 아니라 평범한 외부인으로 등장해 사건에 휘말린다.
@@ -13046,48 +13532,65 @@ public class TRPGGameManager {
         JsonArray roles = gdam.getAsJsonArray("roles");
         int have = roles.size();
         if (have == 0 || playerCount <= have) return;
+        int need = playerCount - have;
+
+        String era = "";
+        if (gdam.has("constraints") && gdam.get("constraints").isJsonObject())
+            era = getStr(gdam.getAsJsonObject("constraints"), "era");
 
         List<String> zones = new ArrayList<>();
+        java.util.Set<String> usedNames = new java.util.HashSet<>();
         for (JsonElement el : roles) {
             if (!el.isJsonObject()) continue;
             JsonObject r = el.getAsJsonObject();
             if (r.has("zone") && !r.get("zone").getAsString().isBlank()) zones.add(r.get("zone").getAsString());
+            if (r.has("char_name")) usedNames.add(r.get("char_name").getAsString());
         }
-        // 이미 쓰인 이름(배역 char_name + NPC명) 수집 — 휘말림 배역 이름이 겹치지 않게
-        java.util.Set<String> usedNames = new java.util.HashSet<>();
-        for (JsonElement el : roles)
-            if (el.isJsonObject() && el.getAsJsonObject().has("char_name"))
-                usedNames.add(el.getAsJsonObject().get("char_name").getAsString());
         if (gdam.has("npcs") && gdam.get("npcs").isJsonArray())
             for (JsonElement el : gdam.getAsJsonArray("npcs"))
                 if (el.isJsonObject()) { String nm = getStr(el.getAsJsonObject(), "name"); if (!nm.isBlank()) usedNames.add(nm); }
 
-        int need = playerCount - have;
-        for (int i = 0; i < need; i++) {
+        int added = 0;
+        // ① ★조연 NPC 우선 승격(사용자 제안)★: 비핵심·비플롯·성인·말 통하는 NPC를 플레이 배역으로 전환한다.
+        //    기존 조연은 시대·이름·성격이 이미 갖춰져(예: 조선 '박씨댁') 현대식 합성보다 몰입이 낫다. 승격분은 npcs에서
+        //    제거해 AI NPC로 이중 스폰되지 않게 한다. (뒤에서부터 순회 — remove 인덱스 안정.)
+        if (gdam.has("npcs") && gdam.get("npcs").isJsonArray()) {
+            JsonArray npcs = gdam.getAsJsonArray("npcs");
+            for (int i = npcs.size() - 1; i >= 0 && added < need; i--) {
+                if (!npcs.get(i).isJsonObject()) continue;
+                JsonObject npc = npcs.get(i).getAsJsonObject();
+                if (!isPromotableNpc(npc)) continue;
+                JsonObject r = npcToRole(npc, era, usedNames);
+                usedNames.add(getStr(r, "char_name"));
+                roles.add(r);
+                npcs.remove(i);
+                added++;
+            }
+        }
+        int promoted = added;
+        // ② 남으면 ★시대·성별 맞춤 합성 배역★ — 성별-이름 일관(여성역=여성명), 시대 직업, ★'휘말린 피해자' 라벨 금지(존엄한 persona)★.
+        for (int idx = 0; added < need; idx++, added++) {
+            String g = (idx % 2 == 0) ? "여성" : "남성"; // 성별 섞기 → 배정이 양쪽 플레이어를 매칭 가능
             JsonObject r = new JsonObject();
-            r.addProperty("role_id", "role_extra" + (i + 1));
-            r.addProperty("name", "휘말린 외부인");
+            r.addProperty("role_id", "role_extra" + (idx + 1));
+            r.addProperty("name", isPastEra(era) ? "동네 사람" : "이웃 주민");
             r.addProperty("is_core", false);
-            // ★char_name/gender를 코드에서 부여 — AI 생성 배역이 아니라 누락되면 계정명이 노출되고 이름이 안 정해진다.
-            r.addProperty("char_name", pickExtraName(usedNames));
-            r.addProperty("gender", ThreadLocalRandom.current().nextBoolean() ? "남성" : "여성");
-            // ★평범한 민간인 직업·성인 나이를 코드에서 부여★ — job_pool/age_range가 없으면 배역 배정(applyRoleJob)이
-            //   원년(기본) 직업·나이를 그대로 둬, 원년 캐릭터가 환상/괴담풍이면 휘말림 배역까지 그 값(예: 12세 '환영의 엮음이')이 노출된다.
-            JsonArray jobPool = new JsonArray();
-            for (String j : EXTRA_BYSTANDER_JOBS) jobPool.add(j);
+            r.addProperty("gender", g);
+            r.addProperty("char_name", periodName(era, g, usedNames)); // 성별에 맞는 이름
+            JsonArray jobPool = new JsonArray(); for (int k = 0; k < 5; k++) jobPool.add(periodJob(era));
             r.add("job_pool", jobPool);
-            JsonArray ageRange = new JsonArray(); ageRange.add(20); ageRange.add(55);
-            r.add("age_range", ageRange);
-            if (!zones.isEmpty()) r.addProperty("zone", zones.get(i % zones.size())); // 사건 현장(또는 그 일대)에 분산 배치
+            JsonArray ageRange = new JsonArray(); ageRange.add(20); ageRange.add(55); r.add("age_range", ageRange);
+            if (!zones.isEmpty()) r.addProperty("zone", zones.get(idx % zones.size()));
             r.addProperty("role_type", "bystander");
             JsonArray info = new JsonArray();
-            info.add("당신은 우연히 이 장소에 있게 된 평범한 사람이다 — 특별한 사명도, 사전 정보도 없다.");
-            info.add("그저 평소처럼 지내려던 참이었지만, 곧 이 자리에서 벌어지는 일에 본의 아니게 휘말린다.");
+            info.add("당신은 이 고장에서 제 삶을 꾸리며 살아온 평범한 사람이다 — 특별한 사명도, 사전 정보도 없다.");
+            info.add("여느 때처럼 지내려던 참에, 이 자리에서 벌어지는 일에 자연스레 얽혀 든다.");
             r.add("initial_info", info);
-            r.addProperty("hidden_info", "사건과 무관한 외부인으로 우연히 현장에 있었다. 처음엔 영문을 모르지만 진행될수록 직접 위협에 노출되어 휘말린다.");
+            r.addProperty("hidden_info", "사건의 중심 인물은 아니었으나 우연히 현장에 있어 직접 위협에 노출된다.");
             roles.add(r);
         }
-        plugin.getLogger().info("[TRPG] 플레이어(" + playerCount + ") > 배역(" + have + ") → '휘말린 외부인' 배역 " + need + "개 추가");
+        plugin.getLogger().info("[TRPG] 플레이어(" + playerCount + ") > 배역(" + have + ") → 조연 승격 " + promoted
+            + " + 합성 " + (added - promoted) + " 배역 보강 (시대: " + (era.isBlank() ? "미지정" : era) + ")");
     }
 
     /**
@@ -13177,7 +13680,9 @@ public class TRPGGameManager {
                         JsonObject role = ordered.get(i);
                         cost = Math.abs(pAge - roleMidAge(role));
                         String rGender = role.has("gender") ? role.get("gender").getAsString() : "";
-                        if (!pGender.isEmpty() && !rGender.isEmpty() && !pGender.equals(rGender)) cost += 40;
+                        // ★성별 우선(하드)★: 같은 성별 배역이 하나라도 남아있으면 그쪽으로 가게 큰 벌점 — '여성인데 강태팔(남성명)·아빠 배역'
+                        //   같은 교차 배정을 막는다. 같은 성별 배역이 없을 때만 부득이 교차(그때도 이름·정체성은 배역 성별로 일관).
+                        if (!pGender.isEmpty() && !rGender.isEmpty() && !pGender.equals(rGender)) cost += 10000;
                     }
                     if (cost < bestCost) { bestCost = cost; bestIdx = i; }
                 }
@@ -13380,7 +13885,7 @@ public class TRPGGameManager {
         // ★로그/실시간 뷰어·재현 충실도★: 코드가 정한 판정을 기록(주사위·스탯보정·성공기준·결과) — 인게임에 뜨던 판정이 로그엔 없던 공백 보완.
         gameLogger.logAbilityResult(dpd != null ? dpd.gmDisplayName() : player.getName(), "주사위 판정",
             (reason.isEmpty() ? "행동 판정" : reason) + " — d" + max + "=" + roll + modNote
-            + " (기준 " + effDc + " 이상 성공) → " + outcome);
+            + " (기준 " + effDc + " 이상 성공) → " + outcome, true); // overt=겉으로 드러난 물리 판정 → 같은 구역 목격
         // ★#209 굴림 먼저 → 보정 하나씩 가산★
         // 1) '굴리는 중' 연출(약 1.5초, d{max} 무작위) — 3틱 간격.
         final int FRAMES = 10;
@@ -13525,7 +14030,8 @@ public class TRPGGameManager {
             int val = Math.max(1, Math.min(20, raw + statBonus + lb));
             int crit = raw == 20 ? 1 : raw == 1 ? -1 : 0;                // 자연 최대·최소 = 대성공·대실패
             rolls.addProperty(k, val);
-            if (lb != 0) rolls.addProperty(k + "_luck", lb);            // ★표시 분해용★ 행운 보정분 — 성패는 val로, 표시는 '능력치+행운'으로 쪼갠다
+            rolls.addProperty(k + "_base", raw);                        // ★표시 분해용★ 자연굴림(주사위값) — 주사위·능력치·행운을 각각 보여주기 위해 저장
+            if (lb != 0) rolls.addProperty(k + "_luck", lb);            // ★표시 분해용★ 행운 보정분 — 성패는 val로, 표시는 '주사위+능력치+행운'으로 쪼갠다
             if (crit != 0) rolls.addProperty(k + "_crit", crit);
             if (!first) note.append(" · ");
             first = false;
@@ -13668,10 +14174,21 @@ public class TRPGGameManager {
         NamedTextColor col = crit == 1 ? NamedTextColor.AQUA : crit == -1 ? NamedTextColor.DARK_RED
                            : success ? NamedTextColor.GREEN : partial ? NamedTextColor.GOLD : NamedTextColor.RED;
         String label = diceStatLabel(statKey);
-        // ★뷰어 호환 로그(핵심 수정)★ — diceParse가 dN=M·(기준 D 이상 성공)·→ 결과 세 패턴을 모두 요구한다.
-        //   예전 형식('영감 16 (기준 12) → 성공')엔 dN=M·'이상 성공'이 없어 뷰어가 주사위로 인식 못 해 애니메이션이 안 나왔다.
+        // ★분해 표기(주사위·능력치·행운 각각)★: 미리 굴린 base(자연굴림)·luck(행운 보정분)를 꺼내 능력치분=val-base-luck로 나눈다.
+        //   전엔 주사위+능력치가 한 덩어리(fstat)로 합쳐 보였다 → 셋으로 분리. 뷰어 diceSteps도 (기본 N +X라벨 +Y행운)를 단계 연출한다.
+        int luckPart = (rolls != null && statKey != null && rolls.has(statKey + "_luck")) ? rolls.get(statKey + "_luck").getAsInt() : 0;
+        int basePart = (rolls != null && statKey != null && rolls.has(statKey + "_base")) ? rolls.get(statKey + "_base").getAsInt() : -1;
+        int statPart = basePart >= 0 ? (val - basePart - luckPart) : 0; // 능력치(영감 등) 보너스분(상·하한 클램프 흡수)
+        String modNote = "";
+        if (basePart >= 0 && crit == 0) { // 대성공/대실패·구경로는 자연값만(보정 무의미) — 나머지만 분해
+            StringBuilder ms = new StringBuilder(" (기본 " + basePart);
+            if (statPart != 0 && !label.isEmpty()) ms.append(' ').append(statPart > 0 ? "+" : "").append(statPart).append(label);
+            if (luckPart != 0) ms.append(' ').append(luckPart > 0 ? "+" : "").append(luckPart).append("행운");
+            modNote = ms.append(')').toString();
+        }
+        // ★뷰어 호환 로그★ — diceParse가 dN=M·(기준 D 이상 성공)·→ 결과 세 패턴을 요구. modNote(기본+보정)까지 넣어 뷰어가 주사위/능력치/행운을 단계로 나눠 연출한다.
         gameLogger.logAbilityResult(pd != null ? pd.gmDisplayName() : player.getName(), "주사위 판정",
-            (reason.isEmpty() ? "행동 판정" : reason) + " — d20=" + val + " (기준 " + dc + " 이상 성공) → " + outcome);
+            (reason.isEmpty() ? "행동 판정" : reason) + " — d20=" + val + modNote + " (기준 " + dc + " 이상 성공) → " + outcome, true); // overt
         // 왜 굴리는지 먼저 안내(관전자 포함) — ★행동 텍스트는 여기 한 번만★(결과 줄엔 반복하지 않는다). d20·기준·능력치 표기는 결과 줄로 미뤄 짧게.
         msgToWatchers(player, "§e🎲 " + (reason.isEmpty() ? "판정" : reason) + " §7— 굴립니다…");
         // ★인게임 굴림 연출★: 무작위 프레임(약 0.8s) → 착지값 강조. onDone은 착지 시점에 실행해 인라인 뒤 서술이 자연히 이어지게(연출은 서술과 겹쳐 흐른다).
@@ -13687,8 +14204,7 @@ public class TRPGGameManager {
             }, i * 3L);
         }
         final long landTick = FRAMES * 3L + 2L;
-        int luckPart = (rolls != null && statKey != null && rolls.has(statKey + "_luck")) ? rolls.get(statKey + "_luck").getAsInt() : 0;
-        final int fval = val, fdc = dc, fstat = val - luckPart, fluck = luckPart; // 표시: 능력치분(fstat) + 행운분(fluck) = 판정값(fval)
+        final int fval = val, fdc = dc, fbase = basePart, fstatp = statPart, fluck = luckPart, fcritv = crit; // 표시 분해: 주사위(fbase)+능력치(fstatp)+행운(fluck)=판정값(fval)
         final String fout = outcome, flabel = label, freason = reason;
         final NamedTextColor fcol = col;
         plugin.getServer().getScheduler().runTaskLater(plugin, () -> {   // ★굴림이 끝난 뒤에야 결과 공개★(강조 타이틀 + 채팅) — 미리 노출 금지
@@ -13699,8 +14215,15 @@ public class TRPGGameManager {
                 Title.Times.times(Duration.ofMillis(120), Duration.ofMillis(2200), Duration.ofMillis(500))));
             // ★압축 결과 표기(요청)★: 행동 텍스트(freason)는 위 '굴립니다' 줄에 이미 나왔으니 반복하지 않고,
             //   [능력치(+행운 보정) / 기준] → 결과 만 짧게 — 긴 서술 반복·어중간한 줄바꿈 제거.
-            String statDisp = (flabel.isEmpty() ? "판정" : flabel) + " " + fstat
-                + (fluck > 0 ? " §7+행운 " + fluck : fluck < 0 ? " §7-행운 " + (-fluck) : "");
+            String statDisp;
+            if (fbase >= 0 && fcritv == 0) { // ★주사위·능력치·행운 각각 표기★(합쳐 보이던 문제 수정)
+                statDisp = "주사위 " + fbase
+                    + (fstatp != 0 && !flabel.isEmpty() ? " §7" + (fstatp > 0 ? "+" : "") + fstatp + " " + flabel + "§f" : "")
+                    + (fluck != 0 ? " §7" + (fluck > 0 ? "+행운 " : "-행운 ") + Math.abs(fluck) + "§f" : "")
+                    + " §7= §f" + fval;
+            } else { // 대성공/대실패·구경로: 자연값만(보정 무의미)
+                statDisp = (flabel.isEmpty() ? "판정" : flabel) + " " + fval;
+            }
             msgToWatchers(player, "§e🎲 §7[§f" + statDisp + " §7/ 기준 " + fdc + "§7] → " + colorCode(fcol) + fout);
         }, landTick);
         // ★행운 추가굴림 연출·로그(#luck B1)★ — 프리롤이 luck_reroll을 심었으면 메인 착지 뒤에 🍀 행운 주사위를 한 번 더 보여준다.
@@ -13712,7 +14235,7 @@ public class TRPGGameManager {
             final String ltierDisp = lroll >= 7 ? "압도적!" : lroll >= 5 ? "큰 행운" : lroll >= 3 ? "행운" : "미약한 행운";
             final NamedTextColor lcol = lroll >= 7 ? NamedTextColor.AQUA : NamedTextColor.LIGHT_PURPLE; // 7=압도적은 대성공색
             gameLogger.logAbilityResult(pd != null ? pd.gmDisplayName() : player.getName(), "행운 판정",
-                "행운 추가판정 — d7=" + lroll + " (기준 1 이상 성공) → " + ltier); // 뷰어 diceParse 호환(dN=M·기준·→한토큰)
+                "행운 추가판정 — d7=" + lroll + " (기준 1 이상 성공) → " + ltier, true); // 뷰어 diceParse 호환(dN=M·기준·→한토큰) · overt
             plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
                 if (!player.isOnline()) return;
                 titleToWatchers(player, Title.title(

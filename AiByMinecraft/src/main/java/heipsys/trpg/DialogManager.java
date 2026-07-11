@@ -333,6 +333,46 @@ public class DialogManager {
         player.showDialog(dialog);
     }
 
+    /** '모두 무작위' 시작 전 — 카테고리별 포함/제외 토글(서버 영속). 로보토미·코즈믹·SCP 기본 제외.
+     *  isExcluded=현재 제외 여부, onToggle=키 토글 후 이 창 재표시(호출측이 처리), onStart=이대로 시작. */
+    public void showRandomExcludeChoice(Player player, java.util.function.Predicate<String> isExcluded,
+                                        java.util.function.Consumer<String> onToggle, Runnable onStart) {
+        String[][] cats = {
+            {"projectmoon", "환상체(로보토미)"}, {"cosmic", "코즈믹 호러"}, {"scp", "SCP"},
+            {"korean", "한국 괴담"}, {"japan", "일본 괴담"}, {"western", "서양 괴담"},
+            {"game", "게임 괴담"}, {"creepypasta", "크리피파스타"}, {"backrooms", "백룸·이계"},
+            {"internet", "인터넷 괴담"}, {"real", "실화·미제사건"}, {"sf", "SF 공포"}
+        };
+        List<ActionButton> buttons = new ArrayList<>();
+        buttons.add(ActionButton.create(
+            Component.text("▶ 이대로 시작", NamedTextColor.GOLD),
+            Component.text("포함(✓)된 종류만 섞어 무작위로 생성합니다."), 200,
+            DialogAction.customClick((v, a) -> onStart.run(), ClickCallback.Options.builder().uses(1).build())));
+        for (String[] c : cats) {
+            final String key = c[0];
+            boolean ex = isExcluded.test(key);
+            buttons.add(ActionButton.create(
+                Component.text((ex ? "✗ " : "✓ ") + c[1], ex ? TextColor.color(0x888888) : NamedTextColor.GREEN),
+                Component.text(ex ? "제외됨 — 누르면 포함" : "포함됨 — 누르면 제외"), 150,
+                DialogAction.customClick((v, a) -> onToggle.accept(key), ClickCallback.Options.builder().uses(1).build())));
+        }
+        ActionButton cancel = ActionButton.create(
+            Component.text("취소", TextColor.color(0xAAAAAA)),
+            Component.text("세션을 시작하지 않습니다."), 100, null);
+        Component body = Component.text()
+            .append(Component.text("모두 무작위 — 어떤 종류를 섞을까요?", NamedTextColor.WHITE))
+            .appendNewline()
+            .append(Component.text("✓=포함 / ✗=제외. 항목을 누르면 바뀌고 이 창이 다시 열립니다. 설정은 서버에 저장됩니다.", NamedTextColor.GRAY))
+            .build();
+        Dialog dialog = Dialog.create(b -> b.empty()
+            .base(DialogBase.builder(Component.text("모두 무작위  —  포함할 종류 선택"))
+                .body(List.of(DialogBody.plainMessage(body)))
+                .build())
+            .type(DialogType.multiAction(buttons, cancel, 2))
+        );
+        player.showDialog(dialog);
+    }
+
     /** 시작 설정 — 괴담 유형/성격 선택(종류별 테스트용). onPick에 컨셉 제약 문구 전달(""=무작위). */
     public void showEntityTypeChoice(Player player, java.util.function.Consumer<String> onPick) {
         String[][] opts = {
@@ -515,9 +555,9 @@ public class DialogManager {
 
     /** 시작 설정 다이얼로그 — 자동생성·시작 스테이지·괴담 유형을 버튼으로 고른다. 항목을 누르면 바뀌고 이 창이 다시 열린다. */
     public void showStartSettings(Player player, boolean pregen, int startStage, String typeHint, String famePool,
-                                  boolean groupTurn,
+                                  String reservedEntity, boolean groupTurn,
                                   Runnable onTogglePregen, Runnable onPickStage, Runnable onPickType, Runnable onPickFame,
-                                  Runnable onToggleGroupTurn) {
+                                  Runnable onToggleGroupTurn, Runnable onPickEntity) {
         List<ActionButton> buttons = new ArrayList<>();
         buttons.add(ActionButton.create(
             Component.text("자동 사전생성:  " + (pregen ? "켜짐" : "꺼짐"), pregen ? NamedTextColor.GREEN : NamedTextColor.RED),
@@ -539,6 +579,11 @@ public class DialogManager {
             Component.text("인지도 풀:  " + famePoolLabel(famePool), NamedTextColor.GOLD),
             Component.text("등장 괴담 인지도 고정 (유명/덜유명/마이너만, 또는 난이도별)"), 180,
             DialogAction.customClick((v, a) -> onPickFame.run(), ClickCallback.Options.builder().uses(1).build())));
+        buttons.add(ActionButton.create(
+            Component.text("다음 괴담 지정:  " + (reservedEntity == null || reservedEntity.isEmpty() ? "없음(무작위)" : reservedEntity),
+                (reservedEntity == null || reservedEntity.isEmpty()) ? NamedTextColor.GRAY : NamedTextColor.LIGHT_PURPLE),
+            Component.text("다음에 생성될 괴담을 특정 이름으로 지정 (예: 쿠네쿠네) — 1회 적용. 누르면 채팅으로 이름 입력"), 180,
+            DialogAction.customClick((v, a) -> onPickEntity.run(), ClickCallback.Options.builder().uses(1).build())));
         ActionButton close = ActionButton.create(
             Component.text("닫기", TextColor.color(0xAAAAAA)),
             Component.text("설정 완료 — 다음 /trpg start 부터 적용"), 120, null);
@@ -897,9 +942,9 @@ public class DialogManager {
     // ──────────────────────────────────────────────────────────────
 
     /**
-     * 능동 특성 발동 시 2-선택지 다이얼로그.
-     * onCommit: 특성에 모든걸 맡기기 (무난)
-     * onInput: 행동 직접 입력 (리스크·리턴)
+     * 능동 특성 발동 시 2-선택지 다이얼로그(순수 서술형 특성 전용).
+     * onCommit: 특성에 모든걸 맡기기 (무난) / onInput: 행동 직접 입력 (리스크·리턴).
+     * ★시스템 효과 능력(행운 주사위·탐색·버프·순간이동 등)은 이 창을 거치지 않고 즉시 발동한다(handleTraitUse가 분기).
      */
     public void showTraitActivation(Player player, TraitData trait, String zone,
                                      Runnable onCommit, Runnable onInput) {
