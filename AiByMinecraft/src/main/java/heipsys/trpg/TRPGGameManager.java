@@ -2966,15 +2966,19 @@ public class TRPGGameManager {
                         + "(종결 처리는 시스템이 이어서 한다), 실패·부분성공이면 대가·전개를 주고 끝내지 마라.");
                     clearTag = null; // 이 턴은 클리어 보류 — 아래로 흘러 <DICE> 굴림을 실제로 수행하고, 성공 시 stash가 매듭짓는다.
                 }
-                // ★무판정 종결 게이트(외부 감사 P1)★: DICE 없이 CLEAR만 온 응답 — 프롬프트의 '자동성공' 예외는
-                //   '조건 완전 충족 + 위협도 낮음'일 때만이다. 위협이 높은데(≥40) 최근 3턴 내 성공 판정도 없이
-                //   서술만으로 끝내려 하면 종결을 보류하고 결정타 판정을 요구한다(주사위 0회 클리어 재발 방지 — 엔진 집행).
-                if (clearTag != null && ai.parseDiceTag(raw) == null && state.getThreat() >= 40
+                // ★무판정 종결 게이트(외부 감사 P1)★: DICE 없이 CLEAR만 온 응답 — 위협이 높은데(≥40) 최근
+                //   3턴 내 성공 판정도 없이 서술만으로 끝내려 하면 종결을 보류하고 판정을 요구한다(주사위 0회 클리어 방지).
+                // ★예외 — 정답을 이미 아는 실행은 자동성공 우선(재도전-지식 감사)★: '정확한 해법 실행' 자체가
+                //   보상인 괴담에서, 파티가 정답을 손에 넣었으면(①종결단서 capstone 전부 발견 ②재도전 메타지식)
+                //   위협이 높아도 게이트를 걸지 않는다 — 주사위는 해법을 모른 채 버티거나 물리 난이도 보완용이지,
+                //   '정답을 아는데 위협만 높다'는 이유로 굴리게 하면 정보·재도전의 가치가 무너진다.
+                boolean solutionKnown = solutionCapstoneKnown() || corruptMan.getAttempts() > 0;
+                if (clearTag != null && !solutionKnown && ai.parseDiceTag(raw) == null && state.getThreat() >= 40
                         && state.getCurrentTurn() - lastDiceSuccessTurn > 3) {
                     gameLogger.logEvent("[CLEAR 보류: 무판정] 위협도 " + state.getThreat() + " — 결정타 판정 요구");
-                    ai.injectGmSystem("[종결 보류 — 판정 필요] 방금 <CLEAR>는 판정 없이 서술만으로 종결하려 했다. 위협도가 낮지 않아 자동성공 요건이 아니다. "
+                    ai.injectGmSystem("[종결 보류 — 판정 필요] 방금 <CLEAR>는 판정 없이 서술만으로 종결하려 했다. 위협도가 낮지 않고, 파티가 정답 해법을 확실히 갖췄다는 근거도 아직 없다. "
                         + "종결로 이어지는 결정적 행동을 ★<DICE>(\"decisive\":\"1\")로 먼저 굴려라★ — 성공으로 확정되면 그때 <CLEAR>를 다시 내라. "
-                        + "(조건을 완전히 갖춘 정석 해결이라도 위협이 이만큼 남아 있으면 실행의 성패는 굴림으로 가른다.)");
+                        + "(단 플레이어가 올바른 해법을 확실히 알고 실행하는 경우라면 굴리지 말고 그대로 <CLEAR>로 빠르게 매듭지어라.)");
                     clearTag = null;
                 }
                 // ★전역 결정타 게이트(감사 B)★: 다른 응답의 결정타 판정이 아직 미해결이면 이 CLEAR를 보류한다.
@@ -9588,6 +9592,22 @@ public class TRPGGameManager {
         for (String tok : content.split("[^가-힣A-Za-z0-9]+"))
             if (tok.length() >= 2 && found.contains(tok)) overlap++;
         return overlap >= 3;
+    }
+
+    /** ★파티가 정답을 손에 넣었는가(자동성공 예외 신호, 재도전-지식 감사)★ — 이 시나리오에 종결단서(capstone)가
+     *  하나라도 있고 그것이 전부 봉인 해제(선행 단서 확보)됐으면 true. capstone 없는 시나리오는 이 신호로 판단
+     *  불가라 false(그땐 재도전 여부 등 다른 신호로 자동성공 예외를 가린다). */
+    private boolean solutionCapstoneKnown() {
+        JsonObject gdam = state.getGdamData();
+        if (gdam == null || !gdam.has("clues") || !gdam.get("clues").isJsonArray()) return false;
+        JsonArray clues = gdam.getAsJsonArray("clues");
+        boolean hasCapstone = false;
+        for (JsonElement ce : clues) {
+            if (!ce.isJsonObject()) continue;
+            JsonObject c = ce.getAsJsonObject();
+            if (c.has("capstone") && c.get("capstone").isJsonPrimitive() && c.get("capstone").getAsBoolean()) { hasCapstone = true; break; }
+        }
+        return hasCapstone && sealedCapstoneCount(clues) == 0;
     }
 
     /** 선행 단서가 아직 안 채워져 ★봉인 상태★인 capstone 단서 수. */
