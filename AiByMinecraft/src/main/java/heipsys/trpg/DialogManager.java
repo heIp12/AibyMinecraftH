@@ -941,8 +941,58 @@ public class DialogManager {
     //  능동 특성 발동 다이얼로그
     // ──────────────────────────────────────────────────────────────
 
-    // (특성 발동 2-선택지 다이얼로그 showTraitActivation 제거 — 발동형 능력은 선택 없이 즉시 발동한다.
-    //  입력형 능력은 handleTraitUse가 전용 입력창으로 바로 보내고, 그 외는 commitTrait로 곧장 발동.)
+    /**
+     * 능동 특성 발동 시 2-선택지 다이얼로그(순수 서술형 특성 전용).
+     * onCommit: 특성에 모든걸 맡기기 (무난) / onInput: 행동 직접 입력 (리스크·리턴).
+     * ★시스템 효과 능력(행운 주사위·탐색·버프·순간이동 등)은 이 창을 거치지 않고 즉시 발동한다(handleTraitUse가 분기).
+     */
+    public void showTraitActivation(Player player, TraitData trait, String zone,
+                                     Runnable onCommit, Runnable onInput) {
+        activeDialog.put(player.getUniqueId(), DialogState.TRAIT_ACTIVATION);
+
+        String situationText = (zone != null && !zone.isBlank())
+            ? zone + "에서 " + trait.name + " 특성을 발동합니다."
+            : trait.name + " 특성을 발동합니다.";
+
+        Component body = Component.text()
+            .append(Component.text(situationText + "\n\n", NamedTextColor.WHITE))
+            .append(Component.text("효과: ", NamedTextColor.GRAY))
+            .append(Component.text(trait.effect != null ? trait.effect : "", NamedTextColor.AQUA))
+            .append(Component.newline()).append(Component.newline())
+            .append(Component.text("• 특성에 맡기기", NamedTextColor.GREEN))
+            .append(Component.text(": 무난하게 효과가 발휘됩니다.\n", NamedTextColor.GRAY))
+            .append(Component.text("• 행동 직접 입력", NamedTextColor.GOLD))
+            .append(Component.text(": 행동에 따라 결과가 더 좋거나 나쁠 수 있습니다.", NamedTextColor.GRAY))
+            .build();
+
+        ActionButton commitBtn = ActionButton.create(
+            Component.text("특성에 모든걸 맡기기", NamedTextColor.GREEN, TextDecoration.BOLD),
+            Component.text("추가 행동 없이 특성 효과만으로 진행합니다.\n무난한 결과가 보장됩니다.", NamedTextColor.GRAY),
+            200,
+            DialogAction.customClick((v, a) -> {
+                activeDialog.remove(player.getUniqueId());
+                onCommit.run();
+            }, ClickCallback.Options.builder().uses(1).build())
+        );
+
+        ActionButton inputBtn = ActionButton.create(
+            Component.text("행동을 직접 입력하기", NamedTextColor.GOLD, TextDecoration.BOLD),
+            Component.text("채팅으로 행동을 입력하면 특성과 함께 처리됩니다.\n더 좋은 결과를 노릴 수 있지만 역효과 위험도 있습니다.\n[리스크·리턴]", NamedTextColor.GRAY),
+            200,
+            DialogAction.customClick((v, a) -> {
+                activeDialog.remove(player.getUniqueId());
+                onInput.run();
+            }, ClickCallback.Options.builder().uses(1).build())
+        );
+
+        Dialog dialog = Dialog.create(b -> b.empty()
+            .base(DialogBase.builder(Component.text("[" + trait.name + "] 발동"))
+                .body(List.of(DialogBody.plainMessage(body)))
+                .build())
+            .type(DialogType.multiAction(List.of(commitBtn, inputBtn), null, 1))
+        );
+        player.showDialog(dialog);
+    }
 
     // ──────────────────────────────────────────────────────────────
     //  스테이지 종료 특성 성장 3선택지 다이얼로그
