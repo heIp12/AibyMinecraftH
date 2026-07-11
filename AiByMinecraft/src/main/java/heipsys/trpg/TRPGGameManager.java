@@ -191,6 +191,19 @@ public class TRPGGameManager {
      *  그 판정이 성공하면 시스템이 그 자리(같은 배역 문맥)에서 onClearEnding으로 매듭짓는다. 비동기 멀티플레이라
      *  '다음 응답'이 다른 구역의 딴 플레이어 턴으로 새어 종결을 놓치던 버그(제보) 방지. 실패·부분성공이면 폐기. */
     private final Map<UUID, JsonObject> pendingDecisiveClear = new ConcurrentHashMap<>();
+
+    /** ★전역 결정타 게이트(감사 B)★ — 미해결 결정타 판정(굴림~결과 서술까지)이 공중에 떠 있는 플레이어들.
+     *  이 집합이 비어있지 않은 동안 ★어느 플레이어의 <CLEAR>든★ 보류된다(heldCrossClear). 5스테이지 실측 버그:
+     *  차복만의 결정타(부분성공)가 착지하기 전에 옥분의 병렬 응답 CLEAR가 통과해 A급 종결 → 판정 결과와 엔딩이 모순. */
+    private final java.util.Set<UUID> unresolvedDecisiveDice = ConcurrentHashMap.newKeySet();
+    /** 결정타 미해결 중 도착해 보류된 타 응답의 CLEAR 태그(최신 1개)와 그 발신 플레이어. 판정 성공 시 적용, 아니면 폐기. */
+    private JsonObject heldCrossClear = null;
+    private Player heldCrossClearBy = null;
+
+    /** ★위치 desync(감사 C)★ — GM이 존재하지 않는 구역 id로 이동시켜 거부된 뒤, <ZONE_UPDATE>로 교정될 때까지
+     *  엔진상 위치를 신뢰할 수 없는 플레이어. 이 동안 근처 발화·목격·대면 통신의 결정적 전달에서 제외한다
+     *  (5스테이지 실측: zone_fen 거부 후 낡은 위치로 원거리 대화가 [근처] 처리). 유효 구역 확정 시 해제. */
+    private final java.util.Set<UUID> locationDesynced = ConcurrentHashMap.newKeySet();
     /** ★체력·정신 소모 메시지 지연 큐★ — STATE_UPDATE(공격받음 등)로 생긴 vital 변화 안내를 ★관련 서술이 나온 뒤★
      *  출력하려고 모아둔다(주사위 결과처럼). applyStateUpdate가 적립 → 서술 전달 후 flushPendingVitalMsgs가 배출. */
     private final Map<UUID, java.util.List<String>> pendingVitalMsgs = new ConcurrentHashMap<>();
@@ -251,6 +264,10 @@ public class TRPGGameManager {
     private final Map<String, java.util.Deque<String>> npcLastAutoOutput = new ConcurrentHashMap<>();
     /** NPC별 연속 자율 반복 횟수 — 임계 이상이면 자율 구동을 게이트(플레이어 상호작용 시 리셋). */
     private final Map<String, Integer> npcAutoStale = new ConcurrentHashMap<>();
+    /** ★자율 NPC 상태서명 스로틀(감사 J — 비용)★: 마지막 자율 호출 시점의 상태 서명(구역·구역내 플레이어·위협 밴드·
+     *  타임라인 단계·예정 의도)과 인게임 시각. 서명이 그대로고 ~35 인게임분이 안 지났으면 라운드로빈 호출을 생략한다. */
+    private final Map<String, String>  npcAutoStateSig  = new ConcurrentHashMap<>();
+    private final Map<String, Integer> npcAutoStateTime = new ConcurrentHashMap<>();
     /** ★#179 능동 비트★ 라운드로빈 커서 — 매 비트마다 다음 critical NPC 1명을 순번대로 고른다(전원 매턴=파산 방지). */
     private int npcBeatCursor = -1;
     /** NPC id → 뷰어 로그에 마지막으로 남긴 위치(zone). 매 주기 같은 위치를 이동 이벤트로 도배하지 않도록, 바뀔 때만 logMove. 뷰어 NPC 시점 '현재 위치'·근처 가시성용(#188). */
@@ -406,6 +423,7 @@ public class TRPGGameManager {
 
     public TRPGGameManager(AICraft plugin, AiManager ai) {
         this.plugin     = plugin;
+        this.swearAllowed = plugin.getConfig().getBoolean("trpg.swear-allowed", false); // ★NPC 욕설 허용(기본 off)★ — config.yml 영속
         this.ai         = ai;
         this.gdamGen    = new GdamGenerator(plugin, ai);
         this.state      = new GameStateManager();
@@ -1008,6 +1026,9 @@ public class TRPGGameManager {
         stunTurns.clear();
         possessingNpc.clear();
         activeTimedEffects.clear();
+        unresolvedDecisiveDice.clear(); heldCrossClear = null; heldCrossClearBy = null; // 결정타 게이트 리셋(감사 B)
+        locationDesynced.clear(); // 구역 desync 표식 리셋(감사 C)
+        npcAutoStateSig.clear(); npcAutoStateTime.clear(); // 자율 NPC 상태서명 스로틀 리셋(감사 J)
         resetOverviewCache();
         preSpawnCallCounts.clear();
         preSpawnLastBeat.clear();
@@ -1295,6 +1316,16 @@ public class TRPGGameManager {
     /** 시작 설정: 다음 생성 괴담의 유형/성격 힌트(종류별 테스트용, ""=무작위). GdamGenerator에 즉시 반영. */
     private String conceptTypeHint = "";
 
+    /** ★NPC 욕설·비속어 허용 여부★ — 기본 off(순화된 표현만). config.yml(trpg.swear-allowed)에 영속. */
+    private boolean swearAllowed = false;
+    public boolean isSwearAllowed() { return swearAllowed; }
+    /** 욕설 허용 토글 — 값을 바꾸고 config.yml에 저장(서버 자동 저장). */
+    public void setSwearAllowed(boolean v) {
+        swearAllowed = v;
+        plugin.getConfig().set("trpg.swear-allowed", v);
+        plugin.saveConfig();
+    }
+
     /** /trpg setting [pregen on|off | stage N | type <유형>] — 인자 없으면 현재 설정 표시. */
     public void handleStartSetting(Player player, String[] sub) {
         if (sub == null || sub.length == 0) { openStartSettings(player); return; }
@@ -1398,6 +1429,17 @@ public class TRPGGameManager {
             player.sendMessage("§6[설정] 단체턴 서술 팬아웃: " + (state.isGroupFanout()
                 ? "§a켜짐 §7(통합 서술을 라운드 동료에게 결정적 전달 — 기본)"
                 : "§c꺼짐 §7(GM의 WITNESS 재량에만 의존 — 동료 장면 누락 가능)") + " §7— 즉시 적용");
+        } else if (key.equals("swear") || key.equals("욕설") || key.equals("욕")) {
+            // ★NPC 욕설·비속어 허용 토글★ — 기본 off(순화된 표현만). config.yml(trpg.swear-allowed)에 서버 저장.
+            boolean nv;
+            if (sub.length >= 2) {
+                String v = sub[1].toLowerCase();
+                if (v.equals("on") || v.equals("켜기") || v.equals("켬") || v.equals("허용") || v.equals("true") || v.equals("1")) nv = true;
+                else if (v.equals("off") || v.equals("끄기") || v.equals("끔") || v.equals("금지") || v.equals("false") || v.equals("0")) nv = false;
+                else { player.sendMessage("§c사용법: §f/trpg setting swear <on|off>"); return; }
+            } else nv = !swearAllowed; // 값 없으면 토글
+            setSwearAllowed(nv);
+            player.sendMessage("§6[설정] NPC 욕설·비속어: " + (nv ? "§a허용" : "§c금지 §7(기본 — 순화된 표현만)") + " §7— 서버 저장·즉시 적용");
         } else {
             openStartSettings(player);
         }
@@ -1407,7 +1449,7 @@ public class TRPGGameManager {
     public void openStartSettings(Player player) {
         dialogMan.showStartSettings(player, autoPregen, startStage, conceptTypeHint, gdamGen.getFamePool(),
             reservedNextEntityLabel(),
-            state.isGroupTurn(),
+            state.isGroupTurn(), swearAllowed,
             () -> { // 자동 사전생성 토글
                 autoPregen = !autoPregen;
                 player.sendMessage("§6[설정] 자동 사전생성: " + (autoPregen ? "§a켜짐" : "§c꺼짐 §7(/trpg next에서 즉석 생성)"));
@@ -1444,6 +1486,11 @@ public class TRPGGameManager {
             () -> { // ★다음 괴담 지정★ — 채팅으로 이름 입력받기(취소: '취소', 해제: 'off')
                 pendingEntityReserveInput.add(player.getUniqueId());
                 player.sendMessage("§6[다음 괴담] 채팅으로 지정할 괴담 이름을 입력하세요. §7(예: §f쿠네쿠네§7 · 취소: §f취소§7 · 해제: §foff§7)");
+            },
+            () -> { // ★NPC 욕설 on/off 토글★ (config.yml 서버 저장)
+                setSwearAllowed(!swearAllowed);
+                player.sendMessage("§6[설정] NPC 욕설·비속어: " + (swearAllowed ? "§a허용" : "§c금지 §7(순화된 표현만)") + " §7— 서버 저장");
+                openStartSettings(player);
             });
     }
 
@@ -1924,8 +1971,9 @@ public class TRPGGameManager {
             }
 
             if (myPd != null && !myPd.contactId.isEmpty()) {
-                p.sendMessage("§7당신의 연락처: §f" + myPd.contactId
-                    + " §8(상대 번호를 알면 §f@번호 메시지§8로 바로 연락할 수 있습니다)");
+                if (isPhoneUsable()) // ★감사 G★ 번호 없는 세계(과거·통신두절)에선 자기 번호 표기를 생략(면식 목록만)
+                    p.sendMessage("§7당신의 연락처: §f" + myPd.contactId
+                        + " §8(상대 번호를 알면 §f@번호 메시지§8로 바로 연락할 수 있습니다)");
                 announceKnownContacts(p, myPd);
             }
 
@@ -2340,6 +2388,9 @@ public class TRPGGameManager {
 
         morphTurns.clear(); observerTurns.clear(); animalForm.clear(); stunTurns.clear(); possessingNpc.clear(); // 변신·관조·동물형태·행동불능·빙의는 스테이지 넘어 유지되지 않음
         activeTimedEffects.clear(); // 지속형 능력 효과(카운트다운·상시)도 스테이지 넘어 유지되지 않음
+        unresolvedDecisiveDice.clear(); heldCrossClear = null; heldCrossClearBy = null; // 결정타 게이트도 스테이지 리셋(감사 B)
+        locationDesynced.clear(); // 구역 desync 표식도 스테이지 리셋(감사 C — 새 스테이지 = 새 구역 배치)
+        npcAutoStateSig.clear(); npcAutoStateTime.clear(); // 자율 NPC 상태서명 스로틀도 스테이지 리셋(감사 J — 새 NPC·새 시계)
         commBypassTurn.clear(); commBypassStealth.clear(); // 통신 개방도 스테이지 넘어 유지 안 됨(턴 번호 재사용 오작동 방지)
         resetOverviewCache(); // 새 스테이지 = 새 괴담 → 시나리오 개요 캐시 초기화(다음 사용 시 재생성)
         loadForbiddenWord(); // 금지워드형 괴담의 금지어 로드(entity.forbidden_word)
@@ -2908,6 +2959,15 @@ public class TRPGGameManager {
                         + "(종결 처리는 시스템이 이어서 한다), 실패·부분성공이면 대가·전개를 주고 끝내지 마라.");
                     clearTag = null; // 이 턴은 클리어 보류 — 아래로 흘러 <DICE> 굴림을 실제로 수행하고, 성공 시 stash가 매듭짓는다.
                 }
+                // ★전역 결정타 게이트(감사 B)★: 다른 응답의 결정타 판정이 아직 미해결이면 이 CLEAR를 보류한다.
+                //   (같은 응답 DICE+CLEAR는 위 stash가 처리 — 여기는 '타 플레이어/후속 응답'의 CLEAR가 판정을 앞지르는 경쟁 차단.)
+                //   판정이 성공으로 확정되면 resolveDecisiveDice가 보류분을 적용하고, 부분성공·실패면 폐기+GM 교정 주입.
+                if (clearTag != null && !unresolvedDecisiveDice.isEmpty()) {
+                    heldCrossClear = clearTag;
+                    heldCrossClearBy = player;
+                    gameLogger.logEvent("[CLEAR 보류] 미해결 결정타 판정 " + unresolvedDecisiveDice.size() + "건 — 판정 확정 후 처리");
+                    clearTag = null; // 서술·상태 적용은 아래 일반 경로로 계속(종결만 보류)
+                }
                 if (clearTag != null) {
                     // ★#2 종결 전 상태 반영★: CLEAR로 이 응답의 상태·NPC종결·아이템소모 태그가 유실되지 않게 먼저 적용한다
                     //   (희생 hp_change로 인한 사망·봉인 상태·최종 아이템 소모가 등급·생존자 평가에 반영되게). CLEAR는 여기서
@@ -2991,8 +3051,21 @@ public class TRPGGameManager {
             for (JsonObject itemUse : ai.parseAllItemUses(raw)) applyItemUse(itemUse);
             maybeAutoSave(); // ★#8★ 상태·아이템 적용 뒤 저장 — 중단 후 이어하기가 이번 턴 결과까지 반영(예전엔 적용 전 저장)
 
+            // 3c. ★구역 태그 사전검사(감사 C)★ — 서술 '배달 전에' 무효 구역을 감지한다(5d에서만 알면 잘못된 위치를
+            //   전제한 목격·근처 전달이 이미 나간 뒤다). 무효면 desync 표시 + 다음 GM 응답에 일회성 교정 주입.
+            //   (의미 추측 자동매핑(zone_fen→습지)은 오매핑 위험 > 이득이라 안 한다 — GM이 유효 id로 재지정하는 루프.)
+            for (String[] zuPre : ai.parseZoneUpdateTags(raw)) {
+                if (resolveZoneId(zuPre[1]) != null) continue;
+                PlayerData zpd = findAnyByName(zuPre[0]);
+                if (zpd != null) locationDesynced.add(zpd.uuid);
+                injectZoneCorrection(zpd, zuPre[0], zuPre[1]);
+            }
+
             // 4. 서술 배달 — <DICE>가 있으면 그 위치에서 쪼개 [앞 서술]→[주사위 인라인]→[뒤 결과 서술](#254). 없으면 통짜 배달.
             JsonObject inlineDice = (player != null && player.isOnline()) ? ai.parseDiceTag(raw) : null;
+            // ★결정타 등록(감사 B)★: 이 굴림이 결정타(명시 decisive / CLEAR 동봉 stash / 고DC / 고위협)면 해소될 때까지
+            //   전역 게이트에 올린다 — 이 동안 도착하는 어떤 CLEAR도 판정 확정 전엔 처리되지 않는다.
+            if (inlineDice != null && isDecisiveDice(player, inlineDice)) unresolvedDecisiveDice.add(player.getUniqueId());
             if (inlineDice != null) deliverNarrativeWithInlineDice(player, raw, inlineDice);
             else deliverNarrative(player, raw);
             // ★체력·정신 소모 안내는 관련 서술(공격받았다 등) '뒤'에 출력★(요청): 서술을 배달(큐 적재)한 직후
@@ -3710,7 +3783,7 @@ public class TRPGGameManager {
             player.sendMessage("§a세션에 재접속했습니다!");
             player.sendMessage(charGen.buildSheetMessage(pd, state.getRoomNumber(), state.getCorruption().attempts + 1));
             if (!pd.contactId.isEmpty()) {
-                player.sendMessage("§7당신의 연락처: §f" + pd.contactId);
+                if (isPhoneUsable()) player.sendMessage("§7당신의 연락처: §f" + pd.contactId); // 감사 G
                 announceKnownContacts(player, pd);
             }
             // 게임 진행 중(캐릭터 생성 이후)이면 정보·기록·지도·메모장 아이템 복원
@@ -7414,6 +7487,28 @@ public class TRPGGameManager {
      *                   false면 개요+뒷이야기만(생존 재도전 등 — 같은 스테이지 재플레이 스포 방지).
      * @param onDone 에필로그·해설 공개가 끝난 뒤 실행할 콜백 (없으면 null)
      */
+    /** ★엔딩 사실 정본(감사 K)★ — 후일담 AI가 실제 결과와 다른 결말을 재구성(없던 '함께 구조'·합류·이동,
+     *  생존/사망 뒤집기)하는 것을 막기 위한 확정 사실 목록. 5스테이지 실측: 격리실에 갇힌 채 끝난 캐릭터가
+     *  후일담에서 '함께 구조되어 걸어나온' 것으로 재작성됨 → 최종 위치·생사·마지막 행동을 정본으로 못박는다. */
+    private String endingFactSnapshot() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("\n## ★사실 정본(재구성 금지)★ — 아래는 시스템이 확정한 실제 결과다. 후일담은 이와 모순되면 안 된다.\n");
+        sb.append("실제로 없었던 '함께 구조됨'·'마지막에 합류'·위치 이동·생존/사망 뒤집기를 만들어내지 마라. ")
+          .append("위치 불명자는 행방을 단정하지 말고 '행방이 확인되지 않았다'는 여운으로 다뤄라.\n");
+        for (PlayerData pd : state.getAllPlayers()) {
+            String where = locationDesynced.contains(pd.uuid)
+                ? "위치 불명(추적 끊김 — 마지막 위치를 단정하지 마라)"
+                : ((pd.zone == null || pd.zone.isEmpty()) ? "위치 기록 없음" : zoneDisplayName(pd.zone));
+            String last = state.lastActionDisplayOf(pd);
+            sb.append("- ").append(pd.gmDisplayName())
+              .append(" · ").append(pd.isDead ? "사망" : "생존")
+              .append(" · 최종 위치: ").append(where);
+            if (last != null && !last.isBlank()) sb.append(" · 마지막 행동: ").append(last);
+            sb.append("\n");
+        }
+        return sb.toString();
+    }
+
     private void concludeWithReveal(String endingLabel, boolean fullReveal, Runnable onDone) {
         String recentLog = state.buildEntityLog(15);
         // CODE-15: '플레이어가 실제로 발견한 것'만 공개하도록 발견 목록을 컨텍스트로 주입.
@@ -7434,6 +7529,7 @@ public class TRPGGameManager {
         String prompt = "게임이 끝났다. 결말 유형: " + endingLabel + ".\n"
             + (recentLog.isBlank() ? "" : "플레이어들의 주요 행동 기록:\n" + recentLog + "\n")
             + discovered
+            + endingFactSnapshot()
             + "\n이 사건의 '뒷이야기'를 소설풍 에필로그로 써줘. "
             + "★ 통합 엔딩 서술(후일담): 전 플레이어를 '하나의 통합 서사'로 보여준다(개별 후일담 나열 금지). "
             + "메인 해결 주체(들) 중심으로 서술하고, 비(非)주체 캐릭터는 한 줄로 간략히 다룬다. "
@@ -7727,6 +7823,7 @@ public class TRPGGameManager {
                     PlayerData mpd = state.getPlayer(mu);
                     if (mpd == null || mpd.isDead || !spawnedPlayers.contains(mu)) continue;
                     if (!actorZone.isEmpty() && !actorZone.equals(mpd.zone)) continue;
+                    if (locationDesynced.contains(mu) || (actor != null && locationDesynced.contains(actor.getUniqueId()))) continue; // 위치 불확정 — 오배달 방지(감사 C)
                     Player mp = Bukkit.getPlayer(mu);
                     if (mp == null || !mp.isOnline()) continue;
                     narrativeDelivery.deliver(mp, grpNarrative);
@@ -7745,6 +7842,13 @@ public class TRPGGameManager {
                 .filter(pd -> spawnedPlayers.contains(pd.uuid) && matchesPlayerName(pd, pName))
                 .findFirst().orElse(null);
             if (wpd == null) continue;
+            // ★위치 불확정 게이트(감사 C)★: 행동자/목격자의 위치가 desync면 같은구역·인접 기반 목격을 신뢰할 수 없다
+            //   — far(멀리 퍼지는 큰 사건)만 통과(위치 무관), 나머지는 교정 전까지 차단.
+            if (!gmMarkedFar && (locationDesynced.contains(wpd.uuid)
+                    || (actor != null && locationDesynced.contains(actor.getUniqueId())))) {
+                gameLogger.write("목격", "", "[WITNESS 차단: " + pName + " — 위치 불확정(구역 교정 대기)]");
+                continue;
+            }
             if (!witnessReaches(actorZone, wpd.zone, gmMarkedFar)) { // 먼 구역인데 GM이 far 표시 안 함 → 차단
                 gameLogger.write("목격", "", "[원거리 WITNESS 차단: " + pName + " — 먼 구역·GM far 미표시(작은 행동)]");
                 continue;
@@ -8338,7 +8442,10 @@ public class TRPGGameManager {
                 if (trimmed.isBlank() || trimmed.startsWith("§c")) return;
                 // deliver() 내부에서 format()이 호출되므로 여기서 중복 호출하지 않는다
                 narrativeDelivery.deliver(p, trimmed);
-                gameLogger.logGmOutput(p.getName() + "(대기)", trimmed);
+                // ★계정명 노출 금지★ — 대기(미등장) 서술 로그도 캐릭터명으로(없으면 중립 라벨). p.getName()은 계정명이라 뷰어에 그대로 샜다.
+                PlayerData wpd = state.getPlayer(p);
+                String wname = (wpd != null && wpd.charName != null && !wpd.charName.isEmpty()) ? wpd.charName : "대기 참가자";
+                gameLogger.logGmOutput(wname + "(대기)", trimmed);
             }));
     }
 
@@ -8559,13 +8666,16 @@ public class TRPGGameManager {
             // ★role_type은 내부 설계 라벨(약화된열쇠·발생원+수상한자 등)이라 노출 금지★. zone도 zone_id가 아니라 표시명으로(메타 누출 방지).
             String zone = zoneDisplayName(npcZones.getOrDefault(getStr(npc, "id"), getStr(npc, "zone")));
             sb.append(zone == null || zone.isBlank() || "?".equals(zone) ? "." : " — " + zone + "에서 시작.");
-            // 지금 하는 일 (schedule 첫 항목: action 우선, 없으면 goal)
-            if (npc.has("schedule") && npc.get("schedule").isJsonArray() && npc.getAsJsonArray("schedule").size() > 0
-                    && npc.getAsJsonArray("schedule").get(0).isJsonObject()) {
-                JsonObject s = npc.getAsJsonArray("schedule").get(0).getAsJsonObject();
-                String action = getStr(s, "action"), goal = getStr(s, "goal");
-                String doing = !action.isBlank() ? action : goal;
-                if (!doing.isBlank()) sb.append(" 지금 하는 일: ").append(doing).append(doing.endsWith(".") ? "" : ".");
+            // 지금 하는 일 (schedule 중 ★열려 있는★ 첫 항목: action 우선, 없으면 goal — 잠긴 후반 예정은 건너뜀(감사 F))
+            if (npc.has("schedule") && npc.get("schedule").isJsonArray()) {
+                for (JsonElement sel : npc.getAsJsonArray("schedule")) {
+                    if (!sel.isJsonObject()) continue;
+                    JsonObject s = sel.getAsJsonObject();
+                    if (scheduleItemLocked(s)) continue;
+                    String action = getStr(s, "action"), goal = getStr(s, "goal");
+                    String doing = !action.isBlank() ? action : goal;
+                    if (!doing.isBlank()) { sb.append(" 지금 하는 일: ").append(doing).append(doing.endsWith(".") ? "" : "."); break; }
+                }
             }
             // 아는 것 (knowledge 최대 2개 — 그 NPC 시점에만 보이므로 스포일러 무관)
             if (npc.has("knowledge") && npc.get("knowledge").isJsonArray()) {
@@ -8800,6 +8910,10 @@ public class TRPGGameManager {
     /** 말투 ⑤ 욕설·비속어 — 독립 3축(발동 trigger P1~P7 · 강도 intensity · 돌려까기 burn).
      *  생성기가 성격에서 정해 swear 필드에 박고(있으면 그대로), 없으면 성격에서 스스로 고른다(구작 호환). P2·P3·P4는 게임 상태 연동. */
     private void npcProfanityBlock(StringBuilder sb, JsonObject npcObj) {
+        if (!swearAllowed) { // ★서버 설정: 욕설 금지(기본 off)★ — 성향(swear 필드) 무관 전원 순화
+            sb.append("- 욕설·비속어: ★쓰지 않는다★ — 격한 인물이라도 순화된 표현으로만. 거친 감정은 어조·태도·짧은 행동으로 드러내라.\n");
+            return;
+        }
         JsonObject sw = (npcObj != null && npcObj.has("swear") && npcObj.get("swear").isJsonObject())
             ? npcObj.getAsJsonObject("swear") : null;
         String tg = sw != null && sw.has("trigger") ? sw.get("trigger").getAsString() : "";
@@ -8953,6 +9067,7 @@ public class TRPGGameManager {
             for (JsonElement el : npcObj.getAsJsonArray("schedule")) {
                 if (!el.isJsonObject()) continue;
                 JsonObject s = el.getAsJsonObject();
+                if (scheduleItemLocked(s)) continue; // ★하드 게이트(감사 F)★ 단계·단서 조건 미충족 예정은 NPC에게 아예 안 보임
                 String goal = getStr(s, "goal"); // A: 의도(안정). action은 그 목표를 향한 '지금 계획'(가변).
                 sb.append("  · [").append(getStr(s, "time")).append("] ");
                 if (!goal.isBlank()) sb.append("목표: ").append(goal).append(" · 지금 계획: ").append(getStr(s, "action"));
@@ -9198,7 +9313,8 @@ public class TRPGGameManager {
             if (au >= nowTurn && !cooldown && !stale) { toFire.add(npc0); if (toFire.size() >= 2) break; } // 활성 NPC는 최대 2명까지 매턴
         }
         // 라운드로빈 베이스라인은 ★주기 턴(cadence)에만★ 1명 — 활성 NPC 없는 조용한 턴은 스파스하게(N주기마다 1명). 활성 NPC는 위에서 매턴 이미 잡힘.
-        if (cadenceTurn && toFire.size() < 2) { JsonObject rr = pickNpcBeat(pool, nowTurn, toFire); if (rr != null) toFire.add(rr); } // toFire 전달 → 활성창 NPC와 중복된 라운드로빈 픽 방지
+        JsonObject rrPick = null;
+        if (cadenceTurn && toFire.size() < 2) { rrPick = pickNpcBeat(pool, nowTurn, toFire); if (rrPick != null) toFire.add(rrPick); } // toFire 전달 → 활성창 NPC와 중복된 라운드로빈 픽 방지
         boolean anyFired = false;
         // ★막후 진행(층1)★: 이번 턴 비트 없는 '못 닿는' NPC의 예정만 GM에 정적 주입(AI 호출 없이 진행 보장).
         java.util.List<String> offscreenIntents = new java.util.ArrayList<>();
@@ -9220,6 +9336,10 @@ public class TRPGGameManager {
             // ★대화 중 중복 구동 방지★(맥락오염 방지, 안전망): 직전 1턴 내 직접 대화한 NPC는 자율 구동 생략.
             int lastDirect = npcLastDirectTurn.getOrDefault(npcId, Integer.MIN_VALUE);
             if (lastDirect >= 0 && nowTurn - lastDirect <= 1) continue;
+            // ★상태서명 스로틀(감사 J)★ — 라운드로빈 베이스라인 픽만: NPC 주변 상태(구역·구역내 플레이어·위협 밴드·
+            //   단계·예정)가 마지막 자율 호출 때와 그대로고 ~35 인게임분이 안 지났으면 이번 호출을 생략(비용 절약).
+            //   활성 창(<BUSY>·지시 이행) NPC는 다급한 일 진행 중이라 스로틀하지 않는다.
+            if (npcObj == rrPick && npcAutoStateThrottled(npcId, npcZone, npcObj)) continue;
             // 반전 동명 안내용(우연 동명이인은 pool에서 이미 제외됨).
             String overlapPlayer = overlappingPlayerLabel(npcObj);
             // ★그 NPC가 있는 위치(zone)에서 일어난 행동만 — 다른 장면의 플레이어 행동이 NPC 서술에 섞이지 않게.
@@ -9402,6 +9522,48 @@ public class TRPGGameManager {
         return "";
     }
 
+    /** ★스케줄 하드 게이트(감사 F)★ — min_timeline_stage 미도달 또는 requires_clues 미발견이면 잠긴 예정:
+     *  NPC 프롬프트·의도 요약 어디에도 노출하지 않는다(NPC가 후반 전개를 앞당겨 실행·발설하던 문제 차단). */
+    private boolean scheduleItemLocked(JsonObject s) {
+        if (s == null) return false;
+        try {
+            if (s.has("min_timeline_stage") && s.get("min_timeline_stage").isJsonPrimitive()
+                    && state.getTimelineStage() < s.get("min_timeline_stage").getAsInt()) return true;
+            if (s.has("requires_clues") && s.get("requires_clues").isJsonArray()) {
+                for (JsonElement re : s.getAsJsonArray("requires_clues")) {
+                    String cid = re.isJsonPrimitive() ? re.getAsString().trim() : "";
+                    if (!cid.isEmpty() && !authoredClueDiscovered(cid)) return true;
+                }
+            }
+        } catch (Exception ignored) {}
+        return false;
+    }
+
+    /** authored 단서(id)가 실제 발견됐는지 근사 판정 — 발견 단서 자유문과 그 단서 content의 포함/토큰 겹침으로.
+     *  id가 clues에 없거나 content가 비면 게이트를 풀어 준다(생성 오류에 예정이 영영 인질 잡히지 않게 — 안전측). */
+    private boolean authoredClueDiscovered(String clueId) {
+        JsonObject gdam = state.getGdamData();
+        if (gdam == null || !gdam.has("clues") || !gdam.get("clues").isJsonArray()) return true;
+        String content = null;
+        for (JsonElement ce : gdam.getAsJsonArray("clues")) {
+            if (!ce.isJsonObject()) continue;
+            JsonObject c = ce.getAsJsonObject();
+            if (clueId.equals(getStr(c, "id"))) { content = getStr(c, "content"); break; }
+        }
+        if (content == null || content.isBlank()) return true;
+        java.util.List<String> found = state.getDiscoveredClues();
+        if (found == null || found.isEmpty()) return false;
+        for (String f : found) {
+            if (f == null || f.isBlank()) continue;
+            if (f.contains(content) || content.contains(f)) return true;
+            int overlap = 0;
+            for (String tok : content.split("[^가-힣A-Za-z0-9]+"))
+                if (tok.length() >= 2 && f.contains(tok)) overlap++;
+            if (overlap >= 3) return true;
+        }
+        return false;
+    }
+
     /** NPC의 현재 예정 의도를 짧게 요약(막후 진행 주입용). schedule의 goal(없으면 action) 우선 → NPC goal → role_type. */
     private String npcScheduleIntent(JsonObject npcObj) {
         if (npcObj == null) return "";
@@ -9409,6 +9571,7 @@ public class TRPGGameManager {
             for (JsonElement el : npcObj.getAsJsonArray("schedule")) {
                 if (!el.isJsonObject()) continue;
                 JsonObject s = el.getAsJsonObject();
+                if (scheduleItemLocked(s)) continue; // 잠긴 예정은 의도 요약에서도 숨김(감사 F)
                 String goal = getStr(s, "goal"), action = getStr(s, "action");
                 String v = !goal.isBlank() ? goal : action;
                 if (!v.isBlank()) { String cond = getStr(s, "condition"); return v + (cond.isBlank() ? "" : " (조건:" + cond + ")"); }
@@ -9418,6 +9581,25 @@ public class TRPGGameManager {
         if (!g.isBlank()) return g;
         String rt = getStr(npcObj, "role_type");
         return rt.isBlank() ? "" : ("역할:" + rt);
+    }
+
+    /** ★상태서명 스로틀(감사 J)★ — 이 NPC 주변 상태가 마지막 자율 호출 때와 그대로고 ~35 인게임분 미경과면 true(생략).
+     *  서명 = 구역 + 구역내 생존 플레이어 + 위협 밴드(20단위) + 타임라인 단계 + 열린 예정 의도. 시계 비활성이면 턴×15분 근사. */
+    private boolean npcAutoStateThrottled(String npcId, String npcZone, JsonObject npcObj) {
+        try {
+            StringBuilder here = new StringBuilder();
+            for (PlayerData pd : state.getAllPlayers())
+                if (!pd.isDead && npcZone != null && npcZone.equals(pd.zone)) here.append(pd.name).append(",");
+            String sig = npcZone + "|" + here + "|" + (state.getThreat() / 20) + "|" + state.getTimelineStage()
+                + "|" + npcScheduleIntent(npcObj);
+            int now = state.getClockMinutes() >= 0 ? state.getClockMinutes() : state.getCurrentTurn() * 15;
+            String prevSig = npcAutoStateSig.get(npcId);
+            Integer prevAt = npcAutoStateTime.get(npcId);
+            if (prevSig != null && prevAt != null && prevSig.equals(sig) && now - prevAt < 35) return true;
+            npcAutoStateSig.put(npcId, sig);
+            npcAutoStateTime.put(npcId, now);
+        } catch (Exception ignored) {}
+        return false;
     }
 
     /** 이 NPC가 만나거나(같은 zone) 전화로 닿을 수 있는 살아있는 등장 플레이어가 하나라도 있는가. 자율 AI 호출 여부 판단용(비용 절약). */
@@ -9690,6 +9872,7 @@ public class TRPGGameManager {
         java.util.List<String> heardNames = new java.util.ArrayList<>();
         for (PlayerData pd : state.getAllPlayers()) {
             if (pd.isDead || !spawnedPlayers.contains(pd.uuid) || !npcZone.equals(pd.zone)) continue;
+            if (locationDesynced.contains(pd.uuid)) continue; // 위치 불확정 — 낡은 좌표 기반 근처 전달 방지(감사 C)
             Player tp = Bukkit.getPlayer(pd.uuid);
             if (tp == null || !tp.isOnline()) continue;
             msgToWatchers(tp, "§a[근처] §f" + npcName + ": " + speech); // 본인+관전자(별도 sendMessage 시 이중 출력)
@@ -10093,7 +10276,8 @@ public class TRPGGameManager {
                                          boolean dialedByNumber, Player sender) {
         if (dialedByNumber) return false;                        // 번호 다이얼 = 원격 전자
         if (targetPd != null)                                    // 플레이어: 같은(비어있지 않은) 구역이면 대면
-            return !senderPd.zone.isEmpty() && senderPd.zone.equals(targetPd.zone);
+            return !locationDesynced.contains(senderPd.uuid) && !locationDesynced.contains(targetPd.uuid) // 위치 불확정이면 대면 아님(감사 C)
+                && !senderPd.zone.isEmpty() && senderPd.zone.equals(targetPd.zone);
         if (npcObj != null) {                                    // NPC: 10175 규칙(위치 불명·같은 구역=대면) + 최근 조우
             String npcZone = npcZones.getOrDefault(getStr(npcObj, "id"), getStr(npcObj, "zone"));
             boolean sameZone = senderPd.zone.isEmpty() || npcZone.isEmpty() || senderPd.zone.equals(npcZone);
@@ -10314,7 +10498,8 @@ public class TRPGGameManager {
         // 도달 가능성 판정 (viaDevice = 기기 통신 여부, written = 전자통신 대신 필담/편지)
         boolean viaDevice;
         boolean written = false;
-        if (!senderPd.zone.isEmpty() && senderPd.zone.equals(targetPd.zone)) {
+        if (!locationDesynced.contains(senderPd.uuid) && !locationDesynced.contains(targetPd.uuid) // 위치 불확정이면 대면 아님(감사 C — 낡은 좌표로 원거리 대화가 [근처] 처리되던 버그)
+            && !senderPd.zone.isEmpty() && senderPd.zone.equals(targetPd.zone)) {
             viaDevice = false; // 같은 구역 → 대면 (번호 불필요)
             // ★면전 소통수단★: 선언(#177)이 있으면 우선(음성=소리내어/글=필담), 없으면 소리 위험 시 자동 필담.
             written = resolveInPersonWritten(senderPd);
@@ -11476,6 +11661,15 @@ public class TRPGGameManager {
 
     private void notifyContactLearned(PlayerData learner, PlayerData subject) {
         Player p = Bukkit.getPlayer(learner.uuid);
+        // ★감사 G★ 원격 통신이 없는 세계(phone_usable=false·과거 시대 등)에선 '전화번호'가 개념적으로 없다 —
+        //   "연락처: 이름 (1084)" 대신 "면식"으로 표시한다(내부 contactId·@이름 라우팅은 그대로 유지).
+        if (!isPhoneUsable()) {
+            if (p != null && p.isOnline())
+                p.sendMessage("§a[면식] §f" + commDisplayName(subject) + "§7와(과) 서로 알아보는 사이가 되었다.");
+            gameLogger.logItem("clue", learner.gmDisplayName(),
+                "면식: " + subject.gmDisplayName(), "면식");
+            return;
+        }
         if (p != null && p.isOnline())
             p.sendMessage("§a[연락처 입수] §f" + commDisplayName(subject) + " (" + subject.contactId + ")");
         // 뷰어·재현: 연락처(전화번호) 입수는 '정보 획득' — 단서로 기록해 상태패널·타임라인에 반영.
@@ -11484,12 +11678,13 @@ public class TRPGGameManager {
     }
 
     private void announceKnownContacts(Player p, PlayerData pd) {
+        boolean phones = isPhoneUsable(); // ★감사 G★ 번호 없는 세계면 이름·관계만(면식 목록)
         List<String> parts = new ArrayList<>();
         for (UUID u : pd.knownContacts) {
             PlayerData other = state.getPlayer(u);
             if (other == null) continue;
             String rel = relationshipLabel(pd.roleId, other.roleId);
-            parts.add(commDisplayName(other) + "(" + other.contactId + ")"
+            parts.add(commDisplayName(other) + (phones ? "(" + other.contactId + ")" : "")
                 + (rel.isBlank() ? "" : " §7[" + rel + "]§f"));
         }
         for (String npcId : pd.everKnownNpcContacts) {
@@ -11498,11 +11693,11 @@ public class TRPGGameManager {
             String nm  = npc.has("name") ? npc.get("name").getAsString() : npcId;
             String num = npcContactNumber(npcId);
             String rel = relationshipLabel(pd.roleId, npcId);
-            parts.add(nm + (num.isBlank() ? "" : "(" + num + ")")
+            parts.add(nm + (phones && !num.isBlank() ? "(" + num + ")" : "")
                 + (rel.isBlank() ? "" : " §7[" + rel + "]§f"));
         }
         if (parts.isEmpty()) return;
-        p.sendMessage("§7알고 있는 연락처: §f" + String.join("§7, §f", parts));
+        p.sendMessage((phones ? "§7알고 있는 연락처: §f" : "§7아는 사람: §f") + String.join("§7, §f", parts));
     }
 
     // ── 연락처 부여 / 특성 사전지식 / 발견·변경 ──────────────────────
@@ -12797,6 +12992,7 @@ public class TRPGGameManager {
             moved.travelPath.clear(); moved.travelDest = "";
         }
         moved.zone = newZone;
+        locationDesynced.remove(moved.uuid); // ★위치 확정 — desync 해제(감사 C)★: 유효 구역으로 실제 이동/갱신됨
         moved.visitedZones.add(newZone); // 방문 기록 (직접 그린 약도에 반영)
         // ★실시간 뷰어 위치★: 첫 배치(스폰)가 아닌 실제 구역 이동만 기록 → 상태패널 '현재 위치' 갱신.
         if (zoneChanged && !firstAssignment && spawnedPlayers.contains(moved.uuid))
@@ -13274,14 +13470,29 @@ public class TRPGGameManager {
                 String access = getStr(c, "access"); // easy|normal|hard(얻는 난이도)
                 String gate   = getStr(c, "gate");   // always|puppet|doomed(획득 조건)
                 if (content.isBlank() && subj.isBlank()) continue;
+                // ★capstone 게이트(감사 E)★: 정답을 사실상 완성하는 종결 단서는 requires_clues의 선행 단서가
+                //   전부 발견되기 전엔 ★내용 자체를 GM에게도 봉인★한다(위치·존재만) — GM이 앞당겨 흘릴 수 없게.
+                boolean capstone = c.has("capstone") && c.get("capstone").isJsonPrimitive()
+                    && c.get("capstone").getAsBoolean();
+                boolean capstoneSealed = false;
+                if (capstone && c.has("requires_clues") && c.get("requires_clues").isJsonArray()) {
+                    for (JsonElement pre : c.getAsJsonArray("requires_clues")) {
+                        String rid = pre.isJsonPrimitive() ? pre.getAsString().trim() : "";
+                        if (!rid.isEmpty() && !authoredClueDiscovered(rid)) { capstoneSealed = true; break; }
+                    }
+                }
                 sb.append("- ").append(mislead ? "[거짓] " : "");
+                if (capstone) sb.append("[종결단서] ");
                 if ("hard".equalsIgnoreCase(access)) sb.append("[어려움] ");
                 else if ("easy".equalsIgnoreCase(access)) sb.append("[쉬움] ");
                 if ("puppet".equalsIgnoreCase(gate)) sb.append("[조종중에만] ");
                 else if ("doomed".equalsIgnoreCase(gate)) sb.append("[파국국면에만] ");
                 if (!subj.isBlank()) sb.append("(").append(subj).append(") ");
-                sb.append(content.isBlank() ? subj : content);
+                if (capstoneSealed) sb.append("★봉인★ 선행 단서 확보 전 — 내용 비공개(시스템이 감춤). 존재·장소만 암시 가능, 내용을 지어내 대신 채우지 마라");
+                else sb.append(content.isBlank() ? subj : content);
                 if (!loc.isBlank()) sb.append(" — 위치: ").append(loc);
+                String gmNote = getStr(c, "gm_note");
+                if (!gmNote.isBlank() && !capstoneSealed) sb.append(" (운영 노트: ").append(gmNote).append(")");
                 sb.append("\n");
             }
             sb.append("- 위 단서를 해당 위치·대상에 ★실제로 배치★하고, 플레이어가 그곳을 탐색하거나 관련 NPC·사물과 상호작용하면 그 단서를 ★분명히 드러내라★(먼저 떠먹이진 말되, 닿으면 확실히 보여줄 것).\n");
@@ -14229,11 +14440,29 @@ public class TRPGGameManager {
     /** ★#254 인라인 주사위★: 서술을 <DICE> 위치에서 쪼개 [앞 서술]→[주사위 결과 인라인]→[뒤 결과 서술] 순으로 배달한다.
      *  주사위 결과는 computePreRollNote가 미리 굴려둔 값(공정)으로 showInlineDice가 표시. 태그를 못 찾으면 통짜 배달+기존 연출로 폴백. */
     private void deliverNarrativeWithInlineDice(Player player, String raw, JsonObject dice) {
+        // ★종결 결정타 산문 폐기(감사 B·Q1)★: GM이 decisive를 명시했거나 CLEAR를 동봉(stash)한 굴림은, GM이 판정
+        //   결과를 모른 채 쓴 서술(태그 앞이든 뒤든 — 5스테이지 실측: '완전 구조' 성공 서술이 태그 ★앞★에 왔다)을
+        //   통째로 정본에서 제외한다. 시도 라인은 시스템이 결정론으로 내고(저모델이 형식을 안 지켜도 안전),
+        //   결과 서술은 followUpDiceResult가 ★실제 판정값★으로 쓴다. (고DC·고위협 '추정' 결정타는 산문 유지 —
+        //   과폐기 방지 — 대신 전역 CLEAR 게이트만 적용.)
+        if (isHardDecisiveDice(player, dice)) {
+            PlayerData dpd = state.getPlayer(player);
+            String reason = dice.has("reason") && !dice.get("reason").isJsonNull() ? dice.get("reason").getAsString().trim() : "";
+            String who = dpd != null ? dpd.gmDisplayName() : player.getName();
+            deliverNarrative(player, "§f" + who + " — " + (reason.isEmpty() ? "결정적 시도" : reason) + ". §7모든 것이 이 순간에 걸렸다.");
+            narrativeDelivery.runAfterDelivery(player, () ->
+                showInlineDice(player, dice, outcome -> {
+                    if (player.isOnline()) followUpDiceResult(player, dice, outcome); // 결과는 항상 실제 판정값으로 재서술
+                    else resolveDecisiveDice(player, outcome);                        // 오프라인 — 게이트만 해소(교착 방지)
+                }));
+            return;
+        }
         int s = raw.indexOf("<DICE>");
         int e = raw.indexOf("</DICE>");
         if (s < 0 || e < 0 || e < s) { // 태그 형태가 어긋나면 안전 폴백
             deliverNarrative(player, raw);
-            if (player.isOnline()) present(() -> { if (player.isOnline()) showInlineDice(player, dice, null); });
+            if (player.isOnline()) present(() -> { if (player.isOnline()) showInlineDice(player, dice, outcome -> resolveDecisiveDice(player, outcome)); });
+            else resolveDecisiveDice(player, "실패"); // 오프라인 — 게이트 해소(보류 CLEAR는 폐기 경로)
             return;
         }
         String before = raw.substring(0, s);
@@ -14244,10 +14473,87 @@ public class TRPGGameManager {
             showInlineDice(player, dice, outcome -> {
                 if (player.isOnline() && !ai.stripTags(fAfter).isBlank()) {
                     deliverNarrative(player, fAfter);          // GM이 결과를 이어 썼음
-                    completeDeferredClear(player, outcome);    // ★미뤄둔 결정타 클리어를 이 판정 성공 시 그 자리에서 매듭
+                    if (completeDeferredClear(player, outcome)) { // ★미뤄둔 결정타 클리어를 이 판정 성공 시 그 자리에서 매듭
+                        heldCrossClear = null; heldCrossClearBy = null; // stash가 매듭 — 보류분은 중복이라 정리
+                    }
+                    resolveDecisiveDice(player, outcome);      // ★전역 게이트 해소 — 보류된 타 응답 CLEAR 적용/폐기
                 } else if (player.isOnline())
                     followUpDiceResult(player, dice, outcome); // ★결과 서술 없음 → 자동 후속★(주사위만 굴리고 방치 방지; 미뤄둔 클리어도 여기서 처리)
+                else resolveDecisiveDice(player, outcome);     // 오프라인 — 게이트만 해소
             }));
+    }
+
+    /** ★결정타 판별(감사 B)★ — 전역 CLEAR 게이트 등록 기준. 명시(decisive)·CLEAR 동봉(stash)·고DC(14+)·고위협(70+)이면
+     *  이 굴림이 해소될 때까지 어떤 CLEAR도 처리하지 않는다. 저모델이 decisive를 안 붙여도 뒤 세 추론이 백스톱. */
+    private boolean isDecisiveDice(Player player, JsonObject dice) {
+        if (dice == null || player == null) return false;
+        if (isHardDecisiveDice(player, dice)) return true;
+        try { if (dice.has("dc") && !dice.get("dc").isJsonNull() && dice.get("dc").getAsInt() >= 14) return true; } catch (Exception ignored) {}
+        return state.getThreat() >= 70;
+    }
+
+    /** ★종결 결정타(산문 폐기 대상)★ — GM이 명시(decisive=1/true)했거나 같은 응답에 CLEAR를 동봉(stash)한 굴림만.
+     *  (고DC·고위협 추정분까지 산문을 폐기하면 정상 서술 손실이 커서, 폐기는 '종결 의도가 명시된' 굴림에 한정한다.) */
+    private boolean isHardDecisiveDice(Player player, JsonObject dice) {
+        if (dice == null || player == null) return false;
+        if (pendingDecisiveClear.containsKey(player.getUniqueId())) return true; // DICE+CLEAR 동봉 → stash됨
+        if (dice.has("decisive") && !dice.get("decisive").isJsonNull()) {
+            try {
+                String d = dice.get("decisive").getAsString().trim();
+                if ("1".equals(d) || "true".equalsIgnoreCase(d) || "yes".equalsIgnoreCase(d)) return true;
+            } catch (Exception e) {
+                try { if (dice.get("decisive").getAsBoolean()) return true; } catch (Exception ignored) {}
+            }
+        }
+        return false;
+    }
+
+    /** ★전역 결정타 게이트 해소(감사 B)★ — 이 플레이어의 미해결 결정타를 내리고, 모든 결정타가 해소됐으면
+     *  보류된 CLEAR(heldCrossClear)를 판정 결과에 따라 적용(성공/대성공)하거나 폐기+GM 교정(부분성공·실패)한다. */
+    private void resolveDecisiveDice(Player player, String outcome) {
+        if (player == null) return;
+        if (!unresolvedDecisiveDice.remove(player.getUniqueId())) return; // 결정타로 등록된 굴림이 아니었음
+        if (!unresolvedDecisiveDice.isEmpty()) return;                    // 다른 결정타가 아직 공중에 — 보류 유지
+        JsonObject held = heldCrossClear;
+        Player by = heldCrossClearBy;
+        heldCrossClear = null; heldCrossClearBy = null;
+        if (held == null) return;
+        boolean success = "성공".equals(outcome) || "대성공".equals(outcome);
+        if (!success) {
+            gameLogger.logEvent("[CLEAR 폐기] 결정타 " + (outcome == null ? "미확정" : outcome) + " — 보류된 종결 무효");
+            ai.injectGmSystem("[판정 정합] 방금 결정타 판정이 ★" + (outcome == null ? "실패" : outcome) + "★로 확정됐다 — 상황은 종결되지 않았다. "
+                + "앞서 성공·해결된 것처럼 서술된 부분이 있다면 다음 서술에서 대가·미완으로 바로잡아라. <CLEAR>는 실제로 매듭지어졌을 때만 다시 내라.");
+        } else if (currentPhase == Phase.HORROR) {
+            gameLogger.logEvent("[CLEAR 해소] 결정타 성공 확정 — 보류된 종결 적용");
+            applyClearTag(by != null && by.isOnline() ? by : player, held);
+        } else {
+            gameLogger.logEvent("[CLEAR 보류분 정리] 이미 종결 진행 중 — 중복 종결 생략"); // deferredClear 등이 먼저 매듭지음
+        }
+    }
+
+    /** ★구역 교정 주입(감사 C)★ — GM이 무효 구역 id를 내 이동이 무시될 때, 다음 GM 호출에 유효 구역 목록과
+     *  엔진상 확정 위치를 일회성(injectGmSystem — 캐시 안전)으로 주입해 GM이 스스로 <ZONE_UPDATE>로 재지정하게 한다. */
+    private void injectZoneCorrection(PlayerData pd, String whoRaw, String badZone) {
+        String who = pd != null ? pd.gmDisplayName() : whoRaw;
+        String cur = (pd != null && pd.zone != null && !pd.zone.isEmpty()) ? zoneDisplayName(pd.zone) : "불명";
+        StringBuilder ids = new StringBuilder();
+        try {
+            JsonObject g = state.getGdamData();
+            if (g != null && g.has("zones") && g.get("zones").isJsonArray()) {
+                for (JsonElement ze : g.getAsJsonArray("zones")) {
+                    if (!ze.isJsonObject()) continue;
+                    JsonObject zo = ze.getAsJsonObject();
+                    String zid = zo.has("zone_id") && !zo.get("zone_id").isJsonNull() ? zo.get("zone_id").getAsString() : "";
+                    if (zid.isEmpty()) continue;
+                    if (ids.length() > 0) ids.append(", ");
+                    ids.append(zid).append('=')
+                       .append(zo.has("name") && !zo.get("name").isJsonNull() ? zo.get("name").getAsString() : "");
+                }
+            }
+        } catch (Exception ignored) {}
+        ai.injectGmSystem("[구역 교정] 방금 '" + badZone + "'은(는) 존재하지 않는 구역 id라 " + who + "의 이동이 무시됐다. "
+            + who + "의 엔진상 확정 위치는 '" + cur + "'다. 네 서술이 다른 장소를 전제했다면 ★다음 응답에서 <ZONE_UPDATE>로 "
+            + "아래 유효 id 중 하나를 재지정★하라 — 교정 전까지 이 인물의 근처 대화·목격은 전달되지 않는다. 유효 구역: " + ids);
     }
 
     /** ★판정 결과 자동 후속 서술★: GM이 <DICE>만 내고 결과 서술을 안 붙이면(2단계 의도·저품질 모델), 그 판정 결과로
@@ -14255,7 +14561,7 @@ public class TRPGGameManager {
      *  플레이어가 방치돼(두 턴 내리 주사위만 굴림), '행동 전달 좀…' 같은 요청이 나왔다. */
     private void followUpDiceResult(Player player, JsonObject dice, String outcome) {
         PlayerData pd = player != null ? state.getPlayer(player) : null;
-        if (pd == null || !player.isOnline()) return;
+        if (pd == null || !player.isOnline()) { resolveDecisiveDice(player, outcome); return; } // 게이트 누수 방지
         // ★미뤄둔 결정타 클리어★: 이 판정이 성공이면 원 GM이 정한 클리어 태그를 꺼내(1회성) 결과 서술 뒤 매듭짓는다.
         //   (실패·부분성공이면 stash는 폐기되고, 아래 서술은 대가·전개로 흐른다.)
         JsonObject deferredClear = takeDeferredClearOnSuccess(player, outcome);
@@ -14268,8 +14574,26 @@ public class TRPGGameManager {
             + (deferredClear != null ? " 이 성공으로 상황이 ★실제로 해결·종결★되었다 — 그 매듭이 드러나게 서술하라(종료 처리는 시스템이 이어서 한다). <CLEAR>는 직접 내지 마라." : "");
         ai.callGmAiOnce(gmSystemPrompt, sys).thenAccept(resp ->
             plugin.getServer().getScheduler().runTask(plugin, () -> {
-                if (player.isOnline() && resp != null && !ai.stripTags(resp).isBlank()) deliverNarrative(player, resp);
-                if (deferredClear != null) applyClearTag(player, deferredClear); // 결과 서술 뒤 시스템이 매듭
+                // ★위상 가드(감사 B)★: 엔딩·종결 처리 후 도착한 후속은 배달하지 않는다 — 5스테이지 실측: 클리어 선포
+                //   '뒤'에 '차복만이 물에 빠졌다' 후속이 새어 나와 엔딩과 모순. 게이트는 조용히 해소만 한다.
+                if (currentPhase == Phase.GAMEOVER || currentPhase == Phase.CLEAR
+                    || currentPhase == Phase.IDLE || concludingEnding) {
+                    unresolvedDecisiveDice.remove(player.getUniqueId());
+                    heldCrossClear = null; heldCrossClearBy = null;
+                    return;
+                }
+                boolean ok = player.isOnline() && resp != null && !resp.startsWith("§c") && !ai.stripTags(resp).isBlank();
+                if (ok) {
+                    // ★후속 응답도 상태를 실제로 반영(감사 B)★ — 예전엔 서술만 배달해 '얼음물에 빠졌다' HP 피해가 미적용.
+                    for (JsonObject su : ai.parseAllStateUpdates(resp)) applyStateUpdate(su);
+                    flushPendingVitalMsgs();
+                    deliverNarrative(player, resp);
+                }
+                if (deferredClear != null) {
+                    heldCrossClear = null; heldCrossClearBy = null; // 원 GM stash가 매듭짓는다 — 보류분은 중복이라 정리
+                    applyClearTag(player, deferredClear);           // 결과 서술 뒤 시스템이 매듭
+                }
+                resolveDecisiveDice(player, outcome); // ★전역 게이트 해소 — 보류된 타 응답 CLEAR 적용/폐기
             }));
     }
 
@@ -14321,6 +14645,15 @@ public class TRPGGameManager {
         JsonObject rolls = preRolledDice.remove(player.getUniqueId());
         int dc = dice.has("dc") && !dice.get("dc").isJsonNull() ? dice.get("dc").getAsInt() : 12;
         dc = Math.max(2, Math.min(20, dc));
+        // ★결정타 DC 하한(감사 D)★ — 5판 실측: 스테이지 1~5의 DC가 10~15 무상관(난이도 평탄). 일반 판정은 GM 재량을
+        //   존중하되, ★종결·결정타★만은 스테이지 격에 맞는 최소 난이도를 기계로 보장한다(GM이 낮게 불러도 끌어올림).
+        if (isDecisiveDice(player, dice)) {
+            int room = state.getRoomNumber();
+            int floor = room <= 2 ? 12 : room == 3 ? 13 : room == 4 ? 14 : room == 5 ? 15 : 16;
+            if (state.getThreat() >= 90) floor += 1; // 극한 국면 가산
+            floor = Math.min(19, floor);             // 하한 cap — 불가능(20 초과) 방지
+            if (dc < floor) dc = floor;
+        }
         int val, crit = 0;
         if (rolls != null && statKey != null && rolls.has(statKey)) {           // 미리 굴린 값 사용(공정)
             val = rolls.get(statKey).getAsInt();

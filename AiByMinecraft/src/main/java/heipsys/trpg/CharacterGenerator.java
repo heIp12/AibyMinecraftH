@@ -382,20 +382,23 @@ public class CharacterGenerator {
             pd.gender = RNG.nextBoolean() ? "남성" : "여성";
 
         // 직업 — roleData가 있으면 배역 풀 우선, 없으면 가중치 계층 선택
+        // ★나이-직업 정합(감사 H)★: 어느 풀에서 뽑든 pd.age(앵커)와 어울리는 직업만 후보로 — "41세 대학생" 차단.
         JobTier tier = JobTier.COMMON;
         if (roleData != null && roleData.has("job_pool") && roleData.get("job_pool").isJsonArray()) {
             JsonArray pool = roleData.getAsJsonArray("job_pool");
+            List<String> rolePool = new ArrayList<>();
+            for (int i = 0; i < pool.size(); i++) rolePool.add(pool.get(i).getAsString());
             if (pool.size() >= 5) {
-                pd.job = pool.get(RNG.nextInt(pool.size())).getAsString();
+                pd.job = pickJobFitting(rolePool, pd.age);
             } else if (pool.size() > 0) {
                 // 배역 풀 50%, 평범한 풀 50% 혼합
                 if (RNG.nextBoolean()) {
-                    pd.job = pool.get(RNG.nextInt(pool.size())).getAsString();
+                    pd.job = pickJobFitting(rolePool, pd.age);
                 } else {
-                    pd.job = COMMON_JOB_POOL[RNG.nextInt(COMMON_JOB_POOL.length)];
+                    pd.job = pickJobFitting(java.util.Arrays.asList(COMMON_JOB_POOL), pd.age);
                 }
             } else {
-                pd.job = COMMON_JOB_POOL[RNG.nextInt(COMMON_JOB_POOL.length)];
+                pd.job = pickJobFitting(java.util.Arrays.asList(COMMON_JOB_POOL), pd.age);
             }
         } else {
             // 가중치 랜덤: 70% 평범 / 20% 강한 직업 / 10% 희귀 직업
@@ -411,7 +414,10 @@ public class CharacterGenerator {
                 tier = JobTier.RARE;
                 pool = dynRare;
             }
-            pd.job = pickUnusedJob(pd.uuid, pool);
+            List<String> fitting = new ArrayList<>();
+            for (String j : pool) if (jobFitsAge(j, pd.age)) fitting.add(j);
+            pd.job = pickUnusedJob(pd.uuid, fitting.isEmpty() ? pool : fitting);
+            if (fitting.isEmpty() || !jobFitsAge(pd.job, pd.age)) pd.job = ageFallbackJob(pd.age); // 계층 풀 전멸 시 안전 직업
         }
 
         // 총합 23을 6개 스탯에 배분(기본 무작위 총합 -2 — 시작을 살짝 더 약하게)
@@ -439,6 +445,47 @@ public class CharacterGenerator {
         final int FLOOR = 2; // 시작 체력·정신력 최소 2(1/1 즉사 방지, 단 취약하게 — 큰 피해엔 즉사 가능)
         raiseToFloor(pd, 0, FLOOR); // HP
         raiseToFloor(pd, 2, FLOOR); // SAN
+    }
+
+    /** ★나이-직업 적합성(감사 H)★ — "41세 대학생, 76세 대학생" 같은 미스매치 차단(키워드 기반 최소 규칙).
+     *  GdamGenerator.studentAgeBand의 학령 기준과 동일하게 유지할 것. */
+    static boolean jobFitsAge(String job, int age) {
+        if (job == null || job.isBlank()) return true;
+        String j = job.replace(" ", "");
+        if (j.contains("초등학생")) return age >= 8 && age <= 13;
+        if (j.contains("중학생"))   return age >= 12 && age <= 16;
+        if (j.contains("고등학생") || j.contains("여고생") || j.contains("남고생")) return age >= 15 && age <= 19;
+        if (j.contains("대학원생")) return age >= 22 && age <= 35;
+        if (j.contains("대학생") || j.contains("대학교")) return age >= 18 && age <= 27;
+        if (j.endsWith("학생"))     return age >= 8 && age <= 27; // 범칭 '학생'
+        if (age <= 13) // 아동: 학생·무직류 외 직업(고용·면허) 불가
+            return j.contains("학생") || j.contains("어린이") || j.contains("무직");
+        if (age <= 17) { // 청소년: 면허·경력 성인 전문직 불가 (아르바이트류는 통과)
+            String[] adult = {"의사","한의사","약사","형사","경찰","교수","변호사","판사","검사","군인","기자","교사",
+                "간호사","연구원","박사","항해사","조종사","기관사","경비","공무원","사장","대표","원장","감정사",
+                "학예","큐레이터","목사","승려","신부","무당"};
+            for (String a : adult) if (j.contains(a)) return false;
+        }
+        if (age >= 65 && (j.contains("신입") || j.contains("인턴") || j.contains("수습"))) return false;
+        return true;
+    }
+
+    /** 나이와 어울리는 직업만 남겨 무작위 선택. 적합 후보가 없으면(드묾) 나이 기본 직업으로. */
+    private String pickJobFitting(List<String> pool, int age) {
+        List<String> fitting = new ArrayList<>();
+        for (String j : pool) if (jobFitsAge(j, age)) fitting.add(j);
+        if (fitting.isEmpty()) return ageFallbackJob(age);
+        return fitting.get(RNG.nextInt(fitting.size()));
+    }
+
+    /** 풀 전체가 나이와 안 맞을 때의 안전 직업(연령대 기본). */
+    private static String ageFallbackJob(int age) {
+        if (age <= 13) return "초등학생";
+        if (age <= 16) return "중학생";
+        if (age <= 19) return "고등학생";
+        if (age <= 26) return "대학생";
+        if (age >= 65) return "연금 생활자";
+        return "회사원";
     }
 
     private void raiseToFloor(PlayerData pd, int idx, int floor) {

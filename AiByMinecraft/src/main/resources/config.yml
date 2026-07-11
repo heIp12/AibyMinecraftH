@@ -28,3 +28,8 @@ models:
   effort-gm: ""        # GM 서술·판정(매 턴) 응답 속도
   effort-npc: ""       # NPC·괴담 AI 응답 속도
   effort-assistant: "" # 보조 처리 속도
+# [TRPG 괴담] 게임 설정
+
+trpg:
+  # NPC 욕설·비속어 허용 여부 (기본 false = 순화된 표현만). /trpg setting 다이얼로그의 'NPC 욕설' 버튼으로도 토글됩니다.
+  swear-allowed: false

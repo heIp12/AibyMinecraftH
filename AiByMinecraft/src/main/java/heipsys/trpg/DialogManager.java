@@ -555,9 +555,9 @@ public class DialogManager {
 
     /** 시작 설정 다이얼로그 — 자동생성·시작 스테이지·괴담 유형을 버튼으로 고른다. 항목을 누르면 바뀌고 이 창이 다시 열린다. */
     public void showStartSettings(Player player, boolean pregen, int startStage, String typeHint, String famePool,
-                                  String reservedEntity, boolean groupTurn,
+                                  String reservedEntity, boolean groupTurn, boolean swearAllowed,
                                   Runnable onTogglePregen, Runnable onPickStage, Runnable onPickType, Runnable onPickFame,
-                                  Runnable onToggleGroupTurn, Runnable onPickEntity) {
+                                  Runnable onToggleGroupTurn, Runnable onPickEntity, Runnable onToggleSwear) {
         List<ActionButton> buttons = new ArrayList<>();
         buttons.add(ActionButton.create(
             Component.text("자동 사전생성:  " + (pregen ? "켜짐" : "꺼짐"), pregen ? NamedTextColor.GREEN : NamedTextColor.RED),
@@ -584,6 +584,10 @@ public class DialogManager {
                 (reservedEntity == null || reservedEntity.isEmpty()) ? NamedTextColor.GRAY : NamedTextColor.LIGHT_PURPLE),
             Component.text("다음에 생성될 괴담을 특정 이름으로 지정 (예: 쿠네쿠네) — 1회 적용. 누르면 채팅으로 이름 입력"), 180,
             DialogAction.customClick((v, a) -> onPickEntity.run(), ClickCallback.Options.builder().uses(1).build())));
+        buttons.add(ActionButton.create(
+            Component.text("NPC 욕설:  " + (swearAllowed ? "허용" : "금지"), swearAllowed ? NamedTextColor.RED : NamedTextColor.GREEN),
+            Component.text(swearAllowed ? "거친 인물이 성격대로 욕설·비속어 사용 (혐오·차별·성적모욕은 여전히 금지)" : "기본 — 욕설 없이 순화된 표현만 (거친 감정은 어조로)"), 180,
+            DialogAction.customClick((v, a) -> onToggleSwear.run(), ClickCallback.Options.builder().uses(1).build())));
         ActionButton close = ActionButton.create(
             Component.text("닫기", TextColor.color(0xAAAAAA)),
             Component.text("설정 완료 — 다음 /trpg start 부터 적용"), 120, null);

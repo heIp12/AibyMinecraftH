@@ -17,6 +17,7 @@ heipsys\trpg\GameStateManager.class
 heipsys\trpg\model\PlayerData.class
 heipsys\trpg\TurnManager.class
 heipsys\trpg\DialogManager$DialogState.class
+heipsys\trpg\TRPGGameManager$TimedEffect.class
 heipsys\trpg\projectmoon\ProjectMoonLore$Structure.class
 heipsys\trpg\projectmoon\ProjectMoonLore$Injection.class
 heipsys\trpg\cmd\CMDJoin.class
