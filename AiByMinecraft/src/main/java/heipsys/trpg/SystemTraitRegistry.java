@@ -476,7 +476,10 @@ public class SystemTraitRegistry {
         if (td == null) return;
         correctEffectTypeByConcept(td); // ★컨셉↔effectType 불일치 자동 교정(생성 실수·구형 세이브 보정)
         Effect e = Effect.byKey(td.effectType);
-        if (e == null) { td.effectType = ""; enforcePowerBudget(td); annotateCost(td); return; } // 순수 스텟도 예산 적용(낡은 대가 표기 제거)
+        // ★유효 effect_type이 없으면 = 순수 스텟 패시브★ — active를 반드시 false로 강제한다.
+        //   (active:true + effect(서술)만 있고 기계효과(effectType)가 없는 '공짜 서술형 능동'을 차단 —
+        //    이런 특성은 발동 버튼이 아무 기계효과 없이 스텟 예산까지 온전히 먹어 실효 파워가 등급을 넘던 이중 문제.)
+        if (e == null) { td.effectType = ""; td.active = false; td.cooldownTurns = 0; enforcePowerBudget(td); annotateCost(td); return; }
         td.active = e.active;
         if (td.effectParams == null) td.effectParams = new HashMap<>();
         switch (e) {
