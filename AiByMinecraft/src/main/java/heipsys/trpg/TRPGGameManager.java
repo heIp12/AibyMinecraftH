@@ -264,6 +264,10 @@ public class TRPGGameManager {
     private final Map<String, java.util.Deque<String>> npcLastAutoOutput = new ConcurrentHashMap<>();
     /** NPC별 연속 자율 반복 횟수 — 임계 이상이면 자율 구동을 게이트(플레이어 상호작용 시 리셋). */
     private final Map<String, Integer> npcAutoStale = new ConcurrentHashMap<>();
+    /** ★자율 NPC 상태서명 스로틀(감사 J — 비용)★: 마지막 자율 호출 시점의 상태 서명(구역·구역내 플레이어·위협 밴드·
+     *  타임라인 단계·예정 의도)과 인게임 시각. 서명이 그대로고 ~35 인게임분이 안 지났으면 라운드로빈 호출을 생략한다. */
+    private final Map<String, String>  npcAutoStateSig  = new ConcurrentHashMap<>();
+    private final Map<String, Integer> npcAutoStateTime = new ConcurrentHashMap<>();
     /** ★#179 능동 비트★ 라운드로빈 커서 — 매 비트마다 다음 critical NPC 1명을 순번대로 고른다(전원 매턴=파산 방지). */
     private int npcBeatCursor = -1;
     /** NPC id → 뷰어 로그에 마지막으로 남긴 위치(zone). 매 주기 같은 위치를 이동 이벤트로 도배하지 않도록, 바뀔 때만 logMove. 뷰어 NPC 시점 '현재 위치'·근처 가시성용(#188). */
@@ -1024,6 +1028,7 @@ public class TRPGGameManager {
         activeTimedEffects.clear();
         unresolvedDecisiveDice.clear(); heldCrossClear = null; heldCrossClearBy = null; // 결정타 게이트 리셋(감사 B)
         locationDesynced.clear(); // 구역 desync 표식 리셋(감사 C)
+        npcAutoStateSig.clear(); npcAutoStateTime.clear(); // 자율 NPC 상태서명 스로틀 리셋(감사 J)
         resetOverviewCache();
         preSpawnCallCounts.clear();
         preSpawnLastBeat.clear();
@@ -1966,8 +1971,9 @@ public class TRPGGameManager {
             }
 
             if (myPd != null && !myPd.contactId.isEmpty()) {
-                p.sendMessage("§7당신의 연락처: §f" + myPd.contactId
-                    + " §8(상대 번호를 알면 §f@번호 메시지§8로 바로 연락할 수 있습니다)");
+                if (isPhoneUsable()) // ★감사 G★ 번호 없는 세계(과거·통신두절)에선 자기 번호 표기를 생략(면식 목록만)
+                    p.sendMessage("§7당신의 연락처: §f" + myPd.contactId
+                        + " §8(상대 번호를 알면 §f@번호 메시지§8로 바로 연락할 수 있습니다)");
                 announceKnownContacts(p, myPd);
             }
 
@@ -2384,6 +2390,7 @@ public class TRPGGameManager {
         activeTimedEffects.clear(); // 지속형 능력 효과(카운트다운·상시)도 스테이지 넘어 유지되지 않음
         unresolvedDecisiveDice.clear(); heldCrossClear = null; heldCrossClearBy = null; // 결정타 게이트도 스테이지 리셋(감사 B)
         locationDesynced.clear(); // 구역 desync 표식도 스테이지 리셋(감사 C — 새 스테이지 = 새 구역 배치)
+        npcAutoStateSig.clear(); npcAutoStateTime.clear(); // 자율 NPC 상태서명 스로틀도 스테이지 리셋(감사 J — 새 NPC·새 시계)
         commBypassTurn.clear(); commBypassStealth.clear(); // 통신 개방도 스테이지 넘어 유지 안 됨(턴 번호 재사용 오작동 방지)
         resetOverviewCache(); // 새 스테이지 = 새 괴담 → 시나리오 개요 캐시 초기화(다음 사용 시 재생성)
         loadForbiddenWord(); // 금지워드형 괴담의 금지어 로드(entity.forbidden_word)
@@ -3776,7 +3783,7 @@ public class TRPGGameManager {
             player.sendMessage("§a세션에 재접속했습니다!");
             player.sendMessage(charGen.buildSheetMessage(pd, state.getRoomNumber(), state.getCorruption().attempts + 1));
             if (!pd.contactId.isEmpty()) {
-                player.sendMessage("§7당신의 연락처: §f" + pd.contactId);
+                if (isPhoneUsable()) player.sendMessage("§7당신의 연락처: §f" + pd.contactId); // 감사 G
                 announceKnownContacts(player, pd);
             }
             // 게임 진행 중(캐릭터 생성 이후)이면 정보·기록·지도·메모장 아이템 복원
@@ -9306,7 +9313,8 @@ public class TRPGGameManager {
             if (au >= nowTurn && !cooldown && !stale) { toFire.add(npc0); if (toFire.size() >= 2) break; } // 활성 NPC는 최대 2명까지 매턴
         }
         // 라운드로빈 베이스라인은 ★주기 턴(cadence)에만★ 1명 — 활성 NPC 없는 조용한 턴은 스파스하게(N주기마다 1명). 활성 NPC는 위에서 매턴 이미 잡힘.
-        if (cadenceTurn && toFire.size() < 2) { JsonObject rr = pickNpcBeat(pool, nowTurn, toFire); if (rr != null) toFire.add(rr); } // toFire 전달 → 활성창 NPC와 중복된 라운드로빈 픽 방지
+        JsonObject rrPick = null;
+        if (cadenceTurn && toFire.size() < 2) { rrPick = pickNpcBeat(pool, nowTurn, toFire); if (rrPick != null) toFire.add(rrPick); } // toFire 전달 → 활성창 NPC와 중복된 라운드로빈 픽 방지
         boolean anyFired = false;
         // ★막후 진행(층1)★: 이번 턴 비트 없는 '못 닿는' NPC의 예정만 GM에 정적 주입(AI 호출 없이 진행 보장).
         java.util.List<String> offscreenIntents = new java.util.ArrayList<>();
@@ -9328,6 +9336,10 @@ public class TRPGGameManager {
             // ★대화 중 중복 구동 방지★(맥락오염 방지, 안전망): 직전 1턴 내 직접 대화한 NPC는 자율 구동 생략.
             int lastDirect = npcLastDirectTurn.getOrDefault(npcId, Integer.MIN_VALUE);
             if (lastDirect >= 0 && nowTurn - lastDirect <= 1) continue;
+            // ★상태서명 스로틀(감사 J)★ — 라운드로빈 베이스라인 픽만: NPC 주변 상태(구역·구역내 플레이어·위협 밴드·
+            //   단계·예정)가 마지막 자율 호출 때와 그대로고 ~35 인게임분이 안 지났으면 이번 호출을 생략(비용 절약).
+            //   활성 창(<BUSY>·지시 이행) NPC는 다급한 일 진행 중이라 스로틀하지 않는다.
+            if (npcObj == rrPick && npcAutoStateThrottled(npcId, npcZone, npcObj)) continue;
             // 반전 동명 안내용(우연 동명이인은 pool에서 이미 제외됨).
             String overlapPlayer = overlappingPlayerLabel(npcObj);
             // ★그 NPC가 있는 위치(zone)에서 일어난 행동만 — 다른 장면의 플레이어 행동이 NPC 서술에 섞이지 않게.
@@ -9569,6 +9581,25 @@ public class TRPGGameManager {
         if (!g.isBlank()) return g;
         String rt = getStr(npcObj, "role_type");
         return rt.isBlank() ? "" : ("역할:" + rt);
+    }
+
+    /** ★상태서명 스로틀(감사 J)★ — 이 NPC 주변 상태가 마지막 자율 호출 때와 그대로고 ~35 인게임분 미경과면 true(생략).
+     *  서명 = 구역 + 구역내 생존 플레이어 + 위협 밴드(20단위) + 타임라인 단계 + 열린 예정 의도. 시계 비활성이면 턴×15분 근사. */
+    private boolean npcAutoStateThrottled(String npcId, String npcZone, JsonObject npcObj) {
+        try {
+            StringBuilder here = new StringBuilder();
+            for (PlayerData pd : state.getAllPlayers())
+                if (!pd.isDead && npcZone != null && npcZone.equals(pd.zone)) here.append(pd.name).append(",");
+            String sig = npcZone + "|" + here + "|" + (state.getThreat() / 20) + "|" + state.getTimelineStage()
+                + "|" + npcScheduleIntent(npcObj);
+            int now = state.getClockMinutes() >= 0 ? state.getClockMinutes() : state.getCurrentTurn() * 15;
+            String prevSig = npcAutoStateSig.get(npcId);
+            Integer prevAt = npcAutoStateTime.get(npcId);
+            if (prevSig != null && prevAt != null && prevSig.equals(sig) && now - prevAt < 35) return true;
+            npcAutoStateSig.put(npcId, sig);
+            npcAutoStateTime.put(npcId, now);
+        } catch (Exception ignored) {}
+        return false;
     }
 
     /** 이 NPC가 만나거나(같은 zone) 전화로 닿을 수 있는 살아있는 등장 플레이어가 하나라도 있는가. 자율 AI 호출 여부 판단용(비용 절약). */
@@ -11630,6 +11661,15 @@ public class TRPGGameManager {
 
     private void notifyContactLearned(PlayerData learner, PlayerData subject) {
         Player p = Bukkit.getPlayer(learner.uuid);
+        // ★감사 G★ 원격 통신이 없는 세계(phone_usable=false·과거 시대 등)에선 '전화번호'가 개념적으로 없다 —
+        //   "연락처: 이름 (1084)" 대신 "면식"으로 표시한다(내부 contactId·@이름 라우팅은 그대로 유지).
+        if (!isPhoneUsable()) {
+            if (p != null && p.isOnline())
+                p.sendMessage("§a[면식] §f" + commDisplayName(subject) + "§7와(과) 서로 알아보는 사이가 되었다.");
+            gameLogger.logItem("clue", learner.gmDisplayName(),
+                "면식: " + subject.gmDisplayName(), "면식");
+            return;
+        }
         if (p != null && p.isOnline())
             p.sendMessage("§a[연락처 입수] §f" + commDisplayName(subject) + " (" + subject.contactId + ")");
         // 뷰어·재현: 연락처(전화번호) 입수는 '정보 획득' — 단서로 기록해 상태패널·타임라인에 반영.
@@ -11638,12 +11678,13 @@ public class TRPGGameManager {
     }
 
     private void announceKnownContacts(Player p, PlayerData pd) {
+        boolean phones = isPhoneUsable(); // ★감사 G★ 번호 없는 세계면 이름·관계만(면식 목록)
         List<String> parts = new ArrayList<>();
         for (UUID u : pd.knownContacts) {
             PlayerData other = state.getPlayer(u);
             if (other == null) continue;
             String rel = relationshipLabel(pd.roleId, other.roleId);
-            parts.add(commDisplayName(other) + "(" + other.contactId + ")"
+            parts.add(commDisplayName(other) + (phones ? "(" + other.contactId + ")" : "")
                 + (rel.isBlank() ? "" : " §7[" + rel + "]§f"));
         }
         for (String npcId : pd.everKnownNpcContacts) {
@@ -11652,11 +11693,11 @@ public class TRPGGameManager {
             String nm  = npc.has("name") ? npc.get("name").getAsString() : npcId;
             String num = npcContactNumber(npcId);
             String rel = relationshipLabel(pd.roleId, npcId);
-            parts.add(nm + (num.isBlank() ? "" : "(" + num + ")")
+            parts.add(nm + (phones && !num.isBlank() ? "(" + num + ")" : "")
                 + (rel.isBlank() ? "" : " §7[" + rel + "]§f"));
         }
         if (parts.isEmpty()) return;
-        p.sendMessage("§7알고 있는 연락처: §f" + String.join("§7, §f", parts));
+        p.sendMessage((phones ? "§7알고 있는 연락처: §f" : "§7아는 사람: §f") + String.join("§7, §f", parts));
     }
 
     // ── 연락처 부여 / 특성 사전지식 / 발견·변경 ──────────────────────
@@ -14604,6 +14645,15 @@ public class TRPGGameManager {
         JsonObject rolls = preRolledDice.remove(player.getUniqueId());
         int dc = dice.has("dc") && !dice.get("dc").isJsonNull() ? dice.get("dc").getAsInt() : 12;
         dc = Math.max(2, Math.min(20, dc));
+        // ★결정타 DC 하한(감사 D)★ — 5판 실측: 스테이지 1~5의 DC가 10~15 무상관(난이도 평탄). 일반 판정은 GM 재량을
+        //   존중하되, ★종결·결정타★만은 스테이지 격에 맞는 최소 난이도를 기계로 보장한다(GM이 낮게 불러도 끌어올림).
+        if (isDecisiveDice(player, dice)) {
+            int room = state.getRoomNumber();
+            int floor = room <= 2 ? 12 : room == 3 ? 13 : room == 4 ? 14 : room == 5 ? 15 : 16;
+            if (state.getThreat() >= 90) floor += 1; // 극한 국면 가산
+            floor = Math.min(19, floor);             // 하한 cap — 불가능(20 초과) 방지
+            if (dc < floor) dc = floor;
+        }
         int val, crit = 0;
         if (rolls != null && statKey != null && rolls.has(statKey)) {           // 미리 굴린 값 사용(공정)
             val = rolls.get(statKey).getAsInt();
