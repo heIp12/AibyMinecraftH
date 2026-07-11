@@ -438,6 +438,15 @@ public class TRPGGameManager {
     public boolean isActive() { return currentPhase != Phase.IDLE; }
 
     /**
+     * 게임이 비활성(IDLE·설정 단계)이어도 이 플레이어의 채팅을 ★handleChat로 소비해야 하는★ 대기 상태인지.
+     * 예: '다음 괴담 지정'을 설정 다이얼로그/명령으로 켜면 게임 시작 전이라 isActive()=false인데,
+     *     ChatListener가 isActive()만 보고 채팅을 버려 괴담 이름 입력이 씹히던 버그를 막는다.
+     */
+    public boolean isAwaitingChatInput(Player player) {
+        return player != null && pendingEntityReserveInput.contains(player.getUniqueId());
+    }
+
+    /**
      * 무력화 워치독: 살아있고 등장한 플레이어 ★전원★이 행동 불가(완전잠식·기절)면,
      * AI(GM) 호출 없이 ★시스템★이 한 턴씩 시간을 진행시킨다(턴·시계·회복 카운터).
      * → 아무도 입력할 수 없어 게임이 영영 멈추던 문제 해결. 한 명이라도 행동 가능해지면 자동으로 멈춘다.

@@ -40,9 +40,13 @@ public class ChatListener implements Listener {
     @EventHandler
     public void onChat(AsyncChatEvent event) {
         TRPGGameManager trpgManager = trpg();
-        if (trpgManager == null || !trpgManager.isActive()) return;
+        if (trpgManager == null) return;
 
         Player player  = event.getPlayer();
+        // 게임이 비활성(IDLE·설정 단계)이어도, '다음 괴담 지정' 등 채팅 입력 대기 중이면 그 입력을 소비해야 한다
+        //   (예전엔 isActive()만 보고 버려 설정 단계의 괴담 이름 입력이 씹혔다).
+        if (!trpgManager.isActive() && !trpgManager.isAwaitingChatInput(player)) return;
+
         String message = PlainTextComponentSerializer.plainText().serialize(event.message());
 
         event.setCancelled(true);
