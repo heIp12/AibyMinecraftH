@@ -6291,11 +6291,15 @@ public class TRPGGameManager {
         String detail = (td.effect != null && !td.effect.isBlank())
             ? td.effect : "이 캐릭터의 의지가 결과를 확정짓는다.";
         // B1/C4: 단독 제출(허공) 대신 '다음에 입력하는 실제 행동'에 확정 성공을 부착한다.
+        //  ★단 특성 취지에 맞는 종류의 행동에만★ — 예전엔 '이 행동은 반드시 성공'을 무조건 붙여, '격투만 확정' 같은
+        //  특정 조건 특성인데도 아무 행동이나(설득·이동 등) 전부 확정 성공되던 버그. GM이 취지 부합 여부로 게이트하게 한다.
         pendingActionBoost.put(player.getUniqueId(),
-            "[확정 성공(" + td.name + "): " + scopeStr + "은(는) 주사위·실패를 무시하고 §반드시 성공§한 것으로 서술하라(결과 확정). "
-            + detail + " 단 괴담 본체를 즉사·즉시 해결시키는 과잉 처리는 금지하고 '그 행동의 의도'가 이뤄진 것으로만 묘사.]");
+            "[확정 성공(" + td.name + ") — 이 특성의 취지: '" + detail + "'. "
+            + "플레이어가 방금 입력한 행동이 ★이 취지에 부합하는 종류★이면 " + scopeStr + "을(를) 주사위·실패를 무시하고 §반드시 성공§한 것으로 서술하라(결과 확정). "
+            + "★취지와 무관한 다른 종류의 행동에는 적용하지 말고 평소대로 판정하라 — 아무 행동이나 무조건 성공시키지 마라.★ "
+            + "단 괴담 본체를 즉사·즉시 해결시키는 과잉 처리는 금지하고 '그 행동의 의도'가 이뤄진 것으로만 묘사.]");
         pendingBoostTrait.put(player.getUniqueId(), td.id); // 취소 시 환원용
-        player.sendMessage("§e[" + td.name + "] §7다음에 입력하는 행동이 §f확정 성공§7 처리됩니다. (취소: '취소' 입력)");
+        player.sendMessage("§e[" + td.name + "] §7다음에 입력하는 행동이 이 특성의 취지에 맞으면 §f확정 성공§7 처리됩니다. (취소: '취소' 입력)");
     }
 
     private void activateMobility(Player player, PlayerData pd, TraitData td) {
