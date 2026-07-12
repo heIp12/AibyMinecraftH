@@ -290,17 +290,46 @@ public final class ProjectMoonLore {
         ""   // 케테르 — 독백체
     };
 
-    /** NPC 이름이 세피라와 일치하면 그 세피라의 캐논 [speech_style(어조·레지스터), ending_style(시그니처 어미 or 빈값)]을 반환(없으면 null).
-     *  ★생성기가 세피라 말투를 임의 창작해 페르소나가 깨지던 것 수정용★ — 매칭되면 후처리가 이 값으로 덮어쓴다. library=라오루(지정사서) 목소리. */
+    /** (구 2-arg 호환) 세피라 정식 표기(헤세드·게부라 등)만 매칭 — 인간 이름은 매칭하지 않는다. */
     public static String[] canonicalSephirahSpeech(String npcName, boolean library) {
+        return canonicalSephirahSpeech(npcName, library, false);
+    }
+
+    /** NPC 이름이 세피라와 일치하면 그 세피라의 캐논 [speech_style(어조·레지스터), ending_style(시그니처 어미 or 빈값)]을 반환(없으면 null).
+     *  ★생성기가 세피라 말투를 임의 창작해 페르소나가 깨지던 것 수정용★ — 매칭되면 후처리가 이 값으로 덮어쓴다. library=라오루(지정사서) 목소리.
+     *  ★allowHumanName★: true면 괄호 속 인간 이름(다니엘=헤세드·칼리=게부라·가브리엘=예소드 등)도 매칭한다 — 생성기가 세피라를
+     *   인간 이름으로 등장시킬 때(라오루 지정사서 '다니엘' 등) 캐논 말투가 붙게. ★프로젝트 문 시나리오에서만 켤 것★
+     *   (비-PM 시나리오에 우연히 '다니엘'·'미셸' 같은 NPC가 있어도 세피라 말투가 오적용되지 않게 — 정식 표기는 PM 전용이라 항상 안전). */
+    public static String[] canonicalSephirahSpeech(String npcName, boolean library, boolean allowHumanName) {
         if (npcName == null || npcName.isBlank()) return null;
         for (int i = 0; i < SEPHIRAH.length; i++) {
-            String kor = SEPHIRAH[i][0].replaceAll("\\(.*", "").trim();   // "게부라(칼리)" → "게부라"
-            if (!kor.isEmpty() && npcName.contains(kor)) {
-                return new String[]{ library ? SEPHIRAH[i][7] : SEPHIRAH[i][3], SEPHIRAH_ENDING[i] };
+            for (String key : sephirahNameKeys(SEPHIRAH[i][0], allowHumanName)) {
+                if (npcName.contains(key)) {
+                    return new String[]{ library ? SEPHIRAH[i][7] : SEPHIRAH[i][3], SEPHIRAH_ENDING[i] };
+                }
             }
         }
         return null;
+    }
+
+    /** 세피라 표기("헤세드(다니엘)")에서 매칭 키를 뽑는다 — 항상 정식명(헤세드), allowHumanName이면 괄호 속 인간 이름(다니엘)도.
+     *  괄호 속 서술어(쌍둥이·관리자)·머리글자(A/B/C)는 이름이 아니므로 제외한다("A·B 쌍둥이"→키 없음, "관리자 A·아인"→아인). */
+    private static java.util.List<String> sephirahNameKeys(String label, boolean allowHumanName) {
+        java.util.List<String> keys = new java.util.ArrayList<>();
+        if (label == null) return keys;
+        String title = label.replaceAll("\\(.*", "").trim();          // "헤세드(다니엘)" → "헤세드"
+        if (!title.isEmpty()) keys.add(title);
+        if (!allowHumanName) return keys;
+        int lp = label.indexOf('('), rp = label.indexOf(')');
+        if (lp >= 0 && rp > lp) {
+            for (String tok : label.substring(lp + 1, rp).split("[·・,\\s]+")) { // "다니엘" / "A·B 쌍둥이" / "관리자 A·아인"
+                String t = tok.trim();
+                if (t.length() < 2) continue;                          // A·B·C 등 머리글자 제외
+                if (t.equals("쌍둥이") || t.equals("관리자")) continue;   // 서술어 제외
+                keys.add(t);
+            }
+        }
+        return keys;
     }
 
     // ★세피라 코어 억제(폭주 보스전) 세부설정 — SEPHIRAH와 ★같은 순서·길이(인덱스 공유)★.

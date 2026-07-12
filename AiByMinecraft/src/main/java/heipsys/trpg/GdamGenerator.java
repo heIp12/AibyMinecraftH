@@ -2511,12 +2511,13 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
         try {
             if (gdam == null || !gdam.has("npcs") || !gdam.get("npcs").isJsonArray()) return;
             boolean library = isLibraryEra(gdam);
+            boolean pm = isProjectMoonScenario(gdam); // 인간 이름(다니엘=헤세드 등) 매칭은 PM 시나리오에서만 켠다(비-PM 오적용 방지)
             int n = 0;
             for (JsonElement el : gdam.getAsJsonArray("npcs")) {
                 if (el == null || !el.isJsonObject()) continue;
                 JsonObject npc = el.getAsJsonObject();
                 String name = (npc.has("name") && !npc.get("name").isJsonNull()) ? npc.get("name").getAsString() : "";
-                String[] canon = ProjectMoonLore.canonicalSephirahSpeech(name, library);
+                String[] canon = ProjectMoonLore.canonicalSephirahSpeech(name, library, pm);
                 if (canon == null) continue;
                 npc.addProperty("speech_style", canon[0]);
                 npc.addProperty("ending_style", canon[1]);   // 레지스터형이면 "" → 생성기가 지어낸 단일 어미 해제
@@ -2524,6 +2525,17 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
             }
             if (n > 0) logger.info("[gdam] 세피라 말투 캐논 강제 " + n + "명(" + (library ? "라오루" : "로보토미") + ")");
         } catch (Exception ignore) {}
+    }
+
+    /** 프로젝트 문(로보토미·라오루·림버스) 시나리오인가 — 세피라 인간 이름 매칭(다니엘=헤세드) 허용 여부 게이트.
+     *  ★familiar_kind는 이 시점(save→finalizeNpcSpeech)엔 아직 안 심겨 못 쓰므로★ 내용 키워드로 판정한다.
+     *  세피라·지정사서·환상체·로보토미·라오루 등은 PM 전용어라 오탐이 사실상 없다. */
+    private boolean isProjectMoonScenario(JsonObject gdam) {
+        if (gdam == null) return false;
+        String s = gdam.toString();
+        return s.contains("환상체") || s.contains("세피라") || s.contains("지정사서")
+            || s.contains("로보토미") || s.contains("라오루") || s.contains("루이나")
+            || s.contains("클리포트") || s.contains("E.G.O") || s.contains("림버스") || s.contains("의 층");
     }
 
     /** 프로젝트 문 라오루(도서관·지정사서 시대) 판정 — 세피라 speech_style 목소리(LoR vs 로보토미) 선택용 휴리스틱. */
@@ -2564,11 +2576,18 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
             boolean appear = java.util.concurrent.ThreadLocalRandom.current().nextInt(100) < 30; // ★하드코딩 30%: 개성 어미 인물 등장 여부★
             // ★개성 어미 회전 풀 — 시대(era) 정합 2계열★(rotatingEndingPool로 추출 — 테스트 가능·중복 제거).
             String[] pool = rotatingEndingPool(isPastEra(gdam));
+            // ★캐논 세피라(다니엘=헤세드 등) 보호★: familiar_kind가 이 시점엔 아직 안 심겨 위 early-return이 안 먹으므로,
+            //   방금 applySephirahCanonSpeech가 캐논 말투를 넣은 세피라 NPC를 D1 회전/제거 대상에서 빼야 한다
+            //   (안 그러면 헤세드의 늘임체가 회전 풀의 '~냐고' 등으로 덮여 페르소나가 깨진다 — 실제 버그 사례).
+            boolean library = isLibraryEra(gdam);
+            boolean pm = isProjectMoonScenario(gdam);
             JsonObject firstCritical = null;
             java.util.List<JsonObject> withEnding = new java.util.ArrayList<>();
             for (JsonElement el : npcs) {
                 if (el == null || !el.isJsonObject()) continue;
                 JsonObject npc = el.getAsJsonObject();
+                String nm = (npc.has("name") && !npc.get("name").isJsonNull()) ? npc.get("name").getAsString() : "";
+                if (ProjectMoonLore.canonicalSephirahSpeech(nm, library, pm) != null) continue; // 캐논 세피라 — 말투는 applySephirahCanonSpeech가 소유
                 String es = (npc.has("ending_style") && !npc.get("ending_style").isJsonNull())
                     ? npc.get("ending_style").getAsString() : "";
                 if (!es.isBlank()) withEnding.add(npc);
