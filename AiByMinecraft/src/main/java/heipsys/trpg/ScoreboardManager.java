@@ -96,6 +96,8 @@ public class ScoreboardManager {
         if ("faint".equals(pd.status) || pd.faintTurnsRemaining > 0)
                                         return "§7기절 — 정신을 차리는 중";
         if (pd.puppetRecoveryTurns > 0) return "§7관전 — 곧 깨어납니다";
+        // ★입력 종료 후 턴 대기★: 행동을 제출해 GM 응답을 기다리는 중이면 '지금 행동 가능'이 아니다(중복 입력 차단 중).
+        if (pd.turnState == PlayerData.TurnState.ACTING) return "§e행동 처리 중 — 결과를 기다리는 중…";
         int clk = state.getClockMinutes();
         if (state.getTurnMode() >= 2 && clk >= 0 && pd.isBusy(clk)) {
             return "§e다음 행동까지 §f" + Math.max(1, pd.busyUntilMin - clk) + "분";

@@ -15149,7 +15149,8 @@ public class TRPGGameManager {
         gameLogger.logAbilityResult(pd != null ? pd.gmDisplayName() : player.getName(), "주사위 판정",
             (reason.isEmpty() ? "행동 판정" : reason) + " — d20=" + val + modNote + " (기준 " + dc + " 이상 성공) → " + outcome, true); // overt
         // 왜 굴리는지 먼저 안내(관전자 포함) — ★행동 텍스트는 여기 한 번만★(결과 줄엔 반복하지 않는다). d20·기준·능력치 표기는 결과 줄로 미뤄 짧게.
-        msgToWatchers(player, "§e🎲 " + (reason.isEmpty() ? "판정" : reason) + " §7— 굴립니다…");
+        msgToWatchers(player, "§e🎲 " + (reason.isEmpty() ? "판정" : reason) + " §7— §8[d20]§7 굴립니다…"); // ★몇 면 주사위인지 표기(요청)★ — 이 경로는 항상 d20(프리롤)
+
         // ★인게임 굴림 연출★: 무작위 프레임(약 0.8s) → 착지값 강조. onDone은 착지 시점에 실행해 인라인 뒤 서술이 자연히 이어지게(연출은 서술과 겹쳐 흐른다).
         final int FRAMES = 8;
         for (int i = 0; i < FRAMES; i++) {
