@@ -529,13 +529,17 @@ description: >-
   (생성기 선언: 음성/문서/신호/전자/정신/전체, 물리형은 [])를 entityInterferes가 ★최우선★으로 읽고, 없으면(구형) 키워드
   스캔(entityTampersVoice/Written/… — entityScanText) 폴백★. 예전엔 이 허용을 런타임 키워드로만 판정해 #246류 오탐(물리형이
   통신 변조) 반복 → 설계-시 선언으로 근원 해결. comms_dangerous(사용=위험)·comms_monitored(감청)와는 별개 축.
-- **★★GdamGenerator 텍스트블록 65535 한계 — 실측(런타임) 필수★★**: GDAM_SYSTEM_PROMPT_1/2는 ★텍스트블록('"""')이라
-  각 블록 전체가 단일 문자열 리터럴★ → 65535 UTF-8 바이트 한계가 블록 하나에 통째로 걸린다. ★실측 그라운드트루스(리플렉션
-  런타임): PROMPT_1 = 64473바이트(여유 ★~1062★), PROMPT_2 = 61218바이트(여유 ~4317)★. ★PROMPT_1은 사실상 꽉 참 —
-  생성측 문장 추가는 PROMPT_2(타임라인·zones·npcs·clues 등 481행~)에만, 그마저 여유 ~4KB. ★측정법 주의★: `"..."` 조각
-  regex 합산은 텍스트블록에서 ★대폭 undercount(스트레이 따옴표 사이만 셈)★ — 신뢰 금지. ★반드시 리플렉션 런타임 프로브★
-  (private static final String 필드를 getBytes(UTF_8).length)로 재라. 컴파일도 최종 게이트(초과 시 javac 거부). 여유 소진
-  임박 → 프롬프트 모듈 재분할(3분할)이 다음 우선순위(사용자 지적 정확 — '모듈화 먼저').
+- **★★GdamGenerator 텍스트블록 65535 한계 — 실측(런타임) 필수★★**: GDAM_SYSTEM_PROMPT_*는 ★텍스트블록('"""')이라 블록
+  전체가 단일 문자열 리터럴★ → 65535 UTF-8 바이트 한계가 블록 하나에 통째로 걸린다. ★측정법 주의★: `"..."` 조각 regex
+  합산은 텍스트블록에서 ★대폭 undercount★(신뢰 금지) — ★반드시 리플렉션 런타임 프로브(필드 getBytes(UTF_8).length)★로
+  재라. 컴파일도 최종 게이트(초과 시 javac 거부).
+- **★기계적 4분할 완료(바이트 압박 해소)★**: 예전 PROMPT_1(64473, 여유 1062)·PROMPT_2(61218)가 한계 근접이라 ★내용 불변
+  기계적 분할★ 시행 → 현재 ★PROMPT_1A(38267)/1B(26206)/2A(35624)/2B(25594)★, 각 여유 27~40K. `GDAM_SYSTEM_PROMPT =
+  String.join("", 1A,1B,2A,2B)`. ★분할 지점: 1A|1B = '## 배역 설계 원칙' 앞, 2A|2B = '## 출력 JSON 스키마' 앞★. ★검증법
+  (회귀 필수)★: 분할 전 GDAM_SYSTEM_PROMPT를 리플렉션 덤프해 sha256 확보 → 분할 후 재덤프 sha256 ★동일★해야 함(내용
+  바이트 완전 보존 확인 — 실제로 125691바이트 sha 동일 검증). 텍스트블록 분할은 각 블록에 ★col-0 라인 존재→incidental
+  indent 0★이라 안전하나, ★반드시 sha 동일 확인★. 생성측 문장 추가는 이제 아무 블록에나(여유 충분). ★남은 것=아키텍처
+  청크-모듈 재분할(청크별 계약·정보 재배분, 생성결과 바뀜 → 실플레이 검증 필요, 별개 작업).★
 - **통신 변조 = 3층 (내용 GM / 채널 comm_interference / ★언제=GM 스위치+엔진 폴백★)**: entityCommActive()가 '언제'를
   게이트 — currentPhase==HORROR 필수 + commTamperMode(<COMM_TAMPER on/off>, GameStateManager durable): 1=강제ON·
   -1=강제OFF·0=auto. auto면 감청테마(isCommsMonitored)=처음부터 / 그 외=threat≥40(중반 escalation). ★설계 근거★:
