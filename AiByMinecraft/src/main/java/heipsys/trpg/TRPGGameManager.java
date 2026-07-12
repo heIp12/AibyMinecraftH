@@ -11730,11 +11730,21 @@ public class TRPGGameManager {
                 && use.get("broken").getAsBoolean()) {
             inst.broken = true;
         }
-        // ★상태 변화(잔량·켜짐·소진)를 실물 아이템 이름·설명에 반영★ — 손전등 '잔량 2', 소진 시 '망가진 X'.
-        if (pd != null && inst != null
+        // ★소진·파괴 처리★:
+        //  - 소모품(consumable)이 다 쓰여(broken) 없어지면 ★실물·논리 모두 제거★ — 마신 물약·태운 성냥·터진 폭탄이
+        //    인벤토리에 남지 않게(소모=사라짐). 무기·도구·조명은 잔해로 남아 이름이 '망가진 X'로(아래 refreshItemDisplay).
+        boolean consumableGone = pd != null && inst != null && inst.broken && "consumable".equals(inst.itemType);
+        if (consumableGone) {
+            String goneName = (inst.name != null && !inst.name.isBlank()) ? inst.name : inst.id;
+            pd.heldItemIds.remove(inst.id); pd.itemStates.remove(inst.id);
+            Player up = Bukkit.getPlayer(pd.uuid);
+            if (up != null) itemMan.removeById(up, inst.id);         // 실물도 인벤토리에서 제거
+            gameLogger.logItemRemoved(pd.gmDisplayName(), goneName, "소진"); // 뷰어: 소모품 소진 반영
+        } else if (pd != null && inst != null
                 && ((use.has("charge") && !use.get("charge").isJsonNull())
                  || (use.has("on")     && !use.get("on").isJsonNull())
                  || (use.has("broken") && !use.get("broken").isJsonNull()))) {
+            // 상태 변화(잔량·켜짐·소진)를 실물 아이템 이름·설명에 반영 — 손전등 '잔량 2', 소진 시 '망가진 X'.
             Player up = Bukkit.getPlayer(pd.uuid);
             if (up != null) itemMan.refreshItemDisplay(up, inst.id, inst.name, inst.broken, inst.on, inst.charges);
         }
@@ -14617,7 +14627,8 @@ public class TRPGGameManager {
             sb.append("\n## 기계 효과 아이템 보유 현황 (사용 시 <ITEM_USE>로 상태 갱신) ★\n");
             sb.append(itemBlock);
             sb.append("위 아이템을 쓰면 결과를 서술하고 <ITEM_USE>로 상태를 갱신하라(잔량 0·소진 아이템은 작동 불가).\n");
-            sb.append("무기·도구가 부러지거나 망가지면 <ITEM_USE broken=true>로 표시하라 — 실물 아이템 이름이 '망가진 X'로 바뀌고, 잔량은 아이템 설명에 자동 표시된다.\n");
+            sb.append("무기·도구가 부러졌지만 잔해가 남으면 <ITEM_USE broken=true> — 이름이 '망가진 X'로 바뀌고 잔량은 설명에 자동 표시된다.\n");
+            sb.append("★다 써서 없어지거나 완전히 부서져 사라지는 아이템(물약·성냥·폭탄·부품 등)은 <ITEM_USE consume=\"그 아이템\">으로 인벤토리에서 제거하라 — '망가진 X'로 남기지 말 것. (소모품은 다 쓰면 자동 제거됨)\n");
         }
         java.util.Set<String> unlocked = state.getUnlockedZones();
         if (unlocked != null && !unlocked.isEmpty()) {
