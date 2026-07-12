@@ -1559,6 +1559,27 @@ public class AiManager {
                 && response.body().toLowerCase().contains("effort")) {
             return send(model, system, messages, maxTokens, attempt + 1, cacheHistory, "");
         }
+        // ★일시적 서버 오류(503 UNAVAILABLE·500·502·504)★ — 대개 모델 과부하로 잠깐 뒤 풀린다. 재미나이 저가
+        //   모델(flash-lite)은 부하 시 503이 특히 잦다. 한 번의 과부하로 GM 턴이 죽지 않게 지수 백오프로 재시도하고,
+        //   백오프를 다 써도 안 되면 다른 티어 모델로 ★1회만★ 폴백(과부하는 대개 특정 모델에 몰림) 후 그래도 실패면 포기.
+        int stat = response.statusCode();
+        if (stat == 503 || stat == 500 || stat == 502 || stat == 504) {
+            if (attempt < 3) {
+                Thread.sleep(1500L * (1L << attempt)); // 1.5s → 3s → 6s
+                return send(model, system, messages, maxTokens, attempt + 1, cacheHistory, effort);
+            }
+            if (attempt == 3) { // 백오프 소진 → 다른 티어로 1회 폴백(attempt 가드로 모델 간 핑퐁 방지)
+                ensureModelsDiscovered();
+                String med = autoMedium != null ? autoMedium : defMedium();
+                String lo  = autoLow    != null ? autoLow    : defLow();
+                String fb  = !med.equals(model) ? med : (!lo.equals(model) ? lo : null);
+                if (fb != null) {
+                    Thread.sleep(1500L);
+                    return send(fb, system, messages, maxTokens, attempt + 1, cacheHistory, effort);
+                }
+            }
+            // attempt>=4 또는 폴백 대상 없음 → 아래 공통 throw로.
+        }
         if (response.statusCode() != 200) {
             throw new RuntimeException("API " + response.statusCode() + ": " + response.body().substring(0, Math.min(200, response.body().length())));
         }
