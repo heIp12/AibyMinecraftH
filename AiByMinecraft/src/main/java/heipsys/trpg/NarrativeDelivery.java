@@ -94,6 +94,26 @@ public class NarrativeDelivery {
     }
 
     /**
+     * ★이미 색·구성이 정해진 '줄 목록'★을 GM 서술과 ★같은 페이스★로 한 줄(블록)씩 딜레이 출력한다.
+     * (format/세그먼트화를 다시 하지 않는다 — 호출부가 줄 단위 구성을 직접 정한 경우용.)
+     * NPC 직접 대화 답신처럼 '지문 먼저(이름 없이) → 대사는 문장(묶음)별로 [이름] 붙여 하나씩'
+     * 흘려보낼 때 쓴다. 각 줄은 채팅 폭을 넘으면 하드랩(색 유지)하되 한 블록으로 묶어 한 박자에 낸다.
+     */
+    public void deliverLines(Player player, List<String> lines) {
+        if (player == null || lines == null || lines.isEmpty()) return;
+        UUID uuid = player.getUniqueId();
+        ArrayDeque<Block> q = queues.computeIfAbsent(uuid, k -> new ArrayDeque<>());
+        for (String ln : lines) {
+            if (ln == null) continue;
+            String t = ln.strip();
+            if (t.isEmpty()) continue;
+            String block = wrapToBlock(t); // 폭 초과 시에만 내부 줄바꿈(색 이어붙임) — 한 박자 = 한 블록
+            if (!block.isEmpty()) q.add(new Block(block, true));
+        }
+        if (!taskIds.containsKey(uuid)) scheduleNext(player, FIRST_DELAY_TICKS);
+    }
+
+    /**
      * 한 세그먼트(문장 묶음)를 MAX_CHAT_CHARS자 단위로 하드랩해 ★하나의 블록★(여러 줄, 내부 빈 줄 없음)
      * 문자열로 만든다. 줄 사이 여백(빈 줄)은 출력 단계(sendLine)에서 문단 마지막에만 붙인다.
      */

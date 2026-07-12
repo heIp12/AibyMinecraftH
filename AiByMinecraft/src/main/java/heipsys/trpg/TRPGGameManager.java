@@ -11553,7 +11553,9 @@ public class TRPGGameManager {
             java.util.function.Consumer<String> deliverR = (heardR) -> {
                 plugin.getServer().getScheduler().runTask(plugin, () -> {
                     if (sender.isOnline())
-                        sender.sendMessage("§e[" + npcName + "] " + formatNpcSpeech(heardR, "§f")); // ★가독성★: 지문 회색·자기 줄, 문장 줄바꿈
+                        // ★GM 서술과 같은 페이스★: 지문(행동)을 이름 전에 한 번 회색으로, 그다음 대사를 문장 묶음별
+                        //   [이름] 붙여 한 박자씩 딜레이 출력(narrativeDelivery). 변조본도 스크럽(메타 ID 차단).
+                        narrativeDelivery.deliverLines(sender, npcPacedLines(scrubMetaIds(heardR), npcName));
                 });
                 if (tamperedR) gameLogger.logCommTampered(kindR, npcName,
                         java.util.List.of(senderPd.gmDisplayName()), visibleF, heardR, writtenF ? "괴담의 기록 변조" : "괴담의 음성 변조", viaR);
@@ -11931,32 +11933,38 @@ public class TRPGGameManager {
         java.util.List<String> lines = new java.util.ArrayList<>();
         StringBuilder seg = new StringBuilder();   // 현재 대사 조각
         StringBuilder pbuf = new StringBuilder();   // 현재 괄호 지문
-        boolean paren = false, skipParen = false;
-        int parenKept = 0;   // ★행동↔대사 벽 방지★: 지문(괄호)은 응답당 ★1개만★ 표시하고 나머진 통째로 버린다(대사는 전부 보존).
+        boolean paren = false;
         for (int i = 0; i < s.length(); i++) {
             char c = s.charAt(i);
             if (!paren && (c == '(' || c == '（')) {
-                if (parenKept >= 1) { paren = true; skipParen = true; pbuf.setLength(0); } // 두 번째 지문부터: 버림(seg 유지 → 앞뒤 대사 이어짐)
-                else { flushSpeechSeg(seg.toString(), base, lines); seg.setLength(0); paren = true; skipParen = false; pbuf.setLength(0); pbuf.append(c); }
+                flushSpeechSeg(seg.toString(), base, lines); seg.setLength(0);
+                paren = true; pbuf.setLength(0); pbuf.append(c);
             } else if (paren && (c == ')' || c == '）')) {
-                if (!skipParen) { pbuf.append(c); String p = pbuf.toString().trim(); if (!p.isEmpty()) { lines.add("§8" + p); parenKept++; } } // 지문 = 회색, 자기 줄
-                pbuf.setLength(0); paren = false; skipParen = false;
+                pbuf.append(c);
+                String p = pbuf.toString().trim();
+                if (!p.isEmpty()) lines.add("§8" + p);   // 지문 = 회색, 자기 줄 (★내용 보존★ — 버리지 않는다)
+                pbuf.setLength(0); paren = false;
             } else if (paren) {
-                if (!skipParen) pbuf.append(c);
+                pbuf.append(c);
             } else {
                 seg.append(c);
             }
         }
-        if (paren && !skipParen && pbuf.length() > 0) { String p = pbuf.toString().trim(); if (!p.isEmpty()) lines.add("§8" + p); } // 안 닫힌 괄호
+        if (paren && pbuf.length() > 0) { String p = pbuf.toString().trim(); if (!p.isEmpty()) lines.add("§8" + p); } // 안 닫힌 괄호도 보존
         flushSpeechSeg(seg.toString(), base, lines);
         return String.join("\n", lines);
     }
-    /** formatNpcSpeech 보조 — 대사 조각을 종결부호로 문장 분리한 뒤, ★짧은 문장은 한 줄로 묶어★ lines에 담는다.
-     *  (예전엔 종결부호마다 무조건 줄을 끊어 "어? 아, 당신이... 여기?"가 네 토막이 됐다 — 그 과다 줄바꿈을 없앤다.) */
+    /** formatNpcSpeech 보조 — 대사 조각을 문장 묶음(groupDialogueChunks)으로 나눠 각 줄 앞에 base 색을 붙여 담는다. */
     private static void flushSpeechSeg(String seg, String base, java.util.List<String> lines) {
-        if (seg == null) return;
+        for (String ch : groupDialogueChunks(seg)) lines.add(base + ch);
+    }
+    /** 대사 문자열을 ★종결부호로 문장 분리 → 짧은 문장은 폭 기준 한 줄로 묶은★ 청크 목록으로. (색/이름 접두는 호출부 담당.)
+     *  예전엔 종결부호마다 무조건 줄을 끊어 "어? 아, 당신이... 여기?"가 네 토막이 됐다 — 그 과다 줄바꿈을 없앤다. */
+    private static java.util.List<String> groupDialogueChunks(String seg) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        if (seg == null) return out;
         String t = seg.trim();
-        if (t.isEmpty()) return;
+        if (t.isEmpty()) return out;
         // 종결부호(. ? ! … 및 연속) 뒤에서 문장을 나눈다.
         java.util.regex.Matcher m = java.util.regex.Pattern.compile("(.+?[.?!…]+[\"'”’]?)(\\s+|$)").matcher(t);
         int end = 0;
@@ -11975,15 +11983,55 @@ public class TRPGGameManager {
             int w = speechWidth(p);
             if (curW == 0) { cur.append(p); curW = w; }
             else if (curW + 1 + w <= TARGET) { cur.append(' ').append(p); curW += 1 + w; }
-            else { lines.add(base + cur); cur.setLength(0); cur.append(p); curW = w; }
+            else { out.add(cur.toString()); cur.setLength(0); cur.append(p); curW = w; }
         }
-        if (cur.length() > 0) lines.add(base + cur);
+        if (cur.length() > 0) out.add(cur.toString());
+        return out;
     }
     /** 대략적인 표시 폭(한글·CJK·전각 계열=2, ASCII·기호=1). 채팅 줄 묶기 판단용(픽셀 정밀 X, 근사면 충분). */
     private static int speechWidth(String s) {
         int w = 0;
         for (int i = 0; i < s.length(); i++) w += s.charAt(i) >= 0x1100 ? 2 : 1;
         return w;
+    }
+
+    /** ★NPC 대사 → GM 서술과 같은 페이스로 흘려보낼 '줄 목록'★ (사용자 요구 서식).
+     *  ① 통짜 감싼 따옴표 제거 ② 괄호 지문(행동·표정)은 ★모두 보존★해 회색(§8)으로 ★맨 앞에★ 모은다
+     *     (이름 없이 서술처럼 — "지문이 이름 전에 한 번 나오고 대사가 나온다") ③ 나머지 대사는 문장으로
+     *     나눠 폭 기준 묶은 뒤 각 묶음마다 §e[이름]§f 를 붙인다. NarrativeDelivery.deliverLines가 한 박자씩
+     *     딜레이 출력해 GM 대사 서술과 같은 완급을 준다. ★내용은 하나도 버리지 않는다(정보 손실 없음).★ */
+    private static java.util.List<String> npcPacedLines(String raw, String npcName) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        if (raw == null) return out;
+        String s = raw.trim();
+        if (s.isEmpty()) return out;
+        // ① 통짜 감싼 따옴표 제거(감싼 한 쌍뿐일 때만 — 내부 인용 보존)
+        if (s.length() >= 2) {
+            char f = s.charAt(0), l = s.charAt(s.length() - 1);
+            if ((f == '"' || f == '“') && (l == '"' || l == '”')) {
+                long q = s.chars().filter(ch -> ch == '"' || ch == '“' || ch == '”').count();
+                if (q == 2) s = s.substring(1, s.length() - 1).trim();
+            }
+        }
+        // ② 괄호 지문 ↔ 대사 분리 (지문은 순서대로 모으되 전부 보존, 대사만 이어 붙임)
+        java.util.List<String> actions = new java.util.ArrayList<>();
+        StringBuilder dia = new StringBuilder();
+        StringBuilder pbuf = new StringBuilder();
+        boolean paren = false;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (!paren && (c == '(' || c == '（')) { paren = true; pbuf.setLength(0); pbuf.append(c); }
+            else if (paren && (c == ')' || c == '）')) { pbuf.append(c); String p = pbuf.toString().trim(); if (!p.isEmpty()) actions.add(p); pbuf.setLength(0); paren = false; }
+            else if (paren) pbuf.append(c);
+            else dia.append(c);
+        }
+        if (paren && pbuf.length() > 0) { String p = pbuf.toString().trim(); if (!p.isEmpty()) actions.add(p); } // 안 닫힌 괄호도 지문으로 보존
+        // 지문(행동) 먼저 — 회색, 이름 없이
+        for (String a : actions) out.add("§8" + a);
+        // 대사 — 문장 묶음별로 [이름] 붙여 한 박자씩
+        String nm = (npcName == null || npcName.isBlank()) ? "?" : npcName;
+        for (String ch : groupDialogueChunks(dia.toString())) out.add("§e[" + nm + "]§f " + ch);
+        return out;
     }
 
     /** 직접 대화용 NPC 시스템 프롬프트 (자율 행동 프롬프트와 별개). viaCall=전화/원격 통화면 목소리만, 아니면 대면. */
