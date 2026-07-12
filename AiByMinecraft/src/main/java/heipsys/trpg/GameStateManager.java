@@ -663,6 +663,45 @@ public class GameStateManager {
         return best == Integer.MAX_VALUE ? -1 : best;
     }
 
+    /** ★다음에 벌어질 사건 예고용★(정보 계열 특성 scenario_insight) — 아직 발화 안 한 ★가장 이른 다가오는
+     *  main_event★의 label·effect를 짧게 반환한다. 시각 미상·미도달이면 첫 미발화 사건으로 폴백, main_events가
+     *  없는 v1 스키마는 ★다음 단계 키({"n":{effect}})★의 effect로 폴백. 모두 발화·종료면 "".
+     *  ★반환은 '무슨 일이 닥치는가'(사건)일 뿐 — 해결법·약점이 아니다(호출부가 예고편으로 흐린다).★ */
+    public String nextEventHint() {
+        if (gdamData == null || !gdamData.has("timeline") || !gdamData.get("timeline").isJsonObject()) return "";
+        JsonObject tl = gdamData.getAsJsonObject("timeline");
+        if (tl.has("main_events") && tl.get("main_events").isJsonArray()) {
+            JsonObject best = null, firstUnfired = null; int bestWhen = Integer.MAX_VALUE;
+            for (JsonElement el : tl.getAsJsonArray("main_events")) {
+                if (!el.isJsonObject()) continue;
+                JsonObject ev = el.getAsJsonObject();
+                String id = ev.has("id") ? ev.get("id").getAsString() : "";
+                if (id.isEmpty() || firedEvents.contains(id) || blockedEvents.contains(id)) continue;
+                if (firstUnfired == null) firstUnfired = ev;
+                if (!ev.has("time")) continue;
+                int when = parseHhmm(ev.get("time").getAsString());
+                if (when < 0) continue;
+                if (clockStart >= 0 && when < clockStart) when += 1440;
+                if (when >= clockMinutes && when < bestWhen) { bestWhen = when; best = ev; }
+            }
+            JsonObject ev = (best != null) ? best : firstUnfired;
+            if (ev != null) {
+                String label  = ev.has("label")  ? ev.get("label").getAsString()  : "";
+                String effect = ev.has("effect") ? ev.get("effect").getAsString() : "";
+                String s = (label.isBlank() ? effect : (effect.isBlank() ? label : label + " — " + effect)).trim();
+                if (!s.isBlank()) return s;
+            }
+        }
+        // v1 단계 키 폴백: 현재 단계(0=일상) 다음 단계의 effect
+        String nextKey = String.valueOf(timelineStage <= 0 ? 1 : timelineStage + 1);
+        if (tl.has(nextKey) && tl.get(nextKey).isJsonObject()) {
+            JsonObject st = tl.getAsJsonObject(nextKey);
+            String eff = st.has("effect") ? st.get("effect").getAsString() : "";
+            if (!eff.isBlank()) return eff.trim();
+        }
+        return "";
+    }
+
     /** 현재 시각에 도달한 main_events를 1회씩 발화하여 justFiredEvents에 누적 */
     private void fireDueEvents() {
         if (gdamData == null || !gdamData.has("timeline")) return;

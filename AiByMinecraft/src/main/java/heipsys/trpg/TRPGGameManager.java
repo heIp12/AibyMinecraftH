@@ -6826,13 +6826,21 @@ public class TRPGGameManager {
                 ctx.append(buildAllyNpcContext());
             }
             default -> { // scenario_insight
-                // 시나리오 이해 = '영화 줄거리(스포일러 금지)' + '지금 어디쯤(진행도)'. ★핵심 해답(world_rules.core)은 절대 넘기지 않는다.★
+                // 시나리오 이해 = ★곧 닥칠 '다음 사건'을 예고편처럼 복선으로★ 흘린다. ★핵심 해답(world_rules.core)은 절대 넘기지 않는다.★
                 focus = "scenario_insight";
-                focusRule = "포커스=시나리오 이해: 지금 벌어지는 사건의 ★큰 줄기를 '영화 줄거리'처럼★(스포일러 금지) 어렴풋이 짚어주거나, ★이야기가 지금 어디쯤 와 있는지(진행도)★를 알려준다. 정체·정답·해결법·약점·붕괴조건은 제외.";
-                styleHint = "①인과율(에둘러) 또는 ③신탁(중의적) 계열 — 예고편처럼 분위기와 큰 줄기만.";
+                focusRule = "포커스=시나리오 이해(사건 예고): ★곧(다음에) 벌어질 사건★을 예고편처럼 어렴풋이 예고한다 — "
+                    + "★'무슨 일이 닥쳐오는가'★를 구체적 이미지·복선으로 흘려라. ★단순히 '이야기가 시작·중간·끝 어디쯤'이라는 진행도 서술만 반복하지 마라(그건 예고가 아니다)★ — "
+                    + "'다가오는 그 사건'의 낌새를 한 장면처럼 암시하라(예: '곧 불빛이 하나둘 꺼지고, 남은 어둠 속에서 낯선 웃음이 새어 나올 것이다'). "
+                    + "단 정체·정답·해결법·약점·붕괴조건·사건의 '결말'은 제외 — ★임박한 사건의 전조★까지만.";
+                styleHint = "①인과율(복선·에둘러) 또는 ③신탁(중의적 예언) 계열 — ★다가올 사건의 전조★를 한 장면으로. 등급↑=사건에 더 또렷하게, 낮으면 더 흐리게.";
                 if (!getStr(gdam, "scale").isBlank()) ctx.append("사건 규모: ").append(getStr(gdam, "scale")).append("\n");
                 if (e != null && e.has("type")) ctx.append("(참고) 존재 유형(직접 이름 노출 금지): ").append(getStr(e, "type")).append("\n");
-                ctx.append("현재 진행도(줄거리 기준): ").append(scenarioProgressDescriptor()).append("\n");
+                String nxt = state.nextEventHint(); // ★다음에 벌어질 사건★ — 예고의 핵심 재료
+                if (!nxt.isBlank())
+                    ctx.append("★곧 닥칠 사건(예고의 핵심 재료 — 이 '사건'을 복선으로 흐려 예고하라. 정답·해결법 아님): ").append(nxt).append("\n");
+                else
+                    ctx.append("(다음 예정 사건이 뚜렷이 잡히지 않는다 — 지금 상황의 긴장이 어디로 향하는지 방향만 흐릿하게.)\n");
+                ctx.append("현재 진행도(참고용, 이것만 읊지 말 것): ").append(scenarioProgressDescriptor()).append("\n");
             }
         }
         if (ctx.length() == 0) ctx.append("(특별히 잡히는 정보가 거의 없다 — 아주 흐릿한 직감만.)\n");
