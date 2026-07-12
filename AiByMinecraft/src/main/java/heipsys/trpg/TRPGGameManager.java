@@ -4772,7 +4772,7 @@ public class TRPGGameManager {
         if (pool.isEmpty())
             pool = new java.util.ArrayList<>(java.util.Arrays.asList("progress", "ally", "recent", "start", "overview_now", "overview_full"));
         int cap = switch (td.grade == null ? "" : td.grade) {
-            case "S" -> 6; case "A" -> 3; case "B" -> 2; default -> 1;
+            case "EX", "S" -> 6; case "A" -> 3; case "B" -> 2; default -> 1;
         };
         return pool.size() > cap ? new java.util.ArrayList<>(pool.subList(0, cap)) : pool;
     }
@@ -7499,6 +7499,7 @@ public class TRPGGameManager {
     /** 등급 문자 → 0(F)~6(S) 인덱스 (F<E<D<C<B<A<S). 불명은 C(3)로 간주 */
     private int gradeIdx(String grade) {
         return switch (grade == null ? "" : grade.toUpperCase()) {
+            case "EX" -> 7;
             case "S" -> 6;
             case "A" -> 5;
             case "B" -> 4;
@@ -7512,6 +7513,7 @@ public class TRPGGameManager {
 
     private String gradeColor(String grade) {
         return switch (grade == null ? "" : grade.toUpperCase()) {
+            case "EX" -> "§d§l";  // 최상위 티어 — S(금색)와 구분되는 연보라
             case "S"  -> "§6§l";
             case "A"  -> "§a§l";
             case "B"  -> "§e";
@@ -11542,7 +11544,7 @@ public class TRPGGameManager {
     private int gradeToPoints(String g) {
         if (g == null) return 0;
         return switch (g.trim().toUpperCase()) {
-            case "S" -> 5; case "A" -> 4; case "B" -> 3;
+            case "EX" -> 6; case "S" -> 5; case "A" -> 4; case "B" -> 3;
             case "C" -> 2; case "D" -> 1; default -> 0;
         };
     }
@@ -11598,7 +11600,7 @@ public class TRPGGameManager {
     /** 종료 보상 스텟 총량: S=3, A=2, B=0~1, 그 이하 0. */
     private int endStatPoints(String g) {
         return switch (g == null ? "" : g.trim().toUpperCase()) {
-            case "S" -> 3;
+            case "EX", "S" -> 3;   // EX도 스탯은 S와 동일(EX 우위는 효과에 — 스탯 인플레 방지)
             case "A" -> 2;
             case "B" -> ThreadLocalRandom.current().nextInt(2); // 0~1
             default  -> 0;

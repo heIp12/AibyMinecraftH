@@ -70,16 +70,18 @@ public class TraitData {
     }
 
     // 등급 사다리 F<E<D<C<B<A<S
-    private static final String[] LADDER = {"F","E","D","C","B","A","S"};
+    // ★EX = S 위 최상위 티어(강화 전용 — 신규 드롭엔 안 나오고, S 특성을 깊이 강화했을 때만 도달)★
+    private static final String[] LADDER = {"F","E","D","C","B","A","S","EX"};
     private static int gradeInt(String g) {
         return switch (g == null ? "" : g.trim().toUpperCase()) {
-            case "S" -> 6; case "A" -> 5; case "B" -> 4; case "C" -> 3; case "D" -> 2; case "E" -> 1; default -> 0;
+            case "EX" -> 7; case "S" -> 6; case "A" -> 5; case "B" -> 4; case "C" -> 3; case "D" -> 2; case "E" -> 1; default -> 0;
         };
     }
 
     /** AI가 등급을 'D/F'·'D 또는 F'·'B~C'처럼 여러 개로 줄 때 첫 유효 등급 한 글자로 정규화(없으면 def). */
     public static String normGrade(String g, String def) {
         if (g != null) {
+            if (g.trim().equalsIgnoreCase("EX")) return "EX"; // ★EX는 두 글자 — 문자 스캔 전에 먼저 잡는다(안 그러면 'E'로 깨진다)
             for (char c : g.toUpperCase().toCharArray()) {
                 if ("SABCDEF".indexOf(c) >= 0) return String.valueOf(c);
             }
@@ -94,7 +96,9 @@ public class TraitData {
         int cur = gradeInt(grade);
         int og  = (originGrade == null || originGrade.isEmpty()) ? cur : gradeInt(originGrade);
         int bonus = (cur > og) ? Math.max(0, 2 - og) : 0; // D(2)보다 낮은 출신 + 강화된 경우만
-        return LADDER[Math.min(LADDER.length - 1, cur + bonus)];
+        // ★약자보정(역전 성장)이 실효 등급을 EX까지 밀어올리지 않게 상한을 S로 둔다 — EX는 오직 '명목 등급이 EX'일 때만 실효도 EX.
+        int cap = "EX".equalsIgnoreCase(grade == null ? "" : grade.trim()) ? LADDER.length - 1 : gradeInt("S");
+        return LADDER[Math.max(0, Math.min(cap, cur + bonus))];
     }
 
     public String toDisplayLine() {
