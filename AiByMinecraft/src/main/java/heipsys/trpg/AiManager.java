@@ -1125,6 +1125,9 @@ public class AiManager {
             .replaceAll("(?i)</?DANGER\\b[^>]*>", "")   // GPT 등이 <THREAT> 대신 내는 <DANGER delta.../> 변형 누출 차단
             .replaceAll("(?i)</?NPC_STATE\\b[^>]*>", "") // ★#266★ NPC 종결 상태 태그(제압·결박·봉인…) — GM 전용, 서술 누출 차단
             .replaceAll("(?i)</?COMM_TAMPER\\b[^>]*>", "") // ★통신 변조 스위치★ — GM 전용 on/off 신호, 서술 누출 차단
+            .replaceAll("(?i)</?PROTECT_USED\\b[^>]*>", "")     // 방어 실제적용 카운트 신호 — 엔진 전용(parseProtectUsed 소비), 서술 누출 차단(로그 실측 누출)
+            .replaceAll("(?i)</?FATAL_GUARD_USED\\b[^>]*>", "") // 치명 무효화 소진 신호 — 엔진 전용(parseFatalGuardUsed 소비), 서술 누출 차단
+            .replaceAll("(?i)</?EFFECT_END\\b[^>]*>", "")       // 상시 지속효과 종료 신호 — 엔진 전용(parseEffectEnd 소비), 서술 누출 차단
             .replaceAll("<SUMMON[^>]*>", "")
             .replaceAll("<PACE [^/]*/?>", "")
             // ★[지난 자율 행동] 마커 누적 방지★: 미니 모델이 이전 턴의 이 내부 마커를 에코해 매턴 하나씩

@@ -2185,12 +2185,15 @@ public class TRPGGameManager {
         if (!roleData.has("role_stats")) return "";
         JsonObject rs = roleData.getAsJsonObject("role_stats");
 
-        int strAdd = rs.has("str_add")     ? rs.get("str_add").getAsInt()     : 0;
-        int chaAdd = rs.has("cha_add")     ? rs.get("cha_add").getAsInt()     : 0;
-        int lukAdd = rs.has("luk_add")     ? rs.get("luk_add").getAsInt()     : 0;
-        int sprAdd = rs.has("spr_add")     ? rs.get("spr_add").getAsInt()     : 0;
-        int hpAdd  = rs.has("hp_max_add")  ? rs.get("hp_max_add").getAsInt()  : 0;
-        int sanAdd = rs.has("san_max_add") ? rs.get("san_max_add").getAsInt() : 0;
+        // ★배역 보정 상한(요청)★: 개성 보정은 소폭, 난이도 보정(강한 괴담 vs 이른 스테이지)이라도 +6까지만.
+        //   생성기가 극단값(hp_max_add:-10·san_max_add:+20 등 실측)을 내도 캐릭터가 망가지지 않게 엔진에서 클램프한다.
+        //   4스탯은 [-4,+6], 체력·정신력 최대치는 풀이 작으므로 [-3,+6](감소는 얕게, 난이도 생존 보정 +5~6은 허용).
+        int strAdd = clampStat(rs, "str_add",     -4, 6);
+        int chaAdd = clampStat(rs, "cha_add",     -4, 6);
+        int lukAdd = clampStat(rs, "luk_add",     -4, 6);
+        int sprAdd = clampStat(rs, "spr_add",     -4, 6);
+        int hpAdd  = clampStat(rs, "hp_max_add",  -3, 6);
+        int sanAdd = clampStat(rs, "san_max_add", -3, 6);
 
         if (strAdd != 0) pd.str = Math.max(1, pd.str + strAdd);
         if (chaAdd != 0) pd.cha = Math.max(1, pd.cha + chaAdd);
@@ -2213,6 +2216,14 @@ public class TRPGGameManager {
         }
 
         return rs.has("summary") ? rs.get("summary").getAsString() : "";
+    }
+
+    /** role_stats 보정치를 [lo,hi]로 클램프해 읽는다(극단값 방지). 키 없으면 0. */
+    private static int clampStat(JsonObject rs, String key, int lo, int hi) {
+        if (!rs.has(key) || rs.get(key).isJsonNull()) return 0;
+        int v;
+        try { v = rs.get(key).getAsInt(); } catch (Exception e) { return 0; }
+        return Math.max(lo, Math.min(hi, v));
     }
 
     /**
@@ -3147,8 +3158,11 @@ public class TRPGGameManager {
                     boolean resolved = clearTag.has("resolved")
                         ? clearTag.get("resolved").getAsBoolean()
                         : gradeIdx(grade) >= gradeIdx("B"); // 명시 없으면 B+만 해결판정 인정(C=생존판정으로 하향, 진출 문턱↑)
-                    deliverNarrative(player, raw); // 클리어 서술은 행동 플레이어에게
-                    onClearEnding(grade, reason, resolved, by);
+                    deliverNarrative(player, raw); // 클리어 서술은 행동 플레이어에게 — GM 목소리로 천천히
+                    // ★클리어 방법·내용을 'GM이 말하듯' 다 흘린 뒤 종결★(요청): 결과 서술이 페이스대로 끝난 뒤에야
+                    //   onClearEnding(헤더·평가·해설)을 연다 — 서술과 클리어 헤더가 뒤섞이지 않게(결정타 경로와 동일 규약).
+                    final String fg = grade, fr = reason, fby = by; final boolean fres = resolved;
+                    narrativeDelivery.runAfterDelivery(player, () -> onClearEnding(fg, fr, fres, fby));
                     return;
                 }
             }
@@ -7139,6 +7153,12 @@ public class TRPGGameManager {
     private void onClearEnding(String grade, String reason, boolean resolved, String by) {
         if (currentPhase == Phase.CLEAR || currentPhase == Phase.GAMEOVER) return;
         currentPhase = Phase.CLEAR;
+        // ★클리어 서술/헤더 순서 정리(요청)★: 아직 타자기로 흐르던 ★모든 플레이어★의 잔여 서술을 즉시 전부 방출한 뒤
+        //   클리어 헤더를 낸다 — 예전엔 헤더를 먼저 broadcast하고 flushAll이 runScenarioEvaluation(뒤)에서 돌아,
+        //   잔여 서술이 헤더 '아래로' 쏟아져 클리어 내용을 보려면 위로 스크롤해야 했다(제보). 이제 서술→헤더 순.
+        //   (결정타/직접 클리어 경로는 행동 플레이어의 결과 서술을 runAfterDelivery로 이미 GM 페이스대로 다 흘린 뒤
+        //    이 지점에 도달하므로, 여기 flush는 '다른 플레이어의 겹치는 잔여 서술'만 정리한다.)
+        narrativeDelivery.flushAll();
         turnMan.cancelAll(); // 병렬 처리 중이던 다른 플레이어의 행동 취소 — 클리어 후 늦은 서술 누수 방지
         int room = state.getRoomNumber();
         // 스테이지 3+는 괴담 완전 해결(해결판정)만 다음 스테이지 진출 허용. 단순 생존은 재도전만 가능.
@@ -13996,10 +14016,18 @@ public class TRPGGameManager {
      *  라우팅 속성의 zone_id는 내부 통신이라 절대 건드리면 안 된다(그건 여기 들어오지 않는다). */
     private String scrubMetaIds(String text) {
         if (text == null || text.isEmpty()) return text;
-        // 빠른 경로: ID 접두어가 하나도 없으면 즉시 반환(거의 모든 서술이 여기서 끝 — 비용 0).
-        if (!(text.contains("role_") || text.contains("zone_") || text.contains("npc_")
-                || text.contains("clue_") || text.contains("item_"))) return text;
         java.util.Map<String,String> map = metaIdMap();
+        // 빠른 경로: 표준 ID 접두어(role_/zone_ 등)도 없고, ★이 시나리오의 실제 ID(비표준 이름 포함)★도 하나도
+        //   없으면 즉시 반환. 예전엔 접두어만 봐서, 생성기가 zone_id를 "factory_yard"·"street_C"처럼 접두어 없이
+        //   지으면 그 원문 id가 서술에 통째로 누출됐다(로그 실측 27건). 맵 키(실제 id)까지 훑어 잡는다.
+        boolean hit = text.contains("role_") || text.contains("zone_") || text.contains("npc_")
+                || text.contains("clue_") || text.contains("item_");
+        if (!hit) {
+            for (String k : map.keySet()) {
+                if (k.length() >= 4 && text.contains(k)) { hit = true; break; } // 짧은 id 오탐 방지(≥4자)
+            }
+        }
+        if (!hit) return text;
         // 알려진 ID는 '정확 일치'로(뒤에 한글 조사가 붙어도 ID만 잡음), 미매핑(AI 환각 role_D 등)은 일반 ascii 패턴으로.
         StringBuilder pat = new StringBuilder();
         java.util.List<String> keys = new java.util.ArrayList<>(map.keySet());
