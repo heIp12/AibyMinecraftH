@@ -2063,6 +2063,33 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
                         logger.warning("[gdam lint] " + getIdOrName(n) + " core_gate에 해제 조건 전무(min_timeline_stage·requires_clues·player_move 모두 없음) — 영영 안 열리는 게이트");
                 }
             }
+            // 6) 해결 규모 정합(후반 스테이지) — 큰 규모의 붕괴가 'NPC 한 명의 말·협조'로 끝나지 않게(격≠조건개수, 격=진상난이도·실행긴장)
+            if (g.has("room")) {
+                int room = g.get("room").getAsInt();
+                boolean bigScale = room >= 4;
+                if (!bigScale && g.has("scale") && !g.get("scale").isJsonNull()) {
+                    String sc = g.get("scale").getAsString();
+                    if (sc.contains("코즈믹") || sc.contains("종말") || sc.contains("월드") || sc.contains("글로벌")) bigScale = true;
+                }
+                if (bigScale && g.has("world_rules") && g.get("world_rules").isJsonObject()) {
+                    JsonObject wr = g.getAsJsonObject("world_rules");
+                    String dep = tlStr(wr, "npc_dependency");
+                    if (dep.equalsIgnoreCase("high") || dep.contains("높"))
+                        logger.warning("[gdam lint] 규모-해결 정합: 스테이지 " + room + "(대규모)인데 world_rules.npc_dependency=high"
+                            + " — 큰 붕괴가 NPC 한 명의 말·협조로 끝나면 격이 안 맞는다(진상 파악·실행 긴장으로 격을 주고, NPC는 실마리 한 조각까지만).");
+                    // 결정타 단서(capstone) 선행 깊이도 점검 — 대규모인데 선행 단서가 1개뿐이면 '한 조각으로 끝'에 가깝다
+                    if (g.has("clues") && g.get("clues").isJsonArray())
+                        for (JsonElement ce : g.getAsJsonArray("clues")) {
+                            if (!ce.isJsonObject()) continue;
+                            JsonObject c = ce.getAsJsonObject();
+                            if (!(c.has("capstone") && c.get("capstone").isJsonPrimitive() && c.get("capstone").getAsBoolean())) continue;
+                            int pre = (c.has("requires_clues") && c.get("requires_clues").isJsonArray()) ? c.getAsJsonArray("requires_clues").size() : 0;
+                            if (pre < 2)
+                                logger.warning("[gdam lint] 규모-해결 정합: 스테이지 " + room + "(대규모) capstone " + getIdOrName(c)
+                                    + "의 선행 단서 " + pre + "개(<2) — 큰 사건은 진상에 층을 둬라(선행 2~3개로 파악 난이도 확보).");
+                        }
+                }
+            }
         } catch (Exception e) {
             logger.warning("[gdam lint] 검사 중 예외(무시): " + e.getMessage());
         }
