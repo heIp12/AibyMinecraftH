@@ -7235,12 +7235,16 @@ public class TRPGGameManager {
                         String srcMapName = choices.mapUpgrade() != null && choices.mapUpgrade().replacesId != null
                             ? traitMan.getTrait(playerData, choices.mapUpgrade().replacesId)
                                       .map(t -> t.name).orElse("") : null;
-                        dialogMan.showStageEndTraitChoice(p, playerData, choices, srcMyName, srcMapName,
+                        boolean shownDlg = dialogMan.showStageEndTraitChoice(p, playerData, choices, srcMyName, srcMapName,
                             idx -> handleStageEndTraitSelect(p, playerData, choices, idx));
-                        pendingTraitSelect.add(p.getUniqueId());
-                        pendingStageEndChoices.put(p.getUniqueId(), choices);
-                        pendingStageEndNames.put(p.getUniqueId(), new String[]{srcMyName, srcMapName});
-                        p.sendMessage("§8(/trpg trait 으로 선택창을 다시 열 수 있습니다)");
+                        if (shownDlg) { // 고를 수 있는 특성이 하나라도 있을 때만 선택 대기(전부 최저선 침범이면 스킵 → 엔딩 해설 지연 방지)
+                            pendingTraitSelect.add(p.getUniqueId());
+                            pendingStageEndChoices.put(p.getUniqueId(), choices);
+                            pendingStageEndNames.put(p.getUniqueId(), new String[]{srcMyName, srcMapName});
+                            p.sendMessage("§8(/trpg trait 으로 선택창을 다시 열 수 있습니다)");
+                        } else {
+                            p.sendMessage("§7이번엔 고를 수 있는 성장 특성이 없습니다 (체력·정신력 최저선 보호).");
+                        }
                       } finally { shown.complete(null); }
                     });
                 }).exceptionally(ex -> { shown.complete(null); return null; });
