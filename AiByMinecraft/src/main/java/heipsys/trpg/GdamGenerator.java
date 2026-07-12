@@ -1196,6 +1196,8 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
     private static final int FAMILIAR_WINDOW_LOBOTOMY = 7;    // 로보토미(ALEPH 수가 적음)
     private static final int FAMILIAR_VARIANT_WINDOW  = 7;    // 같은 베이스의 변종 재등장 금지 창
     private static final int FAMILIAR_HISTORY_MAX     = 400;  // 전체 이력 상한(태그 다수 × 창 수용)
+    private static final int GLOBAL_RECENT_WINDOW     = 6;    // ★태그 무관★ 직전 N판 즉시 재등장 금지(백룸↔크리피파스타 Smiler처럼 카테고리가 달라 태그가 갈려도 잡는 belt-and-suspenders)
+    private static final int KIND_ROTATE_WINDOW       = 6;    // ★전체랜덤★이 최근 굴린 '종류(필터)'는 피해 모든 필터를 고루 훑도록(같은 카테고리 연속 방지 → 스마일러 두 판 재발 차단)
 
     /** '모두 무작위'(random) 모드가 ★매 스테이지★ 굴리는 구체 종류 풀. 세계 도시전설(random) 다수 +
      *  특수 종류(프로젝트 문·게임·코즈믹·SCP·한국·일본)를 시딩한다. 이렇게 해야 UI 설명('위 전부를 섞어
@@ -1215,6 +1217,12 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
     /** 배역 이름 중복 방지 — 최근 N개 플레이의 등장인물 이름을 기록해 같은 이름 재등장을 막는다 (파일 영속). */
     private static final int NAME_HISTORY_MAX = 50;
     private final java.util.List<String> nameHistory =
+        java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+
+    /** ★전체랜덤 종류 로테이션★ — 최근 굴린 kind(필터) 기록. 전체랜덤이 같은 카테고리를 연속으로 뽑지 않고
+     *  모든 필터를 고루 훑게 한다(파일 영속 — 서버 재시작·판 간에도 유지). */
+    private static final int KIND_HISTORY_MAX = 40;
+    private final java.util.List<String> kindHistory =
         java.util.Collections.synchronizedList(new java.util.ArrayList<>());
 
     /** /trpg setting 인지도풀 고정 — ""/"stage"(난이도별 기본) · "major"/"semi"/"minor"(그 티어만 강편향). */
@@ -1239,11 +1247,12 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
         this.aesKey    = loadOrCreateKey(plugin);
         // ★추적 기록(괴담·이름 no-repeat·회전 카운터·랜덤 제외)은 gdam 폴더가 아니라 상위 폴더에 둔다★ —
         //   구버전(gdam 폴더 내)에 있던 파일은 1회 상위로 이관(로드 전에).
-        for (String tf : new String[]{".familiar_history", ".name_history", ".ending_counter", ".random_excluded"})
+        for (String tf : new String[]{".familiar_history", ".name_history", ".ending_counter", ".random_excluded", ".kind_history"})
             migrateTrackerFile(tf);
         loadFamiliarHistory();
         loadNameHistory();
         loadRandomExcluded();
+        loadKindHistory();
     }
 
     /** 추적 기록 파일 저장 폴더 — gdam 폴더의 ★상위★(플러그인 데이터 폴더). gdam 폴더를 비워도 기록이 안 지워지게. */
@@ -1329,7 +1338,11 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
         }
     }
 
-    /** filter/region → 중복창 태그(문화권/출처). 명시 filter 우선, 없으면 region 키워드로 추론. */
+    /** filter/region → 중복창 태그(문화권/출처). 명시 filter 우선, 없으면 region 키워드로 추론.
+     *  ★버그 수정★: 카탈로그 보유 '출처형' kind(백룸·크리피파스타 등)는 ★kind 자체★로 고정 태그를 준다.
+     *  예전엔 이들이 default로 빠져 ★무작위 로테이션되는 region★에서 태그를 뽑았다 → 백룸(스마일러)을
+     *  판1은 태그A, 판2는 태그B로 기록·조회해 no-repeat 창이 서로 어긋나 스마일러가 연속으로 나왔다.
+     *  region 기반 태그는 지역 로테이션으로 뽑는 모드(random/urban/common/heard/minor/rule)에만 남긴다. */
     private static String familiarTag(String filter, String region) {
         switch (filter == null ? "random" : filter) {
             case "projectmoon": return "로보토미";
@@ -1338,7 +1351,13 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
             case "scp":         return "SCP";
             case "game":        return "게임";
             case "cosmic":      return "코즈믹";
-            default: break;
+            case "western":     return "서양";
+            case "creepypasta": return "크리피파스타";
+            case "backrooms":   return "백룸";
+            case "internet":    return "인터넷";
+            case "real":        return "실화";
+            case "sf":          return "SF";
+            default: break; // urban/common/heard/minor/rule/random/null → 아래 region 기반(지역 로테이션 선택 모드)
         }
         String r = region == null ? "" : region;
         if (r.contains("로보토미") || r.contains("프로젝트 문")) return "로보토미";
@@ -1404,6 +1423,39 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
         return keys;
     }
 
+    /** ★태그 무관★ 직전 GLOBAL_RECENT_WINDOW판의 엔티티 베이스키 집합 — 카테고리(태그)가 달라도
+     *  같은 괴담이 바로 다음 판에 또 나오는 것을 막는 belt-and-suspenders. (백룸 Smiler → 크리피파스타
+     *  Smiler처럼 태그가 갈리면 태그별 창은 못 잡으므로 전역 창으로 보강.) */
+    private java.util.Set<String> globalRecentKeys() {
+        java.util.Set<String> keys = new java.util.HashSet<>();
+        synchronized (familiarHistory) {
+            int n = familiarHistory.size();
+            for (int i = n - 1; i >= 0 && (n - i) <= GLOBAL_RECENT_WINDOW; i--) {
+                String e = familiarHistory.get(i);
+                int tab = e.indexOf('\t');
+                String nm = tab >= 0 ? e.substring(tab + 1) : e;
+                String b = variantBase(nm);
+                if (!b.isBlank()) keys.add(b);
+            }
+        }
+        return keys;
+    }
+    /** 전역 최근 엔티티 이름·베이스 CSV(avoid 블록용 — 프롬프트에 카테고리 불문 금지 목록으로 주입). */
+    private String globalRecentCsv() {
+        java.util.LinkedHashSet<String> names = new java.util.LinkedHashSet<>();
+        synchronized (familiarHistory) {
+            int n = familiarHistory.size();
+            for (int i = n - 1; i >= 0 && (n - i) <= GLOBAL_RECENT_WINDOW; i--) {
+                String e = familiarHistory.get(i);
+                int tab = e.indexOf('\t');
+                String nm = tab >= 0 ? e.substring(tab + 1) : e;
+                if (nm != null && !nm.isBlank()) { names.add(nm.trim()); String b = variantBase(nm); if (!b.isBlank()) names.add(b); }
+            }
+        }
+        names.remove("");
+        return String.join(", ", names);
+    }
+
     private File nameHistoryFile() { return new File(historyDir(), ".name_history"); }
 
     /** 배역 이름 사용 기록을 파일에서 불러온다(최근 NAME_HISTORY_MAX개 유지). */
@@ -1441,6 +1493,41 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
         synchronized (nameHistory) {
             return nameHistory.isEmpty() ? "" : String.join(", ", nameHistory);
         }
+    }
+
+    private File kindHistoryFile() { return new File(historyDir(), ".kind_history"); }
+    /** 전체랜덤 종류 로테이션 기록을 파일에서 불러온다(최근 KIND_HISTORY_MAX개). */
+    private void loadKindHistory() {
+        File f = kindHistoryFile();
+        if (!f.exists()) return;
+        try {
+            java.util.List<String> lines = java.nio.file.Files.readAllLines(f.toPath());
+            synchronized (kindHistory) {
+                kindHistory.clear();
+                for (String l : lines) { String t = l.trim(); if (!t.isEmpty()) kindHistory.add(t); }
+                while (kindHistory.size() > KIND_HISTORY_MAX) kindHistory.remove(0);
+            }
+        } catch (Exception ignored) {}
+    }
+    /** 전체랜덤이 굴린 kind를 기록·저장(최신화). */
+    private void recordKind(String kind) {
+        if (kind == null || kind.isBlank()) return;
+        String k = kind.trim();
+        synchronized (kindHistory) {
+            kindHistory.add(k); // ★삭제 후 재추가 아님★ — 로테이션 창은 '최근 순서'가 중요(빈도 반영). 상한만 관리.
+            while (kindHistory.size() > KIND_HISTORY_MAX) kindHistory.remove(0);
+            try { java.nio.file.Files.write(kindHistoryFile().toPath(), kindHistory); }
+            catch (Exception ignored) {}
+        }
+    }
+    /** 최근 KIND_ROTATE_WINDOW판에 굴린 종류 집합(전체랜덤 회피용). */
+    private java.util.Set<String> recentKindSet() {
+        java.util.Set<String> s = new java.util.HashSet<>();
+        synchronized (kindHistory) {
+            int n = kindHistory.size();
+            for (int i = n - 1; i >= 0 && (n - i) <= KIND_ROTATE_WINDOW; i--) s.add(kindHistory.get(i));
+        }
+        return s;
     }
 
 
@@ -1525,14 +1612,24 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
     }
 
     /** '모두 무작위'(random/null)면 이번 스테이지 구체 괴담 종류를 굴린다. 구체 필터가 이미 지정돼 있으면
-     *  그대로 존중한다(테스트용 유형 선택 보존). 반환값은 gdam.familiar_kind로 심겨 게임측 테마와 정합한다. */
+     *  그대로 존중한다(테스트용 유형 선택 보존). 반환값은 gdam.familiar_kind로 심겨 게임측 테마와 정합한다.
+     *  ★전체랜덤은 모든 필터를 고루 훑는다★ — 최근 굴린 종류(recentKindSet)는 피해 다른 카테고리를 우선한다.
+     *  이게 스마일러(백룸) 두 판 연속 재발의 근본 방지책이다: 같은 종류를 연달아 뽑지 않으니 같은 괴담 풀을
+     *  다시 만나지 않는다. (단 "random"=세계 지역 전설은 region이 매번 로테이션돼 반복해도 괴담이 겹치지
+     *  않으므로 회피 대상에서 뺀다 — 가중치 유지.) */
     private String resolveFamiliarKind(String filter) {
         if (filter != null && !filter.isBlank() && !"random".equals(filter)) return filter;
         // ★'모두 무작위'★ — 서버에 저장된 제외 카테고리(기본 로보토미·코즈믹·SCP)는 굴림 풀에서 뺀다.
         java.util.List<String> pool = new java.util.ArrayList<>(RANDOM_KIND_POOL.length);
         for (String k : RANDOM_KIND_POOL) if (!isRandomExcluded(k)) pool.add(k);
         if (pool.isEmpty()) return "random"; // 전부 제외되면 일반 세계전설(random)로 폴백 — 생성 실패 방지
-        return pool.get(java.util.concurrent.ThreadLocalRandom.current().nextInt(pool.size()));
+        // 최근 창에서 굴린 '구체 종류'는 피한다("random"은 region 로테이션으로 반복 무해 → 항상 후보 유지).
+        java.util.Set<String> recent = recentKindSet();
+        java.util.List<String> fresh = pool.stream().filter(k -> "random".equals(k) || !recent.contains(k)).toList();
+        java.util.List<String> src = fresh.isEmpty() ? pool : fresh; // 전부 최근이면(가짓수 부족) 폴백해 막힘 방지
+        String kind = src.get(java.util.concurrent.ThreadLocalRandom.current().nextInt(src.size()));
+        recordKind(kind); // ★굴린 종류를 기록★ — 다음 판이 이 종류를 회피(로테이션 창)
+        return kind;
     }
 
     /** filter가 카탈로그(GdamCatalog) 보유 출처면 그 src, 아니면 null(지역 전설 등은 카탈로그 미보유). */
@@ -1552,7 +1649,8 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
     private String catalogCandidates(String filter, int stage, String famTag) {
         String src = catalogSrcFor(filter);
         if (src == null) return "";
-        java.util.Set<String> keys = recentFamiliarKeys(famTag);
+        java.util.Set<String> keys = new java.util.HashSet<>(recentFamiliarKeys(famTag));
+        keys.addAll(globalRecentKeys()); // ★전역 최근★도 후보에서 제외(태그 갈려도 직전 판 재등장 차단)
         java.util.Set<String> avoidNames = new java.util.HashSet<>();
         for (GdamCatalog.Entry e : GdamCatalog.bySource(src)) {
             String b = variantBase(e.name());
@@ -1590,10 +1688,16 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
         final String famTag = familiarTag(filter, region);
         final boolean forced = forcedName != null && !forcedName.isBlank();
         String recent = forced ? "" : recentFamiliarFor(famTag);
-        String avoid = recent.isEmpty() ? ""
-            : "이 태그(" + famTag + ")에서 최근 쓴 괴담 — ★재등장 금지(변종·같은 베이스 포함)★: " + recent + "\n"
-            + "★표기가 달라도(원어 병기·발음·번호 유무) 이름의 핵심이 같으면 같은 괴담이다 — 위 목록의 것은 어떤 표기로도 다시 내지 마라.★\n"
-            + "★변종(원전을 비튼 버전)을 낼 거면 이름을 '<베이스> 변종'으로 통일하고, 위 금지 목록의 베이스는 피하라.★\n";
+        String globalRecent = forced ? "" : globalRecentCsv();
+        StringBuilder avoidB = new StringBuilder();
+        if (!recent.isEmpty())
+            avoidB.append("이 태그(").append(famTag).append(")에서 최근 쓴 괴담 — ★재등장 금지(변종·같은 베이스 포함)★: ").append(recent).append("\n");
+        if (!globalRecent.isEmpty())
+            avoidB.append("★직전 몇 판에 이미 나온 괴담 — 카테고리(출처)가 달라도 ★재등장 금지★: ").append(globalRecent).append("\n");
+        if (avoidB.length() > 0)
+            avoidB.append("★표기가 달라도(원어 병기·발음·번호 유무) 이름의 핵심이 같으면 같은 괴담이다 — 위 목록의 것은 어떤 표기로도 다시 내지 마라.★\n")
+                  .append("★변종(원전을 비튼 버전)을 낼 거면 이름을 '<베이스> 변종'으로 통일하고, 위 금지 목록의 베이스는 피하라.★\n");
+        String avoid = avoidB.toString();
         // 괴담 범위 필터별 scope(범위)·criterion(선정 기준)
         String scope, criterion;
         switch (filter == null ? "random" : filter) {
@@ -1706,9 +1810,10 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
             var f = FAMILIAR_ENTITIES.stream().filter(e -> e.origin().contains("게임")).toList();
             if (!f.isEmpty()) pool = f;
         }
-        // ★no-repeat 창 반영★: 이 태그에서 최근 쓴 괴담은 폴백에서도 제외(전부 소진 시에만 재사용).
+        // ★no-repeat 창 반영★: 이 태그에서 최근 쓴 괴담 + ★전역 최근★은 폴백에서도 제외(전부 소진 시에만 재사용).
         String fTag = familiarTag(filter, null);
-        java.util.Set<String> recentKeys = recentFamiliarKeys(fTag); // 형식 무관(베이스) 매칭 — 괄호·발음 병기·번호 차이 흡수
+        java.util.Set<String> recentKeys = new java.util.HashSet<>(recentFamiliarKeys(fTag)); // 형식 무관(베이스) 매칭 — 괄호·발음 병기·번호 차이 흡수
+        recentKeys.addAll(globalRecentKeys()); // 태그 갈려도 직전 판 재등장 차단
         java.util.List<FamiliarEntity> fresh = recentKeys.isEmpty() ? pool
             : pool.stream().filter(e -> !recentKeys.contains(variantBase(e.name()))).toList();
         java.util.List<FamiliarEntity> pick = fresh.isEmpty() ? pool : fresh;
