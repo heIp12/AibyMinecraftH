@@ -11708,6 +11708,14 @@ public class TRPGGameManager {
                 && use.get("broken").getAsBoolean()) {
             inst.broken = true;
         }
+        // ★상태 변화(잔량·켜짐·소진)를 실물 아이템 이름·설명에 반영★ — 손전등 '잔량 2', 소진 시 '망가진 X'.
+        if (pd != null && inst != null
+                && ((use.has("charge") && !use.get("charge").isJsonNull())
+                 || (use.has("on")     && !use.get("on").isJsonNull())
+                 || (use.has("broken") && !use.get("broken").isJsonNull()))) {
+            Player up = Bukkit.getPlayer(pd.uuid);
+            if (up != null) itemMan.refreshItemDisplay(up, inst.id, inst.name, inst.broken, inst.on, inst.charges);
+        }
         // 구역 해제 (열쇠·도구)
         if (use.has("unlock") && !use.get("unlock").isJsonNull()) {
             String zone = use.get("unlock").getAsString();
@@ -14587,6 +14595,7 @@ public class TRPGGameManager {
             sb.append("\n## 기계 효과 아이템 보유 현황 (사용 시 <ITEM_USE>로 상태 갱신) ★\n");
             sb.append(itemBlock);
             sb.append("위 아이템을 쓰면 결과를 서술하고 <ITEM_USE>로 상태를 갱신하라(잔량 0·소진 아이템은 작동 불가).\n");
+            sb.append("무기·도구가 부러지거나 망가지면 <ITEM_USE broken=true>로 표시하라 — 실물 아이템 이름이 '망가진 X'로 바뀌고, 잔량은 아이템 설명에 자동 표시된다.\n");
         }
         java.util.Set<String> unlocked = state.getUnlockedZones();
         if (unlocked != null && !unlocked.isEmpty()) {

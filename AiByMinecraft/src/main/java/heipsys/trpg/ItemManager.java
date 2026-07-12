@@ -154,6 +154,57 @@ public class ItemManager {
         });
     }
 
+    /** lore에 붙는 동적 상태줄 표식(중복 삽입 방지·재갱신용). */
+    private static final String STATUS_TAG = "§8[상태] ";
+
+    /**
+     * ★<ITEM_USE>로 상태가 바뀐 뒤, 인벤토리 실물 아이템의 이름·설명을 갱신★한다.
+     *  - 소진·고장(broken)이면 이름이 '망가진 X'(회색)로 바뀐다(예: 칼 → 망가진 칼).
+     *  - 잔량(charges)·켜짐(on)은 lore의 '[상태]' 한 줄로 표시(예: 손전등 '잔량 2').
+     *  예전엔 지급 시점 외형이 고정돼, 상태(잔량/소진)가 GM 컨텍스트에만 있고 아이템엔 안 보였다.
+     */
+    public void refreshItemDisplay(Player player, String id, String baseName, boolean broken, boolean on, int charges) {
+        if (player == null || id == null || id.isBlank()) return;
+        JsonObject def = findItemDef(id);
+        final String title = def != null ? (def.has("title") ? def.get("title").getAsString()
+                                          : def.has("name") ? def.get("name").getAsString() : id) : id;
+        final String base = (baseName != null && !baseName.isBlank()) ? baseName
+                          : (title != null && !title.isBlank() ? title : id);
+        plugin.getServer().getScheduler().runTask(plugin, () -> {
+            for (ItemStack it : player.getInventory().getContents()) {
+                if (it == null) continue;
+                var meta = it.getItemMeta();
+                if (meta == null) continue;
+                String pid = meta.getPersistentDataContainer().get(idKey, PersistentDataType.STRING);
+                boolean match = (pid != null && pid.equals(id));
+                if (!match && pid == null && meta.hasDisplayName()) { // 구형(표식 없는) 폴백: 표시 이름 매칭
+                    String dn = PlainTextComponentSerializer.plainText().serialize(meta.displayName());
+                    match = dn.contains(base) || dn.contains(id) || (title != null && !title.isBlank() && dn.contains(title));
+                }
+                if (!match) continue;
+                meta.displayName(Component.text(broken ? "§8망가진 " + base : "§e" + base));
+                // 기존 상태줄 제거 후, [TRPG 아이템]/[쪽지] 머리줄 다음에 새 상태줄 삽입(없으면 맨 앞).
+                List<Component> lore = meta.lore() != null ? new ArrayList<>(meta.lore()) : new ArrayList<>();
+                lore.removeIf(c -> PlainTextComponentSerializer.plainText().serialize(c).startsWith(STATUS_TAG));
+                String status = statusLine(broken, on, charges);
+                if (status != null) lore.add(Math.min(1, lore.size()), Component.text(status));
+                meta.lore(lore);
+                it.setItemMeta(meta);
+                break; // 한 개만 갱신
+            }
+        });
+    }
+
+    /** 상태줄 문자열(잔량/켜짐/소진). 표시할 상태가 없으면 null. */
+    private String statusLine(boolean broken, boolean on, int charges) {
+        if (broken) return STATUS_TAG + "소진·고장 (작동 불가)";
+        StringBuilder sb = new StringBuilder(STATUS_TAG);
+        boolean any = false;
+        if (on)           { sb.append("켜짐"); any = true; }
+        if (charges >= 0) { if (any) sb.append(" · "); sb.append("잔량 ").append(charges); any = true; }
+        return any ? sb.toString() : null;
+    }
+
     // ──────────────────────────────────────────────────────────────
     //  아이템 빌더
     // ──────────────────────────────────────────────────────────────
