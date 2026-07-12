@@ -9754,6 +9754,7 @@ public class TRPGGameManager {
             if (!ce.isJsonObject()) continue;
             JsonObject c = ce.getAsJsonObject();
             if (!(c.has("capstone") && c.get("capstone").isJsonPrimitive() && c.get("capstone").getAsBoolean())) continue;
+            if (clueEventSealed(c)) { n++; continue; } // ★#285★ 사건 미해결 봉인 capstone도 '봉인'으로 카운트 → solutionCapstoneKnown 오탐(가짜 자동성공) 방지
             if (!c.has("requires_clues") || !c.get("requires_clues").isJsonArray()) continue;
             for (JsonElement pre : c.getAsJsonArray("requires_clues")) {
                 String rid = pre.isJsonPrimitive() ? pre.getAsString().trim() : "";

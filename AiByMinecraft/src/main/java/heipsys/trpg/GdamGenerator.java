@@ -2591,9 +2591,83 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
         return (o != null && o.has(k) && !o.get(k).isJsonNull()) ? o.get(k).getAsString() : "";
     }
 
+    /** 힌트관문 게이트로 삼을 만한 사건인가 — id 있고, 종료(is_end) 아님, 곁가지(side) 아님(=본줄기 사건). */
+    private static boolean isGateCandidate(JsonObject ev) {
+        if (ev == null || tlStr(ev, "id").isBlank()) return false;
+        if (ev.has("is_end") && ev.get("is_end").isJsonPrimitive() && ev.get("is_end").getAsBoolean()) return false;
+        if (ev.has("side")   && ev.get("side").isJsonPrimitive()   && ev.get("side").getAsBoolean())   return false;
+        return true;
+    }
+    /** 사건 위협도(없으면 0). 힌트관문 '거대함' 척도. */
+    private static int evThreat(JsonObject ev) {
+        try { if (ev != null && ev.has("threat") && !ev.get("threat").isJsonNull()) return ev.get("threat").getAsInt(); }
+        catch (Exception ignore) {}
+        return 0;
+    }
+
+    /** ★#285 힌트관문 30% (코드 프리롤 — 확률·상태를 엔진이 소유, 프롬프트 %지시 신뢰 안 함)★
+     *  씨드로 결정적 30%를 굴려, 당첨된 시나리오에 한해 ★클리어 직결 종결단서(capstone) 하나★를
+     *  ★초반 거대 사건의 근원 직접해결(EVENT_RESOLVE) 전까지 봉인★한다(예방으론 안 열림).
+     *  거대 사건 선정: 본줄기(비종료·비곁가지) 중 위협도 유의미한 것 우선, 동급이면 ★배열 순서=이른 시각★.
+     *  선정 사건은 반드시 blockable=true로(요구사항: 초반 지연 사건은 예방 가능해야 함 — 단 예방≠해결).
+     *  ★CLEAR 하드게이트가 아니다★: 봉인은 그 단서 조각만 잠근다 — 정답 아는 팀의 실행은 런타임
+     *  자동성공(clearAssertsKnownSolution)으로 여전히 인정된다. 적합 capstone·사건 없으면 조용히 건너뛴다.
+     *  ★생성 프롬프트 문자열은 건드리지 않는다(65535 한계 무관) — 순수 후처리. 씨드 결정적이라 재현 가능.★ */
+    private void applyHintGateReroll(String seed, JsonObject gdam) {
+        try {
+            if (gdam == null) return;
+            if (Math.floorMod(("hintgate:" + (seed == null ? "" : seed)).hashCode(), 100) >= 30) return; // 70%는 게이트 없음(정상)
+
+            // 종결단서(capstone, 시나리오당 0~1개) — 클리어 직결 '확인 조각'
+            if (!gdam.has("clues") || !gdam.get("clues").isJsonArray()) return;
+            JsonObject capstone = null;
+            for (JsonElement ce : gdam.getAsJsonArray("clues")) {
+                if (!ce.isJsonObject()) continue;
+                JsonObject c = ce.getAsJsonObject();
+                if (c.has("capstone") && c.get("capstone").isJsonPrimitive() && c.get("capstone").getAsBoolean()
+                        && !tlStr(c, "id").isBlank()) {
+                    if (!tlStr(c, "requires_event_resolved").isBlank()) return; // 이미 게이트됨(멱등)
+                    capstone = c; break;
+                }
+            }
+            if (capstone == null) { logger.info("[힌트관문] 당첨이나 capstone 단서 없음 — 봉인 건너뜀 (" + seed + ")"); return; }
+
+            if (!gdam.has("timeline") || !gdam.get("timeline").isJsonObject()) return;
+            JsonObject tl = gdam.getAsJsonObject("timeline");
+            if (!tl.has("main_events") || !tl.get("main_events").isJsonArray()) return;
+            JsonArray evs = tl.getAsJsonArray("main_events");
+
+            int maxThreat = 0; // 1패스: 후보 최대 위협도 → 유의미 기준선
+            for (JsonElement ee : evs) if (ee.isJsonObject() && isGateCandidate(ee.getAsJsonObject())) maxThreat = Math.max(maxThreat, evThreat(ee.getAsJsonObject()));
+            int bar = Math.max(10, (int) (maxThreat * 0.6));
+            // 2패스: 배열 순서(=시간 순)로 가장 이른 '유의미' 사건, 없으면 최대 위협도 사건
+            JsonObject bestEv = null, biggest = null; int biggestThreat = -1;
+            for (JsonElement ee : evs) {
+                if (!ee.isJsonObject()) continue;
+                JsonObject ev = ee.getAsJsonObject();
+                if (!isGateCandidate(ev)) continue;
+                int t = evThreat(ev);
+                if (t > biggestThreat) { biggestThreat = t; biggest = ev; }
+                if (bestEv == null && t >= bar) bestEv = ev; // 첫(가장 이른) 유의미 사건
+            }
+            if (bestEv == null) bestEv = biggest;
+            if (bestEv == null) { logger.info("[힌트관문] 당첨이나 적합 사건 없음 — 봉인 건너뜀 (" + seed + ")"); return; }
+
+            // 배선(양방향) + 예방 가능 표시
+            String evId = tlStr(bestEv, "id");
+            capstone.addProperty("requires_event_resolved", evId);
+            bestEv.addProperty("unlocks_clue", tlStr(capstone, "id"));
+            bestEv.addProperty("blockable", true); // ★초반 지연 사건은 반드시 막을 수 있어야 함(예방·학습) — 예방≠해결★
+            logger.info("[힌트관문] 적용 (" + seed + "): 종결단서 '" + tlStr(capstone, "id") + "' → 사건 '" + evId + "' 근원해결 전까지 봉인 (위협도 " + evThreat(bestEv) + ")");
+        } catch (Exception e) {
+            logger.warning("[힌트관문] 적용 중 예외(무시): " + e.getMessage());
+        }
+    }
+
     public void save(String seed, JsonObject gdam) throws Exception {
         recordCampaignArchetype(gdam); // ★캠페인 중복방지 기록(GPT 디테일2: 성공 저장 시에만)★ — 이 판의 주 world_rules 아키타입을 캠페인 사용 목록에 추가
         repairTimelineConsistency(gdam); // ★생성 후 타임라인 정합 자동 보정★ — 종료 사건 시각·창 밖 사건·시간창 페이스(GPT 지적: 검증이 존재 여부만 봄)
+        applyHintGateReroll(seed, gdam); // ★#285★ 힌트관문 30% 코드 프리롤 — 당첨 시 종결단서를 초반 거대사건 근원해결 전까지 봉인(순수 후처리)
         finalizeNpcSpeech(gdam); // 저장 직전 NPC 말투 후처리 — D1: 개성 어미 최소 1명 보장 · D2: 그 인물 나이 12~35
         File file = new File(gdamDir, seed + ".gdam");
         String encrypted = encrypt(gdam.toString());
