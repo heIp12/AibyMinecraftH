@@ -75,7 +75,9 @@ public class ContextCompressor {
             + "핵심 복선과 중요 정보만 3줄로 압축 요약해줘.";
 
         return ai.callAssistant(task, rawLog).thenAccept(summary -> {
-            ai.compressGmContext("[일상 파트 요약] " + summary);
+            // ★일상 요약은 injectGmSystem으로★(compressGmContext는 gmContext<=20이면 no-op이라 일상은 대개 요약을 만들고
+            //   버렸다 — 요약 AI 비용만 쓰고 폐기). injectGmSystem은 크기 무관하게 다음 GM 호출(공포 첫 턴)에 요약을 전달한다.
+            if (summary != null && !summary.isBlank()) ai.injectGmSystem("[일상 파트 요약] " + summary);
         });
     }
 }
