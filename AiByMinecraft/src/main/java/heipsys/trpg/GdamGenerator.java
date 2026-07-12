@@ -2679,6 +2679,7 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
                 if (canon == null) continue;
                 npc.addProperty("speech_style", canon[0]);
                 npc.addProperty("ending_style", canon[1]);   // 레지스터형이면 "" → 생성기가 지어낸 단일 어미 해제
+                npc.addProperty("canon_speech", true);        // ★정전(원작) 인물 표식★ — 저품질만 끄고 중·고품질은 유지(런타임 canonSpeechAllowed 게이트)
                 n++;
             }
             if (n > 0) logger.info("[gdam] 세피라 말투 캐논 강제 " + n + "명(" + (library ? "라오루" : "로보토미") + ")");

@@ -125,6 +125,10 @@ public class AiManager {
      *  미니 티어라 정밀 문체 편집(어간 복원·재활용)이 비문을 낸다(실측 '바보군냐') → 특수 말투를 통째로 끄고
      *  나이·시대별 말씨만 쓴다(사용자 지시). 변환(pass2) 호출도 아예 안 나가 비용 절감을 겸한다. */
     public boolean specialSpeechEnabled()  { return gmQuality == Quality.HIGH; }
+    /** ★정전(원작) 인물 캐논 말투 허용 여부★ — 일반 특수 말투(specialSpeechEnabled)는 고품질 전용이지만, 세피라·
+     *  친숙 정전 캐릭터의 ★원작 말투★는 캐논 충실도라 ★저품질만 끄고 중·고품질(·효율)은 유지★한다(사용자 결정).
+     *  저품질은 미니 티어라 캐논 어미 렌더도 비문 위험이 커 통째로 끈다(그땐 나이·시대 말씨). */
+    public boolean canonSpeechAllowed()    { return gmQuality != Quality.LOW; }
     private static String norm(String m)   { return (m != null && !m.isBlank()) ? m.trim() : null; }
     public void setHighModelOverride(String m)   { this.highModelOverride   = norm(m); }
     public void setMediumModelOverride(String m) { this.mediumModelOverride = norm(m); }
@@ -596,6 +600,12 @@ public class AiManager {
         if (npcOverride != null) return npcOverride;
         return gmQuality == Quality.HIGH ? sonnetModel() : miniModel();
     }
+    /** ★자율(안 보이는) NPC 판단 전용 모델★ — 플레이어에게 직접 노출되지 않는 자율 행동/사고는 값싼 미니로.
+     *  고품질이라도 ★직접 대화(npcModel)만 중급으로 올리고★ 숨은 판단은 미니 유지해 비용을 아낀다(사용자 결정).
+     *  단 config models.npc 오버라이드가 있으면 그 지정을 존중(양쪽 동일). */
+    private String npcAutonomousModel() {
+        return npcOverride != null ? npcOverride : miniModel();
+    }
     /** 보조(특성·처리) AI 모델 — 역할 오버라이드 우선, 없으면 저품질(Haiku). */
     private String assistantModel() { return assistantOverride != null ? assistantOverride : haikuModel(); }
 
@@ -712,7 +722,8 @@ public class AiManager {
                     //   호출마다 달라진다 → 메시지 히스토리 캐시 프리픽스가 [sys1][sys2(동적)][msgs]라 sys2에서 갈려 msgs가 절대
                     //   히트 못한다. 그런데 cacheHistory=true면 그 못 읽을 히스토리를 매 호출 캐시쓰기(2×)만 하고 버렸다(순낭비).
                     //   false로 두면 히스토리는 정가 1×, sys1(안정 코어)은 시스템 블록 자체 cache_control로 그대로 0.1× 캐시된다.
-                    String result = send(npcModel(), systemPrompt, snapshot, ASST_MAX_TOKENS, false, npcEffort);
+                    // ★직접 대화(dialogue)=npcModel(고품질 중급) / 자율 판단=npcAutonomousModel(항상 미니, 안 보임)★ — 비용 분리(사용자 결정)
+                    String result = send(dialogue ? npcModel() : npcAutonomousModel(), systemPrompt, snapshot, ASST_MAX_TOKENS, false, npcEffort);
                     // #1(컨텍스트 오염): 자율(3인칭) 응답을 raw로 저장하면 이후 ★대화★ 호출이 그 3인칭·보고체를 흉내낸다(약한 모델의 이력 모방).
                     //   → 자율 응답은 태그를 떼고 '[지난 자율 행동] 요약' 중립 로그로 저장한다(대화 1인칭 응답은 verbatim 유지해 대화 연속성 보존).
                     //   ★단 stripTags가 통째로 지우는 <NPC_CALL>(제가 먼저 건 연락)의 요지는 1인칭 기억으로 되살려 둔다★ —
@@ -738,9 +749,11 @@ public class AiManager {
      * 생성(pass1: callNpcAi)과 분리하는 이유 — 미니 모델은 '스타일 유지하며 생성'은 약해도(표준 어미로 회귀) '완성 문장 어미만 치환'은 안정적이다.
      * 실패·빈 응답이면 원본 대사를 그대로 돌려준다(전달을 절대 막지 않는다). 동기 호출 — 대화 전달 콜백(thenAccept)은 이미 비-메인 스레드다.
      */
-    public String restyleDialogue(String dialogue, String styleSpec) {
+    public String restyleDialogue(String dialogue, String styleSpec) { return restyleDialogue(dialogue, styleSpec, false); }
+    /** canon=true(정전 인물 캐논 말투)면 ★저품질만 끄고 중·고품질은 렌더★한다(canonSpeechAllowed) — 일반 특수 말투는 고품질 전용. */
+    public String restyleDialogue(String dialogue, String styleSpec, boolean canon) {
         if (dialogue == null || dialogue.isBlank() || styleSpec == null || styleSpec.isBlank()) return dialogue;
-        if (!specialSpeechEnabled()) return dialogue; // ★저·중품질(·효율): 특수 말투 미시도★ — 원문 그대로(호출 0·비문 위험 0). 고품질만 변환(그때 npcModel=중급이라 안정).
+        if (!specialSpeechEnabled() && !(canon && canonSpeechAllowed())) return dialogue; // 특수 말투(고품질) OR 정전 인물(비저품질)만 변환. 그 외 원문 그대로(호출 0·비문 위험 0).
         // ★짧은 외침·부름·감탄 파편엔 개성 어미를 얹지 않는다★(과적용·비문 방지: '놔'→'놔라니까', '잘 커'→'잘 커라니까' 차단)
         //   — 괄호 지문·문장부호·공백을 뺀 실질 글자가 3자 이하면 원형 그대로.
         String bare = dialogue.replaceAll("\\([^)]*\\)", "").replaceAll("[\\s…·.!?~\"'\\-–—]+", "");

@@ -9295,10 +9295,13 @@ public class TRPGGameManager {
         //   예전엔 ①만 타서 어조·리듬(speech_style)이 pass1에서 통째로 증발했다(게부라 거친 결이 밋밋해짐).
         String endingStyle = getStr(npcObj, "ending_style");
         String speechStyle = getStr(npcObj, "speech_style");
-        if (!ai.specialSpeechEnabled()) {
+        // ★정전(원작) 인물 캐논 말투는 저품질만 끄고 중·고품질은 유지★(사용자 결정) — 일반 특수 말투는 고품질 전용.
+        boolean styleOn = ai.specialSpeechEnabled() || (npcCanon(npcObj) && ai.canonSpeechAllowed());
+        if (!styleOn) {
             // ★저·중품질(·효율) = 특수 말투 OFF(사용자 지시)★ — 미니 NPC 모델은 개성 어미·복합 말씨 지시를 어겨 비문을
             //   내니('바보군냐' 실측), ①~③(어미습관·개인말투·유창도)을 걸지 않고 '나이·시대 말씨만' 한 줄로 단순화한다
             //   (아래 ④나이별·⑥시대가 그 지시를 담당). ending_style pass2 변환도 restyleDialogue 게이트로 함께 꺼진다.
+            //   ※정전 인물(canon_speech)은 저품질이 아니면 이 분기를 건너뛰어 원작 말투를 유지한다.
             sb.append("- 말투: 특별한 어미·말버릇을 꾸미지 마라 — 나이·시대에 맞는 자연스러운 말씨로만, 쉬운 일상어로 간결하게 말하라.\n");
         }
         else if (!endingStyle.isBlank() && !speechStyle.isBlank()) {              // ①+② 병용: 어조는 pass1, 어미는 pass2가 확정
@@ -9499,6 +9502,12 @@ public class TRPGGameManager {
                 for (String r : rels) sb.append("  · ").append(r).append("\n");
             }
         }
+    }
+
+    /** ★정전(원작) 인물 표식★ — 생성기 applySephirahCanonSpeech가 캐논 말투를 넣은 NPC(canon_speech=true).
+     *  이 인물의 말투는 저품질만 끄고 중·고품질은 유지한다(canonSpeechAllowed 게이트와 짝). */
+    private static boolean npcCanon(JsonObject npcObj) {
+        return npcObj != null && npcObj.has("canon_speech") && !npcObj.get("canon_speech").isJsonNull() && npcObj.get("canon_speech").getAsBoolean();
     }
 
     /** 어미 렌더(pass2 restyleDialogue)용 스타일 스펙 — ending_style 우선, 없으면 speech_style가 '문장 끝 어미'를
@@ -9735,7 +9744,8 @@ public class TRPGGameManager {
                     if (callEndingStyle.isBlank()) calls = npcCalls;
                     else {
                         java.util.Map<String, String> styled = new java.util.LinkedHashMap<>();
-                        npcCalls.forEach((tn, cm) -> styled.put(tn, ai.restyleDialogue(cm, callEndingStyle)));
+                        boolean canonC = npcCanon(npcObj);
+                        npcCalls.forEach((tn, cm) -> styled.put(tn, ai.restyleDialogue(cm, callEndingStyle, canonC)));
                         calls = styled;
                     }
                     plugin.getServer().getScheduler().runTask(plugin, () ->
@@ -9765,7 +9775,7 @@ public class TRPGGameManager {
                 String quotedRaw = String.join(" ", quotesOf(trimmed));
                 String ambSpec = quotedRaw.isBlank() ? "" : endingRenderSpec(npcObj);
                 final String ambientSpeech = quotedRaw.isBlank() ? ""
-                    : (ambSpec.isBlank() ? quotedRaw : ai.restyleDialogue(quotedRaw, ambSpec));
+                    : (ambSpec.isBlank() ? quotedRaw : ai.restyleDialogue(quotedRaw, ambSpec, npcCanon(npcObj)));
 
                 // ★#247 자율 이동 반영★: 자율 서술이 '이동'을 담고 있으면 GM이 <NPC_AT>로 실제 위치를 옮기도록 지시한다.
                 //   (엔진 zone은 GM의 <NPC_AT>로만 갱신 → 이 신호가 없으면 서술은 복도를 걸어도 엔진상 원구역에 갇혀 타 구역 위협 불가.)
@@ -11541,7 +11551,7 @@ public class TRPGGameManager {
             // ★말투 2-pass(pass2)★: ending_style이 지정된 NPC(생성 시 시스템이 약 30%로 등장 조절, 최대 2명)만 완성 대사의 ★어미·말투★를 지정 스타일로 렌더한다.
             //   생성(pass1)은 내용+감정에 집중(중립 말씨) → 여기서 개성 말끝을 한 번에 얹는다(미니 모델은 '변환'이 안정적). 실패 시 원본 유지.
             String endStyle = endingRenderSpec(npcObj); // ending_style 우선, 없으면 '어미'를 규정한 speech_style(#207)
-            if (!endStyle.isBlank()) visible = ai.restyleDialogue(visible, endStyle);
+            if (!endStyle.isBlank()) visible = ai.restyleDialogue(visible, endStyle, npcCanon(npcObj));
             // ★통신 변조★: 매체 모달리티가 맞는 괴담이 원격 답신을 가로채 바꿔 전달(30%). 대면(sameZone)은 변조 안 함.
             //   변조 내용은 저급(미니) AI가 자연스럽게 다시 씀(tamperTextNatural, 비동기) — 실패 시 하드코딩 폴백.
             final String tmodR = commModality(media, writtenF);
