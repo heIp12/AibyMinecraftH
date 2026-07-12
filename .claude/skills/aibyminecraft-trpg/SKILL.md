@@ -130,8 +130,16 @@ description: >-
 - **★다음 괴담 임의 지정(1회)★**: `/trpg setting entity <이름>`(또는 설정 다이얼로그 버튼→채팅 입력) → `reservedNextEntity`.
   생성 직전 `applyReservedEntity`가 `gdamGen.setForcedEntity`로 넘겨 1회 소비 → `generateFamiliarConcept`가 scope/criterion을
   그 이름으로 덮어 강제(중복금지·카탈로그 무시). 지정 시 `clearPregen`으로 기존 사전생성분 폐기. 해제=off/none/없음. #228 시드 예약과 별개.
-- **모델 티어**: GM=medium(sonnet), NPC=mini(haiku). 정밀 1회성은 callAssistantHiFi. 정밀 대형
+- **모델 티어(품질 라우팅)**: GM=품질 선택(저=mini/중=sonnet/고=opus/효율=적응형), NPC=mini —
+  ★단 고품질 세션은 NPC가 중급(sonnet급)으로 승격★(npcModel, config npc 지정 오버라이드는 항상 우선).
+  ★특수 말투(ending_style+pass2 restyle)는 고품질 전용★(specialSpeechEnabled) — 저·중·효율은 pass1 ①②③을
+  건너뛰고 '나이·시대 말씨만' 한 줄 + restyleDialogue 즉시 원문 반환(호출 0). 엔티티·보조=haiku 고정,
+  gdam 생성=최소 sonnet(고품질만 opus). 정밀 1회성은 callAssistantHiFi. 정밀 대형
   설계는 사용자 승인 하에 Fable5(claude-fable-5) 다중에이전트 Workflow("울트라코드").
+- **비용 원칙(결정, 2026-07)**: "플레이어가 품질 저하를 직접 느끼는 지점에만 강한 모델" — 단서 추출
+  (extractAndStoreInfo)은 같은 서술이면 ★1회 호출을 행동자+단체 동료가 공유★하고 초단문(<50자)은 스킵.
+  자율 NPC sparse 트리거·코드 판정(이동/통신/시계)·pendingSystemNotes 캐시 보존은 기구현 — 프롬프트를 자주
+  고치면 GM 시스템 캐시가 재생성되니(1h TTL 2×) 안정 프리픽스를 흔들지 말 것.
 
 ## ★ 환경·도구 제약 (효율 메모 — 꼭 확인)
 - **Workflow(다중에이전트 울트라코드)는 헤드리스 자율 실행에서 launch 실패**: 권한 스트림이 닫혀 1-에이전트

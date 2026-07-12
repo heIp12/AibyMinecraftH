@@ -121,6 +121,10 @@ public class AiManager {
     public void setGmQuality(Quality q)    { if (q != null) this.gmQuality = q; }
     public Quality getGmQuality()          { return gmQuality; }
     public boolean isGmHighQuality()       { return gmQuality == Quality.HIGH; }
+    /** ★특수 말투(개성 어미 ending_style + pass2 변환) 활성 여부 = 고품질 세션 전용★ — 저·중품질(·효율)은 NPC가
+     *  미니 티어라 정밀 문체 편집(어간 복원·재활용)이 비문을 낸다(실측 '바보군냐') → 특수 말투를 통째로 끄고
+     *  나이·시대별 말씨만 쓴다(사용자 지시). 변환(pass2) 호출도 아예 안 나가 비용 절감을 겸한다. */
+    public boolean specialSpeechEnabled()  { return gmQuality == Quality.HIGH; }
     private static String norm(String m)   { return (m != null && !m.isBlank()) ? m.trim() : null; }
     public void setHighModelOverride(String m)   { this.highModelOverride   = norm(m); }
     public void setMediumModelOverride(String m) { this.mediumModelOverride = norm(m); }
@@ -149,7 +153,7 @@ public class AiManager {
     }
 
     // ── provider별 등급 기본 모델 (네트워크 없음) ──
-    // 티어 지도(역할↔능력): HIGH=GM고품질·생성고품질(플래그십) · MEDIUM=GM기본·생성기본(강한 중형) · LOW=엔티티·보조(유능한 소형) · MINI=NPC(유능한 소형)
+    // 티어 지도(역할↔능력): HIGH=GM고품질·생성고품질(플래그십) · MEDIUM=GM기본·생성기본(강한 중형) · LOW=엔티티·보조(유능한 소형) · MINI=NPC(유능한 소형; ★고품질 세션은 NPC가 MEDIUM으로 승격★ — npcModel 참조)
     //   ★provider 능력 정렬★: Claude Haiku 4.5는 유능한 소형이라 LOW/MINI에 적합하나, OpenAI nano는 그보다 아래 급이라 엔티티·보조에도 부실 → OpenAI LOW/MINI는 mini로 통일(nano 미사용).
     private String defHigh()   { return switch (apiType) { case "claude" -> "claude-opus-4-8";          case "openai" -> "gpt-5.5";      default -> "gemini-2.5-pro"; }; }
     private String defMedium() { return switch (apiType) { case "claude" -> "claude-sonnet-5";          case "openai" -> "gpt-5.4";      default -> "gemini-3.5-flash"; }; }
@@ -584,8 +588,14 @@ public class AiManager {
 
     /** 괴담(엔티티) AI 모델 — 역할 오버라이드 우선, 없으면 저품질(Haiku). */
     private String entityModel()    { return entityOverride    != null ? entityOverride    : haikuModel(); }
-    /** NPC AI 모델 — 역할 오버라이드 우선, 없으면 ★미니 티어★(B테스트: 나노급이 절차 반복·스톤월링 등 대화 품질을 깎아 한 단계 승격). */
-    private String npcModel()       { return npcOverride       != null ? npcOverride       : miniModel(); }
+    /** NPC AI 모델 — 역할 오버라이드 우선(★config 지정 모델은 그대로★), 없으면 ★미니 티어★(B테스트: 나노급이 절차 반복·
+     *  스톤월링 등 대화 품질을 깎아 한 단계 승격). ★고품질 세션은 중급(sonnet급)으로 승격★(사용자 지시) — NPC 직접 대사·
+     *  선연락·말투 변환(pass2)이 전부 이 모델을 타는 '플레이어 직접 노출' 경로라, 고품질에선 소형을 쓰지 않는다.
+     *  저·중·효율은 기존 미니 유지(특수 말투는 specialSpeechEnabled 게이트로 함께 꺼진다). */
+    private String npcModel()       {
+        if (npcOverride != null) return npcOverride;
+        return gmQuality == Quality.HIGH ? sonnetModel() : miniModel();
+    }
     /** 보조(특성·처리) AI 모델 — 역할 오버라이드 우선, 없으면 저품질(Haiku). */
     private String assistantModel() { return assistantOverride != null ? assistantOverride : haikuModel(); }
 
@@ -726,6 +736,7 @@ public class AiManager {
      */
     public String restyleDialogue(String dialogue, String styleSpec) {
         if (dialogue == null || dialogue.isBlank() || styleSpec == null || styleSpec.isBlank()) return dialogue;
+        if (!specialSpeechEnabled()) return dialogue; // ★저·중품질(·효율): 특수 말투 미시도★ — 원문 그대로(호출 0·비문 위험 0). 고품질만 변환(그때 npcModel=중급이라 안정).
         // ★짧은 외침·부름·감탄 파편엔 개성 어미를 얹지 않는다★(과적용·비문 방지: '놔'→'놔라니까', '잘 커'→'잘 커라니까' 차단)
         //   — 괄호 지문·문장부호·공백을 뺀 실질 글자가 3자 이하면 원형 그대로.
         String bare = dialogue.replaceAll("\\([^)]*\\)", "").replaceAll("[\\s…·.!?~\"'\\-–—]+", "");

@@ -7983,6 +7983,10 @@ public class TRPGGameManager {
     }
     private void deliverNarrative(Player actor, String raw) {
         String narrative = ai.stripTags(raw);
+        // ★비용: 단서 추출 1회 공유★ — 행동자·단체 라운드 동료는 '같은 서술'을 받으므로 추출(callAssistant)을 1번만
+        //   호출하고 결과를 전원에 기록한다(예전엔 인원수만큼 같은 입력으로 중복 호출 = 순수 낭비). 목격(WITNESS)은
+        //   문장이 서로 달라 개별 호출 유지.
+        java.util.List<PlayerData> extractTargets = new java.util.ArrayList<>();
         if (!narrative.isBlank() && actor != null && actor.isOnline()) {
             narrativeDelivery.deliver(actor, narrative);
             relayToSpectators(actor, narrative); // 관전자에게도 같은 서술 전달(#7)
@@ -7991,7 +7995,7 @@ public class TRPGGameManager {
             gameLogger.logGmOutput(apd != null ? apd.gmDisplayName() : actor.getName(), narrative);
             if (apd != null) {
                 appendNarrativeLog(apd, narrative);
-                extractAndStoreInfo(narrative, apd);
+                extractTargets.add(apd);
                 // ★행동 결과를 같은 구역 NPC 인지 피드에 '확정 사실'로 남긴다★ — NPC가 행동 '시도'만 보고 그 결과(제압·구조
                 //   성공 등)를 못 봐 "정말 했냐"며 목격 자체를 의심하던 공백 보완(저품질 NPC 헛소리 방지). 발화 전용이던
                 //   목격창(notifyLocalWitnesses)을 '행위'로도 확장해, 같은 구역 NPC가 다음 서술에서 그 일에 반응하게 한다.
@@ -8027,10 +8031,11 @@ public class TRPGGameManager {
                     narrativeDelivery.deliver(mp, grpNarrative);
                     relayToSpectators(mp, grpNarrative);
                     appendNarrativeLog(mpd, grpNarrative);
-                    extractAndStoreInfo(grpNarrative, mpd);
+                    extractTargets.add(mpd); // 같은 서술 — 아래에서 1회 추출로 합산
                 }
             }
         }
+        if (!extractTargets.isEmpty()) extractAndStoreInfo(narrative, extractTargets); // 행동자+동료 공유 1회 추출
         for (String[] w : ai.parseWitnessTags(raw)) {
             String pName = w[0], witnessText = w[1];
             boolean gmMarkedFar = "1".equals(w[2]); // GM이 '멀리 퍼지는 큰 사건'으로 명시(엔진 단어추측 아님)
@@ -8101,7 +8106,13 @@ public class TRPGGameManager {
     }
 
     private void extractAndStoreInfo(String narrative, PlayerData pd) {
-        if (narrative.isBlank()) return;
+        extractAndStoreInfo(narrative, java.util.List.of(pd));
+    }
+    /** ★비용 최적화판★ — 같은 서술은 추출 호출 1회, 결과를 targets 전원에 기록. 초단문(공백 제외 50자 미만)은
+     *  기록할 새 단서가 없다시피 하니 호출 자체를 생략(짧은 응수·목격 파편의 '없음' 호출 제거). */
+    private void extractAndStoreInfo(String narrative, java.util.List<PlayerData> targets) {
+        if (narrative == null || narrative.isBlank() || targets == null || targets.isEmpty()) return;
+        if (narrative.replaceAll("\\s+", "").length() < 50) return; // 초단문 스킵(비용) — 한두 마디엔 새 단서가 없다
         // P57: 같은 대상(인물/사물/사건)별로 단서를 묶어 기록한다.
         // 각 줄을 '대상|단서' 또는 '[대상] 단서' 형식으로 받아 subject별로 그룹화한다.
         String task = "아래 TRPG 서술에서 ★기록할 가치가 있는 새 정보(단서)★만 뽑아줘.\n"
@@ -8149,9 +8160,12 @@ public class TRPGGameManager {
                 if (body.isEmpty()) continue;
                 // 형식 불명(대상 분리 실패)이면 '단서' 그룹으로 폴백
                 if (subject == null || subject.isEmpty()) subject = "단서";
-                if (pd.addInfo(subject, body)) // infoGroups(정보모음) 기록 — 조종 중에도 기록 자체는 유지
-                    // ★실시간 뷰어 정보획득★: 새로 얻은 단서만 로그 이벤트로(중복 방지) → 상태패널 '알아낸 단서'에 반영.
-                    gameLogger.logItem("clue", pd.gmDisplayName(), body, "단서".equals(subject) ? "" : subject);
+                for (PlayerData pd : targets) {
+                    if (pd == null) continue;
+                    if (pd.addInfo(subject, body)) // infoGroups(정보모음) 기록 — 조종 중에도 기록 자체는 유지
+                        // ★실시간 뷰어 정보획득★: 새로 얻은 단서만 로그 이벤트로(중복 방지) → 상태패널 '알아낸 단서'에 반영.
+                        gameLogger.logItem("clue", pd.gmDisplayName(), body, "단서".equals(subject) ? "" : subject);
+                }
                 // G10: 예전엔 조종 중 keyFacts(핵심정보)에 "[조종 중] …"로도 등록해 핵심정보가 오염됐다 → 그 등록만 제거.
             }
         });
@@ -9270,7 +9284,13 @@ public class TRPGGameManager {
         //   예전엔 ①만 타서 어조·리듬(speech_style)이 pass1에서 통째로 증발했다(게부라 거친 결이 밋밋해짐).
         String endingStyle = getStr(npcObj, "ending_style");
         String speechStyle = getStr(npcObj, "speech_style");
-        if (!endingStyle.isBlank() && !speechStyle.isBlank()) {                   // ①+② 병용: 어조는 pass1, 어미는 pass2가 확정
+        if (!ai.specialSpeechEnabled()) {
+            // ★저·중품질(·효율) = 특수 말투 OFF(사용자 지시)★ — 미니 NPC 모델은 개성 어미·복합 말씨 지시를 어겨 비문을
+            //   내니('바보군냐' 실측), ①~③(어미습관·개인말투·유창도)을 걸지 않고 '나이·시대 말씨만' 한 줄로 단순화한다
+            //   (아래 ④나이별·⑥시대가 그 지시를 담당). ending_style pass2 변환도 restyleDialogue 게이트로 함께 꺼진다.
+            sb.append("- 말투: 특별한 어미·말버릇을 꾸미지 마라 — 나이·시대에 맞는 자연스러운 말씨로만, 쉬운 일상어로 간결하게 말하라.\n");
+        }
+        else if (!endingStyle.isBlank() && !speechStyle.isBlank()) {              // ①+② 병용: 어조는 pass1, 어미는 pass2가 확정
             npcPersonalSpeechBlock(sb, speechStyle);
             sb.append("- 문장 끝 특유 어미는 출력 후 시스템이 한 번 더 정돈한다 — 위 말씨대로 자연스럽게 말하되, 어미가 좀 어긋나도 새 어미를 지어내진 마라.\n");
         }

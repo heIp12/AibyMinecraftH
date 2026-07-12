@@ -201,28 +201,28 @@ public class DialogManager {
         List<ActionButton> buttons = new ArrayList<>();
         buttons.add(ActionButton.create(
             Component.text("저품질 모드  " + lowCost, NamedTextColor.GRAY),
-            Component.text("가장 빠르고 저렴한 모델로 진행합니다.\n서술이 단순할 수 있습니다.\n" + lowCost),
+            Component.text("가장 빠르고 저렴한 모델로 진행합니다.\n서술이 단순하고, NPC는 소형 모델·기본 말투(나이·시대 말씨만)입니다.\n" + lowCost),
             150,
             DialogAction.customClick((v, a) -> onLow.run(),
                 ClickCallback.Options.builder().uses(1).build())
         ));
         buttons.add(ActionButton.create(
             Component.text("중품질 모드 (권장)  " + medCost, NamedTextColor.YELLOW),
-            Component.text("균형 잡힌 기본 모델로 진행합니다.\n품질과 비용의 절충.\n" + medCost),
+            Component.text("균형 잡힌 기본 모델로 진행합니다.\n품질과 비용의 절충. NPC는 소형 모델·기본 말투(나이·시대 말씨만).\n" + medCost),
             150,
             DialogAction.customClick((v, a) -> onMedium.run(),
                 ClickCallback.Options.builder().uses(1).build())
         ));
         buttons.add(ActionButton.create(
             Component.text("고품질 모드  " + highCost, NamedTextColor.AQUA),
-            Component.text("가장 똑똑한 모델로 진행합니다.\n응답이 느리고 토큰 비용이 큽니다.\n" + highCost),
+            Component.text("가장 똑똑한 모델로 진행합니다.\nNPC도 중급 모델로 승격 — 개성 말투(특수 어미)와 정밀한 연기가 살아납니다.\n응답이 느리고 토큰 비용이 큽니다.\n" + highCost),
             150,
             DialogAction.customClick((v, a) -> onHigh.run(),
                 ClickCallback.Options.builder().uses(1).build())
         ));
         buttons.add(ActionButton.create(
             Component.text("효율 모드 (적응형)  " + effCost, NamedTextColor.GREEN),
-            Component.text("평소엔 중품질로 저렴하게, 전투·절정에만 자동으로 고품질(Opus 등).\n비용/품질을 자동 균형.\n" + effCost),
+            Component.text("평소엔 중품질로 저렴하게, 전투·절정에만 자동으로 고품질(Opus 등).\n비용/품질을 자동 균형. NPC는 소형 모델·기본 말투.\n" + effCost),
             150,
             DialogAction.customClick((v, a) -> onEfficient.run(),
                 ClickCallback.Options.builder().uses(1).build())
