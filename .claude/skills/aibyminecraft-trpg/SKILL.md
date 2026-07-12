@@ -551,6 +551,17 @@ description: >-
   분할 로직 19) + ContractTest(6). ★남은 것=실플레이 생성품질 검증(#112, 컴파일환경 미검증) + struct 모듈 2차 절감(스케일 조건부).★
   ★새 GM/생성 섹션 추가 시 주의★: `## 헤더`가 MOD_ASSIGN에 없으면 buildSystemModules가 예외→full 폴백(손실 아님, 로그만). 새 섹션은 MOD_ASSIGN에 등록.
 - **★설계·검증 기록★**: `docs/design/gdam-prompt-resplit-design.md`(다중에이전트 Workflow 분석3→설계3+종합→적대검증 SOUND).
+  - **② 실생성 검증(다중에이전트, 실제 SYS_x 모듈)**: haiku/sonnet/opus × 3시나리오 → 7/7 파싱분 전부 스키마완전·capstone존재·`lintItemVsCapstone` 교차유출 0. 힌트관문(30%) sonnet/opus 정상배선·haiku 반쪽(→`lintHintGate`가 포착). opus 2건 '실패'는 하네스 `JSON.parse` 엄격성(실플러그인 JsonSalvage 대상).
+- **★일상 파트 상태머신 정합(다중에이전트 검증 9주장 CONFIRMED)★**: 커밋 2ecfa9d/90f81d3/6d5d256/f98a98f/85f8e14.
+  - **#1 준비 전 입력 차단**: `dailyReady`(volatile) — assignRolesAndStart에서 false, startDailyPhase 말미 true. handleGameChat에서 `DAILY && !dailyReady`면 차단. (비동기 특성생성 대기 창에 즉시등장 배역이 지도·특성 지급 전 행동하던 문제.)
+  - **#2 프롤로그 순서·GM히스토리**: `prologuePending`(Set, 플레이어별) — 프롤로그 발사 시 add, thenAccept/exceptionally에서 remove, handleGameChat 대기 게이트. + 프롤로그 narrative를 `injectGmSystem("[프롤로그 — …]")`로 메인 GM에 전달(callGmAiOnce 무상태라 이후 GM이 프롤로그 즉흥 물건/장면 몰랐음).
+  - **#3 전환 경계 stale 서술**: `GmResponse.dailyAtSubmit`(제출 시점 위상, TurnManager 캡처). onGmResponse 초입 `dailyAtSubmit && !isDailyPhase() && HORROR`면 stale 일상 응답 드롭(전환유발 응답 자신은 아직 isDailyPhase=true라 안 걸림).
+  - **#4 crisis 정합**: loadTimelineConfig에서 `opening=="crisis"`면 dailyTurnsLeft를 `daily_prologue.turns`로 클램프(최소 1, onHorrorPhaseStart 정상경로 유지). daily_prologue.turns 실사용화.
+  - **#5 crisis 메인GM**: buildGmPrompt에 opening=="crisis"면 '일상 기본규칙 미적용' 지시 주입(예전엔 개인 프롤로그에만 전달돼 이후 평온 복귀 모순).
+  - **#6 일상 TIME_SKIP**: skipTime() 첫 가드에 `dailyPhase` 추가(일상 시계 동결 — advanceStage/advanceClock과 정합).
+  - **#8 일상 요약 폐기**: compressDailyPhase가 compressGmContext(≤20 no-op) 대신 `injectGmSystem`으로 전달.
+  - **#9 죽은 데이터**: daily_prologue 스키마에서 role_placements·foreshadowing 제거(미사용).
+  - **#7 현행 유지(사용자 결정)**: 일상 중 금지어파국·NO_HOPE 배드엔딩은 조건문에 Phase.DAILY 의도 포함(금지워드형은 일상에도 위험). 사망·SAN→꼭두각시 전이는 이미 HORROR 게이트. 'HP0 좀비'(HP 데미지 적용되나 사망전이 HORROR한정)는 잔존 — 미수정.
 - **통신 변조 = 3층 (내용 GM / 채널 comm_interference / ★언제=GM 스위치+엔진 폴백★)**: entityCommActive()가 '언제'를
   게이트 — currentPhase==HORROR 필수 + commTamperMode(<COMM_TAMPER on/off>, GameStateManager durable): 1=강제ON·
   -1=강제OFF·0=auto. auto면 감청테마(isCommsMonitored)=처음부터 / 그 외=threat≥40(중반 escalation). ★설계 근거★:
