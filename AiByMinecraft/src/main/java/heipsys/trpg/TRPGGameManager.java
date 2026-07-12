@@ -12018,10 +12018,10 @@ public class TRPGGameManager {
     }
 
     /** ★NPC 대사 → GM 서술과 같은 페이스로 흘려보낼 '줄 목록'★ (사용자 요구 서식).
-     *  ① 통짜 감싼 따옴표 제거 ② 괄호 지문(행동·표정)은 ★모두 보존★해 회색(§8)으로 ★맨 앞에★ 모은다
-     *     (이름 없이 서술처럼 — "지문이 이름 전에 한 번 나오고 대사가 나온다") ③ 나머지 대사는 문장으로
-     *     나눠 폭 기준 묶은 뒤 각 묶음마다 §e[이름]§f 를 붙인다. NarrativeDelivery.deliverLines가 한 박자씩
-     *     딜레이 출력해 GM 대사 서술과 같은 완급을 준다. ★내용은 하나도 버리지 않는다(정보 손실 없음).★ */
+     *  ① 통짜 감싼 따옴표 제거 ② 괄호 지문(행동)은 회색(§8) ★맨 앞 1개만★(이름 없이 — "지문이 이름 전에 한 번")
+     *  ③ 대사는 문장 묶음별 §e[이름]§f, ★최대 3줄★. 3인칭 자기서술('이름은/는 …')은 대사가 아니라 GM 몫이라 회색으로.
+     *  ★상한(지문1·대사3)은 소설식 장문 대응★ — 모델이 지문 여럿+3인칭 서술로 벽을 쌓아도 딜리버리에서 잘라 짧게 유지.
+     *  NarrativeDelivery.deliverLines가 한 박자씩 딜레이 출력해 GM 대사 서술과 같은 완급을 준다. */
     private static java.util.List<String> npcPacedLines(String raw, String npcName) {
         java.util.List<String> out = new java.util.ArrayList<>();
         if (raw == null) return out;
@@ -12047,12 +12047,20 @@ public class TRPGGameManager {
             else if (paren) pbuf.append(c);
             else dia.append(c);
         }
-        if (paren && pbuf.length() > 0) { String p = pbuf.toString().trim(); if (!p.isEmpty()) actions.add(p); } // 안 닫힌 괄호도 지문으로 보존
-        // 지문(행동) 먼저 — 회색, 이름 없이
-        for (String a : actions) out.add("§8" + a);
-        // 대사 — 문장 묶음별로 [이름] 붙여 한 박자씩
+        if (paren && pbuf.length() > 0) { String p = pbuf.toString().trim(); if (!p.isEmpty()) actions.add(p); } // 안 닫힌 괄호도 보존
         String nm = (npcName == null || npcName.isBlank()) ? "?" : npcName;
-        for (String ch : groupDialogueChunks(dia.toString())) out.add("§e[" + nm + "]§f " + ch);
+        // 지문(행동)은 ★응답당 최대 1개★만(회색, 이름 없이) — 모델이 소설처럼 지문을 여럿 뱉어도 첫 1개만(나머지 atmospheric은 버림).
+        //   사용자 피드백: 지문 3개+서술 5줄로 '너무 길어짐' → 지문 1 + 대사 최대 3줄로 상한.
+        if (!actions.isEmpty()) out.add("§8" + actions.get(0));
+        // 대사 — 문장 묶음별로 [이름] 붙여 한 박자씩, ★최대 3묶음★(장황한 서술 방지).
+        //   ★3인칭 자기서술('조수현은/는 …')은 대사가 아니라 GM 몫★ → 이름+주격조사로 시작하는 묶음은 회색 지문으로(오라벨·벽 방지).
+        int shown = 0;
+        for (String ch : groupDialogueChunks(dia.toString())) {
+            if (shown >= 3) break;
+            if (ch.startsWith(nm + "은") || ch.startsWith(nm + "는")) out.add("§8" + ch); // 3인칭 자기서술 → 회색(이름 접두 X)
+            else out.add("§e[" + nm + "]§f " + ch);
+            shown++;
+        }
         return out;
     }
 
@@ -12066,6 +12074,7 @@ public class TRPGGameManager {
         npcFeatureBlocks(sb, npcObj, context); // CORE + 캐릭터 데이터(현재상태·성격·목적·기억). 자율 전용 실행규칙·3인칭·문장수는 상속 안 함
         sb.append("\n## 직접 대화 모드").append(viaCall ? " (원격 통화 — " + mname + ")" : paperInPerson ? " (필담 — 면전에서 조용히 글로)" : written ? " (서면 — " + mname + ")" : " (대면 — 같은 공간)").append("\n");
         sb.append("플레이어가 네게 직접 말을 걸었다. ★너는 " + name + " 본인이다 — 관찰당하는 인물이 아니라 행동하는 당사자다. 1인칭으로 직접 말하고 행동하라(\"" + name + "은(는) …한다\"처럼 소설 화자가 3인칭으로 너를 묘사하지 마라).★\n");
+        sb.append("- ★소설식 상황·심리 서술 금지(가장 흔한 실수)★: '" + name + "은(는) 몸을 웅크린다'·'심장이 미친 듯이 뛴다'·'손이 떨린다'·'…하는 순간 …한다' 식으로 ★네 행동·몸 상태·주변을 3인칭/무인칭으로 서술하지 마라★ — 그건 GM(서술자)의 몫이다. 너는 ★입으로 말한 대사★만 내놓아라(짧은 괄호 지문 1개까지만 허용). 할 말이 거의 없으면(겁에 질림·숨는 중 등) 짧게 한마디('…!'·'저… 제발, 조용히 해줘요')만 하고 끝내라 — 장면을 소설로 채우지 마라.\n");
         sb.append("- ★대사 위주★로 답하라. 행동·표정이 필요하면 ★짧은 괄호 지문★으로만 곁들여라. 예) (형 손 잡으며) 이렇게 잡고 있으면 되는 거 맞지, 형?\n");
         sb.append("- ★괄호 지문은 한 응답에 많아야 1개, 몇 글자로 아주 짧게★ — 문장마다 동작·시선을 덧붙여 지문 여러 개로 벽을 쌓지 마라. 대부분의 답은 지문 없이 ★말로만★ 한다(지문은 정말 필요할 때 딱 한 번).\n");
         sb.append("  · 지문은 ★짤막한 구절★로만 써라(예: (문 쪽을 흘긋), (한숨)). ★완결된 서술 문장, 특히 '-습니다/-했다'체 해설(\"(그는 창밖을 오래 바라봅니다.)\" 같은)★은 금지 — 지문은 소설 서술이 아니라 네 즉각 동작의 짧은 메모다.\n");
