@@ -180,6 +180,11 @@ public class TRPGGameManager {
     private volatile Runnable pendingClearReveal = null;
     /** 스토리에 이미 등장한(spawn된) 플레이어 */
     private final Set<UUID> spawnedPlayers      = ConcurrentHashMap.newKeySet();
+    /** ★#1★ startDailyPhase(지도·NPC위치·개인프롤로그·아이템·특성 지급)가 끝나기 전엔 게임 행동을 막는다 —
+     *  예전엔 배역 특성 생성(비동기) 대기 동안 currentPhase만 DAILY로 바뀌어 즉시등장 배역이 준비 전 행동을 넣을 수 있었다. */
+    private volatile boolean dailyReady = false;
+    /** ★#2★ 개인 프롤로그 서술이 아직 그 플레이어에게 도착하지 않았으면(비동기) 그 플레이어 행동을 대기시킨다. */
+    private final Set<UUID> prologuePending = ConcurrentHashMap.newKeySet();
     /** 특성 발동 대기 중인 플레이어 UUID → 트레이트 ID (행동 입력 전까지 유지) */
     private final Map<UUID, String> pendingTraitActivation = new ConcurrentHashMap<>();
     private final Map<UUID, String> pendingPrayerInput = new ConcurrentHashMap<>(); // UUID → traitId
@@ -2025,6 +2030,7 @@ public class TRPGGameManager {
             }
         }
 
+        dailyReady = false; // ★#1★ 준비(startDailyPhase) 완료 전 행동 차단 — 아래 비동기 특성 생성 대기 창을 막는다.
         currentPhase = Phase.DAILY;
         // 캐릭터 생성 단계의 잔여 다이얼로그 상태(주사위확인·특성선택 등)가 남아 있으면
         // handleGameChat이 모든 채팅을 다이얼로그 입력으로 삼켜 '아무 입력도 안 되는' 문제가 생긴다 → 전원 정리.
@@ -2251,6 +2257,7 @@ public class TRPGGameManager {
     // ──────────────────────────────────────────────────────────────
 
     private void startDailyPhase() {
+        prologuePending.clear(); // ★#2★ 이전 스테이지 잔여 대기 표식 제거(아래 프롤로그 발사에서 플레이어별로 다시 채움)
         lastNpcBeatTurn = 0; // 새 스테이지/회차 시작 — NPC 워치독 초기화(괴담 파트 진입 시 조기 등장)
         // npc_bind로 저장한 인연 NPC를 이번 스테이지에 아군으로 소환(initNpcZones 전에 gdam.npcs에 주입)
         injectSavedNpcs(state.getGdamData());
@@ -2381,14 +2388,19 @@ public class TRPGGameManager {
             }
             String prompt = promptSb.toString();
 
+            prologuePending.add(p.getUniqueId()); // ★#2★ 이 플레이어의 프롤로그 도착 전까지 행동 대기
             ai.callGmAiOnce(gmSystemPrompt, prompt)
                 .thenAccept(response -> plugin.getServer().getScheduler().runTask(plugin, () -> {
+                    prologuePending.remove(p.getUniqueId()); // 프롤로그 도착 — 이제 이 플레이어 행동 허용(온라인 아니어도 해제)
                     if (!p.isOnline()) return;
                     String narrative = ai.stripTags(response);
                     if (!narrative.isBlank()) {
                         narrativeDelivery.deliver(p, narrative);
                         relayToSpectators(p, narrative); // 관전자에게도 프롤로그 전달(도입부부터 대상 서술을 함께 보게)
                         gameLogger.logGmOutput(pd.gmDisplayName() + "(프롤로그)", narrative); // 계정명 대신 캐릭터명(뷰어는 logAlias로 매핑)
+                        // ★#2★ 프롤로그가 즉흥 서술한 장면·물건을 메인 GM 컨텍스트에 알린다 — 예전엔 callGmAiOnce(무상태)라
+                        //   이후 행동 GM이 프롤로그 내용을 몰라 '그 장부를 다시 본다' 같은 후속 행동을 새로 해석·모순 처리했다.
+                        ai.injectGmSystem("[프롤로그 — " + pd.gmDisplayName() + " 도입 장면] " + narrative);
                         // (#164 후속) 시작 자동 추천(<-#...-> 1인칭 힌트) 제거 — 프롤로그 서술이 이미 '이 인물이 다음에
                         //   하려던 행동·의도'를 자연스럽게 내비치므로, 별도 assistant AI 호출은 중복이자 토큰 낭비였다.
                         //   추천이 필요하면 플레이어가 /trpg 추천(hint)로 직접 부른다(showRecommendations 유지).
@@ -2406,7 +2418,11 @@ public class TRPGGameManager {
                         }
                     }
                     scoreMan.update(p, pd, state.getRoomNumber());
-                }));
+                }))
+                .exceptionally(ex -> { // 프롤로그 생성 실패해도 대기 표식은 반드시 해제(플레이어 영구 잠금 방지)
+                    plugin.getServer().getScheduler().runTask(plugin, () -> prologuePending.remove(p.getUniqueId()));
+                    return null;
+                });
         });
 
         // 미등장 배역: 배경 서술만 전송
@@ -2432,6 +2448,7 @@ public class TRPGGameManager {
         actionPace = "normal"; paceSlowUntilTurn = -1; // ★#151 완급★ 새 스테이지 — 페이스 기본값 복귀
         lastAutoSaveTurn = -1; // 새 스테이지 시작 — 첫 턴부터 다시 저장되도록
         autoSave();            // 스테이지 시작 시점 즉시 1회 저장(첫 행동 전 중단돼도 이어하기 가능)
+        dailyReady = true;     // ★#1★ 지도·NPC위치·프롤로그 발사·아이템·특성 지급 완료 — 이제 행동 허용(개별 프롤로그 도착은 prologuePending로 별도 대기)
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -2459,6 +2476,12 @@ public class TRPGGameManager {
         // 게임 종료(엔딩) 상태: 모든 행동 차단. 재도전/포기만 가능
         if (currentPhase == Phase.GAMEOVER) {
             player.sendMessage("§8(게임이 종료되었습니다. §f/trpg retry§8 또는 §f/trpg stop§8 을 기다리세요.)");
+            return;
+        }
+        // ★#1★ 준비(startDailyPhase: 지도·NPC위치·아이템·특성 지급) 완료 전엔 행동 차단 —
+        //   예전엔 배역 특성 생성(비동기) 대기 동안 이미 DAILY로 바뀌어 즉시등장 배역이 준비 전 행동을 넣을 수 있었다.
+        if (currentPhase == Phase.DAILY && !dailyReady) {
+            player.sendMessage("§8(게임을 준비하는 중입니다... 잠시만 기다려주세요.)");
             return;
         }
 
@@ -2505,6 +2528,11 @@ public class TRPGGameManager {
         // 미등장 배역: 채팅 차단, 대기 안내
         if (!spawnedPlayers.contains(player.getUniqueId())) {
             player.sendMessage("§8(아직 당신의 배역이 이야기에 등장하지 않았습니다. GM의 안내를 기다리세요.)");
+            return;
+        }
+        // ★#2★ 개인 프롤로그(도입 장면)가 아직 도착하지 않았으면 대기 — 행동이 프롤로그보다 먼저 처리되는 역전 방지.
+        if (prologuePending.contains(player.getUniqueId())) {
+            player.sendMessage("§8(도입부 장면을 준비하는 중입니다... 잠시만 기다려주세요.)");
             return;
         }
 
