@@ -540,3 +540,13 @@ description: >-
 - **declaredCommMethod 기본=voice(#243)**: resetToBase가 ""로 비우면 '자동' 부활→soundDangerous 시 필담 고정('연락이
   계속 문자로'). 필드기본·resetToBase 둘 다 "voice"여야 함(빈값 금지). resolveInPersonWritten: voice=음성·text=필담·
   빈값=soundDangerous면 자동필담.
+- **★Q2 힌트관문 30%(#285) — 사건 예방/해결 분리 (CLEAR 하드게이트 아님)★**: 구현 순서 ①사건 설계필드 GM전달(완료,
+  buildGmPrompt ~13832 — side/event_role/condition/deadline/preventable/unlocks_clue/key_clue) → ②사건 상태머신
+  PREVENTED(EVENT_BLOCK, 발화만 예방·근원 유지·단서 미해제) vs RESOLVED(EVENT_RESOLVE, 근원 직접해결·단서 해제) →
+  ③requires_event_resolved 단서게이트(clue만 봉인, ★CLEAR 봉인 아님★ — 단서 없이도 올바른 해법 실행은 clearAssertsKnownSolution
+  자동성공으로 인정) → ④생성기 30% ★코드 프리롤★(프롬프트 확률지시 신뢰 금지). ★핵심 경계★: 단서봉인 ≠ 클리어봉인.
+  아는 플레이어 실행 봉쇄 금지(#284 교착 재발 방지). EVENT_RESOLVE는 예방 불가·조기 직접해결에도 발화 전 낼 수 있음.
+- **★생성 정합 리마인더(사용자 — step ④ 착수 시 반영)★**: 괴담↔컨셉 ★상호★ 정합(괴담에 맞춰 컨셉, 컨셉에 맞춰 괴담을
+  염두 — 3스 기준 베이스라인). 마지막(5)스테이지 첫 캐릭터(원년 배역)는 배역·나이·성별에 맞춘 개인 이야기(backstory)를
+  부여. ★단 이음(스테이지·시나리오 간 서사 연속성)은 생성하지 않으므로 그 개인사는 무작위여도 됨★(무엇과도 안 이어져도
+  무방). → 청크 계약: concept·entity·roles 청크가 서로의 요지를 압축 공유해 정합(교차유출 없이 정합만).

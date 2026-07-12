@@ -1066,6 +1066,7 @@ public class AiManager {
             .replaceAll("<TIME_SKIP [^/]*/?>", "")
             .replaceAll("<EVENT_BLOCK [^/]*/?>", "")
             .replaceAll("<EVENT_TRIGGER [^/]*/?>", "")
+            .replaceAll("<EVENT_RESOLVE [^/]*/?>", "")
             .replaceAll("<ZONE_SEAL [^/]*/?>", "")
             .replaceAll("<ZONE_UNSEAL [^/]*/?>", "")
             .replaceAll("<COMM_BLOCK [^/]*/?>", "")
@@ -1884,6 +1885,12 @@ public class AiManager {
     /** <EVENT_TRIGGER id="X"/> 모두 파싱 → [id, ...] (분기로 특정 사건 즉시 발화) */
     public java.util.List<String> parseEventTriggerTags(String response) {
         return parseSelfClosingAttr(response, "<EVENT_TRIGGER ", "id");
+    }
+
+    /** ★#285★ <EVENT_RESOLVE id="X"/> 모두 파싱 → [id, ...] (사건의 근원을 직접 해결 — 연결 단서 해제 트리거).
+     *  예방(EVENT_BLOCK)과 구분: 예방은 현상만 막고 단서는 안 열린다. 해결만 단서를 연다. */
+    public java.util.List<String> parseEventResolveTags(String response) {
+        return parseSelfClosingAttr(response, "<EVENT_RESOLVE ", "id");
     }
 
     /** <ZONE_SEAL zone="X"/> — 런타임 구역 봉쇄(#180). zone_id 목록. */

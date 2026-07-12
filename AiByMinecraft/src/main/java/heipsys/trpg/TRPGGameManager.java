@@ -3312,6 +3312,7 @@ public class TRPGGameManager {
             }
             ai.parseEventBlockTags(raw).forEach(state::blockEvent);
             ai.parseEventTriggerTags(raw).forEach(state::triggerEvent);
+            ai.parseEventResolveTags(raw).forEach(this::onEventResolved); // ★#285★ 근원 직접해결 → 상태 표시 + 연결 단서 해제
 
             // 5f. ★런타임 구역 봉쇄(#180)★ — 괴담·사건이 구역/통로를 막거나 연다. zone_id 검증 후 반영.
             ai.parseZoneSealTags(raw).forEach(z -> {
@@ -9691,12 +9692,14 @@ public class TRPGGameManager {
         JsonObject gdam = state.getGdamData();
         if (gdam == null || !gdam.has("clues") || !gdam.get("clues").isJsonArray()) return true;
         String content = null;
+        JsonObject clueObj = null;
         for (JsonElement ce : gdam.getAsJsonArray("clues")) {
             if (!ce.isJsonObject()) continue;
             JsonObject c = ce.getAsJsonObject();
-            if (clueId.equals(getStr(c, "id"))) { content = getStr(c, "content"); break; }
+            if (clueId.equals(getStr(c, "id"))) { content = getStr(c, "content"); clueObj = c; break; }
         }
         if (content == null || content.isBlank()) return true;
+        if (clueEventSealed(clueObj)) return false; // ★#285★ 사건 미해결 봉인 단서는 아직 발견 불가(선행 단서로도 안 열림 — 근원 해결이 유일한 열쇠)
         java.util.List<String> found = state.getDiscoveredClues();
         if (found == null || found.isEmpty()) return false;
         for (String f : found) {
@@ -9776,6 +9779,7 @@ public class TRPGGameManager {
                 JsonObject c = ce.getAsJsonObject();
                 String id = getStr(c, "id"), content = getStr(c, "content");
                 if (id.isBlank() || content.isBlank() || discoveredAuthoredClueIds.contains(id)) continue;
+                if (clueEventSealed(c)) continue; // ★#285★ 사건 미해결 봉인 단서는 아직 발견 기록 금지(근원 해결 전엔 안 열림)
                 if (clueTextMatches(freeText, content)) { discoveredAuthoredClueIds.add(id); added = true; }
             }
             if (!added || sealedBefore == 0) return;
@@ -9786,6 +9790,58 @@ public class TRPGGameManager {
                     + "배치된 위치·조건에서 정상 공개할 수 있다(여전히 먼저 떠먹이진 말고, 탐색이 닿으면 분명히 드러내라).");
             }
         } catch (Exception ignored) {}
+    }
+
+    /** ★#285 사건 게이트(힌트관문)★ — 이 단서가 requires_event_resolved를 선언했고 그 사건이 아직 근원 해결
+     *  (EVENT_RESOLVE)되지 않았으면 봉인(발견 불가). ★이건 '이 단서 한 조각'만 잠그는 것 — CLEAR/자동성공 게이트가
+     *  절대 아니다. 단서 없이도 올바른 해법 실행은 clearAssertsKnownSolution 자동성공으로 인정한다(정답 아는 플레이어 봉쇄 금지).★ */
+    private boolean clueEventSealed(JsonObject clue) {
+        if (clue == null || !clue.has("requires_event_resolved")) return false;
+        String eid = getStr(clue, "requires_event_resolved");
+        return !eid.isBlank() && !state.isEventResolved(eid);
+    }
+
+    /** 이 사건(eventId)의 근원 해결에 게이트된 단서(requires_event_resolved==eventId)가 하나라도 있는가 — 해제 시 프롬프트 재빌드 판단용. */
+    private boolean anyClueGatedOnEvent(JsonObject gdam, String eventId) {
+        if (gdam == null || eventId == null || eventId.isBlank() || !gdam.has("clues") || !gdam.get("clues").isJsonArray()) return false;
+        for (JsonElement ce : gdam.getAsJsonArray("clues")) {
+            if (ce.isJsonObject() && eventId.equals(getStr(ce.getAsJsonObject(), "requires_event_resolved"))) return true;
+        }
+        return false;
+    }
+
+    /** 사건 id → 사람이 읽는 label(메타 id 대신 로그 표시용). 없으면 "". */
+    private String eventLabelById(JsonObject gdam, String eventId) {
+        try {
+            if (gdam == null || !gdam.has("timeline")) return "";
+            JsonObject tl = gdam.getAsJsonObject("timeline");
+            if (!tl.has("main_events") || !tl.get("main_events").isJsonArray()) return "";
+            for (JsonElement el : tl.getAsJsonArray("main_events")) {
+                if (!el.isJsonObject()) continue;
+                JsonObject ev = el.getAsJsonObject();
+                if (eventId.equals(getStr(ev, "id"))) return getStr(ev, "label");
+            }
+        } catch (Exception ignored) {}
+        return "";
+    }
+
+    /** ★#285★ GM {@code <EVENT_RESOLVE id="X"/>} 소비 — 사건의 근원 직접해결을 상태에 표시하고, 그 사건에 게이트된
+     *  핵심 단서(requires_event_resolved==X)가 있으면 GM 프롬프트를 즉시 재빌드 + 해제를 일회 주입한다
+     *  (capstone 동적 해제와 동형·소프트락 방지). ★단서만 여는 것 — CLEAR/자동성공은 별개 경로다.★ */
+    private void onEventResolved(String eventId) {
+        if (eventId == null || eventId.isBlank()) return;
+        String eid = eventId.trim();
+        if (state.isEventResolved(eid)) return; // 중복 태그 무시(멱등)
+        state.resolveEvent(eid);
+        JsonObject gdam = state.getGdamData();
+        String label = eventLabelById(gdam, eid);
+        gameLogger.logEvent("[사건 근원 해결] " + (label.isBlank() ? "사건의 근원을 직접 해결" : "'" + label + "'의 근원을 직접 해결")
+            + " — 예방이 아닌 직접 해결(연결 단서 해제 가능)");
+        if (anyClueGatedOnEvent(gdam, eid)) {
+            gmSystemPrompt = buildGmPrompt(gdam);
+            ai.injectGmSystem("[사건 해결 → 단서 해제] 방금 근원이 직접 해결된 사건에 봉인돼 있던 핵심 단서가 이제 정상 "
+                + "공개될 수 있다(먼저 떠먹이진 말고, 탐색·상황이 닿으면 분명히 드러내라). 예방이었다면 아직 안 열렸을 단서다.");
+        }
     }
 
     /** NPC의 현재 예정 의도를 짧게 요약(막후 진행 주입용). schedule의 goal(없으면 action) 우선 → NPC goal → role_type. */
@@ -13770,18 +13826,21 @@ public class TRPGGameManager {
                         if (!rid.isEmpty() && !authoredClueDiscovered(rid)) { capstoneSealed = true; break; }
                     }
                 }
+                boolean eventSealed = clueEventSealed(c); // ★#285★ requires_event_resolved 미해결 → 봉인(근원 해결 전엔 내용 비공개, 예방으론 안 열림)
                 sb.append("- ").append(mislead ? "[거짓] " : "");
                 if (capstone) sb.append("[종결단서] ");
+                if (eventSealed) sb.append("[사건 근원해결 필요] ");
                 if ("hard".equalsIgnoreCase(access)) sb.append("[어려움] ");
                 else if ("easy".equalsIgnoreCase(access)) sb.append("[쉬움] ");
                 if ("puppet".equalsIgnoreCase(gate)) sb.append("[조종중에만] ");
                 else if ("doomed".equalsIgnoreCase(gate)) sb.append("[파국국면에만] ");
                 if (!subj.isBlank()) sb.append("(").append(subj).append(") ");
-                if (capstoneSealed) sb.append("★봉인★ 선행 단서 확보 전 — 내용 비공개(시스템이 감춤). 존재·장소만 암시 가능, 내용을 지어내 대신 채우지 마라");
+                if (eventSealed) sb.append("★봉인★ 연결된 큰 사건의 ★근원을 직접 해결(EVENT_RESOLVE)★해야 열림 — 예방·차단만으론 안 열린다. 지금은 내용 비공개(시스템이 감춤), 존재·장소만 암시 가능, 내용을 지어내 대신 채우지 마라");
+                else if (capstoneSealed) sb.append("★봉인★ 선행 단서 확보 전 — 내용 비공개(시스템이 감춤). 존재·장소만 암시 가능, 내용을 지어내 대신 채우지 마라");
                 else sb.append(content.isBlank() ? subj : content);
                 if (!loc.isBlank()) sb.append(" — 위치: ").append(loc);
                 String gmNote = getStr(c, "gm_note");
-                if (!gmNote.isBlank() && !capstoneSealed) sb.append(" (운영 노트: ").append(gmNote).append(")");
+                if (!gmNote.isBlank() && !capstoneSealed && !eventSealed) sb.append(" (운영 노트: ").append(gmNote).append(")");
                 sb.append("\n");
             }
             sb.append("- 위 단서를 해당 위치·대상에 ★실제로 배치★하고, 플레이어가 그곳을 탐색하거나 관련 NPC·사물과 상호작용하면 그 단서를 ★분명히 드러내라★(먼저 떠먹이진 말되, 닿으면 확실히 보여줄 것).\n");

@@ -75,7 +75,8 @@ public class GameStateManager {
     private boolean timeVisibleDefault = true;  // 이 방에서 기본적으로 시간 인지 가능 여부
     private boolean endEventFired      = false; // 종료 사건/제한 시각 도달 여부
     private final Set<String>       firedEvents       = new HashSet<>();
-    private final Set<String>       blockedEvents     = new HashSet<>();
+    private final Set<String>       blockedEvents     = new HashSet<>();  // ★예방(EVENT_BLOCK)★ — 발화만 취소(근원 유지, 연결 단서 미해제).
+    private final Set<String>       resolvedEvents    = new HashSet<>();  // ★근원 해결(EVENT_RESOLVE)★ — 사건의 근원을 직접 해결(연결 단서 해제 트리거). blockedEvents의 상위 집합적 의미.
     private final Set<String>       sealedZones       = new HashSet<>(); // ★런타임 봉쇄(#180)★ — 괴담·사건이 막은 구역(자발 진입 차단, 강제이동은 통과).
     private final Set<String>       blockedMedia      = new HashSet<>(); // ★매체별 차단(#180)★ — 괴담·사건이 막은 통신 수단(voice/text/signal/electronic, all=전부).
     private final List<String>      justFiredEvents   = new ArrayList<>();
@@ -231,6 +232,7 @@ public class GameStateManager {
         if (gdamData != null) o.add("gdam", gdamData);
         o.add("firedEvents", SNAP_GSON.toJsonTree(firedEvents));
         o.add("blockedEvents", SNAP_GSON.toJsonTree(blockedEvents));
+        o.add("resolvedEvents", SNAP_GSON.toJsonTree(resolvedEvents)); // ★#285★ 근원 해결 영속(이어하기 시 단서 해제 상태 유지)
         o.add("discoveredClues", SNAP_GSON.toJsonTree(discoveredClues));
         o.add("foundItems", SNAP_GSON.toJsonTree(foundItems));
         o.add("discoveredFacts", SNAP_GSON.toJsonTree(discoveredFacts));
@@ -280,6 +282,7 @@ public class GameStateManager {
         if (o.has("gdam") && o.get("gdam").isJsonObject()) gdamData = o.getAsJsonObject("gdam");
         snapStrInto(firedEvents, o, "firedEvents");
         snapStrInto(blockedEvents, o, "blockedEvents");
+        snapStrInto(resolvedEvents, o, "resolvedEvents"); // ★#285★ 근원 해결 복원
         snapStrInto(discoveredClues, o, "discoveredClues");
         snapStrInto(foundItems, o, "foundItems");
         snapStrInto(discoveredFacts, o, "discoveredFacts");
@@ -522,6 +525,7 @@ public class GameStateManager {
     private void loadTimelineConfig(JsonObject gdam) {
         firedEvents.clear();
         blockedEvents.clear();
+        resolvedEvents.clear();
         sealedZones.clear(); // 런타임 봉쇄(#180) — 새 시나리오/스테이지 초기화
         blockedMedia.clear(); // 매체별 차단(#180) — 새 시나리오/스테이지 초기화
         justFiredEvents.clear();
@@ -732,10 +736,23 @@ public class GameStateManager {
         fireDueEvents();
     }
 
-    /** GM EVENT_BLOCK: 해당 사건을 취소(발화하지 않음) */
+    /** GM EVENT_BLOCK: 해당 사건을 취소(발화하지 않음) — ★예방★(근원 유지, 연결 단서 미해제) */
     public void blockEvent(String id) {
         if (id != null && !id.isBlank()) blockedEvents.add(id.trim());
     }
+
+    /** ★#285★ GM EVENT_RESOLVE: 사건의 ★근원을 직접 해결★ — 앞으로 현상도 발화 안 함(blockedEvents에도 추가:
+     *  이미 발화했다면 firedEvents가 재발화 차단하므로 무해) + '해결됨'으로 표시해 연결 단서 해제를 허용한다.
+     *  ★예방(blockEvent)과의 차이★: 예방은 현상만 막고 근원은 남겨 단서를 열지 않는다. 해결만 단서를 연다. */
+    public void resolveEvent(String id) {
+        if (id == null || id.isBlank()) return;
+        String tid = id.trim();
+        resolvedEvents.add(tid);
+        blockedEvents.add(tid);
+    }
+    /** 이 사건의 근원이 직접 해결(EVENT_RESOLVE)됐는가 — requires_event_resolved 단서게이트 판정용. */
+    public boolean isEventResolved(String id) { return id != null && resolvedEvents.contains(id.trim()); }
+    public Set<String> getResolvedEvents() { return new HashSet<>(resolvedEvents); }
 
     // ── 런타임 봉쇄(#180): 괴담·사건이 구역/통로를 막음 ──────────────
     /** 구역 봉쇄 — 자발 진입 차단(강제이동은 통과). */
