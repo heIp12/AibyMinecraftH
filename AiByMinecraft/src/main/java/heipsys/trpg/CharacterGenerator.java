@@ -377,9 +377,12 @@ public class CharacterGenerator {
         else if (roll < 95) pd.age =  8 + RNG.nextInt(5);  // 8~12
         else                pd.age = 51 + RNG.nextInt(30); // 51~80
         pd.age = Math.max(8, Math.min(80, pd.age)); // ★앵커 범위 최소 8세·최대 80세★
-        // 성별 앵커 — 미설정이면 50/50. 배역 배정 시 배역 성별로 덮어쓰지 않도록 배정 측 가드가 이 값을 유지한다.
+        // 성별 앵커 — 미설정이면 50/50. gender는 부득이한 교차 배정 시 배역 페르소나 성별로 바뀔 수 있어(이름·호칭 정합)
+        //   원본 앵커는 baseGender에 보존한다(다음 스테이지 배역 생성·배역 해제 복귀는 앵커 기준).
         if (pd.gender == null || pd.gender.isEmpty())
             pd.gender = RNG.nextBoolean() ? "남성" : "여성";
+        if (pd.baseGender == null || pd.baseGender.isEmpty())
+            pd.baseGender = pd.gender;
 
         // 직업 — roleData가 있으면 배역 풀 우선, 없으면 가중치 계층 선택
         // ★나이-직업 정합(감사 H)★: 어느 풀에서 뽑든 pd.age(앵커)와 어울리는 직업만 후보로 — "41세 대학생" 차단.

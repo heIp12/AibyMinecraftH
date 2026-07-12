@@ -1961,9 +1961,15 @@ public class TRPGGameManager {
                     pd.roleId   = asgn.roleId();
                     pd.zone     = asgn.zone();
                     pd.charName = asgn.charName();
-                    // ★성별 앵커 유지★: 초기 스테이터스 생성 시 굴린 성별을 배역 성별로 덮어쓰지 않는다
-                    //   (앵커 매칭으로 대개 일치하지만, 불일치해도 플레이어 고유 성별을 우선). 미설정일 때만 배역 성별 채택.
-                    if (pd.gender == null || pd.gender.isEmpty()) pd.gender = asgn.gender();
+                    // ★배역 페르소나 성별 채택(S1 실측 수정)★: 배역 성별이 명시돼 있으면 ★이 스테이지의 페르소나는
+                    //   배역 성별을 따른다★ — 같은 성별 배역이 없어 부득이 교차 배정됐을 때 이름(최성철=남성)과 서술
+                    //   호칭(여성)이 갈라지던 정합 붕괴 방지. 플레이어 고유 앵커는 baseGender에 보존되어 다음 스테이지
+                    //   생성(buildPlayerAnchorHint)·배역 해제(clearRoleData 복귀)에 쓰인다.
+                    if ((pd.baseGender == null || pd.baseGender.isEmpty()) && pd.gender != null && !pd.gender.isEmpty())
+                        pd.baseGender = pd.gender;
+                    String rgn = asgn.gender();
+                    if (rgn != null && !rgn.isBlank() && !"미상".equals(rgn.trim())) pd.gender = rgn.trim();
+                    else if (pd.gender == null || pd.gender.isEmpty()) pd.gender = rgn;
                     pd.roleAssigned = true;
                 }
             }
@@ -7160,6 +7166,11 @@ public class TRPGGameManager {
         //    이 지점에 도달하므로, 여기 flush는 '다른 플레이어의 겹치는 잔여 서술'만 정리한다.)
         narrativeDelivery.flushAll();
         turnMan.cancelAll(); // 병렬 처리 중이던 다른 플레이어의 행동 취소 — 클리어 후 늦은 서술 누수 방지
+        // ★동시 결정타 정리★: 종결 확정 순간 공중에 남은 결정타 게이트·보류 CLEAR를 비운다 — 늦게 도착한 판정·후속이
+        //   '이미 끝난 상대'에 성과를 얹거나 두 번째 종결을 시도하는 모순 방지(L2 실측: 사망한 괴담 재구속 기록).
+        unresolvedDecisiveDice.clear();
+        heldCrossClear = null; heldCrossClearBy = null;
+        pendingDecisiveClear.clear();
         int room = state.getRoomNumber();
         // 스테이지 3+는 괴담 완전 해결(해결판정)만 다음 스테이지 진출 허용. 단순 생존은 재도전만 가능.
         nextStageUnlocked = (room < 3) || resolved;
@@ -7630,6 +7641,8 @@ public class TRPGGameManager {
         if (pd.age <= 0) pd.age = rollAnchorAge();
         if (pd.gender == null || pd.gender.isEmpty())
             pd.gender = java.util.concurrent.ThreadLocalRandom.current().nextBoolean() ? "남성" : "여성";
+        if (pd.baseGender == null || pd.baseGender.isEmpty())
+            pd.baseGender = pd.gender; // 앵커 보존 — gender는 배역 페르소나로 바뀔 수 있음(교차 배정)
     }
 
     /** 비피날레: 배역을 플레이어 초기 나이·성별에 맞추는 앵커 블록(미설정 플레이어는 지금 롤). */
@@ -7643,7 +7656,10 @@ public class TRPGGameManager {
             //   다음 스테이지는 clearRoleData→resetToBase로 ★baseAge로 복귀★한다. 현재 배역에 클램프된 pd.age가
             //   아니라 baseAge로 배역을 생성해야 다음 스테이지 실제 나이와 정합한다.
             int anchorAge = (pd.baseAge > 0) ? pd.baseAge : pd.age;
-            list.append("- ").append(anchorAge).append("세 ").append(pd.gender).append("\n");
+            // ★성별도 앵커(baseGender) 기준★ — 이번 스테이지에 교차 배정으로 배역 페르소나 성별을 입고 있어도
+            //   다음 스테이지 배역은 플레이어 고유 성별에 맞춰 생성돼야 한다(pd.gender는 페르소나라 오염 가능).
+            String anchorGender = (pd.baseGender != null && !pd.baseGender.isEmpty()) ? pd.baseGender : pd.gender;
+            list.append("- ").append(anchorAge).append("세 ").append(anchorGender).append("\n");
             n++;
         }
         if (n == 0) return "";
@@ -9241,6 +9257,8 @@ public class TRPGGameManager {
         sb.append("- 말버릇은 네가 ★하는 말★(대사·통화·<NPC_CALL> 안의 말 — 글에선 옅게)에만 쓴다. 괄호 지문·3인칭 서술과 <THOUGHT>·<NPC_LEARN> 안은 평범한 문체로.\n");
         sb.append("- 버릇은 위 말투에 적힌 ★한 가지뿐★ — 새 버릇을 지어 보태지 마라. ★어미 버릇★(문장 끝 고정 어미)이면 거의 매 문장 일관되게(그게 이 인물의 개성이다). ★접두어·필러 버릇★('뭐랄까'·'그러니까' 류)이면 ★아주 드물게★ — 매 응답마다 넣지 마라(넣는 게 기본이 아니다). 서너 응답에 한 번쯤, 한 응답엔 많아야 한 번, 연속 두 문장 금지. 넣을 때도 ★자리를 매번 같은 곳에 고정하지 마라★ — 특히 문장 끝에 어미처럼 반복해 달지 마라(필러는 어미가 아니다). 말 꺼낼 때·뜸 들일 때 문장 앞이나 중간에 새어 나오듯, 유무·위치를 그때그때 흩뜨려라.\n");
         sb.append("- 버릇이 어미 버릇이 아니면 문장 끝은 평범한 존댓말/반말 그대로 두어라 — 어미를 억지로 바꾸거나 새 어미를 만들지 마라.\n");
+        sb.append("- ★직전 응답에 그 버릇(필러)을 이미 썼다면 이번 응답엔 아예 넣지 마라★ — 연속 응답 도배 금지(실측: 매 대사 '그…그치?' 반복 → 인물이 망가진다). 위기·공포 장면이라고 예외가 아니다(무서울수록 오히려 버릇이 날아가는 게 자연스럽다).\n");
+        sb.append("- ★직전에 한 말을 문장 그대로 되풀이하지 마라★ — 같은 뜻을 다시 말할 땐 표현·길이를 바꿔 새로 말하라(똑같은 문장 재등장 금지).\n");
         sb.append("- ★직무·전문성은 '무엇을 아는지(대답 내용)'에만 반영하라 — 문장 첫머리를 보고서처럼 시작하지 마라.★ 사적인 대화·통화에선 일 얘기보다 상대의 반응·감정·용건이 먼저다(너는 직함이 아니라 사람이다).\n");
     }
 
@@ -14959,7 +14977,11 @@ public class TRPGGameManager {
                 PlayerData pd = state.getPlayer(pl);
                 if (pd != null) ensurePlayerIdentity(pd);
                 int pAge      = (pd != null && pd.age > 0) ? pd.age : -1;
-                String pGender = (pd != null && pd.gender != null) ? pd.gender : "";
+                // ★앵커(baseGender) 기준 매칭★ — 직전 스테이지 교차 배정으로 pd.gender가 배역 페르소나로 남아 있어도
+                //   배역 매칭은 플레이어 고유 성별로 한다.
+                String pGender = pd == null ? ""
+                    : (pd.baseGender != null && !pd.baseGender.isEmpty()) ? pd.baseGender
+                    : (pd.gender != null ? pd.gender : "");
                 boolean coreRemain = false;
                 for (int i = 0; i < coreCount; i++) if (!usedRoles.contains(i)) { coreRemain = true; break; }
                 int hi = coreRemain ? coreCount : ordered.size(); // 코어 남으면 코어에서만 선택
@@ -15057,6 +15079,12 @@ public class TRPGGameManager {
      * 서브타이틀로 '어디까지가 성공인지(성공 기준 DC)'와 결과를 명확히 표시한다.
      */
     private void playDiceResult(Player player, JsonObject dice) {
+        // ★종결 후 굴림 차단(동시 결정타 정리)★: 클리어/게임오버 선포 뒤에 도착한(연출 대기 등) 판정은 굴리지 않는다
+        //   — 이미 끝난 상황에 뒷북 판정·모순 서술이 얹히는 것 방지(L2 실측: 종결된 괴담에 구속 판정). 게이트만 조용히 해소.
+        if (currentPhase == Phase.CLEAR || currentPhase == Phase.GAMEOVER || currentPhase == Phase.IDLE) {
+            if (player != null) unresolvedDecisiveDice.remove(player.getUniqueId());
+            return;
+        }
         int max  = dice.has("max") && !dice.get("max").isJsonNull() ? Math.max(2, dice.get("max").getAsInt()) : 20;
         int dc   = dice.has("dc") && !dice.get("dc").isJsonNull() ? dice.get("dc").getAsInt() : -1;
         String reason = dice.has("reason") && !dice.get("reason").isJsonNull() ? dice.get("reason").getAsString().trim() : "";
@@ -15153,7 +15181,8 @@ public class TRPGGameManager {
         // ★GM 다음 전개 일관성★: 코드가 정한 결과를 컨텍스트에 주입 — 다음 서술이 이 결과와 어긋나지 않게.
         String critHint = critSuccess ? " ★대성공★이므로 기대 이상으로 훌륭히 해내고 추가 이득(예상 밖 성과·유리한 기회)을 곁들여 서술하라."
                         : critFail    ? " ★대실패★이므로 크게 그르쳐 추가 대가(부상·소음·새 위협 노출·자원/단서 손실)를 함께 서술하라. ★전투·직접 위협 등 치명적 국면이면 이 대실패로 체력을 0까지 깎아 사망까지 정당하다 — 기절·중상으로 봐주지 마라(hp_change 음수로 반영).★"
-                        : fail        ? " ★실패★ — 치명적 국면(전투·직접 위협·무모한 강행)이면 부상·후퇴로만 무마하지 말고 상황에 걸맞은 대가(최악의 경우 체력 0=개별 사망)까지 정당하게 매겨라(과보호 금지)."
+                        : fail        ? " ★실패★ — ★시도한 목표는 이뤄지지 않는다★: 열려던 것은 안 열리고, 진정·설득하려던 상대는 응하지 않고, 찾으려던 것은 못 찾고, 잠행·감시는 어긋난다. '다행히 통했는지…'식으로 성공을 밀수하지 마라 — ★전투만이 아니라 대화·지각·탐색·조작 판정도 똑같이★ 실패는 실패다(실측: 진정 대화 실패인데 상대가 응하고, 레버 실패인데 문이 열림). 실패로 생긴 차질·대가(시간 소모·소음·경계 상승·위치 노출·관계 악화)를 보여주고, ★위로용 새 단서·성과를 얹지도 마라★(실패가 이득이 되면 판정이 무의미해진다). 치명적 국면(전투·직접 위협·무모한 강행)이면 부상·후퇴로만 무마하지 말고 상황에 걸맞은 대가(최악의 경우 체력 0=개별 사망)까지 정당하게 매겨라(과보호 금지)."
+                        : partial     ? " ★부분성공★ — 목표의 일부만 ★불완전하게★ 이뤄지고 대가·허점이 남는다. 완전한 성공처럼 매듭짓지 마라(무엇이 덜 됐는지 드러나게)."
                         : "";
         ai.injectGmSystem("[판정 결과] " + (reason.isEmpty() ? "" : reason + " — ")
             + "주사위 d" + max + "=" + roll + modNote + (effDc > 0 ? (", 성공기준 " + effDc) : "") + " → ★" + outcome + "★." + critHint   // ★실제 판정 기준(effDc)으로 주입 — dc와 어긋나 '11<14인데 성공' 같은 모순 서술 유발하던 문제 해소
@@ -15502,9 +15531,10 @@ public class TRPGGameManager {
         String who = pd.gmDisplayName();
         String sys = "직전 행동의 판정 결과가 나왔다 — " + (reason.isEmpty() ? "판정" : reason) + " → ★" + (outcome == null || outcome.isBlank() ? "판정" : outcome) + "★. "
             + "이 결과로 " + who + "의 장면에서 ★실제로 무슨 일이 일어났는지★ 2~4문장으로 이어서 서술하라(주사위만 굴리고 끝내지 마라). "
-            + "성공·대성공이면 그 행동이 표적·상황에 ★실제 유효타·진전★으로 반영되고(적을 흘려보내지 마라), 실패·부분성공이면 ★구체적 대가·전개★를 보여라. "
+            + "성공·대성공이면 그 행동이 표적·상황에 ★실제 유효타·진전★으로 반영되고(적을 흘려보내지 마라), 실패·부분성공이면 ★구체적 대가·전개★를 보여라 — ★실패면 그 행동의 목표는 이뤄지지 않았다★(묶으려던 것은 안 묶였고, 닫으려던 것은 안 닫혔고, 설득은 통하지 않았다). 실패를 성공한 것처럼 서술·기록하지 마라. "
             + "★새 <DICE>는 내지 마라(이미 굴렸다)★ — 이 판정 결과에 맞는 서술만. 다른 위치 플레이어의 장면은 끌어오지 마라."
-            + (deferredClear != null ? " 이 성공으로 상황이 ★실제로 해결·종결★되었다 — 그 매듭이 드러나게 서술하라(종료 처리는 시스템이 이어서 한다). <CLEAR>는 직접 내지 마라." : "");
+            + (deferredClear != null ? " 이 성공으로 상황이 ★실제로 해결·종결★되었다 — 그 매듭이 드러나게 서술하라(종료 처리는 시스템이 이어서 한다). <CLEAR>는 직접 내지 마라." : "")
+            + (heldCrossClear != null ? " ★참고: 다른 인물의 행동으로 상황이 이미 종결 수순이다(종결 보류 중)★ — 이 판정은 그 직전 마지막 손길이다. 실패면 이미 기운 대세에 영향 없는 헛손질로 짧게 접고, 성공이어도 새 국면을 열지 말고 종결에 힘을 보탠 정도로만 서술하라(이미 쓰러진·끝난 상대를 되살려 다시 싸우게 하지 마라). 새 성과·단서 기록 금지." : "");
         ai.callGmAiOnce(gmSystemPrompt, sys).thenAccept(resp ->
             plugin.getServer().getScheduler().runTask(plugin, () -> {
                 // ★위상 가드(감사 B)★: 엔딩·종결 처리 후 도착한 후속은 배달하지 않는다 — 5스테이지 실측: 클리어 선포

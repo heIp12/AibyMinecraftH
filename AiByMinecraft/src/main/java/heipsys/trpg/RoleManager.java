@@ -63,7 +63,9 @@ public class RoleManager {
         for (Player p : shuffled) {
             PlayerData pd = state.getPlayer(p);
             int pAge      = (pd != null && pd.age > 0) ? pd.age : -1;
-            String pGender = (pd != null && pd.gender != null) ? pd.gender : "";
+            String pGender = pd == null ? ""
+                : (pd.baseGender != null && !pd.baseGender.isEmpty()) ? pd.baseGender  // 앵커 우선(페르소나 오염 방지)
+                : (pd.gender != null ? pd.gender : "");
             boolean coreRemain = false;
             for (int i = 0; i < coreCount; i++) if (!used.contains(i)) { coreRemain = true; break; }
             int hi = coreRemain ? coreCount : ordered.size();
@@ -92,8 +94,7 @@ public class RoleManager {
                 pd.roleId   = asgn.roleId();
                 pd.zone     = asgn.zone();
                 pd.charName = asgn.charName();
-                // ★성별 앵커 유지★: 초기 성별을 배역 성별로 덮어쓰지 않는다(미설정일 때만 채택).
-                if (pd.gender == null || pd.gender.isEmpty()) pd.gender = asgn.gender();
+                adoptPersonaGender(pd, asgn.gender()); // 배역 페르소나 성별 채택(앵커는 baseGender 보존)
                 pd.roleAssigned = true;
             }
         }
@@ -134,7 +135,7 @@ public class RoleManager {
                     pd.roleId   = asgn.roleId();
                     pd.zone     = asgn.zone();
                     pd.charName = asgn.charName();
-                    if (pd.gender == null || pd.gender.isEmpty()) pd.gender = asgn.gender(); // ★성별 앵커 유지★
+                    adoptPersonaGender(pd, asgn.gender()); // 배역 페르소나 성별 채택(앵커는 baseGender 보존)
                     pd.roleAssigned = true;
                 }
                 return Optional.of(asgn);
@@ -184,6 +185,17 @@ public class RoleManager {
     // ──────────────────────────────────────────────────────────────
     //  내부 유틸
     // ──────────────────────────────────────────────────────────────
+
+    /** ★배역 페르소나 성별 채택★ — 배역 성별이 명시돼 있으면 이 스테이지의 pd.gender는 배역을 따른다
+     *  (같은 성별 배역이 없어 부득이 교차 배정된 경우, 남성명 배역을 '그녀'로 부르는 정합 붕괴 방지).
+     *  플레이어 고유 앵커는 baseGender에 최초 1회 보존 — 다음 스테이지 생성·배역 해제 복귀는 앵커를 쓴다. */
+    static void adoptPersonaGender(PlayerData pd, String roleGender) {
+        if (pd == null) return;
+        if ((pd.baseGender == null || pd.baseGender.isEmpty()) && pd.gender != null && !pd.gender.isEmpty())
+            pd.baseGender = pd.gender;
+        if (roleGender != null && !roleGender.isBlank() && !"미상".equals(roleGender.trim())) pd.gender = roleGender.trim();
+        else if (pd.gender == null || pd.gender.isEmpty()) pd.gender = roleGender == null ? "" : roleGender;
+    }
 
     private RoleAssignment toAssignment(JsonObject r) {
         String roleId   = r.has("role_id")   ? r.get("role_id").getAsString()   : "role_?";

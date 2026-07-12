@@ -22,6 +22,9 @@ public class PlayerData {
 
     /** 캐릭터 고유(기본) 나이 — 배역이 없을 때 복귀할 값 */
     public int baseAge = 25;
+    /** 초기 굴림 ★성별 앵커★ — gender는 부득이한 교차 배정 시 배역 페르소나 성별로 바뀔 수 있어(이름·호칭 정합)
+     *  원본을 따로 보존한다. 다음 스테이지 배역 생성 앵커·배역 해제 복귀에 이 값을 쓴다. */
+    public String baseGender = "";
     /** 현재 배역에 맞춰 임시로 부여된 나이 (-1 = 배역 없음) */
     public int roleAge = -1;
 
@@ -219,6 +222,8 @@ public class PlayerData {
         baseSpr = spr;
         baseAge = age;
         baseJob = job;
+        // 성별 앵커는 ★최초 1회만★ — 이후 배역 페르소나로 gender가 덮여도(교차 배정) 스냅샷이 앵커를 오염시키지 않게.
+        if ((baseGender == null || baseGender.isEmpty()) && gender != null && !gender.isEmpty()) baseGender = gender;
     }
 
     public void resetToBase() {
@@ -278,8 +283,9 @@ public class PlayerData {
         zone         = "";
         spot         = "";
         charName     = "";
-        // gender는 ★유지★ — 초기 스테이터스 생성 시 굴린 나이·성별 앵커(age는 baseAge로 복구)와 짝을 이뤄
-        //   스테이지가 바뀌어도 같은 인물로 남고, 배역이 이 성별에 맞춰 생성·배정된다(배역→플레이어 역방향 폐기).
+        // 배역 해제 → 성별도 ★고유 앵커(baseGender)로 복귀★ — 부득이한 교차 배정으로 배역 페르소나 성별을
+        //   입었던 경우 원복한다(다음 스테이지 배역은 이 앵커 성별에 맞춰 생성·배정된다 — 배역→플레이어 역방향 폐기).
+        if (baseGender != null && !baseGender.isEmpty()) gender = baseGender;
         roleAssigned = false;
         heldItemIds.clear();
         itemStates.clear();

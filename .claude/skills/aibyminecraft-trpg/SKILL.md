@@ -520,6 +520,12 @@ description: >-
   (kind=thought, actor=NPC — 그 NPC 시점·전체뷰에만, 플레이어엔 비노출) + 게임 내 엿보기 공개는 별개(같은
   구역 엿보기 특성만). logNpcLocationIfChanged(npcLoggedZone 추적, 바뀔 때만 logMove) → 뷰어 zoneAtSeq가
   NPC 위치 인지 = 라이브 패널 '위치' + 근처/방송 가시성. 뷰어 kind=thought 배지 💭·`.k-thought`(흐린 보라·이탤릭).
+- **성별 앵커/페르소나 분리**: PlayerData.baseGender=고유 앵커(최초 1회 고정, 생성·매칭·clearRoleData 복귀 기준) /
+  pd.gender=스테이지 페르소나(배정 시 배역 성별 채택 — 교차 배정돼도 이름·호칭 일관). 배정 3경로(TRPGGameManager
+  preAssign 적용부 + RoleManager.adoptPersonaGender×2) 전부 페르소나 채택. "미상" 배역은 미채택.
+- **종결 후 뒷북 차단**: playDiceResult 최상단 Phase(CLEAR/GAMEOVER/IDLE) 게이트 + onClearEnding이
+  flushAll→cancelAll→결정타 상태(unresolvedDecisiveDice·heldCrossClear·pendingDecisiveClear) 일괄 정리.
+  followUpDiceResult는 heldCrossClear!=null이면 '마지막 손길(새 성과·단서 금지)' 지시 동봉.
 - **행운 보정 수명(#176)**: pendingLuckModifier는 ★다음 실제 판정(주사위)까지 유지★ — 행동 처리 땐 get으로
   GM문맥만 알리고, playDiceResult 굴림 시점에서만 remove(1회 소비). 취약한 중간 스태시 pendingDiceLuck 제거됨.
   (예전엔 판정 없이 서술만 된 행동에서 보정이 증발.) 세 리셋 블록이 pendingLuckModifier.clear().
