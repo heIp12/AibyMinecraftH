@@ -540,12 +540,16 @@ description: >-
 - **declaredCommMethod 기본=voice(#243)**: resetToBase가 ""로 비우면 '자동' 부활→soundDangerous 시 필담 고정('연락이
   계속 문자로'). 필드기본·resetToBase 둘 다 "voice"여야 함(빈값 금지). resolveInPersonWritten: voice=음성·text=필담·
   빈값=soundDangerous면 자동필담.
-- **★Q2 힌트관문 30%(#285) — 사건 예방/해결 분리 (CLEAR 하드게이트 아님)★**: 구현 순서 ①사건 설계필드 GM전달(완료,
-  buildGmPrompt ~13832 — side/event_role/condition/deadline/preventable/unlocks_clue/key_clue) → ②사건 상태머신
-  PREVENTED(EVENT_BLOCK, 발화만 예방·근원 유지·단서 미해제) vs RESOLVED(EVENT_RESOLVE, 근원 직접해결·단서 해제) →
-  ③requires_event_resolved 단서게이트(clue만 봉인, ★CLEAR 봉인 아님★ — 단서 없이도 올바른 해법 실행은 clearAssertsKnownSolution
-  자동성공으로 인정) → ④생성기 30% ★코드 프리롤★(프롬프트 확률지시 신뢰 금지). ★핵심 경계★: 단서봉인 ≠ 클리어봉인.
-  아는 플레이어 실행 봉쇄 금지(#284 교착 재발 방지). EVENT_RESOLVE는 예방 불가·조기 직접해결에도 발화 전 낼 수 있음.
+- **★Q2 힌트관문 30%(#285) — ★전 단계 완료·검증★ (CLEAR 하드게이트 아님)★**: ①사건 설계필드 GM전달(buildGmPrompt
+  ~13832 — side/event_role/condition/deadline/preventable/unlocks_clue/key_clue) → ②사건 상태머신 GameStateManager
+  resolvedEvents+resolveEvent/isEventResolved(PREVENTED=EVENT_BLOCK 발화만 예방·근원 유지·단서 미해제 / RESOLVED=
+  EVENT_RESOLVE 근원 직접해결·단서 해제), AiManager.parseEventResolveTags, TRPGGameManager.onEventResolved(단서게이트
+  해제 시 gmPrompt 재빌드+주입) → ③clueEventSealed(requires_event_resolved 미해결 봉인), authoredClueDiscovered/
+  recordAuthoredClueMatch/sealedCapstoneCount 가드 + 프롬프트 단서렌더 [사건 근원해결 필요]★봉인★ → ④GdamGenerator.
+  applyHintGateReroll(save 후처리, 씨드결정적 30%, capstone 하나를 초반 거대사건-비종료·비곁가지·위협도≥max*0.6·배열순
+  이른것-근원해결 전까지 봉인, 양방향 배선+blockable=true). ★핵심 불변식★: 단서봉인 ≠ 클리어봉인 — 단서 없이도 올바른
+  해법 실행은 clearAssertsKnownSolution 자동성공으로 인정(#284 교착 재발 방지, sealedCapstoneCount도 event-seal 반영해
+  solutionCapstoneKnown 오탐 차단). 검증: EventGateTest13+HintGateTest20(실제 엔진 합성). ★미검증=실플레이(추후)★.
 - **★생성 정합 리마인더(사용자 — step ④ 착수 시 반영)★**: 괴담↔컨셉 ★상호★ 정합(괴담에 맞춰 컨셉, 컨셉에 맞춰 괴담을
   염두 — 3스 기준 베이스라인). 마지막(5)스테이지 첫 캐릭터(원년 배역)는 배역·나이·성별에 맞춘 개인 이야기(backstory)를
   부여. ★단 이음(스테이지·시나리오 간 서사 연속성)은 생성하지 않으므로 그 개인사는 무작위여도 됨★(무엇과도 안 이어져도
