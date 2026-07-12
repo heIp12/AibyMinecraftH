@@ -10714,8 +10714,9 @@ public class TRPGGameManager {
     private void broadcastToKnownContacts(Player sender, PlayerData senderPd, String message) {
         boolean bypass = hasCommBypass(senderPd); // 통신 개방 능력 발동 턴 — 두절·기기 제한 무시
         if (!bypass) {
-            if (!isPhoneUsable()) { sender.sendMessage("§c통신이 두절되어 발신할 수 없습니다."); return; }
-            if (!hasCommDevice(senderPd)) { sender.sendMessage("§c통신 기기가 없어 발신할 수 없습니다."); return; }
+            // ★미발신이면 발신 횟수 환불★ — @전체는 호출 전에 이미 1회 부과됐다. 실제로 못 보낸 경우 되돌린다.
+            if (!isPhoneUsable()) { refundCommUse(sender); sender.sendMessage("§c통신이 두절되어 발신할 수 없습니다."); return; }
+            if (!hasCommDevice(senderPd)) { refundCommUse(sender); sender.sendMessage("§c통신 기기가 없어 발신할 수 없습니다."); return; }
         }
         String disp = senderPd.gmDisplayName();
         String senderNet = commNetworkKey(senderPd); // ★폐쇄망★: 있으면 같은 망 접속자만 수신
@@ -10728,7 +10729,7 @@ public class TRPGGameManager {
             }
         }
         // ★@전체는 플레이어(아는 번호)에게만★ — NPC까지 넣으면 다수 NPC가 반응해 비용 폭증(설계상 NPC는 전체 발신 미수신).
-        if (targets.isEmpty()) { sender.sendMessage(senderNet != null
+        if (targets.isEmpty()) { refundCommUse(sender); sender.sendMessage(senderNet != null // ★수신자 0명=미발신 → 발신 횟수 환불★
                 ? "§7같은 " + senderNet + "망에 접속한 상대가 없습니다."
                 : "§7아는 번호가 없습니다. (먼저 연락처를 알아야 합니다)"); return; }
         // ★매체 차단(#180) — @이름과 동일 게이트(#214)★: 전자통신이 막혀 있으면 보낸 것처럼 보이되 실제로 닿지 않는다(은닉).
@@ -10736,6 +10737,7 @@ public class TRPGGameManager {
             ai.injectGmSystem("[통신 미도달(은닉)] " + disp + "이(가) " + (senderNet != null ? senderNet + "망" : "전체")
                 + " 발신을 시도했으나 지금 전자통신이 통하지 않는다(괴담·상황). 발신자는 모른 채 보냈다고 여긴다 — "
                 + "닿지 않았음을 정황·결과로만 드러내고 '차단됐다'고 티내지 마라.");
+            refundCommUse(sender); // 매체 차단으로 실제 미도달 → 횟수 환불(@이름과 동일, 다른 수단 재시도 가능하게)
             sender.sendMessage("§7[전송 중...]");
             return;
         }
