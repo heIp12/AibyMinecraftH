@@ -918,6 +918,143 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
     // 두 조각을 런타임에 결합('+'는 상수 폴딩되어 64KB 단일 상수가 되므로 String.join 사용).
     private static final String GDAM_SYSTEM_PROMPT = String.join("", GDAM_SYSTEM_PROMPT_1A, GDAM_SYSTEM_PROMPT_1B, GDAM_SYSTEM_PROMPT_2A, GDAM_SYSTEM_PROMPT_2B);
 
+    // ══════════════════════════════════════════════════════════════════
+    //  ② 청크-모듈 재분할 (#107/#108) — 각 생성 청크에 ★그 청크가 실제로 쓰는 규칙만★ 전달.
+    //   과부하(GPT #5) 완화: 예전엔 4개 청크(구조/월드/배역/아이템)가 매 호출 GDAM_SYSTEM_PROMPT
+    //   ★전체★(≈126KB·44섹션)를 받아 자기 슬라이스만 썼다. 이제 CORE(머리말·출력규칙·언어수준·최종자기검증)
+    //   + 청크 모듈(그 청크 산출필드 섹션 + 스키마 슬라이스)만 받는다.
+    //   ★핵심 안전장치★: 원본 4상수(1A/1B/2A/2B)·GDAM_SYSTEM_PROMPT(폴백)는 ★한 글자도 안 건드린다★
+    //   → 폴백 바이트 동일성 보장. 분할은 순수 런타임 문자열 연산(원본 무손실 분할)이고, 어떤 이유로든
+    //   실패하면 4개 모듈 전부 전체 프롬프트로 폴백(=현행 동작). 규칙 손실 0을 정적 초기화에서 자기검증한다.
+    //   섹션 헤더('## …') 키워드 → 청크 집합. core=공통. 여러 청크가 공유하는 섹션은 각 청크에 잔존(단일 소스·복제 없음).
+    private static final String[][] MOD_ASSIGN = {
+        {"출력 규칙", "core"}, {"언어 수준", "core"},
+        {"괴담 이름", "struct"}, {"괴담 소재 다양성", "struct"}, {"설계 순서", "struct"},
+        {"이야기 기승전결", "struct"}, {"사건(이벤트) 설계", "struct","world"}, {"괴담 성격", "struct"},
+        {"괴담 행동양식", "struct"}, {"스케일 기준", "struct"}, {"괴담 세력", "struct"},
+        {"필수 설계 항목", "struct","world","roles"}, {"weakness 작성", "struct"}, {"exploit_path 작성", "struct"},
+        {"약점·해결 서술 추상화", "struct"}, {"물리력 내성", "struct"},
+        {"배역 설계 원칙", "roles"}, {"괴담 연루 배역", "roles"}, {"배역 격", "roles","world"},
+        {"char_name / gender", "roles","world"}, {"job_pool / age_range", "roles"}, {"spawn_timeline 표기", "roles"},
+        {"단계 수 규모 가변", "struct","roles"}, {"pre_spawn_beats", "roles"}, {"role_stats 설계", "roles"},
+        {"배역 관계 설계 원칙", "world","roles"}, {"아이템 설계 규칙", "items","roles"},
+        {"세계관 규칙 (world_rules)", "struct"}, {"배경·행동 제약 (constraints)", "struct"}, {"타임라인 v2 설계 원칙", "struct"},
+        {"zones 설계 원칙", "world"}, {"zone 구역(area)", "world"}, {"zone 거대 영역(realm)", "world"}, {"npcs 설계 원칙", "world"},
+        {"can_impersonate 작성", "struct"}, {"perception 작성", "struct"}, {"hidden_rules 작성", "struct"},
+        {"common_items 작성", "world"}, {"clues 설계 원칙", "world"},
+        {"해결 경로 강건성", "struct","world"}, {"만남 가능성 검증", "world","roles"},
+        {"설계 정합성 최종 자기검증", "core"},
+    };
+    // 스키마 최상위 필드 → 청크 (env = 봉투 seed/room/scale, 모든 모듈 슬라이스에 포함).
+    private static final String[][] MOD_SCHEMA_FIELD = {
+        {"seed","env"}, {"room","env"}, {"scale","env"},
+        {"entity","struct"}, {"world_rules","struct"}, {"constraints","struct"}, {"timeline","struct"},
+        {"roles","roles"},
+        {"relationships","world"}, {"zones","world"}, {"npcs","world"}, {"clues","world"},
+        {"daily_prologue","world"}, {"meeting_design","world"}, {"join_system","world"},
+        {"common_items","world"}, {"info_sharing","world"},
+        {"key_items","items"},
+    };
+    // 청크별 완성 시스템 프롬프트(= CORE_HEAD + 모듈 섹션 + 스키마 슬라이스 + CORE_TAIL). 실패 시 전체 프롬프트 폴백.
+    private static final String SYS_STRUCT, SYS_WORLD, SYS_ROLES, SYS_ITEMS;
+    static {
+        Map<String,String> m = buildSystemModules(GDAM_SYSTEM_PROMPT);
+        SYS_STRUCT = m.get("struct"); SYS_WORLD = m.get("world");
+        SYS_ROLES  = m.get("roles");  SYS_ITEMS = m.get("items");
+    }
+
+    /** GDAM_SYSTEM_PROMPT를 청크별 시스템 프롬프트 4종으로 분해. 실패하면 전부 전체 프롬프트(현행 동작)로 폴백. */
+    private static Map<String,String> buildSystemModules(String full) {
+        Map<String,String> out = new HashMap<>();
+        try {
+            List<String> secs = splitPromptSections(full);
+            StringBuilder head = new StringBuilder(), tail = new StringBuilder();
+            Map<String,StringBuilder> mod = new HashMap<>();
+            for (String c : new String[]{"struct","world","roles","items"}) mod.put(c, new StringBuilder());
+            String schemaSection = null;
+            for (int i = 0; i < secs.size(); i++) {
+                String sec = secs.get(i);
+                if (i == 0) { head.append(sec); continue; }   // 머리말(역할 정의) → CORE 앞
+                String header = sec.split("\n", 2)[0];
+                if (header.contains("출력 JSON 스키마")) { schemaSection = sec; continue; }
+                List<String> chunks = promptChunksFor(header); // 정확히 1개 키워드 매칭 아니면 예외 → 폴백
+                if (chunks.contains("core")) { if (header.contains("자기검증")) tail.append(sec); else head.append(sec); }
+                for (String c : new String[]{"struct","world","roles","items"}) if (chunks.contains(c)) mod.get(c).append(sec);
+            }
+            if (schemaSection == null) throw new IllegalStateException("스키마 섹션 미발견");
+            // 규칙 손실 0 자기검증 — 스키마 최상위 필드(env 제외)가 전부 어느 청크엔가 배정됐는가.
+            Set<String> allKeys = new LinkedHashSet<>(), covered = new LinkedHashSet<>();
+            for (String[] sf : MOD_SCHEMA_FIELD) if (!sf[1].equals("env")) allKeys.add(sf[0]);
+            for (String c : new String[]{"struct","world","roles","items"})
+                for (String[] sf : MOD_SCHEMA_FIELD) if (sf[1].equals(c)) covered.add(sf[0]);
+            if (!allKeys.equals(covered)) throw new IllegalStateException("스키마 키 커버리지 불일치: " + allKeys + " vs " + covered);
+            String h = head.toString(), t = tail.toString();
+            for (String c : new String[]{"struct","world","roles","items"})
+                out.put(c, h + mod.get(c) + promptSchemaSlice(schemaSection, c) + t);
+            return out;
+        } catch (Throwable ex) {
+            java.util.logging.Logger.getLogger(GdamGenerator.class.getName())
+                .warning("[gdam] 프롬프트 모듈 분할 실패 → 전체 프롬프트로 폴백(현행 동작): " + ex);
+            out.clear();
+            for (String c : new String[]{"struct","world","roles","items"}) out.put(c, full);
+            return out;
+        }
+    }
+
+    /** full을 '## ' 줄머리 경계로 무손실 분할. secs[0]=머리말(첫 '## ' 이전), 이후 각 섹션. 합치면 원본과 완전 동일. */
+    private static List<String> splitPromptSections(String full) {
+        List<Integer> pos = new ArrayList<>();
+        pos.add(0);
+        for (int i = 1; i < full.length(); i++)
+            if (full.charAt(i-1) == '\n' && full.startsWith("## ", i)) pos.add(i);
+        pos.add(full.length());
+        List<String> secs = new ArrayList<>();
+        for (int k = 0; k+1 < pos.size(); k++) secs.add(full.substring(pos.get(k), pos.get(k+1)));
+        return secs;
+    }
+
+    /** 헤더가 MOD_ASSIGN 키워드 중 정확히 하나만 포함하면 그 청크 집합, 아니면 예외(→ 안전 폴백). */
+    private static List<String> promptChunksFor(String header) {
+        List<String> hit = null; int matches = 0;
+        for (String[] row : MOD_ASSIGN) {
+            if (header.contains(row[0])) { matches++; hit = new ArrayList<>(Arrays.asList(row).subList(1, row.length)); }
+        }
+        if (matches != 1) throw new IllegalStateException("헤더 매칭 " + matches + "건: " + header);
+        return hit;
+    }
+
+    /** JSON 스키마 예시를 청크별 슬라이스로. 봉투(seed/room/scale)+그 청크 최상위 필드 블록만 남긴 JSON 조각. */
+    private static String promptSchemaSlice(String schemaSection, String chunk) {
+        String[] lines = schemaSection.split("\n", -1);
+        int open = -1, close = -1;
+        for (int i = 0; i < lines.length; i++) if (lines[i].equals("{")) { open = i; break; }
+        for (int i = lines.length-1; i >= 0; i--) if (lines[i].equals("}")) { close = i; break; }
+        if (open < 0 || close < 0 || close <= open) throw new IllegalStateException("스키마 루트 { } 미발견");
+        LinkedHashMap<String,StringBuilder> blocks = new LinkedHashMap<>();
+        String cur = null;
+        for (int i = open+1; i < close; i++) {
+            String key = promptTopKey(lines[i]);
+            if (key != null) { cur = key; blocks.put(cur, new StringBuilder(lines[i]).append("\n")); }
+            else if (cur != null) blocks.get(cur).append(lines[i]).append("\n");
+        }
+        Set<String> want = new LinkedHashSet<>();
+        for (String[] sf : MOD_SCHEMA_FIELD) if (sf[1].equals("env") || sf[1].equals(chunk)) want.add(sf[0]);
+        StringBuilder sb = new StringBuilder();
+        sb.append("## 출력 JSON 스키마 — 이 청크가 채우는 필드(조각, 최종엔 전 청크 필드를 한 객체로 합친다)\n{\n");
+        for (String k : blocks.keySet()) if (want.contains(k)) sb.append(blocks.get(k));
+        sb.append("}\n");
+        return sb.toString();
+    }
+    /** '  "key":' (정확히 2-스페이스 들여쓰기)면 key, 아니면 null(3+ 들여쓰기·비키 라인 제외). */
+    private static String promptTopKey(String ln) {
+        if (!ln.startsWith("  \"")) return null;
+        if (ln.length() > 2 && ln.charAt(2) == ' ') return null;
+        int q2 = ln.indexOf('"', 3);
+        if (q2 < 0) return null;
+        if (ln.indexOf(':', q2) < 0) return null;
+        return ln.substring(3, q2);
+    }
+
     // ──────────────────────────────────────────────────────────────
     //  친숙한 친구들 모드 — 실존 괴담·SCP·크리피파스타 엔티티 목록
     // ──────────────────────────────────────────────────────────────
@@ -1718,7 +1855,7 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
             + "\n\n## ★검증 (출력 전 자기점검)\n최종 JSON을 내기 전 스스로 확인하고, 아니면 고쳐서 출력하라:\n- 고른 행동양식(entity.type)이 world_rules·timeline.main_events에 실제로 반영됐는가?\n- 성향(ai_context.disposition)이 initial_pattern·personality로 구체화됐는가?\n- 스케일이 영향 범위·시간 규모에 반영됐는가?\n- 아키타입의 ★필수산출★ 항목을 다 채웠는가?"
             + hgStruct;
 
-        return aiManager.callGmAiLarge(GDAM_SYSTEM_PROMPT, structPrompt).thenCompose(structRaw -> {
+        return aiManager.callGmAiLarge(SYS_STRUCT, structPrompt).thenCompose(structRaw -> {
             JsonObject core = tryParseObject(structRaw);
             if (core == null || !core.has("entity") || !core.has("timeline")) {
                 logger.warning("[gdam] 분할-구조 파싱 실패 → 단일 생성 폴백" + parseDiag(structRaw));
@@ -1745,7 +1882,7 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
                 + "(일상 유예 없이 바로 사건 한복판). 대부분 시나리오는 calm."
                 + hgWorld;
 
-            return aiManager.callGmAiLarge(GDAM_SYSTEM_PROMPT, worldPrompt).thenCompose(worldRaw -> {
+            return aiManager.callGmAiLarge(SYS_WORLD, worldPrompt).thenCompose(worldRaw -> {
                 JsonObject world = tryParseObject(worldRaw);
                 if (world == null) {
                     logger.warning("[gdam] 분할-월드 파싱 실패 → 단일 생성 폴백" + parseDiag(worldRaw));
@@ -1777,7 +1914,7 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
                 + "★나이-직업 정합: job_pool의 직업은 age_range와 어울려야 한다(대학생=18~27 포함 시에만, 학생 직업은 그 학령 폭일 때만, 하한 17 이하 폭에 성인 전문직 금지)."
                 + nameAvoid;
 
-            return chunkArray(rolesPrompt, "roles", 1).thenCompose(roles -> {
+            return chunkArray(SYS_ROLES, rolesPrompt, "roles", 1).thenCompose(roles -> {
                 if (roles == null || roles.size() == 0) {
                     logger.warning("[gdam] 분할-배역 파싱 실패(재시도 포함) → 단일 생성 폴백");
                     return generate(roomNumber, 0, concept, progress);
@@ -1806,7 +1943,7 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
                     + "★잠금-열쇠 짝(필수)★: 위 constraints.gated_zones의 ★각 항목마다★ 그 문을 여는 열쇠 1개를 key_items에 반드시 포함하라 — item_params.unlocks에 그 항목의 zone 값을 ★그대로 복사★한다(열쇠 없는 잠금은 영영 못 여는 문이 된다). 반대로 gated_zones에 없는 zone을 여는 unlocks 열쇠는 만들지 마라(잠기지 않은 문의 열쇠 = 무용지물).\n"
                     + "★NPC 소지 배치: 아이템(특히 열쇠)을 NPC가 지니게 하려면 location에 ★위 NPC 요약의 실존 NPC 이름★을 그대로 써라(예: \"경비원 박씨가 소지\") — 존재하지 않는 인물이나 요약과 다른 위치의 NPC에게 들리지 마라(플레이어가 영영 못 찾는다).";
 
-                return aiManager.callGmAiLarge(GDAM_SYSTEM_PROMPT, itemsPrompt).thenCompose(itemsRaw -> {
+                return aiManager.callGmAiLarge(SYS_ITEMS, itemsPrompt).thenCompose(itemsRaw -> {
                     JsonArray items = tryParseArray(itemsRaw, "key_items");
                     core.add("roles", roles);
                     core.add("key_items", items != null ? items : new JsonArray());
@@ -1904,13 +2041,13 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
      * AI가 가끔 JSON을 살짝 깨뜨려도, 값비싼 단일 생성 폴백으로 가기 전에 저렴하게 한 번 더 시도한다.
      * 끝내 실패하면 null을 반환(호출부에서 단일 생성 폴백).
      */
-    private CompletableFuture<JsonArray> chunkArray(String prompt, String key, int retriesLeft) {
-        return aiManager.callGmAiLarge(GDAM_SYSTEM_PROMPT, prompt).thenCompose(raw -> {
+    private CompletableFuture<JsonArray> chunkArray(String sys, String prompt, String key, int retriesLeft) {
+        return aiManager.callGmAiLarge(sys, prompt).thenCompose(raw -> {
             JsonArray arr = tryParseArray(raw, key);
             if ((arr != null && arr.size() > 0) || retriesLeft <= 0)
                 return CompletableFuture.completedFuture(arr);
             logger.warning("[gdam] " + key + " 청크 파싱 실패 → 재시도(" + retriesLeft + "회 남음)" + parseDiag(raw));
-            return chunkArray(prompt, key, retriesLeft - 1);
+            return chunkArray(sys, prompt, key, retriesLeft - 1);
         });
     }
 
