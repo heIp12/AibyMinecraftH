@@ -2675,20 +2675,28 @@ public class TRPGGameManager {
         }
         // 회복·부활형 대상 선택
         if (pendingSaintTrait.containsKey(player.getUniqueId())) {
+            String mm = message == null ? "" : message.trim();
+            // ★취소 경로(취소불가 문제 수정)★: 대상 선택 대기 중 어떤 입력도 취소로 못 빠져나가던 것 해소.
+            //   이 시점엔 아직 특성이 소모되지 않았으므로(applySaintEffect에서 소모) 취소는 그냥 대기 해제면 된다.
+            if (mm.equals("취소") || mm.equalsIgnoreCase("cancel") || mm.equals("0")) {
+                pendingSaintTrait.remove(player.getUniqueId());
+                player.sendMessage("§7[성녀] 발동을 취소했습니다. (특성은 소모되지 않음)");
+                return;
+            }
             try {
-                int idx = Integer.parseInt(message.trim()) - 1;
+                int idx = Integer.parseInt(mm) - 1;
                 List<PlayerData> targets = state.getAllPlayers().stream()
                     .filter(p2 -> !p2.uuid.equals(player.getUniqueId()))
                     .collect(java.util.stream.Collectors.toList());
                 if (idx < 0 || idx >= targets.size()) {
-                    player.sendMessage("§c올바른 번호를 입력하세요. (1~" + targets.size() + ")");
+                    player.sendMessage("§c올바른 번호를 입력하세요. (1~" + targets.size() + ", 취소하려면 '취소')");
                     return;
                 }
                 String saintTraitId = pendingSaintTrait.remove(player.getUniqueId());
                 PlayerData target = targets.get(idx);
                 applySaintEffect(player, pd, saintTraitId, target);
             } catch (NumberFormatException ex) {
-                player.sendMessage("§c숫자를 입력하세요.");
+                player.sendMessage("§c숫자를 입력하세요. (취소하려면 '취소')");
             }
             return;
         }
@@ -4692,7 +4700,7 @@ public class TRPGGameManager {
             return;
         }
         pendingSaintTrait.put(player.getUniqueId(), td.id);
-        player.sendMessage("§a[" + td.name + "] 회복시킬 플레이어를 선택하세요 (채팅으로 번호 입력):");
+        player.sendMessage("§a[" + td.name + "] 회복시킬 플레이어를 선택하세요 (채팅으로 번호 입력 · §f취소§a 입력 시 발동 취소):");
         for (int i = 0; i < targets.size(); i++) {
             PlayerData t = targets.get(i);
             String status = t.isDead ? "§c[사망]" : (t.hp[0] < t.hp[1] || t.san[0] < t.san[1]) ? "§e[부상]" : "§a[정상]";
