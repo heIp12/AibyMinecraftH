@@ -344,10 +344,6 @@ public class DialogManager {
             {"internet", "인터넷 괴담"}, {"real", "실화·미제사건"}, {"sf", "SF 공포"}
         };
         List<ActionButton> buttons = new ArrayList<>();
-        buttons.add(ActionButton.create(
-            Component.text("▶ 이대로 시작", NamedTextColor.GOLD),
-            Component.text("포함(✓)된 종류만 섞어 무작위로 생성합니다."), 200,
-            DialogAction.customClick((v, a) -> onStart.run(), ClickCallback.Options.builder().uses(1).build())));
         for (String[] c : cats) {
             final String key = c[0];
             boolean ex = isExcluded.test(key);
@@ -356,6 +352,14 @@ public class DialogManager {
                 Component.text(ex ? "제외됨 — 누르면 포함" : "포함됨 — 누르면 제외"), 150,
                 DialogAction.customClick((v, a) -> onToggle.accept(key), ClickCallback.Options.builder().uses(1).build())));
         }
+        // ★'이대로 시작'은 토글 목록 ★맨 아래★에 둔다★ — 예전엔 첫 버튼이라 2열 격자의 좌상단에 끼여
+        //   토글과 구분이 안 되고(시작칸이 어색), 넓은 폭(200)이 윗줄 정렬까지 흐트러뜨렸다.
+        //   종류를 다 고른 뒤 누르는 확정 버튼이므로, 12개 카테고리(2열×6줄)를 채운 다음 홀로 한 줄을
+        //   차지해 하단의 '취소'(전폭) 바로 위에 오게 한다(확정↔취소 자연스러운 하단 배치).
+        buttons.add(ActionButton.create(
+            Component.text("▶ 이대로 시작", NamedTextColor.GOLD),
+            Component.text("포함(✓)된 종류만 섞어 무작위로 생성합니다."), 200,
+            DialogAction.customClick((v, a) -> onStart.run(), ClickCallback.Options.builder().uses(1).build())));
         ActionButton cancel = ActionButton.create(
             Component.text("취소", TextColor.color(0xAAAAAA)),
             Component.text("세션을 시작하지 않습니다."), 100, null);
