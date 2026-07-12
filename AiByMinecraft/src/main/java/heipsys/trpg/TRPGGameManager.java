@@ -13816,6 +13816,10 @@ public class TRPGGameManager {
                 sb.append("\n## 큰 사건 타임라인 (정해진 시각에 자동 발생) ★\n");
                 sb.append("아래 사건은 막지 않으면 해당 시각에 반드시 일어난다. 시스템이 시각 도달 시 '지금 발생한 사건'으로 알리니 그때 서술하라.\n");
                 sb.append("blockable 사건을 플레이어가 실제로 막아내면 <EVENT_BLOCK id=\"사건ID\"/>를 출력해 취소하라.\n");
+                sb.append("★예방(EVENT_BLOCK) vs 근원 해결(EVENT_RESOLVE) — 중요 구분★: <EVENT_BLOCK id=\"...\"/>는 '현상 예방·일시 차단'이다(피해·위협 상승은 막지만 사건의 ★근원은 그대로★ — 연결 단서는 열리지 않는다). "
+                    + "플레이어가 ★사건의 근원 자체를 직접 해결★했으면 <EVENT_RESOLVE id=\"...\"/>를 출력하라 — ★이때만★ 그 사건에 연결된 핵심 단서(아래 '해결 시 단서해제' 표시)가 열린다. "
+                    + "아는 플레이어가 사건 시각 ★전에★ 근원을 찾아 해결했으면 그것도 예방이 아니라 '조기 직접 해결'이니 <EVENT_RESOLVE>를 내라(사건이 눈앞에 터질 때까지 기다릴 필요 없다). "
+                    + "★단 이 단서 봉인은 정답을 아는 플레이어의 실행·창의적 해결을 막는 CLEAR 게이트가 아니다 — 단서 없이도 올바른 해법 실행은 가능하며, 그럴 땐 위 자동성공 원칙대로 <CLEAR>로 인정하라.★\n");
                 sb.append("개입 분기(branches) ★: 플레이어 행동이 분기 조건을 충족하면 그 흐름을 따른다 — "
                     + "기존 자동 경로 사건을 <EVENT_BLOCK id=\"...\"/>로 취소하고, 분기가 가리키는 사건을 <EVENT_TRIGGER id=\"...\"/>로 즉시 발화하라(시각 미도달이어도). "
                     + "분기 조건이 안 맞으면 auto 경로대로 둔다.\n");
@@ -13828,6 +13832,21 @@ public class TRPGGameManager {
                     if (ev.has("effect")) sb.append(" → ").append(ev.get("effect").getAsString());
                     if (ev.has("blockable") && ev.get("blockable").getAsBoolean()) sb.append(" (막을 수 있음)");
                     if (ev.has("is_end")    && ev.get("is_end").getAsBoolean())    sb.append(" [종료 사건]");
+                    // ★사건 설계 의도 필드 전달(GPT: 예전엔 GM에 안 넘겨져 곁가지·마감·힌트관문이 사실상 미작동)★
+                    if (ev.has("side") && ev.get("side").isJsonPrimitive() && ev.get("side").getAsBoolean()) {
+                        sb.append(" (곁가지");
+                        if (!getStr(ev, "side_scale").isBlank()) sb.append("·규모 ").append(getStr(ev, "side_scale"));
+                        sb.append(")");
+                    }
+                    if (!getStr(ev, "event_role").isBlank())  sb.append(" [역할: ").append(getStr(ev, "event_role")).append("]");
+                    if (!getStr(ev, "condition").isBlank())   sb.append(" {발생조건: ").append(getStr(ev, "condition")).append("}");
+                    if (!getStr(ev, "deadline").isBlank())    sb.append(" (마감 ").append(getStr(ev, "deadline")).append(")");
+                    if (ev.has("preventable") && ev.get("preventable").isJsonPrimitive() && !ev.get("preventable").getAsBoolean())
+                        sb.append(" (★예방 불가 — 근원을 직접 해결해야 함)");
+                    if (!getStr(ev, "unlocks_clue").isBlank())
+                        sb.append(" (★근원 해결<EVENT_RESOLVE> 시 핵심단서 '").append(getStr(ev, "unlocks_clue")).append("' 해제 — 예방으론 안 열림)");
+                    else if (!getStr(ev, "key_clue").isBlank())
+                        sb.append(" (핵심단서 연결: ").append(getStr(ev, "key_clue")).append(")");
                     if (ev.has("branches") && ev.get("branches").isJsonObject()) {
                         JsonObject br = ev.getAsJsonObject("branches");
                         if (br.has("auto") && br.get("auto").isJsonObject()) {
