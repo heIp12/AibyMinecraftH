@@ -198,6 +198,10 @@ public class TRPGGameManager {
     private final java.util.Set<UUID> unresolvedDecisiveDice = ConcurrentHashMap.newKeySet();
     /** 마지막으로 ★성공/대성공★ 판정이 나온 턴 — 무판정 즉시 CLEAR 게이트(위협 높음 + 최근 성공 굴림 없음 → 종결 보류)용. */
     private volatile int lastDiceSuccessTurn = -999;
+    /** ★무판정 CLEAR 1회 보류 후 '이월'(A)★ — 정답을 아는 플레이어의 정당한 자동성공을 무한히 막지 않도록, 첫 무판정 CLEAR는
+     *  보류하되 버리지 않고 이월한다. 다음 행동 때 GM이 다시 CLEAR(재확정)하면 그때 종결한다(3턴 창 내). */
+    private volatile JsonObject pendingNoDiceClear = null;
+    private volatile int pendingNoDiceClearTurn = -999;
     /** 발견된 authored 단서 id(단조 증가) — GM의 자유문 new_clue를 clues[].id에 대응시켜 기록. capstone 봉인 해제·
      *  스케줄 requires_clues 판정이 이 집합을 우선 보므로, 한 번 매칭된 단서는 표현이 달라져도 다시 잠기지 않는다. */
     private final java.util.Set<String> discoveredAuthoredClueIds = ConcurrentHashMap.newKeySet();
@@ -984,7 +988,7 @@ public class TRPGGameManager {
         pendingPrayerInput.clear();
         pendingOracleInput.clear();
         pendingLuckModifier.clear();
-        pendingDecisiveClear.clear(); // 미뤄둔 결정타 클리어 — 스테이지/재도전/종료 리셋 시 잔류(다음 판 오발) 방지
+        pendingDecisiveClear.clear(); pendingNoDiceClear = null; pendingNoDiceClearTurn = -999; // 미뤄둔 결정타/무판정이월 클리어 — 스테이지/재도전/종료 리셋 시 잔류(다음 판 오발) 방지
         pendingHops.clear(); lastHopTurn.clear(); // 이동 홉 추적(#190) — 스테이지/재도전 리셋 시 남으면 다음 판에서 오복귀·홉 스킵 유발
         groupQueue.clear(); groupFlushScheduled.clear(); activeGroupRound.clear(); groupRoundPendingResponse.clear(); // 단체턴(2a) 라운드 상태 — 리셋 시 잔류하면 다음 판 오발화·팬아웃 오발
         noHopeStreak = 0; allIncapTicks = 0; // 자동 배드엔딩(#2) 누적 — 리셋 시 초기화
@@ -1034,7 +1038,7 @@ public class TRPGGameManager {
         unresolvedDecisiveDice.clear(); heldCrossClear = null; heldCrossClearBy = null; // 결정타 게이트 리셋(감사 B)
         locationDesynced.clear(); // 구역 desync 표식 리셋(감사 C)
         npcAutoStateSig.clear(); npcAutoStateTime.clear(); // 자율 NPC 상태서명 스로틀 리셋(감사 J)
-        lastDiceSuccessTurn = -999; discoveredAuthoredClueIds.clear(); // 무판정 CLEAR 게이트·capstone 해제 추적 리셋
+        lastDiceSuccessTurn = -999; pendingNoDiceClear = null; pendingNoDiceClearTurn = -999; discoveredAuthoredClueIds.clear(); // 무판정 CLEAR 게이트·capstone 해제 추적 리셋
         resetOverviewCache();
         preSpawnCallCounts.clear();
         preSpawnLastBeat.clear();
@@ -1120,7 +1124,7 @@ public class TRPGGameManager {
         pendingPrayerInput.clear();
         pendingOracleInput.clear();
         pendingLuckModifier.clear();
-        pendingDecisiveClear.clear(); // 미뤄둔 결정타 클리어 — 스테이지/재도전/종료 리셋 시 잔류(다음 판 오발) 방지
+        pendingDecisiveClear.clear(); pendingNoDiceClear = null; pendingNoDiceClearTurn = -999; // 미뤄둔 결정타/무판정이월 클리어 — 스테이지/재도전/종료 리셋 시 잔류(다음 판 오발) 방지
         pendingHops.clear(); lastHopTurn.clear(); // 이동 홉 추적(#190) — 스테이지/재도전 리셋 시 남으면 다음 판에서 오복귀·홉 스킵 유발
         groupQueue.clear(); groupFlushScheduled.clear(); activeGroupRound.clear(); groupRoundPendingResponse.clear(); // 단체턴(2a) 라운드 상태 — 리셋 시 잔류하면 다음 판 오발화·팬아웃 오발
         noHopeStreak = 0; allIncapTicks = 0; // 자동 배드엔딩(#2) 누적 — 리셋 시 초기화
@@ -1243,7 +1247,7 @@ public class TRPGGameManager {
         pendingPrayerInput.clear();
         pendingOracleInput.clear();
         pendingLuckModifier.clear();
-        pendingDecisiveClear.clear(); // 미뤄둔 결정타 클리어 — 스테이지/재도전/종료 리셋 시 잔류(다음 판 오발) 방지
+        pendingDecisiveClear.clear(); pendingNoDiceClear = null; pendingNoDiceClearTurn = -999; // 미뤄둔 결정타/무판정이월 클리어 — 스테이지/재도전/종료 리셋 시 잔류(다음 판 오발) 방지
         pendingHops.clear(); lastHopTurn.clear(); // 이동 홉 추적(#190) — 스테이지/재도전 리셋 시 남으면 다음 판에서 오복귀·홉 스킵 유발
         groupQueue.clear(); groupFlushScheduled.clear(); activeGroupRound.clear(); groupRoundPendingResponse.clear(); // 단체턴(2a) 라운드 상태 — 리셋 시 잔류하면 다음 판 오발화·팬아웃 오발
         noHopeStreak = 0; allIncapTicks = 0; // 자동 배드엔딩(#2) 누적 — 리셋 시 초기화
@@ -2416,7 +2420,7 @@ public class TRPGGameManager {
         unresolvedDecisiveDice.clear(); heldCrossClear = null; heldCrossClearBy = null; // 결정타 게이트도 스테이지 리셋(감사 B)
         locationDesynced.clear(); // 구역 desync 표식도 스테이지 리셋(감사 C — 새 스테이지 = 새 구역 배치)
         npcAutoStateSig.clear(); npcAutoStateTime.clear(); // 자율 NPC 상태서명 스로틀도 스테이지 리셋(감사 J — 새 NPC·새 시계)
-        lastDiceSuccessTurn = -999; discoveredAuthoredClueIds.clear(); // 무판정 CLEAR 게이트·capstone 해제 추적도 스테이지 리셋
+        lastDiceSuccessTurn = -999; pendingNoDiceClear = null; pendingNoDiceClearTurn = -999; discoveredAuthoredClueIds.clear(); // 무판정 CLEAR 게이트·capstone 해제 추적도 스테이지 리셋
         commBypassTurn.clear(); commBypassStealth.clear(); // 통신 개방도 스테이지 넘어 유지 안 됨(턴 번호 재사용 오작동 방지)
         resetOverviewCache(); // 새 스테이지 = 새 괴담 → 시나리오 개요 캐시 초기화(다음 사용 시 재생성)
         loadForbiddenWord(); // 금지워드형 괴담의 금지어 로드(entity.forbidden_word)
@@ -2992,13 +2996,30 @@ public class TRPGGameManager {
                 //   위협이 높아도 게이트를 걸지 않는다 — 주사위는 해법을 모른 채 버티거나 물리 난이도 보완용이지,
                 //   '정답을 아는데 위협만 높다'는 이유로 굴리게 하면 정보·재도전의 가치가 무너진다.
                 boolean solutionKnown = solutionCapstoneKnown() || corruptMan.getAttempts() > 0;
-                if (clearTag != null && !solutionKnown && ai.parseDiceTag(raw) == null && state.getThreat() >= 40
-                        && state.getCurrentTurn() - lastDiceSuccessTurn > 3) {
-                    gameLogger.logEvent("[CLEAR 보류: 무판정] 위협도 " + state.getThreat() + " — 결정타 판정 요구");
-                    ai.injectGmSystem("[종결 보류 — 판정 필요] 방금 <CLEAR>는 판정 없이 서술만으로 종결하려 했다. 위협도가 낮지 않고, 파티가 정답 해법을 확실히 갖췄다는 근거도 아직 없다. "
-                        + "종결로 이어지는 결정적 행동을 ★<DICE>(\"decisive\":\"1\")로 먼저 굴려라★ — 성공으로 확정되면 그때 <CLEAR>를 다시 내라. "
-                        + "(단 플레이어가 올바른 해법을 확실히 알고 실행하는 경우라면 굴리지 말고 그대로 <CLEAR>로 빠르게 매듭지어라.)");
-                    clearTag = null;
+                // ★C: GM 명시 신호★ — GM이 '플레이어가 올바른 해법을 정확히 실행했다'고 <CLEAR>{"known":"1"}(또는 auto)로 단언하면,
+                //   프롬프트 규칙 271(정답 실행=자동성공)을 GM이 주체적으로 적용한 것 → 게이트를 건너뛰고 즉시 종결(무한 교착 방지).
+                boolean gmAssertsKnown = clearTag != null && clearAssertsKnownSolution(clearTag);
+                if (clearTag != null && !solutionKnown && !gmAssertsKnown && ai.parseDiceTag(raw) == null
+                        && state.getThreat() >= 40 && state.getCurrentTurn() - lastDiceSuccessTurn > 3) {
+                    // ★A: 무판정 CLEAR를 무한히 막지 않는다(로그 CRGY-YQ2H: 정당한 자동성공 5회 연속 차단)★.
+                    //   첫 무판정 CLEAR는 보류하되 ★버리지 않고 이월(stash)★한다. 다음 행동 때 GM이 다시 CLEAR하면(재확정) 그때 종결.
+                    boolean carried = pendingNoDiceClear != null && state.getCurrentTurn() - pendingNoDiceClearTurn <= 3;
+                    if (carried) {
+                        gameLogger.logEvent("[CLEAR 인정: 재확정] 무판정 이월 CLEAR를 GM이 다시 확정 — 정답 실행 자동성공으로 종결(위협도 " + state.getThreat() + ")");
+                        pendingNoDiceClear = null; pendingNoDiceClearTurn = -999;
+                        // clearTag 유지 → 아래 일반 종결 처리로 흐른다
+                    } else {
+                        pendingNoDiceClear = clearTag; pendingNoDiceClearTurn = state.getCurrentTurn();
+                        gameLogger.logEvent("[CLEAR 보류·이월] 무판정 종결을 1회 보류(이월) — 다음 행동 때 재확정하면 종결(위협도 " + state.getThreat() + ")");
+                        ai.injectGmSystem("[종결 보류 — 다음에 재확정] 방금 <CLEAR>는 판정 없이 서술만으로 종결하려 했고 위협도가 낮지 않다. 이번엔 보류하되 ★버리지 않았다★. "
+                            + "★다음 응답에서 — 플레이어가 올바른 해법을 확실히 알고 정확히 실행한 게 맞다면 <CLEAR>를 그대로 다시 내라(그러면 자동성공으로 종결한다).★ "
+                            + "정말 정답 실행이 확실하면 이번에 <CLEAR>{\"grade\":\"...\",\"known\":\"1\"}로 내면 다음 턴을 기다릴 것 없이 ★즉시★ 종결된다. "
+                            + "아직 해법이 불확실하거나 물리적 난관이 남았다면 <DICE>(\"decisive\":\"1\")로 먼저 굴려라(성공 시 종결). 이 상황을 반드시 매듭지어라.");
+                        clearTag = null;
+                    }
+                } else if (clearTag != null && gmAssertsKnown && !solutionKnown) {
+                    gameLogger.logEvent("[CLEAR 인정: GM 정답실행 신호] 무판정이나 GM이 정답 해법 정확 실행(known)을 단언 — 즉시 종결(위협도 " + state.getThreat() + ")");
+                    pendingNoDiceClear = null; pendingNoDiceClearTurn = -999; // clearTag 유지 → 종결 처리
                 }
                 // ★전역 결정타 게이트(감사 B)★: 다른 응답의 결정타 판정이 아직 미해결이면 이 CLEAR를 보류한다.
                 //   (같은 응답 DICE+CLEAR는 위 stash가 처리 — 여기는 '타 플레이어/후속 응답'의 CLEAR가 판정을 앞지르는 경쟁 차단.)
@@ -9692,6 +9713,19 @@ public class TRPGGameManager {
         for (String tok : content.split("[^가-힣A-Za-z0-9]+"))
             if (tok.length() >= 2 && found.contains(tok)) overlap++;
         return overlap >= 3;
+    }
+
+    /** ★C: GM의 '정답 실행 자동성공' 명시 신호★ — GM이 <CLEAR>{"known":"1"}(또는 auto/known_solution) 로 '플레이어가 올바른
+     *  해법을 정확히 실행했다'고 단언한 경우. 무판정 종결 게이트를 GM 판단으로 건너뛰는 통로(프롬프트 규칙 271의 GM 주도 적용). */
+    private boolean clearAssertsKnownSolution(JsonObject clearTag) {
+        if (clearTag == null) return false;
+        for (String k : new String[]{"known", "auto", "known_solution", "auto_success", "autosuccess"}) {
+            if (clearTag.has(k) && clearTag.get(k).isJsonPrimitive()) {
+                String v = clearTag.get(k).getAsString().trim().toLowerCase();
+                if (v.equals("1") || v.equals("true") || v.equals("yes") || v.equals("y")) return true;
+            }
+        }
+        return false;
     }
 
     /** ★파티가 정답을 손에 넣었는가(자동성공 예외 신호, 재도전-지식 감사)★ — 이 시나리오에 종결단서(capstone)가
