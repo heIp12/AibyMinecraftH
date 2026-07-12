@@ -159,6 +159,8 @@ description: >-
   상시 갱신(효율 될 만한 지식은 항상 등록).
 
 ## 최근 추가된 아키텍처 사실 (회귀 방지)
+- **★친숙 괴담 no-repeat = 3중 방어(2026-07, 스마일러 연속 2판 수정)★**: ①태그별 창(recentFamiliarKeys, 한국·게임 20·로보토미 7) ②전역 창(globalRecentKeys/Csv, GLOBAL_RECENT_WINDOW=6 — 태그 무관, 카테고리 갈려도 직전 판 재등장 차단) ③전체랜덤 종류 로테이션(kindHistory·.kind_history 영속, KIND_ROTATE_WINDOW=6 — resolveFamiliarKind가 최근 굴린 kind 회피, "random"은 region 로테이션이라 제외). ★근본 버그★: `familiarTag(filter,region)`가 출처형 kind(backrooms·creepypasta·internet·western·real·sf)를 switch에서 안 잡고 default로 흘려 ★무작위 region★에서 태그를 뽑아 판마다 태그가 갈렸다 → 이제 각 kind를 고정 태그(백룸·크리피파스타 등)로 매핑. ★새 출처 kind(카탈로그 보유)를 추가하면 familiarTag switch에도 반드시 kind→고정태그 매핑을 넣어라★(안 넣으면 region 기반으로 흘러 no-repeat가 다시 어긋난다). variantBase가 괄호(원어 병기)·'변종'·번호를 떼어 "스마일러(Smiler)"↔"스마일러(Smilers)" 철자 드리프트를 흡수.
+- **★메타 ID 일괄 스크럽(scrubMetaIds·2026-07)★**: role_A·zone_B·npc_C·clue_2·item_x가 플레이어 서술·NPC 대사에 누출되면 표시명(char_name·구역명·NPC명·아이템명)으로 결정 치환(metaIdMap). 미매핑은 접두어별 중립어. ★태그 파싱 이후 표시 문자열에만★ 적용(ZONE_UPDATE 등 라우팅 속성 zone_id는 미변경). 적용: deliverNarrative(본문+단체+목격)·NPC 직접대사(visible)·NPC 선연락(heard). NPC 대사 가독성: formatNpcSpeech가 통짜 감싼 따옴표 제거 + flushSpeechSeg가 짧은 문장을 폭 기준(약 44폭≈한글 22자) 한 줄로 묶어 토막화 방지(긴 문장은 홀로, 중간 절단 없음).
 - **★핵심 행동 원장(평가 근거·2026-07)★**: eventLog는 ContextCompressor(THRESHOLD 20·RECENT_KEEP 7)가 20개 초과 시
   앞배치를 Haiku 5줄로 요약→GM컨텍스트 주입 후 ★삭제★하므로, 종료 평가(buildFullEvalLog/buildCampaignEvalLog)는
   생존한 최근 ~7~20개만 봤다(초반 방화·구조·살해·각성 유실). → GameStateManager에 `keyActions`(현 스테이지)+
