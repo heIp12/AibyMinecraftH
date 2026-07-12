@@ -388,6 +388,26 @@ cooldown_turns: B~D급이므로 능동이면 0~2, 수동이면 반드시 0.
         };
     }
 
+    /** 생존 최저선(체력·정신력) — CharacterGenerator.ensureSurvivalFloor의 FLOOR와 동일한 3. */
+    public static final int VITAL_FLOOR = 3;
+
+    /**
+     * 이 특성을 선택/강화하면 체력 또는 정신력 ★최대치가 생존 최저선(3) 밑으로★ 떨어지는가.
+     * 강화(replacesId)는 원본 보정 제거분을 먼저 반영해 순증감으로 판정한다.
+     * 게임 로직(선택 차단)과 다이얼로그(선택창 비활성 표시)가 ★동일 기준★을 쓰도록 공용 static.
+     */
+    public static boolean dropsVitalsBelowFloor(PlayerData pd, TraitData t) {
+        if (pd == null || t == null) return false;
+        int hpMax = pd.hp[1], sanMax = pd.san[1];
+        if (t.replacesId != null) { // 강화: 원본 스탯 보정을 제거한 뒤 새 보정 적용
+            TraitData orig = pd.traits.stream().filter(x -> x.id.equals(t.replacesId)).findFirst().orElse(null);
+            if (orig != null) { hpMax -= orig.hp_max_add; sanMax -= orig.san_max_add; }
+        }
+        hpMax  += t.hp_max_add;
+        sanMax += t.san_max_add;
+        return hpMax < VITAL_FLOOR || sanMax < VITAL_FLOOR;
+    }
+
     // ──────────────────────────────────────────────────────────────
     //  특성 부여 / 제거
     // ──────────────────────────────────────────────────────────────

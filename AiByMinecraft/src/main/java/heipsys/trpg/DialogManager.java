@@ -865,7 +865,7 @@ public class DialogManager {
     //  특성 선택 다이얼로그
     // ──────────────────────────────────────────────────────────────
 
-    public void showTraitSelection(Player player, List<TraitData> choices, boolean canRemove,
+    public void showTraitSelection(Player player, PlayerData pd, List<TraitData> choices, boolean canRemove,
                                     Consumer<Integer> onSelect) {
         activeDialog.put(player.getUniqueId(), DialogState.TRAIT_SELECTION);
         traitChoices.put(player.getUniqueId(), new ArrayList<>(choices));
@@ -876,6 +876,7 @@ public class DialogManager {
             TraitData t = choices.get(i);
             final int idx = i + 1;
             boolean isEnhance = t.replacesId != null;
+            boolean blocked   = pd != null && TraitManager.dropsVitalsBelowFloor(pd, t); // 체력·정신력 최저선(3) 침범 → 선택 불가
 
             String tooltip = (isEnhance ? "기존 특성을 강화하여 영구 획득합니다.\n\n" : "")
                 + (t.description != null ? t.description : "");
@@ -884,11 +885,13 @@ public class DialogManager {
             }
             String sd = t.statDeltaPlain();
             if (!sd.isBlank()) tooltip += (tooltip.isBlank() ? "" : "\n\n") + "능력치 변화: " + sd;
+            if (blocked) tooltip += (tooltip.isBlank() ? "" : "\n\n") + "§c선택 불가 — 체력·정신력이 최저선(3) 밑으로 떨어집니다.";
 
             String label = (isEnhance ? "⬆ 강화 " : "✦ ") + "(" + t.grade + ") " + t.name
-                + (sd.isBlank() ? "" : "  [" + sd + "]");
+                + (sd.isBlank() ? "" : "  [" + sd + "]") + (blocked ? " §8(선택 불가)" : "");
             buttons.add(ActionButton.create(
-                Component.text(label, isEnhance ? NamedTextColor.GOLD : NamedTextColor.WHITE),
+                Component.text(label, blocked ? NamedTextColor.DARK_GRAY
+                                              : (isEnhance ? NamedTextColor.GOLD : NamedTextColor.WHITE)),
                 tooltip.isBlank() ? null : Component.text(tooltip),
                 200,
                 DialogAction.customClick((v, a) -> onSelect.accept(idx),
@@ -1019,7 +1022,7 @@ public class DialogManager {
      * 스테이지 클리어 후 특성 성장 3선택지 다이얼로그.
      * 1: 내 특성 강화  2: 맵 특성 영구 획득  3: 신규 특성
      */
-    public void showStageEndTraitChoice(Player player, TraitManager.StageEndChoices choices,
+    public void showStageEndTraitChoice(Player player, PlayerData pd, TraitManager.StageEndChoices choices,
                                          String srcMyName, String srcMapName,
                                          Consumer<Integer> onSelect) {
         activeDialog.put(player.getUniqueId(), DialogState.STAGE_END_TRAIT);
@@ -1028,15 +1031,18 @@ public class DialogManager {
 
         if (choices.myUpgrade() != null) {
             TraitData t = choices.myUpgrade();
+            boolean blk = pd != null && TraitManager.dropsVitalsBelowFloor(pd, t);
             String tooltip = "내 특성 강화\n"
                 + (srcMyName != null && !srcMyName.isBlank() ? "기존: " + srcMyName + "\n" : "")
                 + "강화 후: (" + t.grade + ") " + t.name + "\n"
                 + (t.description != null && !t.description.isBlank() ? t.description + "\n" : "")
                 + statLine(t)
                 + cooldownLine(choices.srcMyTrait(), t)
-                + "\n효과: " + t.effect;
+                + "\n효과: " + t.effect
+                + (blk ? "\n§c선택 불가 — 체력·정신력이 최저선(3) 밑으로 떨어집니다." : "");
             buttons.add(ActionButton.create(
-                Component.text("⬆ [" + t.grade + "] " + t.name + statSuffix(t), NamedTextColor.AQUA, TextDecoration.BOLD),
+                Component.text("⬆ [" + t.grade + "] " + t.name + statSuffix(t) + (blk ? " (선택 불가)" : ""),
+                    blk ? NamedTextColor.DARK_GRAY : NamedTextColor.AQUA, TextDecoration.BOLD),
                 Component.text(tooltip, NamedTextColor.GRAY),
                 200,
                 DialogAction.customClick((v, a) -> {
@@ -1048,15 +1054,18 @@ public class DialogManager {
 
         if (choices.mapUpgrade() != null) {
             TraitData t = choices.mapUpgrade();
+            boolean blk = pd != null && TraitManager.dropsVitalsBelowFloor(pd, t);
             String tooltip = "맵 특성 → 영구 획득\n"
                 + (srcMapName != null && !srcMapName.isBlank() ? "기존: " + srcMapName + "\n" : "")
                 + "강화 후: (" + t.grade + ") " + t.name + "\n"
                 + (t.description != null && !t.description.isBlank() ? t.description + "\n" : "")
                 + statLine(t)
                 + cooldownLine(choices.srcMapTrait(), t)
-                + "\n효과: " + t.effect;
+                + "\n효과: " + t.effect
+                + (blk ? "\n§c선택 불가 — 체력·정신력이 최저선(3) 밑으로 떨어집니다." : "");
             buttons.add(ActionButton.create(
-                Component.text("✦ [" + t.grade + "] " + t.name + statSuffix(t), NamedTextColor.GOLD, TextDecoration.BOLD),
+                Component.text("✦ [" + t.grade + "] " + t.name + statSuffix(t) + (blk ? " (선택 불가)" : ""),
+                    blk ? NamedTextColor.DARK_GRAY : NamedTextColor.GOLD, TextDecoration.BOLD),
                 Component.text(tooltip, NamedTextColor.GRAY),
                 200,
                 DialogAction.customClick((v, a) -> {
@@ -1068,13 +1077,16 @@ public class DialogManager {
 
         if (choices.newTrait() != null) {
             TraitData t = choices.newTrait();
+            boolean blk = pd != null && TraitManager.dropsVitalsBelowFloor(pd, t);
             String tooltip = "새로운 특성 획득\n"
                 + "(" + t.grade + ") " + t.name + "\n"
                 + (t.description != null && !t.description.isBlank() ? t.description + "\n" : "")
                 + statLine(t)
-                + "\n효과: " + t.effect;
+                + "\n효과: " + t.effect
+                + (blk ? "\n§c선택 불가 — 체력·정신력이 최저선(3) 밑으로 떨어집니다." : "");
             buttons.add(ActionButton.create(
-                Component.text("✨ [" + t.grade + "] " + t.name + statSuffix(t), NamedTextColor.GREEN, TextDecoration.BOLD),
+                Component.text("✨ [" + t.grade + "] " + t.name + statSuffix(t) + (blk ? " (선택 불가)" : ""),
+                    blk ? NamedTextColor.DARK_GRAY : NamedTextColor.GREEN, TextDecoration.BOLD),
                 Component.text(tooltip, NamedTextColor.GRAY),
                 200,
                 DialogAction.customClick((v, a) -> {

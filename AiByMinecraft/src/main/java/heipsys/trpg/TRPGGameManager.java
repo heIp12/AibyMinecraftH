@@ -3975,8 +3975,8 @@ public class TRPGGameManager {
         TraitData selected = choices.get(idx - 1);
         PlayerData pd = state.getPlayer(player);
         if (pd != null && traitDropsVitalsTooLow(pd, selected)) {
-            player.sendMessage("§c[선택 불가] 이 특성은 체력/정신력을 1 이하로 떨어뜨려 선택할 수 없습니다. 다른 특성을 고르세요.");
-            dialogMan.showTraitSelection(player, choices, !pd.traits.isEmpty(),
+            player.sendMessage("§c[선택 불가] 이 특성은 체력/정신력을 최저선(3) 밑으로 떨어뜨려 선택할 수 없습니다. 다른 특성을 고르세요.");
+            dialogMan.showTraitSelection(player, pd, choices, !pd.traits.isEmpty(),
                 i -> handleTraitSelect(player, i)); // 선택지 유지(재표시)
             return;
         }
@@ -4034,9 +4034,9 @@ public class TRPGGameManager {
             default -> null;
         };
         if (picked != null && traitDropsVitalsTooLow(pd, picked)) {
-            player.sendMessage("§c[선택 불가] 이 특성은 체력/정신력을 1 이하로 떨어뜨려 선택할 수 없습니다. 다른 특성을 고르세요.");
+            player.sendMessage("§c[선택 불가] 이 특성은 체력/정신력을 최저선(3) 밑으로 떨어뜨려 선택할 수 없습니다. 다른 특성을 고르세요.");
             String[] names = pendingStageEndNames.getOrDefault(player.getUniqueId(), new String[]{null, null});
-            dialogMan.showStageEndTraitChoice(player, choices, names[0], names[1],
+            dialogMan.showStageEndTraitChoice(player, pd, choices, names[0], names[1],
                 i -> handleStageEndTraitSelect(player, pd, choices, i)); // 선택지 유지(재표시)
             return;
         }
@@ -4091,12 +4091,12 @@ public class TRPGGameManager {
         if (pd == null) return;
         if (choices != null) {
             String[] names = pendingStageEndNames.getOrDefault(uuid, new String[]{null, null});
-            dialogMan.showStageEndTraitChoice(player, choices, names[0], names[1],
+            dialogMan.showStageEndTraitChoice(player, pd, choices, names[0], names[1],
                 idx -> handleStageEndTraitSelect(player, pd, choices, idx));
         } else {
             List<TraitData> traitList = dialogMan.getTraitChoices(player);
             if (!traitList.isEmpty()) {
-                dialogMan.showTraitSelection(player, traitList, !pd.traits.isEmpty(),
+                dialogMan.showTraitSelection(player, pd, traitList, !pd.traits.isEmpty(),
                     idx -> handleTraitSelect(player, idx));
             } else {
                 player.sendMessage("§7특성 선택 정보가 만료되었습니다. 관리자에게 문의하세요.");
@@ -7235,7 +7235,7 @@ public class TRPGGameManager {
                         String srcMapName = choices.mapUpgrade() != null && choices.mapUpgrade().replacesId != null
                             ? traitMan.getTrait(playerData, choices.mapUpgrade().replacesId)
                                       .map(t -> t.name).orElse("") : null;
-                        dialogMan.showStageEndTraitChoice(p, choices, srcMyName, srcMapName,
+                        dialogMan.showStageEndTraitChoice(p, playerData, choices, srcMyName, srcMapName,
                             idx -> handleStageEndTraitSelect(p, playerData, choices, idx));
                         pendingTraitSelect.add(p.getUniqueId());
                         pendingStageEndChoices.put(p.getUniqueId(), choices);
@@ -8498,20 +8498,10 @@ public class TRPGGameManager {
         gameLogger.logAbilityResult(pd != null ? pd.gmDisplayName() : (p != null ? p.getName() : ""), header, body);
     }
 
-    /**
-     * 이 특성을 선택/강화하면 체력 또는 정신력 최대치가 1 이하로 떨어지는가.
-     * 강화(replacesId)는 원본 보정 제거분을 먼저 반영해 순증감으로 판정한다.
-     */
+    /** 이 특성을 선택/강화하면 체력·정신력 최대치가 생존 최저선(3) 밑으로 떨어지는가.
+     *  게임 로직·다이얼로그 공용 기준(TraitManager.dropsVitalsBelowFloor)에 위임. */
     private boolean traitDropsVitalsTooLow(PlayerData pd, TraitData t) {
-        if (pd == null || t == null) return false;
-        int hpMax = pd.hp[1], sanMax = pd.san[1];
-        if (t.replacesId != null) { // 강화: 원본 스탯 보정을 제거한 뒤 새 보정 적용
-            TraitData orig = pd.traits.stream().filter(x -> x.id.equals(t.replacesId)).findFirst().orElse(null);
-            if (orig != null) { hpMax -= orig.hp_max_add; sanMax -= orig.san_max_add; }
-        }
-        hpMax  += t.hp_max_add;
-        sanMax += t.san_max_add;
-        return hpMax <= 1 || sanMax <= 1;
+        return TraitManager.dropsVitalsBelowFloor(pd, t);
     }
 
     // ──────────────────────────────────────────────────────────────
