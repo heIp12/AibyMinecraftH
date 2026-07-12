@@ -805,9 +805,7 @@ critical NPC는 한자리 고정이 아니다 — 메인/사이드 사건에 참
   ],
   "daily_prologue": {
     "turns": 5,
-    "opening": "calm",
-    "role_placements": [],
-    "foreshadowing": []
+    "opening": "calm"
   },
   "meeting_design": {
     "physically_possible": true,
