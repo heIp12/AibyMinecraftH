@@ -3662,6 +3662,15 @@ public class TRPGGameManager {
                         state.markFactDiscovered("name");
                     }
                 }
+                // ★핵심 행동 기록(요청)★: GM이 결정적 행동을 key_action으로 표기하면 압축 무관 영속 원장에 남겨
+                //   종료 평가의 1순위 근거로 쓴다(최근 20개만 보던 평가가 초반 방화·구조·살해·각성을 놓치던 문제 보완).
+                if (update.has("key_action") && !update.get("key_action").isJsonNull()) {
+                    String ka = update.get("key_action").getAsString().trim();
+                    if (!ka.isEmpty()) {
+                        state.addKeyAction(pd.gmDisplayName(), ka);
+                        gameLogger.logEvent("[핵심행동] " + pd.gmDisplayName() + " — " + ka); // 뷰어 타임라인 가시화
+                    }
+                }
                 // G10: 교차검증 등으로 ★확정된★ 사실은 '핵심 정보'(keyFacts, 전화번호 등과 함께)에 올린다.
                 //      조종(꼭두각시) 중에는 괴담의 조작일 수 있어 올리지 않는다.
                 if (update.has("key_fact") && !update.get("key_fact").isJsonNull()
@@ -7229,6 +7238,9 @@ public class TRPGGameManager {
         }
 
         String fullLog = campaignWide ? state.buildCampaignEvalLog() : state.buildFullEvalLog();
+        // ★핵심 행동 원장(요청)★: eventLog는 20개 초과 시 앞부분이 요약·삭제되어 종료 평가가 최근 ~20개만 봤다.
+        //   방화·구조·살해·자기희생·본질 해결·아군 각성 같은 ★결정적 행동★은 압축 무관 원장에 남으니, 평가의 1순위 근거로 준다.
+        String keyLog = state.buildKeyActionLog(campaignWide);
         // ★평가 기록 보강(#230)★: 전역 eventLog가 비거나 얇을 때만, 각 플레이어 개인 행동로그(narrativeLog)로
         //   per-player 근거를 보강한다(narrativeLog는 매 행동마다 TurnManager가 쌓아 eventLog 유실과 무관).
         //   전역 로그가 충분하면 붙이지 않는다(정상 평가의 토큰 비용 불변).
@@ -7243,7 +7255,7 @@ public class TRPGGameManager {
                 for (String ln : nl) perPlayer.append("  ").append(ln).append("\n");
             }
         }
-        boolean haveAny = !fullLog.isBlank() || perPlayer.length() > 0;
+        boolean haveAny = !fullLog.isBlank() || perPlayer.length() > 0 || !keyLog.isBlank();
 
         // ★평가 정합성 — 스테이지 평균으로 정규화★: 최종 총평(campaignWide)은 스테이지별 평가 등급 점수 누적치
         //   (stageGradeSum, 비노출 내부값)를 ★스테이지 수로 나눈 평균★을 권위 근거로 받는다. 그냥 누적 총점을 쓰면
@@ -7271,6 +7283,9 @@ public class TRPGGameManager {
         String prompt = "게임 클리어 등급: " + clearGrade + "\n\n"
             + "플레이어 목록:\n" + playerInfo + "\n"
             + stageBasis
+            + (keyLog.isBlank() ? "" : "★핵심 행동 기록(게임 전체·압축되지 않음 — 평가의 ★1순위 근거★)★:\n" + keyLog
+                + "\n※ 위 기록은 게임 내내 벌어진 결정적 행동(방화·구조·살해·자기희생·본질 해결·아군 각성·중대 실책 등)을 빠짐없이 모은 것이다"
+                + "(아래 '전체 행동 기록'은 최근 장면만 남고 초반이 압축돼 사라졌을 수 있다). ★평가는 이 핵심 행동을 최우선 근거로 삼고, 아래 로그로 보완하라.★\n\n")
             + "전체 행동 기록:\n" + (fullLog.isBlank() ? "(전역 기록 없음 — 아래 개인 행동로그로 평가)" : fullLog) + "\n\n"
             + (perPlayer.length() > 0 ? "개인별 행동로그:\n" + perPlayer + "\n" : "")
             + (haveAny ? "" : "※ 상세 행동 기록이 유실됐을 수 있다. 그럴 땐 위 '플레이어 목록'의 생존/상태·배역만으로 ★최대한★ 평가하라 — ★절대 '기록이 없어 평가 불가'라 답하지 마라★. 최소 참여=B, 무행동 추정=C로 매기고 evaluations를 반드시 채워라.\n\n")
@@ -12953,6 +12968,7 @@ public class TRPGGameManager {
                     ? "§4동물의 몸마저 스러집니다. 이번엔 정말 끝입니다..."
                     : "§4치명상으로 목숨을 잃었습니다... §7(부활 능력으로만 되살아날 수 있습니다)");
                 ai.injectGmSystem("[사망] " + commDisplayName(pd) + "이(가) 체력이 다해 사망했다. 서술에 반영하라(부활 능력 외엔 복구 불가).");
+                state.addKeyAction(pd.gmDisplayName(), "사망(체력 소진)"); // ★핵심 행동 원장 안전망★ — GM이 key_action을 빠뜨려도 사망 사실은 평가에 남는다
             }
         } else if (!"faint".equals(pd.status)) {
             // 체력 1 → 행동불가(기절). ★피해가 클수록 오래 쓰러져 있다(2~5턴).★

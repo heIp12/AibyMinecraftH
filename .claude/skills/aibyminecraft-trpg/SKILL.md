@@ -145,6 +145,15 @@ description: >-
   상시 갱신(효율 될 만한 지식은 항상 등록).
 
 ## 최근 추가된 아키텍처 사실 (회귀 방지)
+- **★핵심 행동 원장(평가 근거·2026-07)★**: eventLog는 ContextCompressor(THRESHOLD 20·RECENT_KEEP 7)가 20개 초과 시
+  앞배치를 Haiku 5줄로 요약→GM컨텍스트 주입 후 ★삭제★하므로, 종료 평가(buildFullEvalLog/buildCampaignEvalLog)는
+  생존한 최근 ~7~20개만 봤다(초반 방화·구조·살해·각성 유실). → GameStateManager에 `keyActions`(현 스테이지)+
+  `campaignKeyActions`(전 스테이지, 압축 무관 영속) 원장 신설: `addKeyAction(actor,deed)`("[S{room}·T{turn}] 이름 — 행동",
+  개행제거·120자캡·직전중복차단), `buildKeyActionLog(campaignWide)`. archiveStageLog가 eventLog와 동일 수명주기로
+  campaign 이관+clear, 스냅샷 save/load(String[]), 새 게임 reset에서 clear. 기록 경로 2개: ①GM이 STATE_UPDATE의
+  ★key_action★ 필드로 결정적 행동 표기(PromptBuilder: 방화·살해·구조·자기희생·본질규명·각성·배신 등만, 이름 빼고
+  행동만, 0~2개/회차) → applyStateUpdate가 addKeyAction+logEvent(뷰어 [핵심행동] 배지). ②안전망: checkHpCollapse
+  사망 확정 시 엔진이 "사망(체력 소진)" 자동 기록. 평가 프롬프트가 이 원장을 ★1순위 근거★로 받는다(runScenarioEvaluation).
 - **★GPT 3자 조율 감사 A~K 전면 구현(2026-07, 20b35ec·7fcc03b·ef9efff·42fc42e)★**:
   ▸**B 결과 무결성(TRPGGameManager)**: `unresolvedDecisiveDice`(전역 결정타 게이트 — 미해결이면 어떤
   <CLEAR>든 `heldCrossClear`로 보류) + `resolveDecisiveDice`(실패→폐기+교정 주입 / 성공&HORROR→적용 /

@@ -122,6 +122,13 @@ public class GameStateManager {
     private final List<EventLogEntry>            eventLog   = Collections.synchronizedList(new ArrayList<>());
     // 캠페인(전 스테이지) 로그 — eventLog는 스테이지마다 비워지므로, 게임 종료 '전 스테이지 총평'용으로 따로 누적(최근 300개 캡). 새 게임 시작 시만 비운다.
     private final List<EventLogEntry>            campaignLog = Collections.synchronizedList(new ArrayList<>());
+    /** ★핵심 행동 기록★(요청): 게임 내내 벌어진 ★결정적 행동★(방화·구조·살해·자기희생·본질 해결·아군 각성·중대 실책 등)을
+     *  ★압축과 무관하게 영속★ 누적한다 — eventLog는 20개 초과 시 앞부분이 요약·삭제되어 종료 평가가 최근 ~20개만 보고
+     *  초반 활약이 사라지던 문제 보완. 스테이지 종료 시 campaignKeyActions로 이관, 스냅샷에 저장. */
+    private final List<String> keyActions         = Collections.synchronizedList(new ArrayList<>());
+    private final List<String> campaignKeyActions = Collections.synchronizedList(new ArrayList<>());
+    private static final int KEY_ACTIONS_STAGE_CAP = 120;   // 현 스테이지 상한(폭주 방어)
+    private static final int KEY_ACTIONS_CAMPAIGN_CAP = 400; // 전 스테이지 누적 상한
     /** 등장(spawn) 여부 판별 — TRPGGameManager의 spawnedPlayers를 단일 출처로 주입. 미설정이면 전원 등장으로 간주. */
     private java.util.function.Predicate<UUID> spawnedCheck = u -> true;
     public void setSpawnedCheck(java.util.function.Predicate<UUID> c) { if (c != null) spawnedCheck = c; }
@@ -148,6 +155,7 @@ public class GameStateManager {
         npcDispositions.clear();   // ★#266★ 새 판/스테이지/재도전 = 새 등장인물 → 종결 상태도 초기화
         eventLog.clear();
         campaignLog.clear(); // 새 게임 시작 — 캠페인(전 스테이지) 로그도 초기화
+        keyActions.clear(); campaignKeyActions.clear(); // 핵심 행동 원장도 새 게임에서 초기화
         threat = 0; anger = 0; angerTarget = ""; commTamperMode = 0; // 괴담 세력 게이지 + 통신변조 스위치 초기화
         loadTimelineConfig(gdam);
     }
@@ -248,6 +256,8 @@ public class GameStateManager {
         o.add("players", ps);
         synchronized (eventLog) { o.add("eventLog", SNAP_GSON.toJsonTree(eventLog)); } // 종료 평가·최근 장면 맥락
         synchronized (campaignLog) { o.add("campaignLog", SNAP_GSON.toJsonTree(campaignLog)); } // 전 스테이지 총평 로그(이어하기 시 보존)
+        synchronized (keyActions) { o.add("keyActions", SNAP_GSON.toJsonTree(keyActions)); } // ★핵심 행동 원장(압축 무관·평가 1순위)★ 영속
+        synchronized (campaignKeyActions) { o.add("campaignKeyActions", SNAP_GSON.toJsonTree(campaignKeyActions)); }
         JsonObject tko = new JsonObject();
         timeKnownOverride.forEach((u, b) -> tko.addProperty(u.toString(), b));
         o.add("timeKnownOverride", tko); // 플레이어별 시간 인지 토글(GM TIME_VISIBLE)
@@ -326,6 +336,20 @@ public class GameStateManager {
             if (o.has("campaignLog") && o.get("campaignLog").isJsonArray()) {
                 EventLogEntry[] arr = SNAP_GSON.fromJson(o.get("campaignLog"), EventLogEntry[].class);
                 if (arr != null) for (EventLogEntry el : arr) if (el != null) campaignLog.add(el);
+            }
+        }
+        synchronized (keyActions) {  // ★핵심 행동 원장★ 복원(이어하기 시 초반 활약 보존)
+            keyActions.clear();
+            if (o.has("keyActions") && o.get("keyActions").isJsonArray()) {
+                String[] arr = SNAP_GSON.fromJson(o.get("keyActions"), String[].class);
+                if (arr != null) for (String s : arr) if (s != null) keyActions.add(s);
+            }
+        }
+        synchronized (campaignKeyActions) {
+            campaignKeyActions.clear();
+            if (o.has("campaignKeyActions") && o.get("campaignKeyActions").isJsonArray()) {
+                String[] arr = SNAP_GSON.fromJson(o.get("campaignKeyActions"), String[].class);
+                if (arr != null) for (String s : arr) if (s != null) campaignKeyActions.add(s);
             }
         }
         justFiredEvents.clear(); // 소비성 버퍼(스냅샷에 없음) — 재사용 인스턴스에 이전 사건이 잔류하지 않도록 정리
@@ -878,6 +902,30 @@ public class GameStateManager {
         }
     }
 
+    /** ★핵심 행동 1건 기록★ — 결정적 행동을 영속 원장에 남긴다(압축 무관). actor·deed는 사람이 읽는 텍스트(메타·개행 금지).
+     *  형식: "[S{스테이지}·{턴}] {행위자} — {행동}". 중복(직전과 동일)·빈값은 무시. */
+    public void addKeyAction(String actor, String deed) {
+        if (deed == null) return;
+        String d = deed.replaceAll("[\\r\\n]+", " ").trim();
+        if (d.isEmpty()) return;
+        if (d.length() > 120) d = d.substring(0, 120).trim() + "…";
+        String a = (actor == null ? "" : actor.trim());
+        String line = "[S" + Math.max(1, roomNumber) + "·T" + currentTurn + "] " + (a.isEmpty() ? "" : a + " — ") + d;
+        synchronized (keyActions) {
+            if (!keyActions.isEmpty() && keyActions.get(keyActions.size() - 1).equals(line)) return; // 직전과 동일 중복 방지
+            keyActions.add(line);
+            while (keyActions.size() > KEY_ACTIONS_STAGE_CAP) keyActions.remove(0);
+        }
+    }
+
+    /** 평가용 핵심 행동 원장. campaignWide=true면 전 스테이지(campaignKeyActions)+현재까지, 아니면 현재 스테이지만. */
+    public String buildKeyActionLog(boolean campaignWide) {
+        List<String> all = new ArrayList<>();
+        if (campaignWide) synchronized (campaignKeyActions) { all.addAll(campaignKeyActions); }
+        synchronized (keyActions) { all.addAll(keyActions); }
+        return String.join("\n", all);
+    }
+
     public List<EventLogEntry> getLog()               { return eventLog; }
     public int                 getLogSize()            { synchronized (eventLog) { return eventLog.size(); } }
 
@@ -1161,6 +1209,14 @@ public class GameStateManager {
     private void archiveStageLog() {
         synchronized (eventLog)    { campaignLog.addAll(eventLog); }
         synchronized (campaignLog) { while (campaignLog.size() > 300) campaignLog.remove(0); }
+        // ★핵심 행동 원장★도 캠페인으로 이관(총평용) 후 현 스테이지 목록 비움 — eventLog와 동일 수명주기.
+        synchronized (keyActions) {
+            synchronized (campaignKeyActions) {
+                campaignKeyActions.addAll(keyActions);
+                while (campaignKeyActions.size() > KEY_ACTIONS_CAMPAIGN_CAP) campaignKeyActions.remove(0);
+            }
+            keyActions.clear();
+        }
     }
 
     /** 게임 종료 '전 스테이지 총평'용 — 이전 스테이지(campaignLog) + 현재 스테이지(eventLog)를 합쳐 평가 로그 생성. */
