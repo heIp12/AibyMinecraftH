@@ -1356,6 +1356,26 @@ public class AiManager {
         return send(model, system, messages, maxTokens, 0, false, effort);
     }
 
+    /** ★시스템 프롬프트 캐시 분할 마커★ — 이 마커 ★앞★(안정 프리픽스: 인격·규칙 코어)만 cache_control(1h)로 캐시하고,
+     *  ★뒤★(동적 꼬리: 세계 현황·문맥별 지식 선별·게이트 상태)는 캐시하지 않는다. NPC처럼 시스템에 상태가 섞여
+     *  '매 호출 유니크 시스템'이 되는 경로는, 예전엔 전체를 1h 캐시로 마킹해 ★매번 캐시 쓰기(2×)만 반복하고 히트 0★이었다
+     *  → 안정부는 0.1× 재사용, 동적부만 정가(1×). Claude 외 provider는 마커를 개행으로 치환해 이어붙인다
+     *  (OpenAI 자동 프리픽스 캐싱·Gemini implicit도 '안정부가 앞'이라 이 배치 자체가 유리). */
+    public static final String SYS_CACHE_SPLIT = "\n<<SYS_CACHE_SPLIT>>\n";
+
+    /** 시스템 문자열을 [안정 프리픽스, 동적 꼬리]로 분할. 마커가 없으면 [전체, null](현행 동작 = 전체 캐시),
+     *  안정부가 비면 분할 무의미 → [전체(마커 제거), null]. (send 밖 static — 단위 검증 가능) */
+    static String[] splitSystemForCache(String system) {
+        if (system == null) return new String[]{null, null};
+        int i = system.indexOf(SYS_CACHE_SPLIT);
+        if (i < 0) return new String[]{system, null};
+        String stable = system.substring(0, i);
+        String dyn = system.substring(i + SYS_CACHE_SPLIT.length());
+        if (stable.isBlank()) return new String[]{dyn, null};
+        if (dyn.isBlank())    return new String[]{stable, null};
+        return new String[]{stable, dyn};
+    }
+
     /** cacheHistory=true면 마지막 메시지에 cache_control을 달아 히스토리 프리픽스를 캐시(멀티턴 GM 전용). */
     private String send(String model, String system, List<JsonObject> messages, int maxTokens, boolean cacheHistory)
             throws Exception {
@@ -1399,16 +1419,24 @@ public class AiManager {
                     req.add("output_config", oc);
                 }
                 if (system != null && !system.isBlank()) {
-                    // system을 cache_control 포함 배열로 전송 → 캐시 히트 시 입력 토큰 ~90% 절약
+                    // system을 cache_control 포함 배열로 전송 → 캐시 히트 시 입력 토큰 ~90% 절약.
+                    // ★SYS_CACHE_SPLIT 분할★: 안정 프리픽스만 캐시 마킹, 동적 꼬리는 비캐시 블록(있을 때만) — 유니크 시스템의 2× 쓰기 churn 방지.
+                    String[] sysParts = splitSystemForCache(system);
                     JsonObject sysBlock = new JsonObject();
                     sysBlock.addProperty("type", "text");
-                    sysBlock.addProperty("text", system);
+                    sysBlock.addProperty("text", sysParts[0]);
                     JsonObject cacheCtrl = new JsonObject();
                     cacheCtrl.addProperty("type", "ephemeral");
                     cacheCtrl.addProperty("ttl", "1h"); // 1시간 TTL(GA·헤더 불필요): TRPG는 턴 간격(수 분)이 기본 5분 캐시를 넘겨 매 턴 시나리오·규칙 프리픽스를 재처리하던 문제 → 세션 내내 유지.
                     sysBlock.add("cache_control", cacheCtrl);
                     JsonArray sysArr = new JsonArray();
                     sysArr.add(sysBlock);
+                    if (sysParts[1] != null) {
+                        JsonObject dynBlock = new JsonObject(); // 동적 꼬리 — 캐시 마킹 없음(정가 1×; 예전엔 여기까지 2× 쓰기)
+                        dynBlock.addProperty("type", "text");
+                        dynBlock.addProperty("text", sysParts[1]);
+                        sysArr.add(dynBlock);
+                    }
                     req.add("system", sysArr);
                 }
 
@@ -1448,7 +1476,7 @@ public class AiManager {
                 JsonArray contents = new JsonArray();
 
                 if (system != null && !system.isBlank()) {
-                    contents.add(geminiMsg("user", "[시스템 지침] " + system));
+                    contents.add(geminiMsg("user", "[시스템 지침] " + system.replace(SYS_CACHE_SPLIT, "\n"))); // 마커 제거(안정부가 앞 = implicit 캐싱에도 유리)
                 }
                 for (JsonObject m : messages) {
                     String role = "assistant".equals(m.get("role").getAsString()) ? "model" : "user";
@@ -1476,7 +1504,7 @@ public class AiManager {
                     if (!oe.isEmpty()) req.addProperty("reasoning_effort", oe);
                 }
                 JsonArray arr = new JsonArray();
-                if (system != null && !system.isBlank()) arr.add(msg("system", system));
+                if (system != null && !system.isBlank()) arr.add(msg("system", system.replace(SYS_CACHE_SPLIT, "\n"))); // 마커 제거(OpenAI 자동 프리픽스 캐싱은 앞부분 안정만으로 이득)
                 arr.addAll(gson.toJsonTree(messages).getAsJsonArray());
                 req.add("messages", arr);
                 body = req.toString();

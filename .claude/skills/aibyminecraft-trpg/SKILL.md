@@ -140,6 +140,12 @@ description: >-
   (extractAndStoreInfo)은 같은 서술이면 ★1회 호출을 행동자+단체 동료가 공유★하고 초단문(<50자)은 스킵.
   자율 NPC sparse 트리거·코드 판정(이동/통신/시계)·pendingSystemNotes 캐시 보존은 기구현 — 프롬프트를 자주
   고치면 GM 시스템 캐시가 재생성되니(1h TTL 2×) 안정 프리픽스를 흔들지 말 것.
+- **시스템 캐시 분할(AiManager.SYS_CACHE_SPLIT)**: send()는 시스템에 이 마커가 있으면 ★앞(안정 코어)만
+  cache_control(1h)★, 뒤(동적 꼬리)는 비캐시 블록으로 보낸다(비Claude는 마커를 개행 치환). NPC 프롬프트 두 경로
+  (buildNpcSystemPrompt·buildNpcDirectConvPrompt)가 npcCorePrompt 뒤에 마커를 넣음 — featureBlocks(세계 현황·
+  문맥별 지식 선별·게이트)가 호출마다 달라 예전엔 전체 캐시 마킹이 '매번 쓰기 2×·히트 0' churn이었다.
+  ★시스템에 동적 상태를 넣는 새 경로를 만들면 반드시 마커 뒤에 넣을 것★(마커 없으면 전체 캐시 = 종전 동작).
+  GM 서술 분량 규칙은 PromptBuilder '### 서술 분량'(장면 중요도 배분·같은 장소 재묘사 금지·행동 재낭독 금지).
 
 ## ★ 환경·도구 제약 (효율 메모 — 꼭 확인)
 - **Workflow(다중에이전트 울트라코드)는 헤드리스 자율 실행에서 launch 실패**: 권한 스트림이 닫혀 1-에이전트

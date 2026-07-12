@@ -9524,6 +9524,10 @@ public class TRPGGameManager {
     /** 자율 행동용 시스템 프롬프트 = CORE + 캐릭터 데이터 + 예정표 + 자율 출력 규칙. */
     private String buildNpcSystemPrompt(JsonObject npcObj, String context) {
         StringBuilder sb = new StringBuilder(npcCorePrompt(npcObj));
+        // ★캐시 분할★: 여기까지(코어 인격·말투·규칙)는 같은 NPC의 호출 간 안정 → 1h 캐시(0.1× 재사용).
+        //   아래 featureBlocks는 세계 현황·문맥별 지식 선별·게이트 상태가 섞여 호출마다 달라질 수 있어 비캐시(정가).
+        //   예전엔 전체가 캐시 마킹돼 유니크 시스템마다 캐시 쓰기 2×만 반복했다.
+        sb.append(AiManager.SYS_CACHE_SPLIT);
         npcFeatureBlocks(sb, npcObj, context);
         // 자율 실행 타이밍 — 위 '현재 상태(schedule)'의 예정을 자율적으로 실행할 때만 적용(대화 모드엔 불필요).
         if (npcObj.has("schedule") && npcObj.get("schedule").isJsonArray() && npcObj.getAsJsonArray("schedule").size() > 0) {
@@ -11958,6 +11962,7 @@ public class TRPGGameManager {
         String mname = (media == null || media.isBlank()) ? (written ? "필담" : "통화") : media; // 구체 매체 이름(전서구·통신구·서찰·필담…)
         boolean paperInPerson = written && inPerson; // 면전 필담(같은 공간에서 글로)
         StringBuilder sb = new StringBuilder(npcCorePrompt(npcObj));
+        sb.append(AiManager.SYS_CACHE_SPLIT); // ★캐시 분할★ — 코어(안정)만 1h 캐시, 아래 상태·지식 선별은 비캐시(buildNpcSystemPrompt와 동일 근거)
         npcFeatureBlocks(sb, npcObj, context); // CORE + 캐릭터 데이터(현재상태·성격·목적·기억). 자율 전용 실행규칙·3인칭·문장수는 상속 안 함
         sb.append("\n## 직접 대화 모드").append(viaCall ? " (원격 통화 — " + mname + ")" : paperInPerson ? " (필담 — 면전에서 조용히 글로)" : written ? " (서면 — " + mname + ")" : " (대면 — 같은 공간)").append("\n");
         sb.append("플레이어가 네게 직접 말을 걸었다. ★너는 " + name + " 본인이다 — 관찰당하는 인물이 아니라 행동하는 당사자다. 1인칭으로 직접 말하고 행동하라(\"" + name + "은(는) …한다\"처럼 소설 화자가 3인칭으로 너를 묘사하지 마라).★\n");
