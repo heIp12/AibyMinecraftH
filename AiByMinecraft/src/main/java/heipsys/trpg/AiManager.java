@@ -336,11 +336,14 @@ public class AiManager {
                                        : new double[]{1, 5};
         // OpenAI (2026 기준; gpt-5 계열 우선, 소형/특수 변형 먼저 판별)
         if (m.contains("4o-mini") || m.contains("4.1-nano")) return new double[]{0.15, 0.6}; // 레거시 초저가
-        if (m.contains("gpt-5") && m.contains("pro")) return new double[]{30, 180};          // gpt-5.x-pro
-        if (m.contains("nano"))    return new double[]{0.20, 1.25};   // gpt-5.x-nano
-        if (m.contains("mini"))    return new double[]{0.75, 4.5};    // gpt-5.x-mini
-        if (m.contains("gpt-5.5") || m.contains("gpt-5-5")) return new double[]{5, 30};      // 플래그십
-        if (m.contains("gpt-5"))   return new double[]{2.5, 15};      // gpt-5 / 5.1 / 5.4 표준급
+        boolean gpt5up = m.contains("gpt-5") || m.startsWith("gpt-6") || m.startsWith("gpt6") || m.startsWith("gpt-7");
+        if (gpt5up && m.contains("pro")) return new double[]{30, 180};                       // gpt-5/6.x-pro
+        if (m.contains("nano"))    return new double[]{0.20, 1.25};   // *-nano
+        if (m.contains("mini"))    return new double[]{0.75, 4.5};    // *-mini
+        // ★버전 기반 티어(문자열 하드코딩 금지)★: gpt-5.5+ 및 차세대(gpt-6/7)는 플래그십({5,30}), gpt-5.0~5.4는 표준({2.5,15}).
+        //   예전엔 "gpt-5.5" ★문자열★만 플래그십이라, 자동탐지가 HIGH를 gpt-5.6 등 ★더 최신★으로 잡으면 그 모델이 아래
+        //   generic({2.5,15})으로 새어 ★HIGH가 MEDIUM(gpt-5.5)보다 싸 보이는 역전★이 났다(선택화면 비용 뒤집힘). 버전으로 판정해 해소.
+        if (gpt5up) return parseVer(m) >= 5.05 ? new double[]{5, 30} : new double[]{2.5, 15};
         if (m.contains("o4") || m.contains("o3") || m.contains("o1")) return new double[]{2.2, 8.8}; // o-시리즈(추론)
         if (m.contains("gpt-4.1")) return new double[]{2, 8};
         if (m.contains("gpt-4o"))  return new double[]{2.5, 10};
