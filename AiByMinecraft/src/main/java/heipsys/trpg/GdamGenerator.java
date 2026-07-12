@@ -1933,13 +1933,19 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
                 recordNames(usedNames);
                 // ★constraints 포함★ — 아이템 청크가 gated_zones(잠긴 문 목록)를 봐야 '문마다 여는 열쇠 짝'을 실제로
                 //   만들 수 있다(예전엔 entity만 줘서 어느 문이 잠겼는지 모른 채 열쇠를 짓게 했다 — 짝 규칙이 공염불).
-                String itemCtx = contextJson(core, roles, "entity", "constraints", "zones"); // ★#1★ 실제 zones를 봐야 열쇠·아이템이 존재하는 구역에 배치
+                // ★계약 struct→items★: world_rules(loophole/collapse_condition/solution)·timeline까지 넘긴다 — 아이템 청크가
+                //   ★재분할 전엔 못 보던★ 정답·붕괴조건·사건 시점을 알아야 (1)collapse_condition을 사소하게 우회하는 '만능 아이템'을
+                //   안 만들고 (2)후반 사건으로만 열리는 정보를 초반 start_item으로 오배치하지 않는다. items=마지막 청크라 역류 스포일러 없음.
+                String itemCtx = contextJson(core, roles, "entity", "constraints", "zones", "world_rules", "timeline");
 
                 String itemsPrompt = head
                     + "## 이미 확정된 내용(참고, 일관성 유지)\n" + itemCtx + "\n\n"
                     + npcRosterBrief(core) // ★#A★ NPC 요약 — 'NPC가 소지'로 배치할 때 실존 NPC·위치와 정합하게
+                    + sealedClueDigest(core) // ★계약 world→items★: 배치 단서 봉인 요약 — 중복·모순·capstone 우회 방지
                     + "위 스키마의 key_items 배열만 JSON으로 출력하라. 형식: {\"key_items\":[ ... ]}\n"
                     + "글이 적힌 아이템(책·쪽지·지도)은 content 본문을 반드시 채운다. 다른 최상위 필드는 출력하지 마라.\n"
+                    + "★단서 정합(위 '배치된 단서 봉인 요약' 준수)★: 글 아이템 content는 이미 배치된 단서와 ★같은 정보를 반복하거나(중복) 어긋나게(모순)★ 쓰지 마라 — 단서를 보완·확장하되 겹치지 않게. ★capstone(종결) 단서를 우회하는 대체 해결 아이템을 만들지 마라★(그 단서는 사건 근원해결로만 열리는 하드 조각이다).\n"
+                    + "★해법 비노출(중요)★: 위 world_rules의 정답·붕괴조건(collapse_condition)·해결 방법을 ★아이템 content(책·쪽지 본문)에 그대로 적지 마라★ — 플레이어가 초반에 주워 읽으면 스포일러다. 이 정보는 '해법을 무력화하는 만능 아이템을 안 만들기' 위한 참고일 뿐이다.\n"
                     + "★잠금-열쇠 짝(필수)★: 위 constraints.gated_zones의 ★각 항목마다★ 그 문을 여는 열쇠 1개를 key_items에 반드시 포함하라 — item_params.unlocks에 그 항목의 zone 값을 ★그대로 복사★한다(열쇠 없는 잠금은 영영 못 여는 문이 된다). 반대로 gated_zones에 없는 zone을 여는 unlocks 열쇠는 만들지 마라(잠기지 않은 문의 열쇠 = 무용지물).\n"
                     + "★NPC 소지 배치: 아이템(특히 열쇠)을 NPC가 지니게 하려면 location에 ★위 NPC 요약의 실존 NPC 이름★을 그대로 써라(예: \"경비원 박씨가 소지\") — 존재하지 않는 인물이나 요약과 다른 위치의 NPC에게 들리지 마라(플레이어가 영영 못 찾는다).";
 
@@ -2079,7 +2085,8 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
         return "## 확정된 NPC 명단(요약 — 이름·문화권·나이·성별과 정합 유지, 겹치는 이름 금지)\n" + sb + "\n";
     }
 
-    /** 배치 단서 발췌(감사 A) — roles 청크가 hidden_info(환영·연루)를 실존 단서와 맞물리게 쓰도록. 없으면 "". */
+    /** 배치 단서 발췌(감사 A) — roles 청크가 hidden_info(환영·연루)를 실존 단서와 맞물리게 쓰도록. 없으면 "".
+     *  ★계약 world→roles 가드★: capstone(종결) 단서는 content 원문을 노출하지 않는다(요지만) — 배역 hidden_info로 정답이 앞당겨지는 스포일러 방지. */
     private String clueDigest(JsonObject core) {
         if (!core.has("clues") || !core.get("clues").isJsonArray()) return "";
         StringBuilder sb = new StringBuilder();
@@ -2089,11 +2096,52 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
             String content = c.has("content") && !c.get("content").isJsonNull() ? c.get("content").getAsString() : "";
             if (content.isBlank()) continue;
             String id = c.has("id") && !c.get("id").isJsonNull() ? c.get("id").getAsString() : "";
+            boolean capstone = c.has("capstone") && c.get("capstone").isJsonPrimitive() && c.get("capstone").getAsBoolean();
+            if (capstone) {
+                // 종결단서: 존재만 알리고 content 원문은 감춘다(정답 앞당김 방지)
+                sb.append("- ").append(id.isBlank() ? "" : "[" + id + "] ").append("(종결단서 — 요지 비공개, 이 단서와 어긋나는 hidden_info 금지)").append("\n");
+                continue;
+            }
             if (content.length() > 60) content = content.substring(0, 60) + "…";
             sb.append("- ").append(id.isBlank() ? "" : "[" + id + "] ").append(content).append("\n");
         }
         if (sb.length() == 0) return "";
         return "## 배치된 단서 발췌(hidden_info·initial_info는 이 단서·entity 규칙과 맞물리게 — 뒷받침 없는 새 초자연 설정 창작 금지)\n" + sb + "\n";
+    }
+
+    /** ★계약 world→items 봉인 다이제스트★ — 아이템 청크가 배치 단서와 중복·모순하거나 capstone(종결)을 우회하지 않도록,
+     *  각 단서의 id·type·capstone·게이트조건과 ★요지(짧게)★만 넘긴다. capstone content 원문(정답 절차)은 절대 노출하지 않는다. 없으면 "". */
+    private String sealedClueDigest(JsonObject core) {
+        if (!core.has("clues") || !core.get("clues").isJsonArray()) return "";
+        StringBuilder sb = new StringBuilder();
+        for (JsonElement ce : core.getAsJsonArray("clues")) {
+            if (!ce.isJsonObject()) continue;
+            JsonObject c = ce.getAsJsonObject();
+            String id = c.has("id") && !c.get("id").isJsonNull() ? c.get("id").getAsString() : "";
+            String type = c.has("type") && !c.get("type").isJsonNull() ? c.get("type").getAsString() : "real";
+            boolean capstone = c.has("capstone") && c.get("capstone").isJsonPrimitive() && c.get("capstone").getAsBoolean();
+            String subject = c.has("clue_subject") && !c.get("clue_subject").isJsonNull() ? c.get("clue_subject").getAsString() : "";
+            String gate = c.has("requires_event_resolved") && !c.get("requires_event_resolved").isJsonNull()
+                ? c.get("requires_event_resolved").getAsString() : "";
+            sb.append("- ").append(id.isBlank() ? "(무명)" : id)
+              .append(" · ").append(type)
+              .append(capstone ? " · ★종결(capstone)★" : "");
+            if (!gate.isBlank()) sb.append(" · 게이트:사건 ").append(gate).append(" 해결必");
+            if (capstone) sb.append(" · [요지 비공개]");
+            else if (!subject.isBlank()) sb.append(" · 주제:").append(subject.length() > 24 ? subject.substring(0, 24) + "…" : subject);
+            sb.append("\n");
+        }
+        if (sb.length() == 0) return "";
+        // common_items 목록도 함께(중복 물건 방지)
+        StringBuilder ci = new StringBuilder();
+        if (core.has("common_items") && core.get("common_items").isJsonArray())
+            for (JsonElement ie : core.getAsJsonArray("common_items")) {
+                String nm = ie.isJsonObject() && ie.getAsJsonObject().has("name") ? ie.getAsJsonObject().get("name").getAsString()
+                          : (ie.isJsonPrimitive() ? ie.getAsString() : "");
+                if (!nm.isBlank()) ci.append(ci.length() == 0 ? "" : ", ").append(nm);
+            }
+        return "## 배치된 단서 봉인 요약(중복·모순 금지, capstone 우회 아이템 금지 — 정답 절차는 담지 마라)\n" + sb
+             + (ci.length() > 0 ? "## 이미 있는 소소한 물건(common_items — 겹치는 물건 재생성 금지): " + ci + "\n" : "") + "\n";
     }
 
     /** ★생성 결과 lint(감사 H)★ — 치명은 아니지만 플레이 품질을 깨는 정합 문제를 경고 로그로 남긴다(비차단).
@@ -2188,6 +2236,9 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
                 logger.warning("[gdam lint] 쉬운 해결 구조(종결단서 약함)인데 전반부 지연·봉쇄 거대사건(threat≥15) 없음 — 초반 운클리어 위험(난이도 바닥 A: 초반 봉쇄 거대사건 권장).");
             // 4c) ★#285 힌트관문 정합 검증(재설계: 생성 청크가 설계, 여기선 배선 검사만)★ — clue.requires_event_resolved ↔ event.id ↔ event.unlocks_clue 짝이 맞나.
             for (String w : lintHintGate(g)) logger.warning(w);
+            // 4d) ★② 재분할 신규 스포일러 벡터 방어(적대검증)★ — 아이템 청크가 world→items 봉인 요약을 받아 capstone(종결)
+            //     단서의 정답을 key_items content(플레이어가 초반 획득·열람)에 그대로 베끼면 게이트 개방 전 해법 유출. content 실질 중복 감지.
+            for (String w : lintItemVsCapstone(g)) logger.warning(w);
             // 5) core_gate(고집도) 무결성·커버리지 — 핵심을 쥔 NPC가 처음부터 다 불어 최단거리 클리어되는 붕괴 방지
             if (g.has("npcs") && g.get("npcs").isJsonArray()) {
                 java.util.Set<String> clueIds = new java.util.HashSet<>();
@@ -2808,6 +2859,52 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
     /** ★#285 힌트관문 정합 검증(재설계: 생성 청크가 설계 → 여기선 배선 검사만)★ — 청크가 만든
      *  clue.requires_event_resolved ↔ event.id, event.unlocks_clue ↔ clue.id 짝이 맞는지 확인.
      *  반쪽 배선(단서만/사건만)·존재하지 않는 사건에 건 단서(소프트락 위험)를 경고 목록으로 반환(비차단). */
+    /** ★② 재분할 가드★ — capstone(종결) 단서 content가 key_items[].content에 실질 복제됐는지 감지(비차단 경고).
+     *  world→items 봉인 요약이 items 청크에 capstone 존재를 알리므로, 모델이 정답을 아이템 본문에 베끼면 게이트 전 유출.
+     *  ★content ≠ capstone content★를 정규화 후 긴 공통 구절(공백제거 20자+ 연속 일치)로 판정. */
+    private static java.util.List<String> lintItemVsCapstone(JsonObject g) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        try {
+            if (!g.has("clues") || !g.get("clues").isJsonArray()) return out;
+            if (!g.has("key_items") || !g.get("key_items").isJsonArray()) return out;
+            java.util.List<String[]> caps = new java.util.ArrayList<>(); // [id, normContent]
+            for (JsonElement ce : g.getAsJsonArray("clues")) {
+                if (!ce.isJsonObject()) continue;
+                JsonObject c = ce.getAsJsonObject();
+                if (!(c.has("capstone") && c.get("capstone").isJsonPrimitive() && c.get("capstone").getAsBoolean())) continue;
+                String cc = tlStr(c, "content"); if (cc.isBlank()) continue;
+                caps.add(new String[]{ tlStr(c, "id"), normForOverlap(cc) });
+            }
+            if (caps.isEmpty()) return out;
+            for (JsonElement ie : g.getAsJsonArray("key_items")) {
+                if (!ie.isJsonObject()) continue;
+                JsonObject it = ie.getAsJsonObject();
+                String ic = normForOverlap(tlStr(it, "content")); if (ic.length() < 20) continue;
+                for (String[] cap : caps)
+                    if (longestCommonSubstr(ic, cap[1]) >= 20)
+                        out.add("[gdam lint] 아이템 '" + tlStr(it,"name") + "' content가 capstone 단서 '" + cap[0]
+                            + "' 정답과 20자+ 겹침 — 종결단서 우회·초반 해법 유출 위험(아이템 본문에 정답 복제 금지).");
+            }
+        } catch (Exception ignore) {}
+        return out;
+    }
+    private static String normForOverlap(String s) {
+        if (s == null) return "";
+        return s.replaceAll("[\\s\\p{Punct}·…“”\"'’‘]", "");
+    }
+    private static int longestCommonSubstr(String a, String b) {
+        if (a.isEmpty() || b.isEmpty()) return 0;
+        int best = 0; int[] prev = new int[b.length() + 1];
+        for (int i = 1; i <= a.length(); i++) {
+            int[] cur = new int[b.length() + 1];
+            for (int j = 1; j <= b.length(); j++) {
+                if (a.charAt(i-1) == b.charAt(j-1)) { cur[j] = prev[j-1] + 1; if (cur[j] > best) best = cur[j]; }
+            }
+            prev = cur;
+        }
+        return best;
+    }
+
     private static java.util.List<String> lintHintGate(JsonObject g) {
         java.util.List<String> out = new java.util.ArrayList<>();
         try {
