@@ -7982,7 +7982,7 @@ public class TRPGGameManager {
         }
     }
     private void deliverNarrative(Player actor, String raw) {
-        String narrative = ai.stripTags(raw);
+        String narrative = scrubMetaIds(ai.stripTags(raw)); // ★메타 ID 누출 차단★(role_A·zone_B 등 → 표시명)
         // ★비용: 단서 추출 1회 공유★ — 행동자·단체 라운드 동료는 '같은 서술'을 받으므로 추출(callAssistant)을 1번만
         //   호출하고 결과를 전원에 기록한다(예전엔 인원수만큼 같은 입력으로 중복 호출 = 순수 낭비). 목격(WITNESS)은
         //   문장이 서로 달라 개별 호출 유지.
@@ -8018,7 +8018,7 @@ public class TRPGGameManager {
         //   인라인 주사위 분할 전달(before/after/후속)이 모두 팬아웃돼야 하므로, 정리는 다음 라운드 갱신·개별 경로·리셋이 맡는다.
         java.util.List<UUID> grpMembers = (actor != null && state.isGroupFanout()) ? activeGroupRound.get(actor.getUniqueId()) : null; // 팬아웃 토글(off=WITNESS 재량에만 의존)
         if (grpMembers != null && actor != null) {
-            String grpNarrative = ai.stripTags(raw);
+            String grpNarrative = narrative; // 동일 본문 — 위에서 이미 스크럽(ai.stripTags+scrubMetaIds)됨
             if (!grpNarrative.isBlank()) {
                 for (UUID mu : grpMembers) {
                     if (mu.equals(actor.getUniqueId())) continue;
@@ -8037,7 +8037,7 @@ public class TRPGGameManager {
         }
         if (!extractTargets.isEmpty()) extractAndStoreInfo(narrative, extractTargets); // 행동자+동료 공유 1회 추출
         for (String[] w : ai.parseWitnessTags(raw)) {
-            String pName = w[0], witnessText = w[1];
+            String pName = w[0], witnessText = scrubMetaIds(w[1]); // ★메타 ID 누출 차단★(목격 서술도 동일)
             boolean gmMarkedFar = "1".equals(w[2]); // GM이 '멀리 퍼지는 큰 사건'으로 명시(엔진 단어추측 아님)
             if (witnessText.isBlank()) continue;
             // ★ GM은 메타 은닉 규칙상 WITNESS player="..."에 ★캐릭터명★을 쓴다(계정명 금지) → 계정명·캐릭터명 둘 다 매칭.
@@ -10283,7 +10283,7 @@ public class TRPGGameManager {
         java.util.function.Consumer<String> deliver = (heard) -> {
             if (tp == null || !tp.isOnline()) return; // 비동기 변조 대기 중 오프라인 → 전달 취소
             String tag = sameZone ? "§a[근처] §f" : written ? ("§b[✉ " + media + "] §f") : ("§b[📞 " + media + "] §f");
-            tp.sendMessage(tag + npcName + ": " + formatNpcSpeech(heard, "§f")); // ★가독성★: 지문 회색·자기 줄
+            tp.sendMessage(tag + npcName + ": " + formatNpcSpeech(scrubMetaIds(heard), "§f")); // ★가독성★: 지문 회색·자기 줄, ★메타 ID 누출 차단★
             target.everKnownNpcContacts.add(npcId); // 연락받음 → 그 번호를 알게 됨(콜백 가능)
             appendNarrativeLog(target, (sameZone ? "[근처] " : "[" + media + "] ") + npcName + ": " + heard);
             state.log("comm", npcName, "→ " + commDisplayName(target) + ": " + callMsg);
@@ -11524,7 +11524,7 @@ public class TRPGGameManager {
             int trustDelta = ai.parseTrustDelta(npcResp);
             if (trustDelta != 0) adjustNpcTrust(npcId, senderPd.uuid.toString(), trustDelta);
 
-            String visible = ai.stripThought(ai.stripTags(npcResp)).trim();
+            String visible = scrubMetaIds(ai.stripThought(ai.stripTags(npcResp)).trim()); // ★메타 ID 누출 차단★
             if (visible.isEmpty()) return;
             // ★말투 2-pass(pass2)★: ending_style이 지정된 NPC(생성 시 시스템이 약 30%로 등장 조절, 최대 2명)만 완성 대사의 ★어미·말투★를 지정 스타일로 렌더한다.
             //   생성(pass1)은 내용+감정에 집중(중립 말씨) → 여기서 개성 말끝을 한 번에 얹는다(미니 모델은 '변환'이 안정적). 실패 시 원본 유지.
@@ -11919,6 +11919,15 @@ public class TRPGGameManager {
         String s = raw.trim();
         if (s.isEmpty()) return s;
         if (base == null || base.isEmpty()) base = "§f";
+        // ★통째 감싼 따옴표 제거★: [이름] 라벨이 이미 발화를 나타내므로 대사 전체를 감싼 "…"는 군더더기(젬나이 등이 자주 붙임).
+        //   내부에 다른 따옴표가 없을 때(감싼 한 쌍뿐)만 벗긴다 — 안쪽 인용은 보존.
+        if (s.length() >= 2) {
+            char f = s.charAt(0), l = s.charAt(s.length() - 1);
+            if ((f == '"' || f == '“') && (l == '"' || l == '”')) {
+                long q = s.chars().filter(ch -> ch == '"' || ch == '“' || ch == '”').count();
+                if (q == 2) s = s.substring(1, s.length() - 1).trim();
+            }
+        }
         java.util.List<String> lines = new java.util.ArrayList<>();
         StringBuilder seg = new StringBuilder();   // 현재 대사 조각
         StringBuilder pbuf = new StringBuilder();   // 현재 괄호 지문
@@ -11943,19 +11952,39 @@ public class TRPGGameManager {
         flushSpeechSeg(seg.toString(), base, lines);
         return String.join("\n", lines);
     }
-    /** formatNpcSpeech 보조 — 대사 조각을 종결부호 기준으로 줄을 끊어 lines에 담는다(각 줄 앞에 base 색). */
+    /** formatNpcSpeech 보조 — 대사 조각을 종결부호로 문장 분리한 뒤, ★짧은 문장은 한 줄로 묶어★ lines에 담는다.
+     *  (예전엔 종결부호마다 무조건 줄을 끊어 "어? 아, 당신이... 여기?"가 네 토막이 됐다 — 그 과다 줄바꿈을 없앤다.) */
     private static void flushSpeechSeg(String seg, String base, java.util.List<String> lines) {
         if (seg == null) return;
         String t = seg.trim();
         if (t.isEmpty()) return;
-        // 종결부호(. ? ! … 및 연속) 뒤에서 끊는다 — 뒤에 내용이 더 있을 때만(짧은 조각은 그대로).
+        // 종결부호(. ? ! … 및 연속) 뒤에서 문장을 나눈다.
         java.util.regex.Matcher m = java.util.regex.Pattern.compile("(.+?[.?!…]+[\"'”’]?)(\\s+|$)").matcher(t);
         int end = 0;
         java.util.List<String> parts = new java.util.ArrayList<>();
         while (m.find()) { parts.add(m.group(1).trim()); end = m.end(); }
         if (end < t.length()) { String tail = t.substring(end).trim(); if (!tail.isEmpty()) parts.add(tail); }
         if (parts.isEmpty()) parts.add(t);
-        for (String p : parts) if (!p.isEmpty()) lines.add(base + p);
+        // ★짧은 문장을 한 줄로 묶어★ 토막(과다 줄바꿈)과 벽(한 줄 과길이)을 동시에 피한다.
+        //   표시 폭(한글·CJK=2, 그 외=1) 기준 약 TARGET폭(≈한글 22자, 채팅 한 줄) 안에서 문장을 이어 붙인다.
+        //   한 문장이 이미 TARGET을 넘으면 그 문장은 홀로 한 줄(문장 중간은 절대 자르지 않는다).
+        final int TARGET = 44;
+        StringBuilder cur = new StringBuilder();
+        int curW = 0;
+        for (String p : parts) {
+            if (p.isEmpty()) continue;
+            int w = speechWidth(p);
+            if (curW == 0) { cur.append(p); curW = w; }
+            else if (curW + 1 + w <= TARGET) { cur.append(' ').append(p); curW += 1 + w; }
+            else { lines.add(base + cur); cur.setLength(0); cur.append(p); curW = w; }
+        }
+        if (cur.length() > 0) lines.add(base + cur);
+    }
+    /** 대략적인 표시 폭(한글·CJK·전각 계열=2, ASCII·기호=1). 채팅 줄 묶기 판단용(픽셀 정밀 X, 근사면 충분). */
+    private static int speechWidth(String s) {
+        int w = 0;
+        for (int i = 0; i < s.length(); i++) w += s.charAt(i) >= 0x1100 ? 2 : 1;
+        return w;
     }
 
     /** 직접 대화용 NPC 시스템 프롬프트 (자율 행동 프롬프트와 별개). viaCall=전화/원격 통화면 목소리만, 아니면 대면. */
@@ -11970,6 +11999,7 @@ public class TRPGGameManager {
         sb.append("플레이어가 네게 직접 말을 걸었다. ★너는 " + name + " 본인이다 — 관찰당하는 인물이 아니라 행동하는 당사자다. 1인칭으로 직접 말하고 행동하라(\"" + name + "은(는) …한다\"처럼 소설 화자가 3인칭으로 너를 묘사하지 마라).★\n");
         sb.append("- ★대사 위주★로 답하라. 행동·표정이 필요하면 ★짧은 괄호 지문★으로만 곁들여라. 예) (형 손 잡으며) 이렇게 잡고 있으면 되는 거 맞지, 형?\n");
         sb.append("- ★괄호 지문은 한 응답에 많아야 1개, 몇 글자로 아주 짧게★ — 문장마다 동작·시선을 덧붙여 지문 여러 개로 벽을 쌓지 마라. 대부분의 답은 지문 없이 ★말로만★ 한다(지문은 정말 필요할 때 딱 한 번).\n");
+        sb.append("  · 지문은 ★짤막한 구절★로만 써라(예: (문 쪽을 흘긋), (한숨)). ★완결된 서술 문장, 특히 '-습니다/-했다'체 해설(\"(그는 창밖을 오래 바라봅니다.)\" 같은)★은 금지 — 지문은 소설 서술이 아니라 네 즉각 동작의 짧은 메모다.\n");
         sb.append("- ★속마음·감정 단정(해설) 금지(가장 중요)★: \"믿는 듯\", \"불안한 듯\", \"…처럼 보인다\" 식으로 너나 상대의 내면을 ★추측·서술하지 마라★. 감정은 ★말투와 짧은 행동★으로만 드러내고, 해석은 상대(플레이어)에게 맡겨라. 너의 진짜 속마음은 입 밖에 내지 말고 삼켜라(별도 <THOUGHT> 지시가 있을 때만 거기 적는다).\n");
         sb.append("  · ★예외★: 상대가 ★감정·속마음을 읽는 특성/능력★을 쓴 경우에만 시스템이 그 내면을 그 플레이어에게 공개한다(기본값=비공개).\n");
         sb.append("- 성격·목표에 충실하되 ★실제 사람이 할 법한 말투★로 답하라(소설 문어체·의미심장한 연출 금지).\n");
@@ -13816,6 +13846,68 @@ public class TRPGGameManager {
             }
         }
         return zoneId;
+    }
+
+    /** ★메타 ID 일괄 변형★ — 플레이어·NPC에게 보여줄 표시 텍스트에서 내부 식별자(role_A·zone_B·npc_C·clue_2·item_x)가
+     *  새어 나온 것을 표시명(char_name·구역명·NPC명·아이템명)으로 결정적으로 치환한다. 저품질/고품질 모델 무관하게
+     *  AI가 가끔 ID를 그대로 뱉는 문제(사용자 보고: "배역이나 방이름이 role_A 등으로 나옴")를 엔진에서 일괄 차단.
+     *  ★반드시 태그 파싱 이후(ai.stripTags 뒤) '표시용 문자열'에만 적용★ — &lt;ZONE_UPDATE zone="zone_A"/&gt; 같은
+     *  라우팅 속성의 zone_id는 내부 통신이라 절대 건드리면 안 된다(그건 여기 들어오지 않는다). */
+    private String scrubMetaIds(String text) {
+        if (text == null || text.isEmpty()) return text;
+        // 빠른 경로: ID 접두어가 하나도 없으면 즉시 반환(거의 모든 서술이 여기서 끝 — 비용 0).
+        if (!(text.contains("role_") || text.contains("zone_") || text.contains("npc_")
+                || text.contains("clue_") || text.contains("item_"))) return text;
+        java.util.Map<String,String> map = metaIdMap();
+        // 알려진 ID는 '정확 일치'로(뒤에 한글 조사가 붙어도 ID만 잡음), 미매핑(AI 환각 role_D 등)은 일반 ascii 패턴으로.
+        StringBuilder pat = new StringBuilder();
+        java.util.List<String> keys = new java.util.ArrayList<>(map.keySet());
+        keys.sort((a, b) -> b.length() - a.length()); // 최장 우선(부분겹침 방지)
+        for (String k : keys) { if (pat.length() > 0) pat.append('|'); pat.append(java.util.regex.Pattern.quote(k)); }
+        if (pat.length() > 0) pat.append('|');
+        pat.append("(?:role|zone|npc|clue|item)_[A-Za-z0-9]+"); // ascii 접미만 — 한글 조사 흡수 방지
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile(pat.toString()).matcher(text);
+        StringBuilder out = new StringBuilder();
+        while (m.find()) {
+            String id = m.group();
+            String rep = map.get(id);
+            if (rep == null || rep.isBlank()) rep = metaIdFallback(id); // 미매핑 → 접두어별 중립어(ID 노출보단 낫다)
+            m.appendReplacement(out, java.util.regex.Matcher.quoteReplacement(rep));
+        }
+        m.appendTail(out);
+        return out.toString();
+    }
+
+    /** 현재 시나리오의 내부 ID → 표시명 맵. 표시명이 비면 담지 않는다(폴백에 맡김). */
+    private java.util.Map<String,String> metaIdMap() {
+        java.util.Map<String,String> m = new java.util.HashMap<>();
+        JsonObject gdam = state.getGdamData();
+        if (gdam == null) return m;
+        putMetaIdName(m, gdam, "roles", "role_id", "char_name");
+        putMetaIdName(m, gdam, "zones", "zone_id", "name");
+        putMetaIdName(m, gdam, "npcs", "id", "name");
+        putMetaIdName(m, gdam, "key_items", "id", "name");
+        return m;
+    }
+    private static void putMetaIdName(java.util.Map<String,String> m, JsonObject gdam, String arr, String idKey, String nameKey) {
+        if (!gdam.has(arr) || !gdam.get(arr).isJsonArray()) return;
+        for (JsonElement el : gdam.getAsJsonArray(arr)) {
+            if (!el.isJsonObject()) continue;
+            JsonObject o = el.getAsJsonObject();
+            if (!o.has(idKey) || o.get(idKey).isJsonNull()) continue;
+            String id = o.get(idKey).getAsString().trim();
+            String nm = o.has(nameKey) && !o.get(nameKey).isJsonNull() ? o.get(nameKey).getAsString().trim() : "";
+            if (nm.isEmpty() && "roles".equals(arr) && o.has("name") && !o.get("name").isJsonNull())
+                nm = o.get("name").getAsString().trim(); // roles: char_name 비면 name 폴백
+            if (!id.isEmpty() && !nm.isEmpty()) m.put(id, nm);
+        }
+    }
+    /** 미매핑 ID(AI가 지어낸 role_D 등)의 중립 폴백 — 원문 ID 노출보다 낫다. */
+    private static String metaIdFallback(String id) {
+        if (id.startsWith("zone_")) return "그곳";
+        if (id.startsWith("item_")) return "그 물건";
+        if (id.startsWith("clue_")) return "그 단서";
+        return "누군가"; // role_ · npc_
     }
 
     /** zone 인자를 유효한 zone_id로 해석(#190) — 실제 id면 그대로, GM이 표시명을 넣었으면 그 이름의 id로 매칭,
