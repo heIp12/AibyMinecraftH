@@ -8861,6 +8861,78 @@ public class TRPGGameManager {
         }
     }
 
+    /** ★핵심행동 게이트(고집도)★ — core_gate가 있는 NPC 프롬프트에 '무엇을·언제까지 하지 않는가'를 주입한다.
+     *  구조 조건(min_timeline_stage·requires_clues)은 엔진이 개폐를 계산해 하드하게 알리고(대화·자율 양채널 공통),
+     *  동기(holds_because)는 버티는 강도와 풀리는 양상을 좌우한다 — 가족보호=거의 절대(죽어도 함구가 자연스러움),
+     *  죄책감·수치=결정적 증거 앞에서 무너짐(죽을 때까지 숨기면 어색), 생존·이해=손익 뒤집히면, 충성·맹세=풀어주면, 공포=협박자 무력화 시.
+     *  ★진상의 결정적 핵심(capstone)은 이 게이트로도 통째로 넘겨주지 않는다 — guards는 '한 조각·한 행동'만★. */
+    private void appendCoreGateBlock(StringBuilder sb, JsonObject npcObj) {
+        if (npcObj == null || !npcObj.has("core_gate") || !npcObj.get("core_gate").isJsonObject()) return;
+        JsonObject cg = npcObj.getAsJsonObject("core_gate");
+        String guards = getStr(cg, "guards");
+        if (guards.isBlank()) return;
+        String motive = getStr(cg, "holds_because");
+        String whenOpen = getStr(cg, "when_open");
+        String playerMove = getStr(cg, "player_move");
+        // 구조 게이트 개폐 계산 — scheduleItemLocked와 동일 기준(단계 도달 & 모든 requires_clues 발견이면 열림).
+        boolean hasStruct = false, structOpen = true;
+        if (cg.has("min_timeline_stage") && cg.get("min_timeline_stage").isJsonPrimitive()) {
+            hasStruct = true;
+            try { if (state.getTimelineStage() < cg.get("min_timeline_stage").getAsInt()) structOpen = false; } catch (Exception ignore) {}
+        }
+        if (cg.has("requires_clues") && cg.get("requires_clues").isJsonArray()) {
+            for (JsonElement re : cg.getAsJsonArray("requires_clues")) {
+                String cid = re.isJsonPrimitive() ? re.getAsString() : "";
+                if (cid.isEmpty()) continue;
+                hasStruct = true;
+                if (!authoredClueDiscovered(cid)) structOpen = false;
+            }
+        }
+        if (hasStruct && structOpen) {
+            sb.append("★핵심 고집 — 이제 풀렸다★: 결정적인 정황이 드러나, 너는 더는 '").append(guards).append("'를 숨길 수 없다. ")
+              .append(whenOpen.isBlank() ? coreGateOpenManner(motive) : whenOpen)
+              .append(" 억지로 더 버티지 마라 — 사람으로서 자연스럽게 내놓아라(단, 결정적 진상 전부를 한 번에 읊지는 말고 네가 쥔 그 조각만).\n");
+        } else {
+            sb.append("★핵심 고집(반드시 지켜라 — 게임 붕괴 방지의 핵심)★: 너는 지금 '").append(guards).append("'를 ★하지 않는다★. ")
+              .append(coreGateLockedRule(motive));
+            if (hasStruct)
+                sb.append(" 결정적인 정황·증거가 아직 다 드러나지 않았으니, 아무리 다그치거나 캐물어도 지금은 넘겨주지 않는다(둘러대거나 침묵·회피 — 네 거짓말 성향대로).");
+            if (!playerMove.isBlank())
+                sb.append(" 다만 [").append(playerMove).append("]가 이뤄지면, 그때는 위 동기에 맞게 네 마음이 움직일 수 있다.");
+            sb.append(" ★이건 내부용 지침이다 — 대사로 읊지 말고(\"나는 ~를 말 못 해\" 식 금지) 행동·태도로만 드러내라.★\n");
+        }
+    }
+    /** core_gate 동기별 '버티는 강도·풀리는 조건'의 인간적 결(잠김 상태). */
+    private static String coreGateLockedRule(String motive) {
+        String m = motive == null ? "" : motive;
+        if (m.contains("가족") || m.contains("사랑") || m.contains("연인") || m.contains("자식") || m.contains("아이"))
+            return "지키려는 사람이 다칠까 봐 목숨을 걸고서라도 함구한다 — 협박·고문·죽음의 위협에도 하지 않는다(이 동기만은 '죽어도 안 함'이 자연스럽다). 오직 그 사람이 이미 안전해졌거나 잃었을 때, 혹은 지켜주겠다는 말을 진심으로 믿게 될 때만 흔들린다.";
+        if (m.contains("죄") || m.contains("수치") || m.contains("부끄") || m.contains("치부"))
+            return "제 잘못·치부라 감춘다. 그냥 물으면 발뺌하지만, ★결정적 증거·정황을 눈앞에 들이밀면 더 못 버티고 무너지듯(때론 후련하게) 털어놓는다★ — 죽을 때까지 악착같이 숨기지는 않는다(그건 어색하다). 진심 어린 이해·공감에도 마음이 풀린다.";
+        if (m.contains("생존") || m.contains("안전") || m.contains("이해") || m.contains("이득") || m.contains("계산"))
+            return "제 안전·이득 때문에 숨긴다 — 철저히 계산적이다. 손익이 뒤집히면(더 나은 거래, 숨기는 게 더 위험해짐, 신변 보장) 말한다.";
+        if (m.contains("충성") || m.contains("의리") || m.contains("맹세") || m.contains("약속") || m.contains("서약"))
+            return "누군가에 대한 의리·약속 때문에 지킨다. 그 상대가 놓아주거나, 배신자였음이·죽었음이 드러나면 매듭이 풀린다.";
+        if (m.contains("공포") || m.contains("협박") || m.contains("겁") || m.contains("두려"))
+            return "협박당해 겁에 질려 함구한다. 협박한 자가 무력화되거나, 지켜줄 수 있다는 걸 진심으로 믿게 되면 털어놓는다.";
+        return "그럴 만한 사정이 있어 지금은 말하지 않는다. 상황이 그 사정을 풀어 줄 때만 달라진다(억지 다그침엔 넘어가지 않되, 죽을 때까지 버티지도 마라).";
+    }
+    /** core_gate 동기별 '열렸을 때 어떻게 행동하나'(when_open 미지정 시 기본 양상). */
+    private static String coreGateOpenManner(String motive) {
+        String m = motive == null ? "" : motive;
+        if (m.contains("가족") || m.contains("사랑") || m.contains("연인") || m.contains("자식") || m.contains("아이"))
+            return "이제 지킬 이유가 사라졌다 — 체념하듯, 혹은 지키려던 마음을 마지막으로 드러내며 말한다.";
+        if (m.contains("죄") || m.contains("수치") || m.contains("부끄") || m.contains("치부"))
+            return "더는 못 숨긴다 — 무너지듯, 어쩌면 후련하게 다 털어놓는다.";
+        if (m.contains("생존") || m.contains("안전") || m.contains("이해") || m.contains("이득") || m.contains("계산"))
+            return "셈이 끝났다 — 마지못해, 조건을 달아서라도 내놓는다.";
+        if (m.contains("충성") || m.contains("의리") || m.contains("맹세") || m.contains("약속") || m.contains("서약"))
+            return "매듭이 풀렸다 — 무겁게, 지켜온 것을 놓으며 말한다.";
+        if (m.contains("공포") || m.contains("협박") || m.contains("겁") || m.contains("두려"))
+            return "겁이 가셨다 — 떨리지만 안도하며 털어놓는다.";
+        return "이제 말할 때가 되었다 — 담담히 내놓는다.";
+    }
+
     /** 시나리오 시대(constraints.era). 없으면 "". */
     private String scenarioEra() {
         JsonObject g = state.getGdamData();
@@ -9120,6 +9192,9 @@ public class TRPGGameManager {
             sb.append("약점(특히 못 견디거나 무서워하는 것 — 이게 직접 건드려지면 평소 기질보다 크게 흔들린다): ").append(getStr(npcObj, "fear")).append("\n");
         // 거짓말 성향(조건) — 거짓말의 '언제/왜'를 규정해 남발도 과소도 막는다. 필드 없으면 방어형(기본).
         sb.append("거짓말 성향: ").append(honestyDesc(getStr(npcObj, "honesty"))).append("\n");
+        // ★핵심행동 게이트(고집도)★ — core_gate가 있으면 '무엇을·언제까지 하지 않는가'를 동기에 맞는 인간적 결로 주입.
+        //   구조 조건(단계·단서)은 엔진이 개폐를 계산해 하드하게 알리고, 동기는 버티는 강도·풀리는 양상을 좌우한다.
+        appendCoreGateBlock(sb, npcObj);
         // ② 지식 게이팅 — '상시 전량 주입'을 막는다. 지금 상황과 ★관련된 기억만★(관련 없으면 신뢰도 높은 것 위주로)
         //   최대 KNOW_CAP개만 노출 → '아는 걸 한 번에 다 쏟기'(GPT 설명 과잉)를 물리적으로 억제. 나머지는 대화가 흐르면 떠오름.
         if (npcObj.has("knowledge") && npcObj.get("knowledge").isJsonArray()) {
@@ -9916,7 +9991,7 @@ public class TRPGGameManager {
         java.util.function.Consumer<String> deliver = (heard) -> {
             if (tp == null || !tp.isOnline()) return; // 비동기 변조 대기 중 오프라인 → 전달 취소
             String tag = sameZone ? "§a[근처] §f" : written ? ("§b[✉ " + media + "] §f") : ("§b[📞 " + media + "] §f");
-            tp.sendMessage(tag + npcName + ": " + heard);
+            tp.sendMessage(tag + npcName + ": " + formatNpcSpeech(heard, "§f")); // ★가독성★: 지문 회색·자기 줄
             target.everKnownNpcContacts.add(npcId); // 연락받음 → 그 번호를 알게 됨(콜백 가능)
             appendNarrativeLog(target, (sameZone ? "[근처] " : "[" + media + "] ") + npcName + ": " + heard);
             state.log("comm", npcName, "→ " + commDisplayName(target) + ": " + callMsg);
@@ -11180,7 +11255,7 @@ public class TRPGGameManager {
             java.util.function.Consumer<String> deliverR = (heardR) -> {
                 plugin.getServer().getScheduler().runTask(plugin, () -> {
                     if (sender.isOnline())
-                        sender.sendMessage("§e[" + npcName + "] §f" + heardR);
+                        sender.sendMessage("§e[" + npcName + "] " + formatNpcSpeech(heardR, "§f")); // ★가독성★: 지문 회색·자기 줄, 문장 줄바꿈
                 });
                 if (tamperedR) gameLogger.logCommTampered(kindR, npcName,
                         java.util.List.of(senderPd.gmDisplayName()), visibleF, heardR, writtenF ? "괴담의 기록 변조" : "괴담의 음성 변조", viaR);
@@ -11518,6 +11593,54 @@ public class TRPGGameManager {
         }
     }
 
+    /** ★NPC 대사 가독성 포맷★ — 인게임 채팅에서 대사가 '벽'처럼 뭉치는 문제 해소:
+     *  ① 괄호 지문(동작·표정 (…))을 ★회색(§8)★으로 낮추고 ★자기 줄★로 분리(대사와 시각적으로 구분),
+     *  ② 대사 문장을 종결부호(. ? ! …) 기준으로 줄을 끊어 한 줄이 지나치게 길지 않게 한다.
+     *  base = 대사 본문 기본색(보통 "§f"). 입력에 색코드가 이미 없다고 가정(있으면 그대로 흘려보냄). */
+    static String formatNpcSpeech(String raw, String base) {
+        if (raw == null) return "";
+        String s = raw.trim();
+        if (s.isEmpty()) return s;
+        if (base == null || base.isEmpty()) base = "§f";
+        java.util.List<String> lines = new java.util.ArrayList<>();
+        StringBuilder seg = new StringBuilder();   // 현재 대사 조각
+        StringBuilder pbuf = new StringBuilder();   // 현재 괄호 지문
+        boolean paren = false;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (!paren && (c == '(' || c == '（')) {
+                flushSpeechSeg(seg.toString(), base, lines); seg.setLength(0);
+                paren = true; pbuf.setLength(0); pbuf.append(c);
+            } else if (paren && (c == ')' || c == '）')) {
+                pbuf.append(c);
+                String p = pbuf.toString().trim();
+                if (!p.isEmpty()) lines.add("§8" + p);   // 지문 = 회색, 자기 줄
+                pbuf.setLength(0); paren = false;
+            } else if (paren) {
+                pbuf.append(c);
+            } else {
+                seg.append(c);
+            }
+        }
+        if (paren && pbuf.length() > 0) { String p = pbuf.toString().trim(); if (!p.isEmpty()) lines.add("§8" + p); } // 안 닫힌 괄호
+        flushSpeechSeg(seg.toString(), base, lines);
+        return String.join("\n", lines);
+    }
+    /** formatNpcSpeech 보조 — 대사 조각을 종결부호 기준으로 줄을 끊어 lines에 담는다(각 줄 앞에 base 색). */
+    private static void flushSpeechSeg(String seg, String base, java.util.List<String> lines) {
+        if (seg == null) return;
+        String t = seg.trim();
+        if (t.isEmpty()) return;
+        // 종결부호(. ? ! … 및 연속) 뒤에서 끊는다 — 뒤에 내용이 더 있을 때만(짧은 조각은 그대로).
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("(.+?[.?!…]+[\"'”’]?)(\\s+|$)").matcher(t);
+        int end = 0;
+        java.util.List<String> parts = new java.util.ArrayList<>();
+        while (m.find()) { parts.add(m.group(1).trim()); end = m.end(); }
+        if (end < t.length()) { String tail = t.substring(end).trim(); if (!tail.isEmpty()) parts.add(tail); }
+        if (parts.isEmpty()) parts.add(t);
+        for (String p : parts) if (!p.isEmpty()) lines.add(base + p);
+    }
+
     /** 직접 대화용 NPC 시스템 프롬프트 (자율 행동 프롬프트와 별개). viaCall=전화/원격 통화면 목소리만, 아니면 대면. */
     private String buildNpcDirectConvPrompt(JsonObject npcObj, boolean includeThought, boolean viaCall, boolean written, boolean inPerson, String media, String context) {
         String name = npcObj.has("name") ? npcObj.get("name").getAsString() : "NPC";
@@ -11528,6 +11651,7 @@ public class TRPGGameManager {
         sb.append("\n## 직접 대화 모드").append(viaCall ? " (원격 통화 — " + mname + ")" : paperInPerson ? " (필담 — 면전에서 조용히 글로)" : written ? " (서면 — " + mname + ")" : " (대면 — 같은 공간)").append("\n");
         sb.append("플레이어가 네게 직접 말을 걸었다. ★너는 " + name + " 본인이다 — 관찰당하는 인물이 아니라 행동하는 당사자다. 1인칭으로 직접 말하고 행동하라(\"" + name + "은(는) …한다\"처럼 소설 화자가 3인칭으로 너를 묘사하지 마라).★\n");
         sb.append("- ★대사 위주★로 답하라. 행동·표정이 필요하면 ★짧은 괄호 지문★으로만 곁들여라. 예) (형 손 잡으며) 이렇게 잡고 있으면 되는 거 맞지, 형?\n");
+        sb.append("- ★괄호 지문은 한 응답에 많아야 1개, 몇 글자로 아주 짧게★ — 문장마다 동작·시선을 덧붙여 지문 여러 개로 벽을 쌓지 마라. 대부분의 답은 지문 없이 ★말로만★ 한다(지문은 정말 필요할 때 딱 한 번).\n");
         sb.append("- ★속마음·감정 단정(해설) 금지(가장 중요)★: \"믿는 듯\", \"불안한 듯\", \"…처럼 보인다\" 식으로 너나 상대의 내면을 ★추측·서술하지 마라★. 감정은 ★말투와 짧은 행동★으로만 드러내고, 해석은 상대(플레이어)에게 맡겨라. 너의 진짜 속마음은 입 밖에 내지 말고 삼켜라(별도 <THOUGHT> 지시가 있을 때만 거기 적는다).\n");
         sb.append("  · ★예외★: 상대가 ★감정·속마음을 읽는 특성/능력★을 쓴 경우에만 시스템이 그 내면을 그 플레이어에게 공개한다(기본값=비공개).\n");
         sb.append("- 성격·목표에 충실하되 ★실제 사람이 할 법한 말투★로 답하라(소설 문어체·의미심장한 연출 금지).\n");
@@ -11549,7 +11673,8 @@ public class TRPGGameManager {
         sb.append("- ★상대 말을 곧이곧대로 다 믿지 마라(믿음도 차등)★: 관계가 가깝고, 네 성격이 잘 믿는 편이고, 상대가 ★근거·증거·앞뒤 맞는 설명★을 댈수록 믿어라. 낯선 상대의 근거 없는 주장은 반신반의하거나 흘려들어라. 그리고 ★설득력이 약해도 근거가 탄탄하면 더 잘 통한다★ — 말주변이 아니라 근거·논리로도 설득된다.\n");
         sb.append("- ★신뢰는 고정이 아니다★: 이 사람과 지금까지 겪은 일(위 대화 기억)을 근거로 신뢰를 조정하라 — 함께 어려움을 넘기거나 이 사람이 ★전에 한 말이 사실로 드러났으면★ 더 믿고 돕고, 거짓·말바꿈·배신이 드러났으면 경계하고 덜 믿어라.\n");
         sb.append("- 신뢰가 ★크게 움직인 순간★(이 사람의 말이 사실로 드러남·함께 큰 위기를 넘김 / 거짓·배신이 드러남)에만 응답 맨 끝에 <TRUST>+2 이유</TRUST> 또는 <TRUST>-2 이유</TRUST>를 붙여라(±1~3, 사소한 대화엔 생략). ★내부 기록이라 대사로 읽지 마라★ — 위 '너와의 관계' 문구에 이미 지금까지 쌓인 신뢰가 반영돼 있으니 그 온도대로 대하라.\n");
-        sb.append("- 평소 2~4문장. ★결정적 순간★(고백·결별·죽음 직전·큰 비밀을 여는 장면)에만 6문장까지 허용 — 대신 평소는 더 짧게.\n");
+        sb.append("- ★길이(가독성 — 매우 중요)★: 평소 ★1~3문장, 짧게★ 답하라. ★결정적 순간★(고백·결별·죽음 직전·큰 비밀을 여는 장면)에만 최대 5문장 — 그 외엔 절대 길게 늘이지 마라. "
+                 + "★취했거나 수다스럽거나 능청스러운 인물도 한 번에 벽을 쌓지 말고 '짧게' 말하라★(수다는 여러 턴에 걸쳐 짧게 여러 번이지, 한 응답을 문단으로 채우는 게 아니다). 한 응답이 채팅 서너 줄을 넘기면 너무 길다.\n");
         sb.append("- ★대화는 앞으로 나아가야 한다(반복 금지)★: 지금까지의 대화가 ★네 기억★이다 — 이미 들은 답·이미 던진 질문을 ★되묻지 마라★. "
                  + "상대가 이름·소속·용건을 한 번 밝혔으면 그것을 ★받아들이고★ 다음으로 넘어가라(동의하든 거절하든, 구체적으로 답하거나 행동하거나 네 입장을 정하라). "
                  + "같은 확인(\"누구세요\"·\"그게 뭐죠\"·\"왜 그래요\")을 ★두 번 이상 반복하지 마라★ — 낯선 상대라도 경계·의심은 ★처음 한두 마디★로만 표하고, 그 뒤엔 반드시 대화를 진전시켜라.\n");
