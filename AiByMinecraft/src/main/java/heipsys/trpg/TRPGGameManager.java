@@ -12083,6 +12083,57 @@ public class TRPGGameManager {
         return Math.max(2, Math.round(MOVE_MINUTES_PER_HOP / f));
     }
 
+    /** ★#265 거리 기반 홉 소요(분)★ — 인접 구역 한 칸 이동 시간. .gdam distances가 있으면 근력 보정해 그 값을,
+     *  없으면 균일 perHop 폴백. (예전엔 전부 균일 5분/홉이라 옆방·먼 방 시간이 같았다 → distances로 실제화.) */
+    private int hopMinutes(String from, String to, PlayerData pd, int perHop) {
+        int d = mapMan.hopDistance(from, to);
+        if (d <= 0) return perHop;                                 // 거리 데이터 없음 → 균일 폴백(구버전 .gdam 호환)
+        float f = strSpeedFactor(pd == null ? 5 : pd.str);         // 근력 셀수록 짧다(moveMinutesPerHop과 동일 스케일)
+        return Math.max(2, Math.round(d / f));
+    }
+
+    /** 이번 턴 예산(budget 분) 안에서 pd.travelPath로 몇 홉 전진하는지 — 거리 누적, ★최소 1홉 보장★(예산 미달이어도 한 칸).
+     *  distances가 없으면 균일 폴백이라 예전 budget/perHop과 동일한 결과가 된다(하위호환). */
+    private int hopsWithinBudget(PlayerData pd, int budget) {
+        if (pd == null || pd.travelPath == null || pd.travelPath.isEmpty()) return 1;
+        int perHop = moveMinutesPerHop(pd), spent = 0, hops = 0;
+        String prev = pd.zone;
+        for (String next : pd.travelPath) {
+            int cost = hopMinutes(prev, next, pd, perHop);
+            if (hops > 0 && spent + cost > budget) break;          // 최소 1홉은 감(hops==0이면 예산 초과라도 진행)
+            spent += cost; hops++; prev = next;
+        }
+        return Math.max(1, hops);
+    }
+
+    /** 목적지까지 총 도보 소요(분) — path 전체 홉 거리 합(근력 보정). 이동 다이얼로그 표시용. */
+    private int travelTotalMinutes(PlayerData pd, java.util.List<String> path) {
+        if (pd == null || path == null || path.isEmpty()) return 0;
+        int perHop = moveMinutesPerHop(pd), sum = 0;
+        String prev = pd.zone;
+        for (String next : path) { sum += hopMinutes(prev, next, pd, perHop); prev = next; }
+        return sum;
+    }
+
+    /** 목적지까지 걸리는 턴 수 — ★엔진의 홉 예산 모델(hopsWithinBudget)과 동일 시뮬레이션★이라 다이얼로그 예고와 실제가 일치. */
+    private int travelTurnsToArrive(PlayerData pd, java.util.List<String> path) {
+        if (pd == null || path == null || path.isEmpty()) return 1;
+        int perHop = moveMinutesPerHop(pd);
+        int budget = Math.max(perHop, state.getMinutesPerTurn());
+        int turns = 0, idx = 0;
+        String prev = pd.zone;
+        while (idx < path.size() && turns < 999) {
+            int spent = 0, hopsThisTurn = 0;
+            while (idx < path.size()) {
+                int cost = hopMinutes(prev, path.get(idx), pd, perHop);
+                if (hopsThisTurn > 0 && spent + cost > budget) break;
+                spent += cost; hopsThisTurn++; prev = path.get(idx); idx++;
+            }
+            turns++;
+        }
+        return Math.max(1, turns);
+    }
+
     /**
      * ★근력(STR)에 따른 이동속도 물리 반영★ — 근력이 낮으면 느리고(평균 5=정상, 1=절반), 높으면 빠르다(8%/점, 상한 2배).
      * Bukkit 기본 보행속도 0.2f. 등장·생존 상태에서만 적용하고, 그 외(미등장·사망)엔 정상으로 되돌린다. 값이 바뀔 때만 set.
@@ -13317,7 +13368,7 @@ public class TRPGGameManager {
         String destName = pd.travelDest.isEmpty() ? "목적지" : zoneDisplayName(pd.travelDest); // 비워지기 전에 확보
         int perHop = moveMinutesPerHop(pd);                                     // 홉당 분(근력 셀수록 짧다 → 더 멀리)
         int budget = Math.max(perHop, state.getMinutesPerTurn());               // 이 턴 이동 시간 예산(분)
-        int maxHops = Math.max(1, budget / perHop);                             // 최소 1홉 보장(예산이 작아도 한 칸은 간다)
+        int maxHops = hopsWithinBudget(pd, budget);                             // #265 거리 기반: 예산 안 홉 수(distances 없으면 균일=budget/perHop과 동일)
         java.util.List<String> hops = new java.util.ArrayList<>();
         String lastPrev = null, lastNext = null;
         boolean threatStop = false; String threatZone = null;
@@ -13410,7 +13461,9 @@ public class TRPGGameManager {
         if (path.isEmpty()) { p.sendMessage("§7그곳으로 가는 길을 알지 못합니다."); return; }
         pd.travelPath = new java.util.ArrayList<>(path);
         pd.travelDest = dest;
-        p.sendMessage("§b[이동 시작] " + zoneDisplayName(dest) + "(으)로 — " + path.size() + "구역 경유");
+        int turns = travelTurnsToArrive(pd, path);
+        p.sendMessage("§b[이동 시작] " + zoneDisplayName(dest) + "(으)로 — " + path.size() + "구역 경유"
+            + (turns <= 1 ? " · 이번 턴 도착 예정" : " · 약 " + turns + "턴 후 도착 예정"));
         travelTurn(p, pd, "이동을 시작한다");
     }
 
@@ -13425,6 +13478,8 @@ public class TRPGGameManager {
         java.util.Set<String> allowed = passableKnownZones(pd); // 잠긴 통과불가 구역은 경로에서 제외(RISK9)
         java.util.List<String[]> dests = new java.util.ArrayList<>();
         JsonObject gdam = state.getGdamData();
+        java.util.Set<String> knownAreas = new java.util.HashSet<>(mapMan.knownAreaNames(pd)); // 아는 대분류(미발견은 ?로 가림 — 스포 방지)
+        boolean timeKnown = state.isTimeKnown(pd);                                            // 시간 미인지 시나리오면 '분' 숨김(스코어보드 불명과 정합)
         if (gdam != null && gdam.has("zones")) for (JsonElement el : gdam.getAsJsonArray("zones")) {
             if (!el.isJsonObject()) continue;
             String z = el.getAsJsonObject().has("zone_id") ? el.getAsJsonObject().get("zone_id").getAsString() : "";
@@ -13432,9 +13487,25 @@ public class TRPGGameManager {
             if (findGatedZone(z) != null && gatePassReason(pd, z).isEmpty()) continue;       // 잠긴 목적지 제외
             java.util.List<String> path = mapMan.shortestZonePath(pd.zone, z, allowed);
             if (path.isEmpty()) continue;                                                    // 경로 없으면 제외
-            dests.add(new String[]{z, zoneDisplayName(z), path.size() == 1 ? "인접" : (path.size() + "구역 경유")});
+            String area = mapMan.areaOf(z);
+            String areaLabel = (area == null || area.isBlank()) ? "" : (knownAreas.contains(area) ? area : "?"); // 미발견 대분류는 ?
+            int hops = path.size(), turns = travelTurnsToArrive(pd, path), mins = travelTotalMinutes(pd, path);
+            StringBuilder sum = new StringBuilder();
+            if (!areaLabel.isEmpty()) sum.append("「").append(areaLabel).append("」 ");        // 대분류 태그(정렬로 같은 대분류끼리 묶임)
+            sum.append(hops == 1 ? "인접" : (hops + "구역 경유"));
+            if (timeKnown && mins > 0) sum.append(" · 약 ").append(mins).append("분");         // 실제 이동시간(분)
+            sum.append(" · ").append(turns <= 1 ? "이번 턴 도착" : (turns + "턴 후 도착"));       // 몇 턴 후 도착
+            dests.add(new String[]{z, zoneDisplayName(z), sum.toString(), areaLabel});
         }
         if (dests.isEmpty()) { p.sendMessage("§7이동할 수 있는 아는 장소가 없습니다."); return; }
+        // ★대분류로 묶기★: 아는 대분류(이름순) → ?(미발견) → 대분류 없음. 같은 대분류면 구역명순.
+        dests.sort((a, b) -> {
+            String aa = a.length > 3 ? a[3] : "", bb = b.length > 3 ? b[3] : "";
+            int ra = aa.equals("?") ? 1 : aa.isEmpty() ? 2 : 0;
+            int rb = bb.equals("?") ? 1 : bb.isEmpty() ? 2 : 0;
+            if (ra != rb) return Integer.compare(ra, rb);
+            int c = aa.compareTo(bb); return c != 0 ? c : a[1].compareTo(b[1]);
+        });
         dialogMan.showMoveDestChoice(p, dests, zid ->
             plugin.getServer().getScheduler().runTask(plugin, () -> startTravel(p, zid)));
     }

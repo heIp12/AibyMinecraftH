@@ -56,6 +56,7 @@ public class MapManager {
     private final Map<String, String>      zoneArea  = new LinkedHashMap<>();
     private final Map<String, String>      zoneRealm = new LinkedHashMap<>(); // zone_id → realm(거대 분리 영역: 현실/꿈/화성 등). 기본 "" = 주 영역. realm 다르면 걸어서 못 넘는다(#190).
     private final Map<String, Set<String>> adj       = new HashMap<>();
+    private final Map<String, Map<String, Integer>> zoneDist = new HashMap<>(); // zone_id → (인접 zone_id → 도보 이동 분). #265 거리 기반 이동시간(있으면 균일 폴백 대신 사용).
     private List<String>                   zoneOrder = new ArrayList<>();
     private final List<String>             areaOrder = new ArrayList<>();
     private final Map<String, Set<String>> areaAdj   = new HashMap<>();
@@ -93,7 +94,7 @@ public class MapManager {
     // ──────────────────────────────────────────────────────────────
 
     public void loadScenario(JsonObject gdam) {
-        zoneNames.clear(); zoneArea.clear(); zoneRealm.clear(); adj.clear();
+        zoneNames.clear(); zoneArea.clear(); zoneRealm.clear(); adj.clear(); zoneDist.clear();
         zoneOrder = new ArrayList<>();
         areaOrder.clear(); areaAdj.clear();
         flatLayout.clear(); overviewLayout.clear(); areaLayouts.clear();
@@ -123,6 +124,13 @@ public class MapManager {
                     String to = c.getAsString();
                     if (to != null && !to.isBlank()) adj.get(id).add(to);
                 }
+            }
+            if (z.has("distances") && z.get("distances").isJsonObject()) { // #265 인접 zone별 도보 분(선택 필드)
+                Map<String, Integer> dm = new HashMap<>();
+                for (Map.Entry<String, JsonElement> e : z.getAsJsonObject("distances").entrySet()) {
+                    try { int m = e.getValue().getAsInt(); if (m > 0) dm.put(e.getKey(), m); } catch (Exception ignore) {}
+                }
+                if (!dm.isEmpty()) zoneDist.put(id, dm);
             }
         }
         // 단방향 연결 보정
@@ -160,7 +168,7 @@ public class MapManager {
     /** 세션 완전 종료 시만 호출. retrySession에서는 호출하지 않아 views를 유지한다. */
     public void clear() {
         areaViews.clear(); overviewView = null; lastSig.clear();
-        zoneNames.clear(); zoneArea.clear(); adj.clear(); zoneOrder = new ArrayList<>();
+        zoneNames.clear(); zoneArea.clear(); adj.clear(); zoneDist.clear(); zoneOrder = new ArrayList<>();
         areaOrder.clear(); areaAdj.clear();
         flatLayout.clear(); overviewLayout.clear(); areaLayouts.clear();
     }
@@ -197,6 +205,19 @@ public class MapManager {
     public Set<String> getAdjacentZones(String zoneId) {
         return Collections.unmodifiableSet(adj.getOrDefault(zoneId, Set.of()));
     }
+
+    /** 인접 두 구역 사이 도보 이동 거리(분). .gdam distances가 있으면 그 값, 없으면 -1(호출부가 균일 폴백). 방향 무관(양쪽 조회). */
+    public int hopDistance(String from, String to) {
+        if (from == null || to == null) return -1;
+        Map<String, Integer> a = zoneDist.get(from);
+        if (a != null && a.containsKey(to)) return a.get(to);
+        Map<String, Integer> b = zoneDist.get(to);   // distances가 한 방향만 적혔을 수 있어 반대편도 조회
+        if (b != null && b.containsKey(from)) return b.get(from);
+        return -1;
+    }
+
+    /** 구역의 대분류(area) 이름. 없으면 null. (이동 다이얼로그의 대분류 그룹핑용) */
+    public String areaOf(String zoneId) { return zoneArea.get(zoneId); }
 
     /** 구역의 realm(거대 분리 영역: 현실/꿈/화성 등). 없으면 "" = 주 영역. realm이 다르면 걸어서 오갈 수 없다(#190) — GM 서술 전이만. */
     public String realmOf(String zoneId) { return zoneRealm.getOrDefault(zoneId, ""); }

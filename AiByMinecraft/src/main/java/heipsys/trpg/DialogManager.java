@@ -449,7 +449,7 @@ public class DialogManager {
         Component body = Component.text()
             .append(Component.text("어디로 이동할까요?", NamedTextColor.WHITE))
             .appendNewline()
-            .append(Component.text("아는 곳이면 먼 구역도 고를 수 있어요 — 도중 구역들을 거쳐 가며 그만큼 시간이 걸립니다.", NamedTextColor.GRAY))
+            .append(Component.text("각 목적지에 「대분류」·경유 구역·이동시간·도착 턴이 표시됩니다. 대분류가 「?」면 아직 모르는 구역이에요.", NamedTextColor.GRAY))
             .build();
         Dialog dialog = Dialog.create(b -> b.empty()
             .base(DialogBase.builder(Component.text("이동  —  목적지 선택"))
