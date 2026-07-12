@@ -10379,8 +10379,14 @@ public class TRPGGameManager {
         String startFlavor = "", rewardFlavor = "", roleFlavor = "";
         // ★이번 스테이지의 실제 괴담 종류★로 판정(세션 필터가 아님). '모두 무작위'는 생성 시점에 구체 종류를
         //   굴려 gdam.familiar_kind에 심어두므로(#114·#206), 그때그때 프로젝트 문·게임 테마가 제대로 반영된다.
-        String kind = scenarioKind();
-        if (familiarMode && "projectmoon".equals(kind)) {
+        // ★로드·리플레이 정합★: 테마 판정을 ★.gdam의 familiar_kind★(항상 세이브에 영속)로만 한다.
+        //   이전엔 런타임 필드 familiarMode를 함께 봤는데, 리플레이는 이를 복원하지 않아(replaySession 미설정)
+        //   familiarMode=false로 프로젝트 문 테마가 증발했다. familiar_kind는 친숙(프로젝트 문·게임) 시나리오에만
+        //   심기므로(생성기) 이것만 보면 오탐 없이 정확 — 로드·리플레이 모두에서 테마가 유지된다.
+        JsonObject fg = state.getGdamData();
+        String kind = (fg != null && fg.has("familiar_kind") && !fg.get("familiar_kind").getAsString().isBlank())
+            ? fg.get("familiar_kind").getAsString() : "";
+        if ("projectmoon".equals(kind)) {
             String base = "## ★테마: 프로젝트 문(로보토미 코퍼레이션)\n"
                 + "특수 능력·도구는 '전투 E.G.O.(전투표상)'·'E.G.O. 기프트'(환상체에서 추출한 무기·방어구·가호) 개념으로 붙인다. 직업(로보토미 직원·수사관 등)·역할과 어울리게. "
                 + "★E.G.O. 이름은 반드시 ★실존 프로젝트 문 환상체★를 출처로 드러내라 — 형식 '[E.G.O GIFT] <원본 환상체명>' 또는 '[전투 E.G.O.] <원본 환상체명>'(예: [E.G.O GIFT] 백야, [전투 E.G.O.] 그을린 소녀). "
@@ -10392,7 +10398,7 @@ public class TRPGGameManager {
                 + "★보상 중 ★최소 1개는 이번에 출현한 환상체(위 '괴담 테마')의 E.G.O.★를 반드시 포함하라 — 모든 플레이어 공통 이름·효과, 등급만 기여도로 차등(이 E.G.O.에 한해 환상체명 직접 사용 허용).";
             roleFlavor   = base + " 배역도 ★가끔★ 자신의 전투 E.G.O.·E.G.O. 기프트를 장비로 지닐 수 있다(직원 지급품 등). "
                 + "단 위 스포일러 금지·범용성을 지켜 이번 괴담의 정체·소재는 드러내지 말고, 일반 장비처럼 범용으로 묘사하라.";
-        } else if (familiarMode && "game".equals(kind)) {
+        } else if ("game".equals(kind)) {
             String ent = getEntityName();
             String base = "## ★테마: 게임 괴담(" + ent + ")\n"
                 + "능력에 그 게임 특유의 메커니즘을 녹인다(예: 히로빈이면 '블록 부수기·순간이동·구조물 표식', 일반 게임이면 '리스폰·인벤토리·체크포인트'). "
