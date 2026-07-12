@@ -988,6 +988,11 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
             for (String c : new String[]{"struct","world","roles","items"})
                 for (String[] sf : MOD_SCHEMA_FIELD) if (sf[1].equals(c)) covered.add(sf[0]);
             if (!allKeys.equals(covered)) throw new IllegalStateException("스키마 키 커버리지 불일치: " + allKeys + " vs " + covered);
+            // ★스키마 실제 최상위 키가 전부 MOD_SCHEMA_FIELD에 등록됐는가★(미등록 키는 모든 슬라이스에서 누락=규칙 손실 → 안전 폴백).
+            Set<String> known = new HashSet<>();
+            for (String[] sf : MOD_SCHEMA_FIELD) known.add(sf[0]);
+            for (String actual : schemaTopLevelKeys(schemaSection))
+                if (!known.contains(actual)) throw new IllegalStateException("스키마 최상위 키 '" + actual + "' 미등록(MOD_SCHEMA_FIELD 갱신 필요)");
             String h = head.toString(), t = tail.toString();
             for (String c : new String[]{"struct","world","roles","items"})
                 out.put(c, h + mod.get(c) + promptSchemaSlice(schemaSection, c) + t);
@@ -1053,6 +1058,17 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
         if (q2 < 0) return null;
         if (ln.indexOf(':', q2) < 0) return null;
         return ln.substring(3, q2);
+    }
+    /** 스키마 섹션의 루트 { } 사이 최상위 키 목록(등록 누락 검증용). */
+    private static List<String> schemaTopLevelKeys(String schemaSection) {
+        List<String> keys = new ArrayList<>();
+        String[] lines = schemaSection.split("\n", -1);
+        int open = -1, close = -1;
+        for (int i = 0; i < lines.length; i++) if (lines[i].equals("{")) { open = i; break; }
+        for (int i = lines.length-1; i >= 0; i--) if (lines[i].equals("}")) { close = i; break; }
+        if (open < 0 || close < 0) return keys;
+        for (int i = open+1; i < close; i++) { String k = promptTopKey(lines[i]); if (k != null) keys.add(k); }
+        return keys;
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -2879,7 +2895,9 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
             for (JsonElement ie : g.getAsJsonArray("key_items")) {
                 if (!ie.isJsonObject()) continue;
                 JsonObject it = ie.getAsJsonObject();
-                String ic = normForOverlap(tlStr(it, "content")); if (ic.length() < 20) continue;
+                // ★key_items[].content는 ★문자열 배열★(스키마 800행·ItemManager:232)이라 tlStr(getAsString)이 배열에서 예외→가드 무력화되던 버그.
+                //   배열이면 원소를 이어 붙여 비교한다(clue content는 문자열이라 그대로).
+                String ic = normForOverlap(itemContentText(it)); if (ic.length() < 20) continue;
                 for (String[] cap : caps)
                     if (longestCommonSubstr(ic, cap[1]) >= 20)
                         out.add("[gdam lint] 아이템 '" + tlStr(it,"name") + "' content가 capstone 단서 '" + cap[0]
@@ -2887,6 +2905,17 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
             }
         } catch (Exception ignore) {}
         return out;
+    }
+    /** key_items[].content는 문자열 배열(또는 드물게 문자열) — 배열이면 원소를 이어 붙여 반환(가드 비교용). */
+    private static String itemContentText(JsonObject it) {
+        if (it == null || !it.has("content") || it.get("content").isJsonNull()) return "";
+        JsonElement ce = it.get("content");
+        if (ce.isJsonArray()) {
+            StringBuilder sb = new StringBuilder();
+            for (JsonElement e : ce.getAsJsonArray()) if (e.isJsonPrimitive()) sb.append(e.getAsString()).append(" ");
+            return sb.toString();
+        }
+        return ce.isJsonPrimitive() ? ce.getAsString() : "";
     }
     private static String normForOverlap(String s) {
         if (s == null) return "";
