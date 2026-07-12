@@ -3525,12 +3525,16 @@ public class TRPGGameManager {
                 // ★로깅용 스냅샷★: 이 업데이트 전후 체력·정신력·상태를 비교해 '받은 피해·상태 전이'를 로그로 남긴다.
                 final int hpBefore0 = pd.hp[0]; final int sanBefore0 = pd.san[0];
                 final String statusBefore = pd.status; final boolean deadBefore = pd.isDead;
+                // ★피해/회복 사유★(요청): GM이 cause로 준 짧은 한 구절을 체력·정신력 변화 안내에 함께 표시(없으면 빈값).
+                String vitalCause = (update.has("cause") && !update.get("cause").isJsonNull())
+                    ? update.get("cause").getAsString().trim().replaceAll("[\\r\\n]+", " ") : "";
+                if (vitalCause.length() > 40) vitalCause = vitalCause.substring(0, 40).trim() + "…";
                 if (update.has("hp_change")) {
                     int delta = amplifyEntityDamage(update.get("hp_change").getAsInt()); // ★위협도 비례 피해 증폭★
                     if (phased && delta < 0) delta = 0; // 무적: 피해 차단
                     int before = pd.hp[0];
                     pd.hp[0] = Math.max(0, Math.min(pd.hp[1], pd.hp[0] + delta));
-                    notifyVitalChange(pd, "체력", "§c", before, pd.hp[0], pd.hp[1]);
+                    notifyVitalChange(pd, "체력", "§c", before, pd.hp[0], pd.hp[1], vitalCause);
                     // 빙의 중 큰 피해 → 무방비 본체가 공격받은 것 → 본체로 강제 복귀(치명상이면 아래에서 사망 처리)
                     if (delta <= -2 && pd.hp[0] > 0 && possessingNpc.containsKey(pd.uuid))
                         endPossession(Bukkit.getPlayer(pd.uuid), pd, "본체가 공격받아 끌려 돌아옴");
@@ -3551,7 +3555,7 @@ public class TRPGGameManager {
                     if (phased && delta < 0) delta = 0; // 위상 이탈 중 정신 피해도 무효
                     int before = pd.san[0];
                     pd.san[0] = Math.max(0, Math.min(pd.san[1], pd.san[0] + delta));
-                    notifyVitalChange(pd, "정신력", "§b", before, pd.san[0], pd.san[1]);
+                    notifyVitalChange(pd, "정신력", "§b", before, pd.san[0], pd.san[1], vitalCause);
                     // 관전 중인 홀림가 SAN 회복 → 완전 잠식 해제(행동 가능한 puppet으로 복귀)
                     if (pd.puppetRecoveryTurns > 0 && pd.san[0] > 0) {
                         pd.puppetRecoveryTurns = 0;
@@ -3702,7 +3706,7 @@ public class TRPGGameManager {
      * 예: 최대 3에서 1피해 → "체력 -33 (남은 67/100)"
      */
     private void notifyVitalChange(PlayerData pd, String label, String color,
-                                   int before, int after, int max) {
+                                   int before, int after, int max, String cause) {
         int scaledBefore = DialogManager.toPercent(before, max);
         int scaledAfter  = DialogManager.toPercent(after, max);
         int scaledDelta  = scaledAfter - scaledBefore;
@@ -3712,10 +3716,12 @@ public class TRPGGameManager {
         if (p == null || !p.isOnline()) return;
 
         String sign = scaledDelta > 0 ? "+" : "-";
+        // ★사유 표기★(요청): GM이 준 cause가 있으면 "§8[사유]"로 함께 보여 왜 깎였는지(회복인지) 알 수 있게.
+        String causeTag = (cause != null && !cause.isEmpty()) ? " §8[" + cause + "]" : "";
         // ★서술 뒤 출력★(요청): 여기서 바로 보내지 않고 큐에 적립 → 관련 GM 서술(공격받았다 등)이 전달된 뒤
         //   flushPendingVitalMsgs가 배출한다(주사위 결과가 서술 뒤에 나오는 것과 동일한 순서).
         pendingVitalMsgs.computeIfAbsent(pd.uuid, k -> new java.util.ArrayList<>())
-            .add(color + label + " " + sign + Math.abs(scaledDelta) + " §7(남은 " + label + " " + scaledAfter + "/100)");
+            .add(color + label + " " + sign + Math.abs(scaledDelta) + causeTag + " §7(남은 " + label + " " + scaledAfter + "/100)");
     }
 
     /** 적립된 체력·정신 소모 안내를 각 대상의 ★서술 전달이 끝난 뒤★ 출력한다(주사위처럼 순서 보장). */
