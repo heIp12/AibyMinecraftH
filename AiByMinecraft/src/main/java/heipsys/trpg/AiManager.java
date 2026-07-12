@@ -347,7 +347,10 @@ public class AiManager {
         boolean gpt5up = m.contains("gpt-5") || m.startsWith("gpt-6") || m.startsWith("gpt6") || m.startsWith("gpt-7");
         if (gpt5up && m.contains("pro")) return new double[]{30, 180};                       // gpt-5/6.x-pro
         if (m.contains("nano"))    return new double[]{0.20, 1.25};   // *-nano
-        if (m.contains("mini"))    return new double[]{0.75, 4.5};    // *-mini
+        // ★'gemini'는 부분문자열 'mini'를 포함(ge-MINI)★ — 이 '*-mini' 판정이 ★모든 Gemini 모델★을 가로채
+        //   아래 Gemini 블록에 닿지 못하게 하던 버그. 그 결과 전 등급이 mini가격 {0.75,4.5}로 동일 추정(=$0.736/시간,
+        //   저품질=중품질=고품질 가격이 같아 보임)되고 실사용 집계(accumulateUsage)도 오과금됐다. gemini 제외로 차단.
+        if (m.contains("mini") && !m.contains("gemini")) return new double[]{0.75, 4.5};    // *-mini
         // ★버전 기반 티어(문자열 하드코딩 금지)★: gpt-5.5+ 및 차세대(gpt-6/7)는 플래그십({5,30}), gpt-5.0~5.4는 표준({2.5,15}).
         //   예전엔 "gpt-5.5" ★문자열★만 플래그십이라, 자동탐지가 HIGH를 gpt-5.6 등 ★더 최신★으로 잡으면 그 모델이 아래
         //   generic({2.5,15})으로 새어 ★HIGH가 MEDIUM(gpt-5.5)보다 싸 보이는 역전★이 났다(선택화면 비용 뒤집힘). 버전으로 판정해 해소.
