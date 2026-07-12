@@ -408,11 +408,10 @@ public class AiManager {
         return gm + aux + gen;
     }
 
-    /** 품질별 시간당 예상 비용 라벨(원화 추정, ★인원수 반영★). 선택 화면·시작 로그용. */
+    /** 품질별 시간당 예상 비용 라벨(★달러 추정 — 요청★, ★인원수 반영★). 선택 화면·시작 로그용. */
     public String hourlyCostLabel(Quality q, int players) {
         int p = Math.max(1, players);
-        long krw = Math.round(estimateHourlyUsd(q, p) * 1400.0); // 환율 ~₩1,400/$
-        return "약 ₩" + String.format("%,d", krw) + "/시간(" + p + "인 추정)";
+        return "약 " + fmtUsd(estimateHourlyUsd(q, p)) + "/시간(" + p + "인 추정)";
     }
 
     // ── 실사용량 조회·마킹 (실제 토큰 사용 기반, /trpg status용) ──
@@ -471,9 +470,13 @@ public class AiManager {
         }
     }
 
-    /** 사용량 → 원화 환산 누적 비용(₩만, 호출·토큰·달러·괄호 없이 깔끔하게). */
+    /** 사용량 → 누적 소모 비용(★달러 표시 — 요청★). 실제 과금 통화(USD)를 그대로 보여 ₩ 환산(×1400) 근사를 제거. */
     public String usageLabel(UsageStat u) {
-        return "₩" + String.format("%,d", Math.round(u.costUsd() * 1400.0));
+        return fmtUsd(u.costUsd());
+    }
+    /** 달러 금액 표기 — $1 이상은 센트 2자리, 미만은 소액 가독 위해 3자리. */
+    private static String fmtUsd(double c) {
+        return c >= 1.0 ? String.format("$%.2f", c) : String.format("$%.3f", c);
     }
 
     /** ★#231 진단★ 이번 가동 비용 구성 분해 — 순수입력/캐시읽기/캐시쓰기/출력 + 비용 비중 + 캐시 히트율.
@@ -518,7 +521,9 @@ public class AiManager {
                     JsonObject u = json.has("usageMetadata") ? json.getAsJsonObject("usageMetadata") : null;
                     if (u == null) return;
                     in  = usageLong(u, "promptTokenCount");
-                    out = usageLong(u, "candidatesTokenCount");
+                    // ★사고(thinking) 토큰도 출력 토큰과 동일하게 청구된다(Google)★ — candidatesTokenCount만 세면
+                    //   Gemini 사고 모델에서 정상 응답 비용조차 지속 과소집계되던 것 보정(thoughtsTokenCount 합산).
+                    out = usageLong(u, "candidatesTokenCount") + usageLong(u, "thoughtsTokenCount");
                 }
                 default -> { // openai
                     JsonObject u = json.has("usage") ? json.getAsJsonObject("usage") : null;
