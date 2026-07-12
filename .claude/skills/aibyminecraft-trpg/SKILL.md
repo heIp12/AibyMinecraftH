@@ -538,8 +538,19 @@ description: >-
   String.join("", 1A,1B,2A,2B)`. ★분할 지점: 1A|1B = '## 배역 설계 원칙' 앞, 2A|2B = '## 출력 JSON 스키마' 앞★. ★검증법
   (회귀 필수)★: 분할 전 GDAM_SYSTEM_PROMPT를 리플렉션 덤프해 sha256 확보 → 분할 후 재덤프 sha256 ★동일★해야 함(내용
   바이트 완전 보존 확인 — 실제로 125691바이트 sha 동일 검증). 텍스트블록 분할은 각 블록에 ★col-0 라인 존재→incidental
-  indent 0★이라 안전하나, ★반드시 sha 동일 확인★. 생성측 문장 추가는 이제 아무 블록에나(여유 충분). ★남은 것=아키텍처
-  청크-모듈 재분할(청크별 계약·정보 재배분, 생성결과 바뀜 → 실플레이 검증 필요, 별개 작업).★
+  indent 0★이라 안전하나, ★반드시 sha 동일 확인★. 생성측 문장 추가는 이제 아무 블록에나(여유 충분).
+- **★② 청크-모듈 재분할 완료(#107/#108, 커밋 31c3f15+869376d)★**: generateChunked 4청크가 매 호출 GDAM_SYSTEM_PROMPT
+  ★전체(126042B)★를 받던 과부하(GPT #5) 해소. ★런타임 분할★ 채택(물리 재분해 아님) — 원본 4상수·GDAM_SYSTEM_PROMPT
+  ★무편집→폴백 sha256 bfadd79a…불변★. `buildSystemModules`가 `## ` 경계 무손실 분할(`splitPromptSections`)+헤더 키워드
+  배정(`MOD_ASSIGN` 43섹션)+스키마 필드 슬라이스(`MOD_SCHEMA_FIELD`/`promptSchemaSlice`)→`SYS_STRUCT/WORLD/ROLES/ITEMS`
+  (=CORE_HEAD[머리말·출력규칙·언어수준]+모듈+스키마조각+CORE_TAIL[최종자기검증]). ★커버리지 실패 시 4모듈 전부 full 폴백(현행 동작)★.
+  실측 SYS 68679/53785/32360/14355B(합 169KB, 폴백4배 대비 −66%). 4 callGmAiLarge + chunkArray(sys인자)를 SYS_x로,
+  폴백 generate()는 full 유지. ★계약★: struct→items(itemCtx에 world_rules·timeline) · world→items 신규 `sealedClueDigest`
+  (단서 id·type·capstone·게이트·요지만, 정답 How 제외) · clueDigest capstone 필터(roles에 종결단서 원문 숨김). ★가드
+  `lintItemVsCapstone`★(capstone 정답이 key_items content에 20자+ 복제 시 경고, lintGdam 4d). 테스트: ModBuild(스탠드얼론
+  분할 로직 19) + ContractTest(6). ★남은 것=실플레이 생성품질 검증(#112, 컴파일환경 미검증) + struct 모듈 2차 절감(스케일 조건부).★
+  ★새 GM/생성 섹션 추가 시 주의★: `## 헤더`가 MOD_ASSIGN에 없으면 buildSystemModules가 예외→full 폴백(손실 아님, 로그만). 새 섹션은 MOD_ASSIGN에 등록.
+- **★설계·검증 기록★**: `docs/design/gdam-prompt-resplit-design.md`(다중에이전트 Workflow 분석3→설계3+종합→적대검증 SOUND).
 - **통신 변조 = 3층 (내용 GM / 채널 comm_interference / ★언제=GM 스위치+엔진 폴백★)**: entityCommActive()가 '언제'를
   게이트 — currentPhase==HORROR 필수 + commTamperMode(<COMM_TAMPER on/off>, GameStateManager durable): 1=강제ON·
   -1=강제OFF·0=auto. auto면 감청테마(isCommsMonitored)=처음부터 / 그 외=threat≥40(중반 escalation). ★설계 근거★:
