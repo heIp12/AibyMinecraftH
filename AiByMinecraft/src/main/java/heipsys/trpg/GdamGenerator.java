@@ -917,10 +917,13 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
     private static final String GDAM_SYSTEM_PROMPT = String.join("", GDAM_SYSTEM_PROMPT_1A, GDAM_SYSTEM_PROMPT_1B, GDAM_SYSTEM_PROMPT_2A, GDAM_SYSTEM_PROMPT_2B);
 
     // ══════════════════════════════════════════════════════════════════
-    //  ② 청크-모듈 재분할 (#107/#108) — 각 생성 청크에 ★그 청크가 실제로 쓰는 규칙만★ 전달.
-    //   과부하(GPT #5) 완화: 예전엔 4개 청크(구조/월드/배역/아이템)가 매 호출 GDAM_SYSTEM_PROMPT
+    //  ② 청크-모듈 재분할 (#107/#108, #290 인물 분리) — 각 생성 청크에 ★그 청크가 실제로 쓰는 규칙만★ 전달.
+    //   과부하(GPT #5) 완화: 예전엔 4개 청크가 매 호출 GDAM_SYSTEM_PROMPT
     //   ★전체★(≈126KB·44섹션)를 받아 자기 슬라이스만 썼다. 이제 CORE(머리말·출력규칙·언어수준·최종자기검증)
     //   + 청크 모듈(그 청크 산출필드 섹션 + 스키마 슬라이스)만 받는다.
+    //   #290: 가장 정밀한 산출물(npcs)이 월드 청크에 7필드로 뭉쳐 밀도가 떨어져 → ★인물(npcs) 청크★를 분리,
+    //   5청크(구조/월드/인물/배역/아이템). relationships(npc id 참조)·clues(소지자·증언이 npc와 얽힘)·
+    //   meeting_design(관계 의존)은 npcs와 함께 생성해야 정합해 인물 청크로 이동.
     //   ★핵심 안전장치★: 원본 4상수(1A/1B/2A/2B)·GDAM_SYSTEM_PROMPT(폴백)는 ★한 글자도 안 건드린다★
     //   → 폴백 바이트 동일성 보장. 분할은 순수 런타임 문자열 연산(원본 무손실 분할)이고, 어떤 이유로든
     //   실패하면 4개 모듈 전부 전체 프롬프트로 폴백(=현행 동작). 규칙 손실 0을 정적 초기화에서 자기검증한다.
@@ -928,19 +931,19 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
     private static final String[][] MOD_ASSIGN = {
         {"출력 규칙", "core"}, {"언어 수준", "core"},
         {"괴담 이름", "struct"}, {"괴담 소재 다양성", "struct"}, {"설계 순서", "struct"},
-        {"이야기 기승전결", "struct"}, {"사건(이벤트) 설계", "struct","world"}, {"괴담 성격", "struct"},
+        {"이야기 기승전결", "struct"}, {"사건(이벤트) 설계", "struct","npcs"}, {"괴담 성격", "struct"},
         {"괴담 행동양식", "struct"}, {"스케일 기준", "struct"}, {"괴담 세력", "struct"},
-        {"필수 설계 항목", "struct","world","roles"}, {"weakness 작성", "struct"}, {"exploit_path 작성", "struct"},
+        {"필수 설계 항목", "struct","world","roles","npcs"}, {"weakness 작성", "struct"}, {"exploit_path 작성", "struct"},
         {"약점·해결 서술 추상화", "struct"}, {"물리력 내성", "struct"},
-        {"배역 설계 원칙", "roles"}, {"괴담 연루 배역", "roles"}, {"배역 격", "roles","world"},
-        {"char_name / gender", "roles","world"}, {"job_pool / age_range", "roles"}, {"spawn_timeline 표기", "roles"},
+        {"배역 설계 원칙", "roles"}, {"괴담 연루 배역", "roles"}, {"배역 격", "roles","npcs"},
+        {"char_name / gender", "roles","npcs"}, {"job_pool / age_range", "roles"}, {"spawn_timeline 표기", "roles"},
         {"단계 수 규모 가변", "struct","roles"}, {"pre_spawn_beats", "roles"}, {"role_stats 설계", "roles"},
-        {"배역 관계 설계 원칙", "world","roles"}, {"아이템 설계 규칙", "items","roles"},
+        {"배역 관계 설계 원칙", "npcs","roles"}, {"아이템 설계 규칙", "items","roles"},
         {"세계관 규칙 (world_rules)", "struct"}, {"배경·행동 제약 (constraints)", "struct"}, {"타임라인 v2 설계 원칙", "struct"},
-        {"zones 설계 원칙", "world"}, {"zone 구역(area)", "world"}, {"zone 거대 영역(realm)", "world"}, {"npcs 설계 원칙", "world"},
+        {"zones 설계 원칙", "world"}, {"zone 구역(area)", "world"}, {"zone 거대 영역(realm)", "world"}, {"npcs 설계 원칙", "npcs"},
         {"can_impersonate 작성", "struct"}, {"perception 작성", "struct"}, {"hidden_rules 작성", "struct"},
-        {"common_items 작성", "world"}, {"clues 설계 원칙", "world"},
-        {"해결 경로 강건성", "struct","world"}, {"만남 가능성 검증", "world","roles"},
+        {"common_items 작성", "world"}, {"clues 설계 원칙", "npcs"},
+        {"해결 경로 강건성", "struct","npcs"}, {"만남 가능성 검증", "npcs","roles"},
         {"설계 정합성 최종 자기검증", "core"},
     };
     // 스키마 최상위 필드 → 청크 (env = 봉투 seed/room/scale, 모든 모듈 슬라이스에 포함).
@@ -948,27 +951,28 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
         {"seed","env"}, {"room","env"}, {"scale","env"},
         {"entity","struct"}, {"world_rules","struct"}, {"constraints","struct"}, {"timeline","struct"},
         {"roles","roles"},
-        {"relationships","world"}, {"zones","world"}, {"npcs","world"}, {"clues","world"},
-        {"daily_prologue","world"}, {"meeting_design","world"}, {"join_system","world"},
+        {"relationships","npcs"}, {"zones","world"}, {"npcs","npcs"}, {"clues","npcs"},
+        {"daily_prologue","world"}, {"meeting_design","npcs"}, {"join_system","world"},
         {"common_items","world"}, {"info_sharing","world"},
         {"key_items","items"},
     };
     // 청크별 완성 시스템 프롬프트(= CORE_HEAD + 모듈 섹션 + 스키마 슬라이스 + CORE_TAIL). 실패 시 전체 프롬프트 폴백.
-    private static final String SYS_STRUCT, SYS_WORLD, SYS_ROLES, SYS_ITEMS;
+    private static final String[] CHUNK_NAMES = {"struct","world","npcs","roles","items"};
+    private static final String SYS_STRUCT, SYS_WORLD, SYS_NPCS, SYS_ROLES, SYS_ITEMS;
     static {
         Map<String,String> m = buildSystemModules(GDAM_SYSTEM_PROMPT);
-        SYS_STRUCT = m.get("struct"); SYS_WORLD = m.get("world");
+        SYS_STRUCT = m.get("struct"); SYS_WORLD = m.get("world"); SYS_NPCS = m.get("npcs");
         SYS_ROLES  = m.get("roles");  SYS_ITEMS = m.get("items");
     }
 
-    /** GDAM_SYSTEM_PROMPT를 청크별 시스템 프롬프트 4종으로 분해. 실패하면 전부 전체 프롬프트(현행 동작)로 폴백. */
+    /** GDAM_SYSTEM_PROMPT를 청크별 시스템 프롬프트 5종으로 분해. 실패하면 전부 전체 프롬프트(현행 동작)로 폴백. */
     private static Map<String,String> buildSystemModules(String full) {
         Map<String,String> out = new HashMap<>();
         try {
             List<String> secs = splitPromptSections(full);
             StringBuilder head = new StringBuilder(), tail = new StringBuilder();
             Map<String,StringBuilder> mod = new HashMap<>();
-            for (String c : new String[]{"struct","world","roles","items"}) mod.put(c, new StringBuilder());
+            for (String c : CHUNK_NAMES) mod.put(c, new StringBuilder());
             String schemaSection = null;
             for (int i = 0; i < secs.size(); i++) {
                 String sec = secs.get(i);
@@ -977,13 +981,13 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
                 if (header.contains("출력 JSON 스키마")) { schemaSection = sec; continue; }
                 List<String> chunks = promptChunksFor(header); // 정확히 1개 키워드 매칭 아니면 예외 → 폴백
                 if (chunks.contains("core")) { if (header.contains("자기검증")) tail.append(sec); else head.append(sec); }
-                for (String c : new String[]{"struct","world","roles","items"}) if (chunks.contains(c)) mod.get(c).append(sec);
+                for (String c : CHUNK_NAMES) if (chunks.contains(c)) mod.get(c).append(sec);
             }
             if (schemaSection == null) throw new IllegalStateException("스키마 섹션 미발견");
             // 규칙 손실 0 자기검증 — 스키마 최상위 필드(env 제외)가 전부 어느 청크엔가 배정됐는가.
             Set<String> allKeys = new LinkedHashSet<>(), covered = new LinkedHashSet<>();
             for (String[] sf : MOD_SCHEMA_FIELD) if (!sf[1].equals("env")) allKeys.add(sf[0]);
-            for (String c : new String[]{"struct","world","roles","items"})
+            for (String c : CHUNK_NAMES)
                 for (String[] sf : MOD_SCHEMA_FIELD) if (sf[1].equals(c)) covered.add(sf[0]);
             if (!allKeys.equals(covered)) throw new IllegalStateException("스키마 키 커버리지 불일치: " + allKeys + " vs " + covered);
             // ★스키마 실제 최상위 키가 전부 MOD_SCHEMA_FIELD에 등록됐는가★(미등록 키는 모든 슬라이스에서 누락=규칙 손실 → 안전 폴백).
@@ -992,14 +996,14 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
             for (String actual : schemaTopLevelKeys(schemaSection))
                 if (!known.contains(actual)) throw new IllegalStateException("스키마 최상위 키 '" + actual + "' 미등록(MOD_SCHEMA_FIELD 갱신 필요)");
             String h = head.toString(), t = tail.toString();
-            for (String c : new String[]{"struct","world","roles","items"})
+            for (String c : CHUNK_NAMES)
                 out.put(c, h + mod.get(c) + promptSchemaSlice(schemaSection, c) + t);
             return out;
         } catch (Throwable ex) {
             java.util.logging.Logger.getLogger(GdamGenerator.class.getName())
                 .warning("[gdam] 프롬프트 모듈 분할 실패 → 전체 프롬프트로 폴백(현행 동작): " + ex);
             out.clear();
-            for (String c : new String[]{"struct","world","roles","items"}) out.put(c, full);
+            for (String c : CHUNK_NAMES) out.put(c, full);
             return out;
         }
     }
@@ -1814,7 +1818,7 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
         return roll < 15 ? 0 : roll < 40 ? 1 : roll < 65 ? 2 : roll < 85 ? 3 : 4; // 0:15 1:25 2:25 3:20 4:15
     }
 
-    /** 중요 NPC 수 지시(월드 청크). 정확한 목표 수를 못박아 '항상 2명' 고정 편향을 깬다. */
+    /** 중요 NPC 수 지시(인물 청크, #290). 정확한 목표 수를 못박아 '항상 2명' 고정 편향을 깬다. */
     private static String criticalNpcDirective(int roomNumber) {
         int n = criticalNpcCount(roomNumber);
         // ★#9 구조 정합★: 이 수는 '항상 2명' 편향을 깨는 목표치다. 단, 해결이 실제로 특정 인물에 걸린 구조에서 0이 나와
@@ -1877,24 +1881,20 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
             }
             if (progress != null) progress.accept("구조");
 
-            // 1b. 월드 청크: zones·relationships·npcs·clues·daily_prologue·meeting_design·common_items
+            // 1b. 월드 청크: zones·daily_prologue·common_items — ★무대·배경만★(#290: npcs·relationships·clues·
+            //   meeting_design은 다음 '인물' 청크가 정밀 전담. 예전엔 7필드가 한 호출에 뭉쳐 인물 밀도가 떨어졌다).
             // ★#1 컨텍스트 단절 수정★: world_rules(정답·collapse_condition·npc_dependency)·constraints(통신·gated_zones)를
-            //   함께 넘겨야 구역·NPC·단서가 정답 규칙·제약과 어긋나지 않는다(예전엔 entity·timeline만 줘 단서가 해법과 따로 놀았다).
+            //   함께 넘겨야 구역·단서가 정답 규칙·제약과 어긋나지 않는다(예전엔 entity·timeline만 줘 단서가 해법과 따로 놀았다).
             String structCtx = contextJson(core, null, "entity", "timeline", "world_rules", "constraints");
             String worldPrompt = head
                 + "## 이미 확정된 구조(참고, 일관성 유지)\n" + structCtx + "\n\n"
-                + "위 스키마의 ★zones, relationships, npcs, clues, daily_prologue, meeting_design, common_items★ "
-                + "만 하나의 JSON 객체로 출력하라. 형식: {\"zones\":[...],\"relationships\":[...],\"npcs\":[...],"
-                + "\"clues\":[...],\"daily_prologue\":...,\"meeting_design\":...,\"common_items\":[...]}\n"
-                + "entity·timeline·world_rules·constraints·roles·key_items 등 다른 최상위 필드는 절대 포함하지 마라(참고용으로만 봤다)."
-                + ScenarioArchetypes.rolesBlock(roomNumber) // 외부화·샘플링: NPC 역할 후보 소수만 주입(1~2스테이지는 기본만)
-                + criticalNpcDirective(roomNumber)          // ★이번 회차 중요 NPC 수(0~4 가변)★ — '항상 2명' 고정 편향 제거
-                + "\n## ★검증: npcs가 괴담 성향(disposition)·규칙에 맞게 반응·배치됐는가? 아니면 고쳐라."
+                + "위 스키마의 ★zones, daily_prologue, common_items★ "
+                + "만 하나의 JSON 객체로 출력하라. 형식: {\"zones\":[...],\"daily_prologue\":...,\"common_items\":[...]}\n"
+                + "entity·timeline·world_rules·constraints·npcs·clues·roles·key_items 등 다른 최상위 필드는 절대 포함하지 마라(참고용으로만 봤다)."
                 + "\n## daily_prologue.opening: 도입 강도를 시나리오 성격에 맞게 정하라 — "
                 + "\"calm\"(대부분: 담담한 일상에서 서서히 침식) · \"tense\"(일상에 미묘한 긴장·불안, 단 초자연은 아님) · "
                 + "\"crisis\"(시작부터 이미 위기·재난·감금·추격이 진행 중인 괴담). ★crisis면 daily_prologue.turns를 0~1로 짧게★ "
-                + "(일상 유예 없이 바로 사건 한복판). 대부분 시나리오는 calm."
-                + hgWorld;
+                + "(일상 유예 없이 바로 사건 한복판). 대부분 시나리오는 calm.";
 
             return aiManager.callGmAiLarge(SYS_WORLD, worldPrompt).thenCompose(worldRaw -> {
                 JsonObject world = tryParseObject(worldRaw);
@@ -1903,9 +1903,38 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
                     return generate(roomNumber, 0, concept, progress);
                 }
                 // 월드 필드를 구조(core)에 병합
-                for (String k : new String[]{"zones", "relationships", "npcs", "clues",
-                                             "daily_prologue", "meeting_design", "common_items"})
+                for (String k : new String[]{"zones", "daily_prologue", "common_items"})
                     if (world.has(k)) core.add(k, world.get(k));
+                if (progress != null) progress.accept("무대");
+
+            // 1c. ★인물 청크(#290)★: npcs·relationships·clues·meeting_design — 시나리오에서 가장 정밀한 산출물
+            //   (성격·동기·기질·거짓말·욕설·말투·게이트·스케줄)을 전담 호출로 설계한다. clues는 소지자·증언이
+            //   npcs와 얽히고 relationships는 npc id를, meeting_design은 관계를 참조하므로 함께 생성해야 정합하다.
+            String npcCtx = contextJson(core, null, "entity", "world_rules", "constraints", "timeline", "zones");
+            String npcsPrompt = head
+                + "## 이미 확정된 내용(참고, 일관성 유지)\n" + npcCtx + "\n\n"
+                + "위 스키마의 ★npcs, relationships, clues, meeting_design★ 만 하나의 JSON 객체로 출력하라. "
+                + "형식: {\"npcs\":[...],\"relationships\":[...],\"clues\":[...],\"meeting_design\":{...}}\n"
+                + "entity·timeline·zones·roles·key_items 등 다른 최상위 필드는 절대 포함하지 마라(참고용으로만 봤다).\n"
+                + "★이 청크는 '인물 설계' 전담이다 — critical NPC 한 명 한 명을 정밀하게: personality(그 인물만의 구체적 모순·습관)·"
+                + "motivation·temperament·fear·honesty·swear·speech_style(또는 ending_style)·age·knowledge·schedule·core_gate를 "
+                + "스키마 규칙대로 빠짐없이 채우고, NPC끼리 성격·말버릇이 겹치지 않게 하라.\n"
+                + "★relationships는 배역 관례 id(role_A·role_B·role_C…)와 위 npcs의 id를 연결하고, "
+                + "clues의 location·소지자·증언 주체는 실존 zone·npcs와 정합해야 한다(없는 인물·구역 참조 금지).\n"
+                + ScenarioArchetypes.rolesBlock(roomNumber) // 외부화·샘플링: NPC 역할 후보 소수만 주입(1~2스테이지는 기본만)
+                + criticalNpcDirective(roomNumber)          // ★이번 회차 중요 NPC 수(0~4 가변)★ — '항상 2명' 고정 편향 제거
+                + "\n## ★검증: npcs가 괴담 성향(disposition)·규칙에 맞게 반응·배치됐는가? 아니면 고쳐라."
+                + hgWorld;
+
+            return aiManager.callGmAiLarge(SYS_NPCS, npcsPrompt).thenCompose(npcsRaw -> {
+                JsonObject people = tryParseObject(npcsRaw);
+                if (people == null) {
+                    logger.warning("[gdam] 분할-인물 파싱 실패 → 단일 생성 폴백" + parseDiag(npcsRaw));
+                    return generate(roomNumber, 0, concept, progress);
+                }
+                for (String k : new String[]{"npcs", "relationships", "clues", "meeting_design"})
+                    if (people.has(k)) core.add(k, people.get(k));
+                if (progress != null) progress.accept("인물");
 
             // ★#A 컨텍스트 단절 수정★: constraints(era·통신)·timeline까지 함께 넘긴다 — 예전엔 배역 청크가 시대를
             //   몰라 조선 무대에 현대식 이름·직업이, 타임라인을 몰라 spawn_timeline이 단계 수 밖을 가리켰다.
@@ -1992,6 +2021,7 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
                     return CompletableFuture.completedFuture(core);
                 });
             });
+            }); // 인물(npcs) 청크 람다 종료
             }); // 월드(world) 청크 람다 종료
         }).exceptionallyCompose(ex -> {
             logger.warning("[gdam] 분할 생성 예외 → 단일 생성 폴백: " + ex.getMessage());
