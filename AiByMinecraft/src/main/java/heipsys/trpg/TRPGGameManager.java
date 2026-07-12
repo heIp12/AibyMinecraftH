@@ -8106,13 +8106,15 @@ public class TRPGGameManager {
     }
 
     private void extractAndStoreInfo(String narrative, PlayerData pd) {
+        if (pd == null) return; // List.of는 null 원소에 NPE — 방어(현 호출부는 모두 non-null이나 안전빵)
         extractAndStoreInfo(narrative, java.util.List.of(pd));
     }
-    /** ★비용 최적화판★ — 같은 서술은 추출 호출 1회, 결과를 targets 전원에 기록. 초단문(공백 제외 50자 미만)은
-     *  기록할 새 단서가 없다시피 하니 호출 자체를 생략(짧은 응수·목격 파편의 '없음' 호출 제거). */
+    /** ★비용 최적화판★ — 같은 서술은 추출 호출 1회, 결과를 targets 전원에 기록. 초단문(공백 제외 25자 미만)은
+     *  기록할 새 단서가 없다시피 하니 호출 자체를 생략(짧은 응수의 '없음' 호출 제거). ★목격(WITNESS) 한 문장 단서
+     *  (예: "구철승이 중계기를 만지며 엿듣고 있었다")가 통째로 누락되던 문제로 임계 50→25 하향(진짜 단서 문장은 대개 25자+).★ */
     private void extractAndStoreInfo(String narrative, java.util.List<PlayerData> targets) {
         if (narrative == null || narrative.isBlank() || targets == null || targets.isEmpty()) return;
-        if (narrative.replaceAll("\\s+", "").length() < 50) return; // 초단문 스킵(비용) — 한두 마디엔 새 단서가 없다
+        if (narrative.replaceAll("\\s+", "").length() < 25) return; // 초단문 스킵(비용) — 한두 마디엔 새 단서가 없다
         // P57: 같은 대상(인물/사물/사건)별로 단서를 묶어 기록한다.
         // 각 줄을 '대상|단서' 또는 '[대상] 단서' 형식으로 받아 subject별로 그룹화한다.
         String task = "아래 TRPG 서술에서 ★기록할 가치가 있는 새 정보(단서)★만 뽑아줘.\n"

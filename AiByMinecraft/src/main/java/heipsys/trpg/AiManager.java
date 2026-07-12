@@ -708,7 +708,11 @@ public class AiManager {
                     snapshot = new ArrayList<>(ctx);
                 }
                 try {
-                    String result = send(npcModel(), systemPrompt, snapshot, ASST_MAX_TOKENS, true, npcEffort); // 히스토리 프리픽스 캐싱
+                    // ★cacheHistory=false★: NPC 시스템 프롬프트는 동적 꼬리(featureBlocks: 세계 현황·문맥별 지식 선별)를 담아
+                    //   호출마다 달라진다 → 메시지 히스토리 캐시 프리픽스가 [sys1][sys2(동적)][msgs]라 sys2에서 갈려 msgs가 절대
+                    //   히트 못한다. 그런데 cacheHistory=true면 그 못 읽을 히스토리를 매 호출 캐시쓰기(2×)만 하고 버렸다(순낭비).
+                    //   false로 두면 히스토리는 정가 1×, sys1(안정 코어)은 시스템 블록 자체 cache_control로 그대로 0.1× 캐시된다.
+                    String result = send(npcModel(), systemPrompt, snapshot, ASST_MAX_TOKENS, false, npcEffort);
                     // #1(컨텍스트 오염): 자율(3인칭) 응답을 raw로 저장하면 이후 ★대화★ 호출이 그 3인칭·보고체를 흉내낸다(약한 모델의 이력 모방).
                     //   → 자율 응답은 태그를 떼고 '[지난 자율 행동] 요약' 중립 로그로 저장한다(대화 1인칭 응답은 verbatim 유지해 대화 연속성 보존).
                     //   ★단 stripTags가 통째로 지우는 <NPC_CALL>(제가 먼저 건 연락)의 요지는 1인칭 기억으로 되살려 둔다★ —

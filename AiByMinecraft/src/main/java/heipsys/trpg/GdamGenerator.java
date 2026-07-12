@@ -265,6 +265,9 @@ harm/defeat가 모두 "불가"인 순수 비물리 괴담도 가능하나 ★남
     private static final String GDAM_SYSTEM_PROMPT_1B = """
 ## 배역 설계 원칙
 - 핵심 배역 3~4개, 각 배역 다른 시작 위치
+- ★spawn_location 표기 — 플레이어에게 '시작 위치: …'로 그대로 보인다. ★현장에서 실제로 부르는 자연스러운 장소 한 구절★로 써라.
+  · ★realm·세계·차원 이름(현실세계·꿈속·화성·이세계 등)이나 '~층'·메타 구조어를 앞에 붙이지 마라★ — 어색하다. 나쁜 예 ✗: "현실세계 미술관" / "예술의 층 전시홀" / "꿈 영역 복도".  좋은 예 ✓: "인적 끊긴 미술관 2층 전시홀" / "젖은 카펫이 깔린 복도 한복판" / "불 꺼진 매표소 앞".
+  · 조사·서술 없이 명사만 나열("현실세계 미술관")하지 말고, 그 인물이 지금 서 있는 곳이 그려지는 구체적 한 구절로.
 - 모든 배역 참여 시 구조적 만남 가능 보장
 - 각 배역은 고유한 초기 정보 보유
 - 늦게 등장하는 배역은 knowledge_advantage: true
@@ -2565,7 +2568,8 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
         String s = gdam.toString();
         return s.contains("환상체") || s.contains("세피라") || s.contains("지정사서")
             || s.contains("로보토미") || s.contains("라오루") || s.contains("루이나")
-            || s.contains("클리포트") || s.contains("E.G.O") || s.contains("림버스") || s.contains("의 층");
+            || s.contains("클리포트") || s.contains("E.G.O") || s.contains("림버스");
+            // ※"의 층" 제거 — '지하의 층계'·'건물의 층수' 같은 평범한 문구에 오탐(비-PM에 세피라 말투 오적용). 위 PM 전용어만으로 충분.
     }
 
     /** 프로젝트 문 라오루(도서관·지정사서 시대) 판정 — 세피라 speech_style 목소리(LoR vs 로보토미) 선택용 휴리스틱. */

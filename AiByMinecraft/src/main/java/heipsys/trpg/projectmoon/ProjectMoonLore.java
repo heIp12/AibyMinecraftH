@@ -304,7 +304,10 @@ public final class ProjectMoonLore {
         if (npcName == null || npcName.isBlank()) return null;
         for (int i = 0; i < SEPHIRAH.length; i++) {
             for (String key : sephirahNameKeys(SEPHIRAH[i][0], allowHumanName)) {
-                if (npcName.contains(key)) {
+                // ★짧은 키(≤2자: 미셸·칼리·아인·호드·비나)는 부분일치가 무관한 이름(칼리스토·아인슈페너·호드윅)까지 오탐 →
+                //   정확일치만 허용. 3자+ 키(다니엘·헤세드·게부라 등)는 부분일치 유지('김미셸' 등은 어차피 3자+가 드묾).★
+                boolean hit = key.length() <= 2 ? npcName.trim().equals(key) : npcName.contains(key);
+                if (hit) {
                     return new String[]{ library ? SEPHIRAH[i][7] : SEPHIRAH[i][3], SEPHIRAH_ENDING[i] };
                 }
             }
