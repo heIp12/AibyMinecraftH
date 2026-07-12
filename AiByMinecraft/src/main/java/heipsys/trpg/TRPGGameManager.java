@@ -9264,11 +9264,17 @@ public class TRPGGameManager {
         int npcAge = npcObj.has("age") && !npcObj.get("age").isJsonNull() ? npcObj.get("age").getAsInt() : -1;
         if (npcAge >= 0 && npcAge < 13) intel = Math.min(intel, 2); // 어린이는 쉬운 말만
         // ── 말투 계층(관리 편의로 메서드 분리; 정의는 ageRegisterHint 아래) ──
-        //   ①어미습관(ending_style) / ②개인말투(speech_style) / ③유창도 폴백(intel) — 셋 중 하나(우선순위대로) + ④나이별(항상).
+        //   ①어미습관(ending_style) / ②개인말투(speech_style) / ③유창도 폴백(intel) — 우선순위대로 + ④나이별(항상).
         //   speech_style·ending_style 없는 구 .gdam·일반 NPC는 ③으로 폴백(하위호환).
+        //   ★둘 다 있으면(캐논 세피라: applySephirahCanonSpeech가 어조+어미묶음을 함께 심음) ①+② 병용★ —
+        //   예전엔 ①만 타서 어조·리듬(speech_style)이 pass1에서 통째로 증발했다(게부라 거친 결이 밋밋해짐).
         String endingStyle = getStr(npcObj, "ending_style");
         String speechStyle = getStr(npcObj, "speech_style");
-        if (!endingStyle.isBlank())      npcEndingHabitBlock(sb);                 // ① 특수 어미 습관 → pass2 렌더
+        if (!endingStyle.isBlank() && !speechStyle.isBlank()) {                   // ①+② 병용: 어조는 pass1, 어미는 pass2가 확정
+            npcPersonalSpeechBlock(sb, speechStyle);
+            sb.append("- 문장 끝 특유 어미는 출력 후 시스템이 한 번 더 정돈한다 — 위 말씨대로 자연스럽게 말하되, 어미가 좀 어긋나도 새 어미를 지어내진 마라.\n");
+        }
+        else if (!endingStyle.isBlank()) npcEndingHabitBlock(sb);                 // ① 특수 어미 습관 → pass2 렌더
         else if (!speechStyle.isBlank()) npcPersonalSpeechBlock(sb, speechStyle); // ② 개인별 말투(speech_style)
         else                             npcFluencyBlock(sb, intel);             // ③ 유창도(주사위) 폴백
         npcAgeSpeechBlock(sb, npcAge);                                            // ④ 나이별 말투·어휘(항상)
