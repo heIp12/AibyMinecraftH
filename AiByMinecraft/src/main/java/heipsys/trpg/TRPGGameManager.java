@@ -8109,12 +8109,13 @@ public class TRPGGameManager {
         if (pd == null) return; // List.of는 null 원소에 NPE — 방어(현 호출부는 모두 non-null이나 안전빵)
         extractAndStoreInfo(narrative, java.util.List.of(pd));
     }
-    /** ★비용 최적화판★ — 같은 서술은 추출 호출 1회, 결과를 targets 전원에 기록. 초단문(공백 제외 25자 미만)은
-     *  기록할 새 단서가 없다시피 하니 호출 자체를 생략(짧은 응수의 '없음' 호출 제거). ★목격(WITNESS) 한 문장 단서
-     *  (예: "구철승이 중계기를 만지며 엿듣고 있었다")가 통째로 누락되던 문제로 임계 50→25 하향(진짜 단서 문장은 대개 25자+).★ */
+    /** ★비용 최적화판★ — 같은 서술은 추출 호출 1회, 결과를 targets 전원에 기록. 초단문(공백 제외 8자 미만)만
+     *  호출 생략(한두 어절 응수엔 새 단서가 없다시피). ★임계 하향 25→8★: "거울을 보면 따라온다"·"종은 세 번 울린다"·
+     *  "관리인이 거짓말했다"처럼 ★짧아도 결정적인 단서 문장★(8~12자)이 통째로 누락되던 문제(GPT 지적). 추출은
+     *  값싼 모델이라 짧은 목격 한 줄까지 챙기는 편이 게임성(모든 정보 축적)에 부합한다. */
     private void extractAndStoreInfo(String narrative, java.util.List<PlayerData> targets) {
         if (narrative == null || narrative.isBlank() || targets == null || targets.isEmpty()) return;
-        if (narrative.replaceAll("\\s+", "").length() < 25) return; // 초단문 스킵(비용) — 한두 마디엔 새 단서가 없다
+        if (narrative.replaceAll("\\s+", "").length() < 8) return; // 초단문만 스킵("네.","알았어" 등) — 단서 있을 리 없는 파편
         // P57: 같은 대상(인물/사물/사건)별로 단서를 묶어 기록한다.
         // 각 줄을 '대상|단서' 또는 '[대상] 단서' 형식으로 받아 subject별로 그룹화한다.
         String task = "아래 TRPG 서술에서 ★기록할 가치가 있는 새 정보(단서)★만 뽑아줘.\n"
@@ -10261,8 +10262,9 @@ public class TRPGGameManager {
 
     /** 자율 NPC가 먼저 플레이어에게 연락(전화/직접). 닿을 때만 전달하고, 플레이어는 그 NPC 번호를 알게 된다(콜백 가능). */
     private void deliverNpcInitiatedContact(JsonObject npcObj, String npcId, String npcName, String npcZone,
-                                            String targetName, String callMsg) {
-        if (callMsg == null || callMsg.isBlank() || !isNpcCommunicable(npcObj)) return;
+                                            String targetName, String callMsgRaw) {
+        if (callMsgRaw == null || callMsgRaw.isBlank() || !isNpcCommunicable(npcObj)) return;
+        final String callMsg = scrubMetaIds(callMsgRaw); // ★메타 ID 누출 차단★ — 선연락 본문·기록·GM 컨텍스트 전부 클린(GPT #4)
         PlayerData target = state.getAllPlayers().stream()
             .filter(pd -> matchesPlayerName(pd, targetName)).findFirst().orElse(null);
         if (target == null || target.isDead || !spawnedPlayers.contains(target.uuid)) return;
@@ -10283,9 +10285,10 @@ public class TRPGGameManager {
         java.util.function.Consumer<String> deliver = (heard) -> {
             if (tp == null || !tp.isOnline()) return; // 비동기 변조 대기 중 오프라인 → 전달 취소
             String tag = sameZone ? "§a[근처] §f" : written ? ("§b[✉ " + media + "] §f") : ("§b[📞 " + media + "] §f");
-            tp.sendMessage(tag + npcName + ": " + formatNpcSpeech(scrubMetaIds(heard), "§f")); // ★가독성★: 지문 회색·자기 줄, ★메타 ID 누출 차단★
+            String heardClean = scrubMetaIds(heard); // ★메타 ID 누출 차단★ — 표시·기록 공용(GPT #4: 기록 경로도 스크럽)
+            tp.sendMessage(tag + npcName + ": " + formatNpcSpeech(heardClean, "§f")); // ★가독성★: 지문 회색·자기 줄
             target.everKnownNpcContacts.add(npcId); // 연락받음 → 그 번호를 알게 됨(콜백 가능)
-            appendNarrativeLog(target, (sameZone ? "[근처] " : "[" + media + "] ") + npcName + ": " + heard);
+            appendNarrativeLog(target, (sameZone ? "[근처] " : "[" + media + "] ") + npcName + ": " + heardClean);
             state.log("comm", npcName, "→ " + commDisplayName(target) + ": " + callMsg);
             // 뷰어 통신내역: NPC→플레이어 선연락도 수신자를 기록. 변조 시 원본+변형본 대조. via=구체 매체명.
             String kind = written ? "letter" : (sameZone ? "nearby" : "call");
@@ -10326,6 +10329,7 @@ public class TRPGGameManager {
      *   자율 비트의 외침·인사·혼잣말이 채널 틈에 빠져 유실되던 문제의 전달 경로.) */
     private int deliverNpcAmbientSpeech(String npcId, String npcName, String npcZone, String speech) {
         if (speech == null || speech.isBlank() || npcZone == null || npcZone.isEmpty()) return 0;
+        speech = scrubMetaIds(speech); // ★메타 ID 누출 차단★ — 자율 NPC 능동 발화도 role_A 등 원문 노출 방지(GPT #4)
         java.util.List<String> heardNames = new java.util.ArrayList<>();
         for (PlayerData pd : state.getAllPlayers()) {
             if (pd.isDead || !spawnedPlayers.contains(pd.uuid) || !npcZone.equals(pd.zone)) continue;

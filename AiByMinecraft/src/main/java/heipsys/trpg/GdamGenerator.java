@@ -1792,6 +1792,26 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
 
     /** AI 선택 실패 시 큐레이션 목록에서 1개 사용 (안전 폴백). 필터(scp/urban)면 목록도 거른다. */
     private String fallbackFamiliarConcept(int roomNumber, String filter) {
+        // ★카탈로그 보유 출처(백룸·크리피파스타·서양·인터넷·실화·SF 등)는 GdamCatalog에서 ★테마 일치★ 후보를 뽑는다★.
+        //   예전엔 이들이 아래 FAMILIAR_ENTITIES 분류에 없어 전체 풀에서 엉뚱한 괴담(프로젝트문·일본 등)이 뽑히고도
+        //   familiar_kind만 backrooms로 붙어 테마가 어긋났다(GPT #7). src가 있으면 그 src로만 뽑아 정합.
+        String catSrc = catalogSrcFor(filter);
+        if (catSrc != null) {
+            String tag = familiarTag(filter, null);
+            java.util.Set<String> rk = new java.util.HashSet<>(recentFamiliarKeys(tag));
+            rk.addAll(globalRecentKeys());
+            java.util.Set<String> avoid = new java.util.HashSet<>();
+            for (GdamCatalog.Entry e : GdamCatalog.bySource(catSrc))
+                if (!variantBase(e.name()).isBlank() && rk.contains(variantBase(e.name()))) avoid.add(e.name());
+            java.util.List<GdamCatalog.Entry> cands = GdamCatalog.pick(catSrc, roomNumber, avoid, 1, famePool);
+            if (!cands.isEmpty()) {
+                GdamCatalog.Entry e = cands.get(0);
+                recordFamiliar(tag, e.name());
+                String lore = "이름: " + e.name() + "\n출처: " + catSrc + "\n" + e.desc();
+                return wrapFamiliarConcept(lore, roomNumber, filter);
+            }
+            // 카탈로그가 비면(이론상) 아래 FAMILIAR_ENTITIES 폴백으로 진행
+        }
         java.util.List<FamiliarEntity> pool = FAMILIAR_ENTITIES;
         if ("scp".equals(filter)) {
             var f = FAMILIAR_ENTITIES.stream().filter(e -> e.origin().contains("SCP")).toList();
