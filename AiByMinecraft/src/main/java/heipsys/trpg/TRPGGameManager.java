@@ -7090,9 +7090,12 @@ public class TRPGGameManager {
                 //   약체 보정은 표시 등급이 아닌 '실효 파워'(weaknessBonus)로 따로 들어가므로 진행은 막히지 않는다.
                 int totalBoost    = Math.min(2, corruptMan.getLevel() + perfBoost);
                 String maxGrade   = maxRewardGrade(state.getRoomNumber(), clearGrade); // 스테이지별 보상 상한
+                // ★P6 기여도 A+ 보상★: 개인 기여 평가가 A(5) 이상이면 이번 신규 특성을 '무작위 능동 능력'으로 보장(강한 활약엔 직접 쓰는 능력).
+                boolean preferActive = gradeIdx(pGrade) >= 5;
                 CompletableFuture<Void> shown = new CompletableFuture<>();             // 이 플레이어 선택창이 표시(또는 스킵)된 시점에 완료
                 shownFutures.add(shown);
-                traitMan.generateStageEndChoices(playerData, gdamTheme, totalBoost, weaknessBonus, maxGrade).thenAccept(choices -> {
+                if (preferActive) { Player pa = Bukkit.getPlayer(playerData.uuid); if (pa != null && pa.isOnline()) pa.sendMessage("§a§l[기여도 " + pGrade + "] §a뛰어난 활약 — 새 특성이 ★능동 능력★으로 주어집니다."); }
+                traitMan.generateStageEndChoices(playerData, gdamTheme, totalBoost, weaknessBonus, maxGrade, preferActive).thenAccept(choices -> {
                     Player p = Bukkit.getPlayer(playerData.uuid);
                     if (choices == null || p == null || !p.isOnline()) { shown.complete(null); return; }
                     plugin.getServer().getScheduler().runTask(plugin, () -> {

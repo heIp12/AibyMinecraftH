@@ -450,6 +450,10 @@ cooldown_turns: B~D급이므로 능동이면 0~2, 수동이면 반드시 0.
      * newTrait: 새 범용 특성
      */
     public CompletableFuture<StageEndChoices> generateStageEndChoices(PlayerData pd, String gdamTheme, int gradeBoost, int powerBonus, String maxGrade) {
+        return generateStageEndChoices(pd, gdamTheme, gradeBoost, powerBonus, maxGrade, false);
+    }
+    /** preferActive=true(기여도 A+ 보상, P6): new_trait를 ★능동 발동형★으로 만들도록 유도한다(강한 활약엔 직접 쓰는 능력을 준다). */
+    public CompletableFuture<StageEndChoices> generateStageEndChoices(PlayerData pd, String gdamTheme, int gradeBoost, int powerBonus, String maxGrade, boolean preferActive) {
         // 기여도(사용 횟수) 높은 순으로 선택
         TraitData bestPlayer = pd.traits.stream()
             .filter(t -> !t.roleSpecific)
@@ -540,6 +544,12 @@ cooldown_turns: B~D급이므로 능동이면 0~2, 수동이면 반드시 0.
         if (!behavior.isBlank()) {
             sb.append("## 이번 스테이지 플레이어가 한 행동 (new_trait 착안 근거 ★최우선)\n")
               .append(behavior).append("\n");
+        }
+        // ★P6 기여도 A+ 보상★: 뛰어난 활약을 한 플레이어에겐 new_trait를 '직접 눌러 쓰는 능동 능력'으로 준다(수동 패시브 대신).
+        if (preferActive) {
+            sb.append("## ★뛰어난 활약(기여도 A+) 보상 — 중요\n")
+              .append("이 플레이어는 이번 스테이지에서 뛰어난 활약을 했다. ★new_trait는 반드시 능동 발동형(active=true)★의, ")
+              .append("직접 눌러 쓰는 능력으로 만들어라(자동 패시브 말고). effect_type도 능동 발동에 어울리는 것으로 고르고, 위 '플레이어가 한 행동'의 결에 맞춰라.\n\n");
         }
 
         String system = """
