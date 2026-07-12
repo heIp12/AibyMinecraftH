@@ -498,6 +498,20 @@ description: >-
 - **행운 보정 수명(#176)**: pendingLuckModifier는 ★다음 실제 판정(주사위)까지 유지★ — 행동 처리 땐 get으로
   GM문맥만 알리고, playDiceResult 굴림 시점에서만 remove(1회 소비). 취약한 중간 스태시 pendingDiceLuck 제거됨.
   (예전엔 판정 없이 서술만 된 행동에서 보정이 증발.) 세 리셋 블록이 pendingLuckModifier.clear().
+- **어미 묶음 체계(#289)**: ending_style은 단일 어미가 아니라 ★미니 문법★(기능→어미 표: 평서/질문/명령별 형태
+  + 존/반 처리 + 교체 예시 + 원형 유지 범위). rotatingEndingPool(GdamGenerator) 20종·SEPHIRAH_ENDING(ProjectMoonLore)
+  전부 이 형식 — restyleDialogue(AiManager)는 스타일 불가지론 프로토콜(교체 기본·예시가 덧붙임이면 덧붙임(헤세드 늘임)·
+  존/반은 원본 유지하되 스타일 '고정(캐릭터성)' 선언 시 우선·같은 어미 연속 금지). ★새 어미를 엔진/프롬프트에
+  하드코딩하지 말 것 — 풀/캐논 문자열에 선언★. 캐논 세피라는 speech_style(어조)+ending_style(묶음) 둘 다 심겨
+  pass1이 ①+② 병용(TRPGGameManager 말투 계층). '바보군냐' 겹침 사고가 이 개편의 발단. 케테르만 어미 빈값.
+- **gdam 5청크 생성(#290)**: 구조(entity·world_rules·constraints·timeline) → 월드(zones·daily_prologue·common_items)
+  → ★인물(npcs·relationships·clues·meeting_design — 정밀 전담)★ → 배역(roles) → 아이템(key_items).
+  청크 추가/이동 시 MOD_SCHEMA_FIELD(필드→청크)·MOD_ASSIGN(섹션→청크)·CHUNK_NAMES를 함께 갱신
+  (정적 자기검증 실패 시 전체 프롬프트 폴백으로 조용히 후퇴하니, 리플렉션으로 SYS_* 길이·섹션 포함을 확인할 것).
+  relationships는 npc id를, clues 소지자·증언은 npcs를, meeting_design은 관계를 참조 → 넷은 반드시 같은 청크.
+- **familiar_kind 타이밍 함정**: gdam.familiar_kind는 generate() 바깥 .thenApply에서 심겨 ★save()→finalizeNpcSpeech
+  시점엔 아직 없다★ — 생성 후처리에서 정전 여부가 필요하면 내용 키워드(isProjectMoonScenario 등)로 판정할 것
+  (다니엘=헤세드 캐논 어미가 D1 회전 풀 '~냐고'에 덮인 원인, 90922eb).
 
 ## 진행 중 설계(예약) — 착수 시 이 맥락으로
 - **턴(#151)·맵통신(#180) — ★완전 설계 완료★**: `docs/design/turn-map-design.md`(구현 승인 대기). 요지:
