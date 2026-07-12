@@ -521,6 +521,11 @@ type 값 규칙: "written_book"=책/일기/문서류, "paper"=쪽지/메모, "ma
     해법을 실제로 실행할 결정적 순간'★을 사건으로 하나 심어라(예: "진짜 마지막 역이 다가온다"·"봉인의 달이 정점에 이른다"·
     "제단이 잠깐 무방비로 열린다"). effect는 '이때 올바로 실행하면 끝낼 수 있다'는 기회의 창임을 담되, is_end는 붙이지 마라
     (실행 성공은 런타임 CLEAR가 판정). 이 사건이 있어야 해법을 아는 팀이 '실행 타이밍이 안 와서' 무한히 끌려다니지 않는다.
+  * ★난이도 바닥 — 초반 봉쇄 사건(쉬운 해결 대비)★: 이 판의 해결이 ★너무 쉽거나 이르게 도달 가능★하면(선행 단서 적음·해법 자명·
+    초반에 손닿음 → 운으로 조기 클리어 위험), 반드시 ★전반부★에 클리어를 지연·봉쇄하는 ★거대 사건★을 하나 배치해 눈을 돌려라
+    (예: 탈출로 붕괴·인질 상황·큰 위협 강림 — 먼저 수습·개입해야 해결로 갈 길이 열린다). ★blockable:true(예방·개입 가능)★로 두어
+    초회차엔 겪고 재도전엔 발생조건을 없앨 수 있게 하라(사건의 실제 발화를 클리어 필수조건으로 삼지 마라). 이 봉쇄 사건은 힌트관문
+    (핵심단서 잠금)과 ★같은 사건이어도 된다★.
   * blockable:true 사건은 플레이어가 저지할 수 있는 사건(문 잠금 등), false는 반드시 일어나는 사건(괴담 각성 등).
   * branches(선택): 사건에 분기를 붙인다. {"auto":{"condition":"막지 못하면","next":"E3"},
     "intervene":[{"condition":"탈출로 확보","next":"E3-B"},{"condition":"규칙 허점을 찌르면","next":"E_규칙붕괴"}]}
@@ -2015,6 +2020,9 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
                     }
                 }
             }
+            // 4b) ★A(난이도 바닥) 백스톱★: 쉬운 해결 구조인데 전반부 지연·봉쇄 거대사건이 없으면 경고(비차단) — 초반 운클리어 위험
+            if (easyClearLacksEarlyBlocker(g))
+                logger.warning("[gdam lint] 쉬운 해결 구조(종결단서 약함)인데 전반부 지연·봉쇄 거대사건(threat≥15) 없음 — 초반 운클리어 위험(난이도 바닥 A: 초반 봉쇄 거대사건 권장).");
             // 5) core_gate(고집도) 무결성·커버리지 — 핵심을 쥔 NPC가 처음부터 다 불어 최단거리 클리어되는 붕괴 방지
             if (g.has("npcs") && g.get("npcs").isJsonArray()) {
                 java.util.Set<String> clueIds = new java.util.HashSet<>();
@@ -2603,6 +2611,40 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
         try { if (ev != null && ev.has("threat") && !ev.get("threat").isJsonNull()) return ev.get("threat").getAsInt(); }
         catch (Exception ignore) {}
         return 0;
+    }
+
+    /** ★A(난이도 바닥) 백스톱 판정★ — 구조적으로 '쉬운 해결'인데 초반 지연·봉쇄 거대사건이 없으면 true(초반 운클리어 위험).
+     *  쉬움 = 종결단서(capstone)가 선행단서 2+로 게이트되지 않음(없거나 <2 → 답이 금세 완성). 초반 봉쇄 = 비종료 main_events의
+     *  ★전반부(배열 앞 절반)★에 threat≥15 거대 사건 존재. 힌트관문 B(applyHintGateReroll)와 별개 축 — 이건 난이도 감지·경고다.
+     *  ★생성 실패에 인질 잡히지 않게 안전측(판단 불가 시 false)★. lint 경고용(비차단). */
+    private static boolean easyClearLacksEarlyBlocker(JsonObject g) {
+        if (g == null) return false;
+        boolean easy = true; // capstone이 선행 2+로 게이트되면 '안 쉬움'
+        if (g.has("clues") && g.get("clues").isJsonArray()) {
+            for (JsonElement ce : g.getAsJsonArray("clues")) {
+                if (!ce.isJsonObject()) continue;
+                JsonObject c = ce.getAsJsonObject();
+                if (c.has("capstone") && c.get("capstone").isJsonPrimitive() && c.get("capstone").getAsBoolean()) {
+                    int pre = (c.has("requires_clues") && c.get("requires_clues").isJsonArray()) ? c.getAsJsonArray("requires_clues").size() : 0;
+                    if (pre >= 2) { easy = false; break; }
+                }
+            }
+        }
+        if (!easy) return false;
+        if (!g.has("timeline") || !g.get("timeline").isJsonObject()) return false;
+        JsonObject tl = g.getAsJsonObject("timeline");
+        if (!tl.has("main_events") || !tl.get("main_events").isJsonArray()) return false;
+        java.util.List<JsonObject> nonEnd = new java.util.ArrayList<>();
+        for (JsonElement ee : tl.getAsJsonArray("main_events")) {
+            if (!ee.isJsonObject()) continue;
+            JsonObject ev = ee.getAsJsonObject();
+            if (ev.has("is_end") && ev.get("is_end").isJsonPrimitive() && ev.get("is_end").getAsBoolean()) continue;
+            nonEnd.add(ev);
+        }
+        if (nonEnd.isEmpty()) return true; // 비종료 사건 전무 → 초반 봉쇄도 없음
+        int firstHalf = Math.max(1, (nonEnd.size() + 1) / 2); // 앞 절반(올림)
+        for (int i = 0; i < firstHalf; i++) if (evThreat(nonEnd.get(i)) >= 15) return false; // 전반부 거대사건 있음 → OK
+        return true; // 쉬움 + 전반부 봉쇄 없음 → 위험
     }
 
     /** ★#285 힌트관문 30% (코드 프리롤 — 확률·상태를 엔진이 소유, 프롬프트 %지시 신뢰 안 함)★

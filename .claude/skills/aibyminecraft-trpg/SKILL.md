@@ -529,8 +529,13 @@ description: >-
   (생성기 선언: 음성/문서/신호/전자/정신/전체, 물리형은 [])를 entityInterferes가 ★최우선★으로 읽고, 없으면(구형) 키워드
   스캔(entityTampersVoice/Written/… — entityScanText) 폴백★. 예전엔 이 허용을 런타임 키워드로만 판정해 #246류 오탐(물리형이
   통신 변조) 반복 → 설계-시 선언으로 근원 해결. comms_dangerous(사용=위험)·comms_monitored(감청)와는 별개 축.
-- **★GdamGenerator 텍스트블록이 한도 근접(60KB/65.5KB)★**: GDAM_SYSTEM_PROMPT_2에 스키마 필드 추가 시 여유 ~5.5KB뿐.
-  더 늘리면 3분할 필요(64KB UTF-8 상수 한도). 추가 전 위 텍스트블록 크기 스크립트로 확인할 것.
+- **★★GdamGenerator 텍스트블록 65535 한계 — 실측(런타임) 필수★★**: GDAM_SYSTEM_PROMPT_1/2는 ★텍스트블록('"""')이라
+  각 블록 전체가 단일 문자열 리터럴★ → 65535 UTF-8 바이트 한계가 블록 하나에 통째로 걸린다. ★실측 그라운드트루스(리플렉션
+  런타임): PROMPT_1 = 64473바이트(여유 ★~1062★), PROMPT_2 = 61218바이트(여유 ~4317)★. ★PROMPT_1은 사실상 꽉 참 —
+  생성측 문장 추가는 PROMPT_2(타임라인·zones·npcs·clues 등 481행~)에만, 그마저 여유 ~4KB. ★측정법 주의★: `"..."` 조각
+  regex 합산은 텍스트블록에서 ★대폭 undercount(스트레이 따옴표 사이만 셈)★ — 신뢰 금지. ★반드시 리플렉션 런타임 프로브★
+  (private static final String 필드를 getBytes(UTF_8).length)로 재라. 컴파일도 최종 게이트(초과 시 javac 거부). 여유 소진
+  임박 → 프롬프트 모듈 재분할(3분할)이 다음 우선순위(사용자 지적 정확 — '모듈화 먼저').
 - **통신 변조 = 3층 (내용 GM / 채널 comm_interference / ★언제=GM 스위치+엔진 폴백★)**: entityCommActive()가 '언제'를
   게이트 — currentPhase==HORROR 필수 + commTamperMode(<COMM_TAMPER on/off>, GameStateManager durable): 1=강제ON·
   -1=강제OFF·0=auto. auto면 감청테마(isCommsMonitored)=처음부터 / 그 외=threat≥40(중반 escalation). ★설계 근거★:
@@ -550,6 +555,11 @@ description: >-
   이른것-근원해결 전까지 봉인, 양방향 배선+blockable=true). ★핵심 불변식★: 단서봉인 ≠ 클리어봉인 — 단서 없이도 올바른
   해법 실행은 clearAssertsKnownSolution 자동성공으로 인정(#284 교착 재발 방지, sealedCapstoneCount도 event-seal 반영해
   solutionCapstoneKnown 오탐 차단). 검증: EventGateTest13+HintGateTest20(실제 엔진 합성). ★미검증=실플레이(추후)★.
+- **★A 난이도 바닥(#286) — B(힌트관문)와 별개 축★**: 해결이 너무 쉬운 판이면 초반에 클리어를 지연·봉쇄하는 거대사건
+  배치(눈 돌리기). ★A(난이도)≠B(30% 단서잠금)★ — 단 사용자 결정으로 ★한 사건이 봉쇄+단서잠금 겸함 허용★(강제 분리 안 함,
+  B의 applyHintGateReroll 그대로). 구현: (생성)PROMPT_2 타임라인 규칙 '난이도 바닥 — 초반 봉쇄 사건'(blockable=true, 발화를
+  클리어 필수조건으로 X, 재도전엔 발생조건 제거) + (코드)easyClearLacksEarlyBlocker lint 백스톱(capstone 선행<2=쉬움 &
+  전반부 threat≥15 부재 → 경고, 비차단). 검증 EasyClearTest 9/9(실제 메서드 리플렉션). ★서사 봉쇄사건 생성은 실플레이 검증 필요★.
 - **★생성 정합 리마인더(사용자 — step ④ 착수 시 반영)★**: 괴담↔컨셉 ★상호★ 정합(괴담에 맞춰 컨셉, 컨셉에 맞춰 괴담을
   염두 — 3스 기준 베이스라인). 마지막(5)스테이지 첫 캐릭터(원년 배역)는 배역·나이·성별에 맞춘 개인 이야기(backstory)를
   부여. ★단 이음(스테이지·시나리오 간 서사 연속성)은 생성하지 않으므로 그 개인사는 무작위여도 됨★(무엇과도 안 이어져도
