@@ -236,6 +236,7 @@ public class TRPGGameManager {
     private final Map<UUID, String> pendingForesightInput = new ConcurrentHashMap<>(); // UUID → traitId (결과 예지)
     private final Map<UUID, String> pendingActionBoost = new ConcurrentHashMap<>(); // UUID → 다음 행동 확정/운명 보정문 (B1/C4)
     private final Map<UUID, String> pendingBoostTrait = new ConcurrentHashMap<>();  // UUID → 보정문 출처 traitId (취소 환원용)
+    private final Map<UUID, String> boostTraitAwaitingResult = new ConcurrentHashMap<>(); // UUID → 확정성공 보정문 출처 traitId (GM이 미적용 신호 시 환불용)
     /** 동반회귀(group_rewind) 발동 시 이번 스테이지 재도전 제약을 해제한다(스테이지3+여도 허용). */
     private boolean forceRetryAllowed = false;
     /** GM이 개설한 기기 통신 채널: A → {B, C, ...} (양방향 저장) */
@@ -2804,7 +2805,12 @@ public class TRPGGameManager {
 
         // B1/C4: 확정성공·운명 등 '다음 행동 보정' 대기분 주입 (1회 적용 후 소멸)
         String actionBoost = pendingActionBoost.remove(player.getUniqueId());
-        if (actionBoost != null) { gmCtx.append(" ").append(actionBoost); pendingBoostTrait.remove(player.getUniqueId()); }
+        if (actionBoost != null) {
+            gmCtx.append(" ").append(actionBoost);
+            // ★취지 불일치로 GM이 확정성공을 적용 안 하면 환불하기 위해★ 출처 특성을 응답 처리까지 보존(pendingBoostTrait는 소멸).
+            String bt = pendingBoostTrait.remove(player.getUniqueId());
+            if (bt != null) boostTraitAwaitingResult.put(player.getUniqueId(), bt);
+        }
 
         // B3: 충전식 기계 아이템 사용으로 보이면 GM에게 <ITEM_USE> 발행을 강하게 환기(자원 누락 방지)
         if (!pd.itemStates.isEmpty()) {
@@ -3046,6 +3052,15 @@ public class TRPGGameManager {
 
             String raw = response.rawText();
             Player player = response.player();
+            // ★확정 성공 '미적용' 환불★: GM이 <GUARANTEE_UNUSED/>를 냈으면(행동이 특성 취지와 불일치 → 미적용) 그 특성 사용을 되돌린다.
+            if (player != null) {
+                String awaitBt = boostTraitAwaitingResult.remove(player.getUniqueId());
+                if (awaitBt != null && raw != null && raw.toUpperCase().contains("GUARANTEE_UNUSED")) {
+                    PlayerData bpd = state.getPlayer(player);
+                    if (bpd != null) { refundTraitUse(bpd, awaitBt);
+                        player.sendMessage("§7[확정 성공 미적용] 행동이 특성 취지와 맞지 않아 §f사용 횟수가 보존§7됩니다."); }
+                }
+            }
             // ★단체턴(2a)★: 이 응답이 단체 라운드 응답이 아니면(능력·개별 행동 등) 지난 라운드 팬아웃 멤버십을 정리 —
             //   같은 대표의 ★개인★ 서술이 옛 라운드 동료에게 새는 것 방지. 단체 응답이면 유지(인라인 주사위 분할·후속까지 팬아웃).
             if (player != null && !groupRoundPendingResponse.remove(player.getUniqueId()))
@@ -6297,6 +6312,7 @@ public class TRPGGameManager {
             "[확정 성공(" + td.name + ") — 이 특성의 취지: '" + detail + "'. "
             + "플레이어가 방금 입력한 행동이 ★이 취지에 부합하는 종류★이면 " + scopeStr + "을(를) 주사위·실패를 무시하고 §반드시 성공§한 것으로 서술하라(결과 확정). "
             + "★취지와 무관한 다른 종류의 행동에는 적용하지 말고 평소대로 판정하라 — 아무 행동이나 무조건 성공시키지 마라.★ "
+            + "★적용하지 않았다면(취지 불일치) 응답 어딘가에 <GUARANTEE_UNUSED/> 를 포함하라 — 이 능력 사용이 소모되지 않고 보존된다(플레이어 서술엔 안 보임).★ "
             + "단 괴담 본체를 즉사·즉시 해결시키는 과잉 처리는 금지하고 '그 행동의 의도'가 이뤄진 것으로만 묘사.]");
         pendingBoostTrait.put(player.getUniqueId(), td.id); // 취소 시 환원용
         player.sendMessage("§e[" + td.name + "] §7다음에 입력하는 행동이 이 특성의 취지에 맞으면 §f확정 성공§7 처리됩니다. (취소: '취소' 입력)");

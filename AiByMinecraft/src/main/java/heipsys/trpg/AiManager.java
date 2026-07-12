@@ -1081,6 +1081,8 @@ public class AiManager {
             .replaceAll("<DICE>[\\s\\S]*?</DICE>", "")
             .replaceAll("<BROADCAST>[\\s\\S]*?</BROADCAST>", "")
             .replaceAll("<CLEAR>[\\s\\S]*?</CLEAR>", "")
+            .replaceAll("(?is)[\\[<]\\s*/?\\s*GUARANTEE_UNUSED\\b[^\\]>]*[\\]>]", "") // 확정성공 미적용 신호(엔진이 환불에 소비) — 서술 누출 차단
+            .replaceAll("(?i)GUARANTEE_UNUSED", "")                                    // 대괄호·꺾쇠 없이 흘린 잔여 마커도 제거
             // ★WITNESS 누출/오라우팅 방어★: 정형 <WITNESS player="X">…</WITNESS> 외에, 약한 모델이 [WITNESS …](대괄호)나
             //   </WITNESS> 없이 <WITNESS …>를 ★양쪽 북엔드★로 써서 시점 본문이 다른 플레이어에게 누출됐다(로그 실측).
             //   여는 태그([·<)~(닫는 </WITNESS> | 다음 WITNESS 여는태그) 사이를 본문째 제거하고, 남은 고아 태그도 정리.
