@@ -11931,24 +11931,23 @@ public class TRPGGameManager {
         java.util.List<String> lines = new java.util.ArrayList<>();
         StringBuilder seg = new StringBuilder();   // 현재 대사 조각
         StringBuilder pbuf = new StringBuilder();   // 현재 괄호 지문
-        boolean paren = false;
+        boolean paren = false, skipParen = false;
+        int parenKept = 0;   // ★행동↔대사 벽 방지★: 지문(괄호)은 응답당 ★1개만★ 표시하고 나머진 통째로 버린다(대사는 전부 보존).
         for (int i = 0; i < s.length(); i++) {
             char c = s.charAt(i);
             if (!paren && (c == '(' || c == '（')) {
-                flushSpeechSeg(seg.toString(), base, lines); seg.setLength(0);
-                paren = true; pbuf.setLength(0); pbuf.append(c);
+                if (parenKept >= 1) { paren = true; skipParen = true; pbuf.setLength(0); } // 두 번째 지문부터: 버림(seg 유지 → 앞뒤 대사 이어짐)
+                else { flushSpeechSeg(seg.toString(), base, lines); seg.setLength(0); paren = true; skipParen = false; pbuf.setLength(0); pbuf.append(c); }
             } else if (paren && (c == ')' || c == '）')) {
-                pbuf.append(c);
-                String p = pbuf.toString().trim();
-                if (!p.isEmpty()) lines.add("§8" + p);   // 지문 = 회색, 자기 줄
-                pbuf.setLength(0); paren = false;
+                if (!skipParen) { pbuf.append(c); String p = pbuf.toString().trim(); if (!p.isEmpty()) { lines.add("§8" + p); parenKept++; } } // 지문 = 회색, 자기 줄
+                pbuf.setLength(0); paren = false; skipParen = false;
             } else if (paren) {
-                pbuf.append(c);
+                if (!skipParen) pbuf.append(c);
             } else {
                 seg.append(c);
             }
         }
-        if (paren && pbuf.length() > 0) { String p = pbuf.toString().trim(); if (!p.isEmpty()) lines.add("§8" + p); } // 안 닫힌 괄호
+        if (paren && !skipParen && pbuf.length() > 0) { String p = pbuf.toString().trim(); if (!p.isEmpty()) lines.add("§8" + p); } // 안 닫힌 괄호
         flushSpeechSeg(seg.toString(), base, lines);
         return String.join("\n", lines);
     }
@@ -12000,6 +11999,7 @@ public class TRPGGameManager {
         sb.append("- ★대사 위주★로 답하라. 행동·표정이 필요하면 ★짧은 괄호 지문★으로만 곁들여라. 예) (형 손 잡으며) 이렇게 잡고 있으면 되는 거 맞지, 형?\n");
         sb.append("- ★괄호 지문은 한 응답에 많아야 1개, 몇 글자로 아주 짧게★ — 문장마다 동작·시선을 덧붙여 지문 여러 개로 벽을 쌓지 마라. 대부분의 답은 지문 없이 ★말로만★ 한다(지문은 정말 필요할 때 딱 한 번).\n");
         sb.append("  · 지문은 ★짤막한 구절★로만 써라(예: (문 쪽을 흘긋), (한숨)). ★완결된 서술 문장, 특히 '-습니다/-했다'체 해설(\"(그는 창밖을 오래 바라봅니다.)\" 같은)★은 금지 — 지문은 소설 서술이 아니라 네 즉각 동작의 짧은 메모다.\n");
+        sb.append("- ★한 응답 = 짧은 대사 한 덩어리★(가장 흔한 실수): 행동→대사→행동→대사→행동…처럼 여러 장면 비트를 번갈아 늘어놓지 마라 — 그건 소설 한 문단이지 채팅 한 마디가 아니다. 지문이 정말 필요하면 ★맨 앞에 딱 하나★, 그 뒤엔 대사만 이어라. 동작·대사를 여러 번 오가면 채팅이 벽이 된다.\n");
         sb.append("- ★속마음·감정 단정(해설) 금지(가장 중요)★: \"믿는 듯\", \"불안한 듯\", \"…처럼 보인다\" 식으로 너나 상대의 내면을 ★추측·서술하지 마라★. 감정은 ★말투와 짧은 행동★으로만 드러내고, 해석은 상대(플레이어)에게 맡겨라. 너의 진짜 속마음은 입 밖에 내지 말고 삼켜라(별도 <THOUGHT> 지시가 있을 때만 거기 적는다).\n");
         sb.append("  · ★예외★: 상대가 ★감정·속마음을 읽는 특성/능력★을 쓴 경우에만 시스템이 그 내면을 그 플레이어에게 공개한다(기본값=비공개).\n");
         sb.append("- 성격·목표에 충실하되 ★실제 사람이 할 법한 말투★로 답하라(소설 문어체·의미심장한 연출 금지).\n");
