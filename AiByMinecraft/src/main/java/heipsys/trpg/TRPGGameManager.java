@@ -178,6 +178,10 @@ public class TRPGGameManager {
     private final Set<UUID> pendingTraitSelect = ConcurrentHashMap.newKeySet();
     /** ★클리어 엔딩 해설 보류★ — 보상 특성 선택이 끝난 뒤 열도록 미뤄 둔 실행(선택 중 엔딩이 튀어나오는 것 방지). */
     private volatile Runnable pendingClearReveal = null;
+    /** ★엔딩 해설 미리 생성★ — 보상·특성선택이 진행되는 동안 병렬로 굴려 둔 후일(에필로그) AI 결과. reveal 시 재사용해
+     *  '선택 다 했는데 또 한참 기다리는' 지연을 없앤다. 키=결말 라벨(라벨이 다르면 재사용 안 함). */
+    private volatile java.util.concurrent.CompletableFuture<String> pendingEndingStory = null;
+    private volatile String pendingEndingKey = null;
     /** 스토리에 이미 등장한(spawn된) 플레이어 */
     private final Set<UUID> spawnedPlayers      = ConcurrentHashMap.newKeySet();
     /** ★#1★ startDailyPhase(지도·NPC위치·개인프롤로그·아이템·특성 지급)가 끝나기 전엔 게임 행동을 막는다 —
@@ -994,7 +998,7 @@ public class TRPGGameManager {
         ai.saveUsage();   // 세션 종료 시점 영구 사용량 체크포인트 저장
         ai.clearAll();
         pendingCreation.clear();
-        pendingTraitSelect.clear(); pendingClearReveal = null;
+        pendingTraitSelect.clear(); pendingClearReveal = null; pendingEndingStory = null; pendingEndingKey = null;
         pendingTraitActivation.clear();
         pendingPrayerInput.clear();
         pendingOracleInput.clear();
@@ -1253,7 +1257,7 @@ public class TRPGGameManager {
         turnMan.cancelAll();
         narrativeDelivery.clearAll();
         pendingCreation.clear();
-        pendingTraitSelect.clear(); pendingClearReveal = null;
+        pendingTraitSelect.clear(); pendingClearReveal = null; pendingEndingStory = null; pendingEndingKey = null;
         pendingTraitActivation.clear();
         pendingPrayerInput.clear();
         pendingOracleInput.clear();
@@ -7156,6 +7160,8 @@ public class TRPGGameManager {
         // ★생존(미해결)으로 재도전만 가능한 경우(nextStageUnlocked=false): 같은 스테이지를 다시 하므로
         //   보상 특성 선택과 전모 공개(핵심 규칙·해결법)를 막는다 — 재플레이 스포일러·미완성 보상 방지.
         boolean advancing = nextStageUnlocked; // 해결했거나(또는 1~2스테이지) 진출 가능 → 전체 공개·보상
+        // ★엔딩 해설(후일)을 지금부터 병렬 생성★ — 평가·보상·특성선택이 도는 동안 미리 굴려, reveal 시 즉시 표시.
+        startPregenEnding(endingLabel);
         runScenarioEvaluation(finalGrade, playerGrades -> {
             Runnable reveal = () -> concludeWithReveal(endingLabel, advancing, null);
             if (advancing) {
@@ -7719,7 +7725,9 @@ public class TRPGGameManager {
         return sb.toString();
     }
 
-    private void concludeWithReveal(String endingLabel, boolean fullReveal, Runnable onDone) {
+    /** 엔딩 후일(에필로그) 프롬프트 조립 — 표시용 fullReveal와 무관(이야기 자체는 동일). 클리어 시점에 확정된
+     *  로그·발견목록·최종위치를 반영하며, 특성선택 중엔 이 값들이 안 바뀌므로 미리 굴려도 결과가 같다. */
+    private String buildEndingPrompt(String endingLabel) {
         String recentLog = state.buildEntityLog(15);
         // CODE-15: '플레이어가 실제로 발견한 것'만 공개하도록 발견 목록을 컨텍스트로 주입.
         StringBuilder discovered = new StringBuilder();
@@ -7736,7 +7744,7 @@ public class TRPGGameManager {
             discovered.append("\n## 발견 목록: 플레이어가 확정적으로 알아낸 핵심 사실이 거의 없다.\n")
                       .append("정체·약점·해결법 등은 '끝내 밝혀내지 못했다'는 톤으로, 단정 공개를 피하라.\n");
         }
-        String prompt = "게임이 끝났다. 결말 유형: " + endingLabel + ".\n"
+        return "게임이 끝났다. 결말 유형: " + endingLabel + ".\n"
             + (recentLog.isBlank() ? "" : "플레이어들의 주요 행동 기록:\n" + recentLog + "\n")
             + discovered
             + endingFactSnapshot()
@@ -7750,20 +7758,40 @@ public class TRPGGameManager {
             + "★ 등장인물은 반드시 ★캐릭터(배역) 이름★으로만 칭하라 — 플레이어 계정/영문 ID(예: heIp12) 절대 금지. "
             + "★ 내부 시스템 용어(world_rules·collapse_condition·entity·exploit_path 등 필드명) 노출 금지 — 자연스러운 한국어로만. "
             + "제목·마크다운 금지, 대사는 큰따옴표로. ※개별 기여도 평가(등급·하이라이트·감점)는 이 후일담과 별개다.";
-        ai.callGmAiOnce(gmSystemPrompt, prompt)
-            .thenAccept(r -> plugin.getServer().getScheduler().runTask(plugin, () -> {
-                String story = ai.stripTags(r);
-                if (!story.isBlank()) gameLogger.logGmOutput("전체(뒷이야기)", story);
-                List<DialogManager.EndingSection> pages = buildEndingPages(endingLabel, story, fullReveal);
-                lastEndingPages = pages;
-                broadcast("§e§l📖 엔딩 해설이 공개되었습니다. 다이얼로그를 확인하세요.");
-                broadcast("§8(/trpg ending 으로 언제든 다시 열람 가능)");
-                for (org.bukkit.entity.Player p : plugin.getServer().getOnlinePlayers()) {
-                    dialogMan.showEndingDialog(p, pages, 0);
-                }
-                gameLogger.logEvent("엔딩 해설 공개 (" + endingLabel + ")");
-                if (onDone != null) onDone.run();
-            }));
+    }
+
+    /** 엔딩 후일 AI 호출 → 이야기 텍스트 future(태그 제거). 실패해도 빈 문자열로 마무리(해설 페이지는 표시). */
+    private java.util.concurrent.CompletableFuture<String> generateEndingStory(String endingLabel) {
+        return ai.callGmAiOnce(gmSystemPrompt, buildEndingPrompt(endingLabel))
+                 .thenApply(r -> ai.stripTags(r))
+                 .exceptionally(ex -> "");
+    }
+
+    /** ★엔딩 해설을 미리 생성 시작★ — 평가·보상·특성선택이 도는 동안 병렬로 후일 AI를 굴려 둔다(대개 reveal 전에 완료). */
+    private void startPregenEnding(String endingLabel) {
+        try { pendingEndingKey = endingLabel; pendingEndingStory = generateEndingStory(endingLabel); }
+        catch (Exception ignored) { pendingEndingStory = null; pendingEndingKey = null; }
+    }
+
+    private void concludeWithReveal(String endingLabel, boolean fullReveal, Runnable onDone) {
+        // 미리 굴려 둔 결과(라벨 일치)가 있으면 재사용(대개 이미 완료) — 없으면 지금 생성(배드엔딩·포기 등).
+        java.util.concurrent.CompletableFuture<String> storyF =
+            (pendingEndingStory != null && endingLabel.equals(pendingEndingKey))
+                ? pendingEndingStory : generateEndingStory(endingLabel);
+        pendingEndingStory = null; pendingEndingKey = null;
+        storyF.thenAccept(r -> plugin.getServer().getScheduler().runTask(plugin, () -> {
+            String story = r == null ? "" : r;
+            if (!story.isBlank()) gameLogger.logGmOutput("전체(뒷이야기)", story);
+            List<DialogManager.EndingSection> pages = buildEndingPages(endingLabel, story, fullReveal);
+            lastEndingPages = pages;
+            broadcast("§e§l📖 엔딩 해설이 공개되었습니다. 다이얼로그를 확인하세요.");
+            broadcast("§8(/trpg ending 으로 언제든 다시 열람 가능)");
+            for (org.bukkit.entity.Player p : plugin.getServer().getOnlinePlayers()) {
+                dialogMan.showEndingDialog(p, pages, 0);
+            }
+            gameLogger.logEvent("엔딩 해설 공개 (" + endingLabel + ")");
+            if (onDone != null) onDone.run();
+        }));
     }
 
     private List<DialogManager.EndingSection> buildEndingPages(String endingLabel, String epilogue, boolean fullReveal) {
