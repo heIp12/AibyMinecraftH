@@ -577,7 +577,10 @@ public class AiManager {
         //   저품질 세션은 mini로 굴러가고(방호벽: 교착차단·태그누출·지오검증 프롬프트가 받쳐줌), 나노는 GM에 안 쓴다.
         return switch (gmQuality) {
             case HIGH      -> highModel();
-            case LOW       -> miniModel();   // ★floor=mini★ (claude=Haiku 4.5 / openai=gpt-5-mini) — nano로 안 내려간다
+            // ★저품질 GM 바닥★ (nano로는 안 내려간다). claude=Haiku 4.5 / openai=gpt-5-mini는 mini가 값싼 바닥이라 그대로.
+            //   ★Gemini만 예외★: mini=flash가 pro의 ~75% 단가라 '저품질=중품질=고품질' 가격이 붙어버렸다(사용자 보고).
+            //   Gemini의 진짜 값싼 바닥은 ★flash-lite★(Haiku 대응 효율 티어 — nano 아님, 게임 진행 가능선) → 저품질은 그걸 쓴다.
+            case LOW       -> "gemini".equals(apiType) ? haikuModel() : miniModel();
             // ★효율(적응형)★: 평시엔 Sonnet(바닥·게임 제대로 굴러가는 선), 위협도 절정(전투·클라이맥스)에만 Opus로 격상 → 최대 절약.
             case EFFICIENT -> threatSupplier.getAsInt() >= EFFICIENT_PEAK_THREAT ? highModel() : sonnetModel();
             default        -> sonnetModel(); // MEDIUM
