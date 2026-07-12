@@ -136,6 +136,13 @@ description: >-
   건너뛰고 '나이·시대 말씨만' 한 줄 + restyleDialogue 즉시 원문 반환(호출 0). 엔티티·보조=haiku 고정,
   gdam 생성=최소 sonnet(고품질만 opus). 정밀 1회성은 callAssistantHiFi. 정밀 대형
   설계는 사용자 승인 하에 Fable5(claude-fable-5) 다중에이전트 Workflow("울트라코드").
+- **★modelPriceUsd 함정: 'gemini' ⊃ 'mini'★**: 모델가격표(AiManager.modelPriceUsd)는 문자열 부분매칭이라
+  OpenAI '*-mini'({0.75,4.5})·'*-nano' 판정이 ★모든 Gemini 모델을 가로챈다★(ge-MINI). 그러면 Gemini 전용
+  블록(flash-lite {0.25,1.5}/flash {1.5,9}/pro {2,12}, parseVer≥3=gen3)에 못 닿아 전 등급이 mini가격으로 동일
+  =품질선택 화면 시간당 추정이 저=중=고=$0.736로 붙고 실사용 집계(accumulateUsage)도 오과금. → 'mini' 판정에
+  `&& !m.contains("gemini")` 가드 필수. 새 소형 키워드 추가 시 gemini 충돌 재검(현재 'mini'만 충돌, 'nano'는 무충돌).
+  ※ 선택화면 추정은 gmModel 라우팅이 아니라 nominalModel(q)/sonnetModel/highModel을 쓴다 — 라우팅만 고쳐선
+  화면값이 안 바뀜(둘 다 확인).
 - **비용 원칙(결정, 2026-07)**: "플레이어가 품질 저하를 직접 느끼는 지점에만 강한 모델" — 단서 추출
   (extractAndStoreInfo)은 같은 서술이면 ★1회 호출을 행동자+단체 동료가 공유★하고 초단문(<50자)은 스킵.
   자율 NPC sparse 트리거·코드 판정(이동/통신/시계)·pendingSystemNotes 캐시 보존은 기구현 — 프롬프트를 자주
