@@ -7263,12 +7263,17 @@ public class TRPGGameManager {
         //   활약이 잘려 재평가가 뒤집히던 문제(A→C)도 남는다. 평균 기준이면 둘 다 해결(잘한 사람은 유지, 평범한
         //   사람은 스테이지가 많아도 평범). ※이 값은 평가 정합성 전용이며 능력 강화 게이팅·플레이어 표시엔 쓰지 않는다.
         String stageBasis = "";
+        // ★A→C 강등 방지★: 최종 총평의 per-player 총합등급을 '스테이지 평균 앵커 ±1'로 제한한다(parseEvaluation clamp용).
+        //   각 스테이지 평가는 그 스테이지의 전체 맥락을 보고 매겨졌고, 최종 로그는 300캡·압축으로 손실되므로,
+        //   손실된 로그로 재판단해 2단계 이상 뒤집는 것(2스테이지 A → 최종 C)을 막는다. 비어 있으면(=스테이지 평가) 무클램프.
+        final java.util.Map<String,Integer> campAnchorScore = new java.util.HashMap<>();
         if (campaignWide) {
             int stages = Math.max(1, state.getRoomNumber());
             StringBuilder sb2 = new StringBuilder();
             for (PlayerData pd : allPd) {
                 if (!pd.roleAssigned && pd.stageGradeSum == 0) continue;
                 double avg = pd.stageGradeSum / (double) stages;
+                campAnchorScore.put(pd.name, avgToAnchorScore(avg)); // 계정명 키(parseEvaluation의 key와 동일)
                 sb2.append("- ").append(pd.gmDisplayName()); // 계정명 미전송
                 sb2.append(": 스테이지 평균 평가 ").append(String.format("%.1f", avg)).append("/5")
                    .append(" (누적 ").append(pd.stageGradeSum).append("점 ÷ ").append(stages).append("스테이지)\n");
@@ -7277,6 +7282,8 @@ public class TRPGGameManager {
                 stageBasis = "★스테이지별 기존 평가 요약 — 최종은 이 ★스테이지 평균★과 일관되게 매겨라★:\n" + sb2
                     + "위 '스테이지 평균'은 각 스테이지 등급(S=5·A=4·B=3·C=2·D=1·F=0)을 스테이지 수로 나눈 값이다. "
                     + "최종 total은 이 평균에 대응하는 글자로 매겨라 — 평균 4.5+→S, 3.5~4.4→A, 2.5~3.4→B, 1.5~2.4→C, 0.5~1.4→D, 0.5↓→F. "
+                    + "★한 사람의 최종 total을 이 평균 등급보다 ★2단계 이상 낮추지 마라★(예: 스테이지에서 A를 받았는데 최종 C로 내리는 것 금지) — "
+                    + "각 스테이지 평가가 이미 그 판의 전체 맥락을 반영했고, 여기 로그는 초반이 잘려 있을 수 있다. ±1단계 조정만 허용하며, 그마저 로그의 ★명백한★ 근거가 있을 때만.★ "
                     + "★스테이지가 5~6개로 많다는 이유만으로 전원을 영웅(A/S)으로 매기지 마라 — 누적 총점이 커도 평균이 평범(B~C)이면 최종도 B~C다. 평균이 높은데 로그 부족을 이유로 내리지도, 낮은데 임의로 올리지도 마라.★\n\n";
         }
 
@@ -7285,7 +7292,8 @@ public class TRPGGameManager {
             + stageBasis
             + (keyLog.isBlank() ? "" : "★핵심 행동 기록(게임 전체·압축되지 않음 — 평가의 ★1순위 근거★)★:\n" + keyLog
                 + "\n※ 위 기록은 게임 내내 벌어진 결정적 행동(방화·구조·살해·자기희생·본질 해결·아군 각성·중대 실책 등)을 빠짐없이 모은 것이다"
-                + "(아래 '전체 행동 기록'은 최근 장면만 남고 초반이 압축돼 사라졌을 수 있다). ★평가는 이 핵심 행동을 최우선 근거로 삼고, 아래 로그로 보완하라.★\n\n")
+                + "(아래 '전체 행동 기록'은 최근 장면만 남고 초반이 압축돼 사라졌을 수 있다). ★평가는 이 핵심 행동을 최우선 근거로 삼고, 아래 로그로 보완하라.★"
+                + "\n★핵심 행동은 도덕적 표면이 아니라 ★결과·기여도★로 판단하라★ — 클리어·생존·팀에 실제로 도움된 것이면 거친 수단(협박·파괴·살해·강행 등)이라도 '문제행동'으로 감점하지 말고 ★기여★로 인정한다. 반대로 팀에 실제 해를 끼쳤거나(아군 피해·고의 방해·명백한 배신) 무의미했던 것만 낮게 본다. 예: 같은 '관람객을 굴복시킴'도 그 덕에 시간을 벌거나 사건을 막았으면 기여(B~A)지만, 아무 성과 없는 폭력이면 감점이다. 결과가 모호하면 감점하지 말고 중립(B)으로 둔다.\n\n")
             + "전체 행동 기록:\n" + (fullLog.isBlank() ? "(전역 기록 없음 — 아래 개인 행동로그로 평가)" : fullLog) + "\n\n"
             + (perPlayer.length() > 0 ? "개인별 행동로그:\n" + perPlayer + "\n" : "")
             + (haveAny ? "" : "※ 상세 행동 기록이 유실됐을 수 있다. 그럴 땐 위 '플레이어 목록'의 생존/상태·배역만으로 ★최대한★ 평가하라 — ★절대 '기록이 없어 평가 불가'라 답하지 마라★. 최소 참여=B, 무행동 추정=C로 매기고 evaluations를 반드시 채워라.\n\n")
@@ -7348,7 +7356,7 @@ public class TRPGGameManager {
 
         ai.callGmAiOnce(gmSystemPrompt, prompt)
             .thenAccept(raw -> plugin.getServer().getScheduler().runTask(plugin, () -> {
-                EvalResult result = parseEvaluation(raw);
+                EvalResult result = parseEvaluation(raw, campAnchorScore);
                 recordStageGrades(result.grades()); // 평가 정합성 전용: 스테이지 등급 점수 누적(최종 총평 평균 계산용)
                 awardEndStats(result.grades(), result.growth()); // 행동 기반 종료 스텟(S=3·A=2·B=0~1)
                 // CODE-16: 한 줄씩 가변 딜레이 출력. 줄당 delay = clamp(1초,5초, 글자수/12).
@@ -7371,7 +7379,7 @@ public class TRPGGameManager {
     private record EvalResult(List<String> lines, Map<String, String> grades,
                               Map<String, java.util.List<String>> growth) {}
 
-    private EvalResult parseEvaluation(String raw) {
+    private EvalResult parseEvaluation(String raw, Map<String,Integer> campAnchorScore) {
         List<String> lines  = new ArrayList<>();
         Map<String, String> grades = new HashMap<>();
         Map<String, java.util.List<String>> growth = new HashMap<>(); // 행동 기반 성장 스탯(평가가 판단)
@@ -7404,6 +7412,16 @@ public class TRPGGameManager {
                               || p.gmDisplayName().equalsIgnoreCase(pName))
                     .findFirst().orElse(null);
                 String key = epd != null ? epd.name : pName; // 내부 조회 키(계정명으로 정규화)
+
+                // ★A→C 강등 방지 clamp★: 최종 총평(campAnchorScore 비어있지 않음)에서 스테이지 평균 앵커 ±1 밖으로 나간
+                //   total을 앵커 ±1로 되돌린다(2스테이지 A인데 최종 C로 뒤집히던 것 차단). 스테이지 평가엔 앵커가 없어 무동작.
+                if (campAnchorScore != null && !total.isBlank() && campAnchorScore.containsKey(key)) {
+                    String clamped = clampGradeToAnchor(total, campAnchorScore.get(key));
+                    if (!clamped.equals(total)) {
+                        gameLogger.logEvent("[평가 정합] " + key + " 최종등급 " + total + "→" + clamped + " (스테이지 평균 앵커 ±1 제한)");
+                        total = clamped;
+                    }
+                }
 
                 // ★ grantClearTraitRewards가 쓰는 이름→총합등급 맵은 반드시 유지한다.
                 if (!key.isBlank() && !total.isBlank()) grades.put(key, total);
@@ -11720,6 +11738,25 @@ public class TRPGGameManager {
             case "EX" -> 6; case "S" -> 5; case "A" -> 4; case "B" -> 3;
             case "C" -> 2; case "D" -> 1; default -> 0;
         };
+    }
+
+    /** 점수(0=F..5=S,6=EX) → 등급 문자. gradeToPoints의 역함수. */
+    private static String scoreToGrade(int s) {
+        return switch (Math.max(0, Math.min(6, s))) {
+            case 6 -> "EX"; case 5 -> "S"; case 4 -> "A"; case 3 -> "B"; case 2 -> "C"; case 1 -> "D"; default -> "F";
+        };
+    }
+    /** 스테이지 평균(0~5) → 앵커 점수(F=0..S=5). 최종 총평 프롬프트의 임계와 동일. */
+    private static int avgToAnchorScore(double avg) {
+        if (avg >= 4.5) return 5; if (avg >= 3.5) return 4; if (avg >= 2.5) return 3;
+        if (avg >= 1.5) return 2; if (avg >= 0.5) return 1; return 0;
+    }
+    /** 최종 총합등급을 '스테이지 평균 앵커 ±1' 이내로 제한 — 로그 손실로 A→C처럼 2단계 뒤집히던 것 방지. */
+    private String clampGradeToAnchor(String total, int anchorScore) {
+        int ts = gradeToPoints(total);
+        int lo = Math.max(0, anchorScore - 1), hi = Math.min(5, anchorScore + 1);
+        int cl = Math.max(lo, Math.min(hi, ts));
+        return cl == ts ? total : scoreToGrade(cl);
     }
 
     /**
