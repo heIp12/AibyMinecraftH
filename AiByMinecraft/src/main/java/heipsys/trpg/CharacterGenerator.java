@@ -351,7 +351,7 @@ public class CharacterGenerator {
             buildAdjustPrompt(pd, roleContext)
         ).thenCompose(raw -> {
             applyAiAdjustment(pd, raw);
-            // AI 보정(hp/san_max_adj 최대 -3)이 rollStats의 생존 최저선(2)을 다시 깨는 경로 차단
+            // AI 보정(hp/san_max_adj 최대 -3)이 rollStats의 생존 최저선(3)을 다시 깨는 경로 차단
             // (SAN 1/1로 생성돼 정신피해 1에 즉시 홀림·조종되는 캐릭터 방지).
             ensureSurvivalFloor(pd);
             return generateInitialTraits(pd, roleContext, tier);
@@ -448,7 +448,8 @@ public class CharacterGenerator {
      * 총합은 보존한다 — 부족분은 HP·SAN을 제외한 가장 높은 스탯에서 끌어온다.
      */
     private void ensureSurvivalFloor(PlayerData pd) {
-        final int FLOOR = 2; // 시작 체력·정신력 최소 2(1/1 즉사 방지, 단 취약하게 — 큰 피해엔 즉사 가능)
+        final int FLOOR = 3; // ★시작 체력·정신력 최소 3 보장(기초 3 방어)★ — 3 미만이면 HP·SAN 외 가장 높은
+                             //   스탯에서 끌어와 채운다(총합 보존). 낮은 SAN 즉시 홀림·1방 즉사 방지.
         raiseToFloor(pd, 0, FLOOR); // HP
         raiseToFloor(pd, 2, FLOOR); // SAN
     }
