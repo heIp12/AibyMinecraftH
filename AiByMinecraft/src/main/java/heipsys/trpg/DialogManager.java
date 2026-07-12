@@ -152,23 +152,32 @@ public class DialogManager {
                     ClickCallback.Options.builder().uses(1).build())
             ));
         } else {
+            // ★재굴림 소진 시 null 액션이면 눌러도 그냥 닫히고 진행이 막힌다(교착)★ → 눌러도 확정되게 onConfirm 연결.
             buttons.add(ActionButton.create(
-                Component.text("재굴림 불가", NamedTextColor.DARK_GRAY),
-                Component.text("재굴림 횟수를 모두 소진했습니다."),
+                Component.text("🎲 재굴림 소진 — 확정", NamedTextColor.GRAY),
+                Component.text("재굴림을 모두 소진했습니다. 누르면 이 스탯으로 확정합니다."),
                 150,
-                null
+                DialogAction.customClick((v, a) -> onConfirm.run(),
+                    ClickCallback.Options.builder().uses(1).build())
             ));
         }
 
-        // 닫기 버튼·ESC로 종료 불가 — 확정/재굴림만 가능(닫아서 진행 불가가 되던 문제 방지).
-        // 그래도 닫혔다면 /trpg me 로 다시 열 수 있다(2중 안전장치).
+        // ★어떤 방식으로 닫혀도(재굴림 소진 버튼·닫기 버튼·ESC) '확정'으로 처리★ — 예전엔 null 액션 버튼이나
+        //   ESC로 닫으면 콜백이 없어 캐릭터 생성이 교착됐다. ESC를 막는(canCloseWithEscape=false) 대신
+        //   exitAction=onConfirm + ESC 허용으로, 닫는 순간 현재 스탯이 확정돼 진행이 이어진다.
+        ActionButton exitConfirm = ActionButton.create(
+            Component.text("✔ 확정하고 닫기", NamedTextColor.GREEN),
+            Component.text("현재 스탯으로 확정하고 창을 닫습니다. (ESC로 닫아도 동일하게 확정됩니다)"),
+            150,
+            DialogAction.customClick((v, a) -> onConfirm.run(),
+                ClickCallback.Options.builder().uses(1).build()));
         Dialog dialog = Dialog.create(b -> b.empty()
             .base(DialogBase.builder(
                     Component.text("캐릭터 생성  |  스테이지 " + roomNumber + " · " + attempt + "회차"))
                 .body(List.of(DialogBody.plainMessage(body)))
-                .canCloseWithEscape(false)
+                .canCloseWithEscape(true)
                 .build())
-            .type(DialogType.multiAction(buttons, null, 2))
+            .type(DialogType.multiAction(buttons, exitConfirm, 2))
         );
         player.showDialog(dialog);
     }
