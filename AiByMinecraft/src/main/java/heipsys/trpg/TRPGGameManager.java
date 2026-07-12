@@ -1075,6 +1075,15 @@ public class TRPGGameManager {
         forceRetryAllowed = false; // 동반회귀 1회성 재도전 허용은 재도전이 실제로 일어나면 소멸
         gameLogger.section("재도전 " + (corruptMan.getAttempts() + 1) + "회차 (오염도 상승 예정)");
 
+        // ★P5 재도전 지식 이월★: 재도전 = 같은 스테이지(같은 .gdam)를 다시 도는 것 → 지난 회차에 스스로 알아낸
+        //   지식(발견한 단서 기록·능력으로 밝힌 핵심 사실)을 백지로 지우고 시작하게 하지 않는다. 아래 리셋(onRetry·resetToBase)이
+        //   이들을 비우므로, 스냅샷 떠 두었다가 맨 끝에서 되살린다. (엔딩 전모·보상 표시 차단(#43)은 그대로 — 여기서 잇는 건
+        //   '플레이어가 직접 알아낸 것'뿐, 정답을 새로 떠먹이는 게 아니다. capstone 엔진 게이트는 이미 재도전에 유지된다.)
+        java.util.List<String> carryClues = new java.util.ArrayList<>(state.getDiscoveredClues());
+        java.util.Map<java.util.UUID, java.util.List<String>> carryFacts = new java.util.HashMap<>();
+        for (PlayerData cf : state.getAllPlayers())
+            synchronized (cf.keyFacts) { if (!cf.keyFacts.isEmpty()) carryFacts.put(cf.uuid, new java.util.ArrayList<>(cf.keyFacts)); }
+
         // 이전 회차의 잔여 행동·서술·통신을 완전히 정리 (이전 플레이어 진행 방지)
         turnMan.cancelAll();
         narrativeDelivery.clearAll();
@@ -1162,6 +1171,16 @@ public class TRPGGameManager {
                 applyRoleStartZone(pd);                                      // ★#6★ 오프라인: 시작 구역만 데이터로 복원(전판 마지막 구역 잔류 방지·물리 지급은 미가능)
             }
         }
+
+        // ★P5 재도전 지식 이월(복원)★ — 리셋으로 비워진 발견 단서·핵심 사실을 되살린다(같은 스테이지 재도전이라 유효).
+        int carriedClues = 0, carriedFacts = 0;
+        for (String cid : carryClues) { if (!state.getDiscoveredClues().contains(cid)) { state.discoverClue(cid); carriedClues++; } }
+        for (PlayerData pd : state.getAllPlayers()) {
+            java.util.List<String> f = carryFacts.get(pd.uuid);
+            if (f != null) for (String fact : f) if (pd.addKeyFact(fact)) carriedFacts++;
+        }
+        if (carriedClues + carriedFacts > 0)
+            gameLogger.logEvent("[재도전 이월] 지난 회차 지식 복원 — 단서 " + carriedClues + "건, 핵심 사실 " + carriedFacts + "건");
 
         currentPhase = Phase.DAILY;
         startDailyPhase();
