@@ -915,13 +915,16 @@ public class TRPGGameManager {
                             stepLoadingBar("캐릭터 생성 중... (" + done + "/" + total + ")",
                                 0.85f + 0.15f * done / total);
                             if (done >= total) endLoadingBar();
-                            applyStartStageBoost(pd); // 시작 스테이지 비례 시작 스펙 보정(설정 시)
-                            if (!p.isOnline()) {
-                                pendingCreation.remove(p.getUniqueId());
-                                checkAllConfirmed();
-                                return;
-                            }
-                            showCharacterSheetForPlayer(p, pd);
+                            // 시작 스테이지 비례 시작 스펙 보정(설정 시) — 추가 특성은 AI 재창작(async)이므로 완료 후 시트 표시.
+                            applyStartStageBoost(pd).whenComplete((v, ex) ->
+                                plugin.getServer().getScheduler().runTask(plugin, () -> {
+                                    if (!p.isOnline()) {
+                                        pendingCreation.remove(p.getUniqueId());
+                                        checkAllConfirmed();
+                                        return;
+                                    }
+                                    showCharacterSheetForPlayer(p, pd);
+                                }));
                         });
                     })
                     .exceptionally(ex -> {
@@ -1540,30 +1543,56 @@ public class TRPGGameManager {
      * 단계(=startStage-1)마다: 올스탯 총합 +2, 그리고 무작위로
      *   [특성 1개 추가 — 시작 스테이지가 높을수록 ★더 높은 등급★] 또는 [보유 특성 등급 1단계 상승].
      */
-    private void applyStartStageBoost(PlayerData pd) {
-        if (pd == null || startStage <= 1) return;
-        if (state.getRoomNumber() != startStage) return; // 시작 스테이지에서만(도중 합류·다음 스테이지엔 미적용)
+    private java.util.concurrent.CompletableFuture<Void> applyStartStageBoost(PlayerData pd) {
+        java.util.concurrent.CompletableFuture<Void> done = new java.util.concurrent.CompletableFuture<>();
+        if (pd == null || startStage <= 1 || state.getRoomNumber() != startStage) { // 시작 스테이지에서만
+            done.complete(null); return done;
+        }
         int levels = startStage - 1;
         int ceil = startStage <= 3 ? gradeIdx("B") : gradeIdx("A"); // '적당히 높은' 상한 — 낮은 시작=최대 B, 높은 시작=최대 A
         java.util.Random rng = new java.util.Random();
         java.util.List<String> notes = new java.util.ArrayList<>();
+        // 단계당 올스탯 +2와 '보유 특성 등급↑'는 결정론적으로 처리하고, ★특성 추가 슬롯만 AI 재창작으로 적립★한다.
+        int newSlots = 0;
         for (int i = 0; i < levels; i++) {
             bumpStat(pd, rng.nextInt(4), 1);
             bumpStat(pd, rng.nextInt(4), 1);                 // 단계당 올스탯 총합 +2
             boolean addNew = rng.nextBoolean();
-            if (addNew) {                                     // (a) 특성 추가 — 등급이 시작 스테이지에 비례
-                TraitData t = rollStartTrait(pd, rng, ceil);
-                if (t != null) { pd.traits.add(t); notes.add("＋" + t.name + "(" + t.grade + ")"); }
-                else if (!upgradeOneTrait(pd, notes)) bumpStat(pd, rng.nextInt(4), 2); // 풀 소진 → 등급↑ → 그래도 안 되면 스탯
-            } else {                                           // (b) 보유 특성 등급 1단계 상승
-                if (!upgradeOneTrait(pd, notes)) {             // 올릴 특성 없으면 추가로 대체
-                    TraitData t = rollStartTrait(pd, rng, ceil);
-                    if (t != null) { pd.traits.add(t); notes.add("＋" + t.name + "(" + t.grade + ")"); }
-                    else bumpStat(pd, rng.nextInt(4), 2);
-                }
-            }
+            if (addNew) newSlots++;                          // (a) 특성 추가 → AI 재창작 슬롯
+            else if (!upgradeOneTrait(pd, notes)) newSlots++; // (b) 올릴 특성 없으면 새 특성 슬롯으로 대체
         }
-        pd.snapshotBase(); // 보정 스탯을 base로 재확정(재도전·다음 스테이지에도 유지)
+        final int slots = newSlots, fceil = ceil;
+        if (slots <= 0) { pd.snapshotBase(); announceStartBoost(pd, levels, notes); done.complete(null); return done; }
+        // ★AI 재창작(요청)★: 시작 스테이지 추가 특성을 괴담 테마·직업 반영해 AI가 만든다(기본풀 고정 탈피).
+        //   AI 실패·부족 시에만 프리셋 폴백(rollStartTrait) → 보상 소실·회귀 없음.
+        traitMan.generateClearTraits(gradeName(fceil), pd, getEntityName()).whenComplete((list, ex) ->
+            plugin.getServer().getScheduler().runTask(plugin, () -> { // pd 변경·메시지는 메인 스레드
+                int added = 0;
+                if (list != null) {
+                    for (TraitData t : list) {
+                        if (added >= slots) break;
+                        if (t == null) continue;
+                        if (gradeIdx(t.grade) > fceil) t.grade = gradeName(fceil);       // 상한 클램프
+                        if (gradeIdx(t.grade) < gradeIdx("C")) t.grade = "C";
+                        SystemTraitRegistry.applyDefaults(t);                              // 등급 기준 코스트·예산 재적용
+                        final String tid = t.id;
+                        if (tid != null && pd.traits.stream().anyMatch(x -> tid.equals(x.id))) continue; // 중복 제외
+                        pd.traits.add(t); notes.add("＋" + t.name + "(" + t.grade + ")"); added++;
+                    }
+                }
+                for (int i = added; i < slots; i++) {  // 부족분 프리셋 폴백(AI 실패·개수 부족)
+                    TraitData t = rollStartTrait(pd, rng, fceil);
+                    if (t != null) { pd.traits.add(t); notes.add("＋" + t.name + "(" + t.grade + ")"); }
+                    else if (!upgradeOneTrait(pd, notes)) bumpStat(pd, rng.nextInt(4), 2);
+                }
+                pd.snapshotBase(); // 보정 스탯·특성을 base로 재확정(재도전·다음 스테이지에도 유지)
+                announceStartBoost(pd, levels, notes);
+                done.complete(null);
+            }));
+        return done;
+    }
+    /** 시작 보정 결과 안내(메인 스레드에서 호출). */
+    private void announceStartBoost(PlayerData pd, int levels, java.util.List<String> notes) {
         Player p = Bukkit.getPlayer(pd.uuid);
         if (p != null) {
             p.sendMessage("§6[시작 보정] 시작 스테이지 " + startStage + " — " + levels + "단계 성장 적용");
@@ -1876,10 +1905,10 @@ public class TRPGGameManager {
         charGen.generate(player).thenAccept(newPd -> {
             newPd.diceRollsRemaining = pd.diceRollsRemaining;
             state.addPlayer(newPd);
-            plugin.getServer().getScheduler().runTask(plugin, () -> {
-                applyStartStageBoost(newPd); // 재굴림도 시작 보정 재적용
-                showCharacterSheetForPlayer(player, newPd);
-            });
+            plugin.getServer().getScheduler().runTask(plugin, () ->
+                applyStartStageBoost(newPd).whenComplete((v, ex) -> // 재굴림도 시작 보정 재적용(추가 특성 AI 재창작 완료 후 시트)
+                    plugin.getServer().getScheduler().runTask(plugin, () ->
+                        showCharacterSheetForPlayer(player, newPd))));
         });
     }
 
@@ -7614,6 +7643,13 @@ public class TRPGGameManager {
             case "E" -> 1;
             case "F" -> 0;
             default  -> 3;
+        };
+    }
+    /** gradeIdx의 역 — 등급 인덱스(0~7) → 등급 문자. */
+    private String gradeName(int idx) {
+        return switch (Math.max(0, Math.min(7, idx))) {
+            case 7 -> "EX"; case 6 -> "S"; case 5 -> "A"; case 4 -> "B";
+            case 3 -> "C"; case 2 -> "D"; case 1 -> "E"; default -> "F";
         };
     }
 
