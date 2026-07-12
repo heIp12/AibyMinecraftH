@@ -13671,6 +13671,18 @@ public class TRPGGameManager {
         sb.append("씨드: ").append(gdam.has("seed") ? gdam.get("seed").getAsString() : "?").append("\n");
         int room = state.getRoomNumber();
         sb.append("room(현재 스테이지 번호): ").append(room).append("\n");
+        // ★crisis 도입 정합★: daily_prologue.opening=="crisis"면 메인 GM에도 위기 도입을 명시한다 — 예전엔 opening이
+        //   개인 프롤로그 생성에만 쓰여, 첫 장면만 위기이고 이후 메인 GM은 '일상(N턴)'만 보고 기본 일상 규칙(첫 장면 평범·
+        //   치명 위협 금지)을 따라 위기 도중 평온한 일상으로 되돌아가는 모순이 있었다(PromptBuilder crisis 예외를 데이터로 발동).
+        if (gdam.has("daily_prologue") && gdam.get("daily_prologue").isJsonObject()) {
+            JsonObject dpo = gdam.getAsJsonObject("daily_prologue");
+            String opening = dpo.has("opening") && !dpo.get("opening").isJsonNull() ? dpo.get("opening").getAsString() : "";
+            if ("crisis".equalsIgnoreCase(opening)) {
+                sb.append("## ★도입 강도: crisis — 일상 파트 기본 규칙 미적용\n")
+                  .append("이 시나리오는 ★시작부터 위기·재난·감금·추격이 진행 중★이다. 일상 파트 기본 규칙(첫 장면 100% 평범, 일상 중 직접적·치명적 위협 금지)을 ★적용하지 마라★ — ")
+                  .append("도입부터 사건 한복판으로 운영하되, 괴담의 정체·원리·약점은 아직 드러내지 마라(위기 상황 자체는 노출, 정답은 비공개).\n");
+            }
+        }
         if (gdam.has("entity")) {
             sb.append("괴담 존재: ").append(gdam.getAsJsonObject("entity").get("name").getAsString()).append("\n");
             sb.append("★ 괴담 위치 일관성(다중구역 동시생성 금지): '하나의 몸'으로 나타나는 괴담은 ★한 시점에 한 구역에만★ 실체화한다. "

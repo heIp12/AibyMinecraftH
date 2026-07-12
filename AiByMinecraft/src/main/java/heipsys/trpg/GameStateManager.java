@@ -544,6 +544,18 @@ public class GameStateManager {
         if (gdam == null || !gdam.has("timeline")) return;
         JsonObject tl = gdam.getAsJsonObject("timeline");
         if (tl.has("daily_turns"))      dailyTurnsLeft     = tl.get("daily_turns").getAsInt();
+        // ★crisis 정합★: daily_prologue.opening=="crisis"면 일상 유예를 짧게 — timeline.daily_turns(구조 청크에서
+        //   먼저 확정)와 daily_prologue.turns(월드 청크, 예전엔 미사용 사문)의 불일치를 여기서 해소한다.
+        //   crisis는 시작부터 위기이므로 일상을 daily_prologue.turns(있으면)로 클램프하되, 최소 1턴은 남겨
+        //   consumeDailyTurn→onHorrorPhaseStart 정상 전환 경로를 태운다(load에서 dailyPhase 강제해제는 안 함).
+        if (gdam.has("daily_prologue") && gdam.get("daily_prologue").isJsonObject()) {
+            JsonObject dp = gdam.getAsJsonObject("daily_prologue");
+            String opening = dp.has("opening") && !dp.get("opening").isJsonNull() ? dp.get("opening").getAsString() : "";
+            if ("crisis".equalsIgnoreCase(opening)) {
+                int dpTurns = dp.has("turns") && dp.get("turns").isJsonPrimitive() ? dp.get("turns").getAsInt() : 1;
+                dailyTurnsLeft = Math.max(1, Math.min(dailyTurnsLeft, dpTurns));
+            }
+        }
         if (tl.has("minutes_per_turn")) minutesPerTurn     = Math.max(1, tl.get("minutes_per_turn").getAsInt());
         if (tl.has("time_visible"))     timeVisibleDefault = tl.get("time_visible").getAsBoolean();
         if (tl.has("start_time")) {
@@ -729,9 +741,11 @@ public class GameStateManager {
             .ifPresent(p -> timeKnownOverride.put(p.uuid, known));
     }
 
-    /** GM TIME_SKIP: 시간을 건너뛰고 그 사이 사건을 발화 */
+    /** GM TIME_SKIP: 시간을 건너뛰고 그 사이 사건을 발화. ★일상 파트에선 시계 동결★(다른 시계전진 메서드와 정합) —
+     *  예전엔 일상 중 '밤까지 기다린다'가 skipTime을 태워 메인 사건·위협도·전투·종료사건을 일상 단계 그대로 발화하는
+     *  혼합 상태를 만들었다. 일상 중 대기는 서술만, 시계·사건은 공포 파트에서만 움직인다. */
     public void skipTime(int minutes) {
-        if (clockMinutes < 0 || minutes <= 0) return;
+        if (dailyPhase || clockMinutes < 0 || minutes <= 0) return;
         clockMinutes += minutes;
         fireDueEvents();
     }
