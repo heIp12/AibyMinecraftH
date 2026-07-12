@@ -554,14 +554,16 @@ description: >-
   resolvedEvents+resolveEvent/isEventResolved(PREVENTED=EVENT_BLOCK 발화만 예방·근원 유지·단서 미해제 / RESOLVED=
   EVENT_RESOLVE 근원 직접해결·단서 해제), AiManager.parseEventResolveTags, TRPGGameManager.onEventResolved(단서게이트
   해제 시 gmPrompt 재빌드+주입) → ③clueEventSealed(requires_event_resolved 미해결 봉인), authoredClueDiscovered/
-  recordAuthoredClueMatch/sealedCapstoneCount 가드 + 프롬프트 단서렌더 [사건 근원해결 필요]★봉인★ → ④GdamGenerator.
-  applyHintGateReroll(save 후처리, 씨드결정적 30%, capstone 하나를 초반 거대사건-비종료·비곁가지·위협도≥max*0.6·배열순
-  이른것-근원해결 전까지 봉인, 양방향 배선+blockable=true). ★핵심 불변식★: 단서봉인 ≠ 클리어봉인 — 단서 없이도 올바른
-  해법 실행은 clearAssertsKnownSolution 자동성공으로 인정(#284 교착 재발 방지, sealedCapstoneCount도 event-seal 반영해
-  solutionCapstoneKnown 오탐 차단). 검증: EventGateTest13+HintGateTest20(실제 엔진 합성). ★미검증=실플레이(추후)★.
+  recordAuthoredClueMatch/sealedCapstoneCount 가드 + 프롬프트 단서렌더 [사건 근원해결 필요]★봉인★ → ④★30% 재설계(GPT)★:
+  ★post-hoc applyHintGateReroll 폐기★(순환·강제blockable·post-lint 위험) → GdamGenerator.generateChunked에서 30% 프리롤
+  (ThreadLocalRandom) 당첨 시 ★구조 청크에 hgStruct(거대·예방가능·근원해결 설계된 지연사건 + unlocks_clue:"clue_hintgate")★
+  + ★월드 청크에 hgWorld(id="clue_hintgate" capstone 단서 + requires_event_resolved=그 사건)★ 주입(조건부 런타임 스트링이라
+  65535·상시프롬프트 무관, 진짜 30%). 배선정합은 ★lintHintGate(정적, 테스트가능)★가 검사(반쪽배선·없는사건에 건 단서=
+  소프트락 경고, 비차단). ★핵심 불변식★: 단서봉인 ≠ 클리어봉인 — 단서 없이도 올바른 해법 실행은 clearAssertsKnownSolution
+  자동성공 인정(#284, sealedCapstoneCount도 event-seal 반영). EVENT_RESOLVE는 eventIdExists로 환각 id 거부. 검증:
+  EventGate13+HintGate7(lintHintGate)+ClearScope9. ★생성 실효는 실플레이 미검증.★
 - **★A 난이도 바닥(#286) — B(힌트관문)와 별개 축★**: 해결이 너무 쉬운 판이면 초반에 클리어를 지연·봉쇄하는 거대사건
-  배치(눈 돌리기). ★A(난이도)≠B(30% 단서잠금)★ — 단 사용자 결정으로 ★한 사건이 봉쇄+단서잠금 겸함 허용★(강제 분리 안 함,
-  B의 applyHintGateReroll 그대로). 구현: (생성)PROMPT_2 타임라인 규칙 '난이도 바닥 — 초반 봉쇄 사건'(blockable=true, 발화를
+  배치(눈 돌리기). ★A(난이도)≠B(30% 단서잠금)★ — 단 사용자 결정으로 ★한 사건이 봉쇄+단서잠금 겸함 허용★(강제 분리 안 함). 구현: (생성)PROMPT_2 타임라인 규칙 '난이도 바닥 — 초반 봉쇄 사건'(blockable=true, 발화를
   클리어 필수조건으로 X, 재도전엔 발생조건 제거) + (코드)easyClearLacksEarlyBlocker lint 백스톱(capstone 선행<2=쉬움 &
   전반부 threat≥15 부재 → 경고, 비차단). 검증 EasyClearTest 9/9(실제 메서드 리플렉션). ★서사 봉쇄사건 생성은 실플레이 검증 필요★.
 - **★생성 정합 리마인더(사용자) — ★반영 완료★**: 괴담↔컨셉 ★상호★ 정합(괴담에 맞춰 컨셉, 컨셉에 맞춰 괴담) + 마지막

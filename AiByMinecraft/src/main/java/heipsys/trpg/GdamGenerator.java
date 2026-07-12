@@ -1690,6 +1690,21 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
         final String head = "스테이지 번호: " + roomNumber + "\n스케일: " + scale + "\n"
             + lengthGuideFor(roomNumber) + conceptBlock + "\n\n";
 
+        // ★#285 힌트관문 30% — 코드 프리롤(확률 소유) + 생성 청크가 사건·단서를 ★함께 설계★(GPT 재설계: post-hoc 배선 폐기)★.
+        //   당첨 시: 구조 청크가 '거대·예방가능·근원해결이 설계된' 전반부 지연 사건을, 월드 청크가 그 사건에 건 종결단서를 만든다.
+        //   고정 id 'clue_hintgate'로 교차 배선 → lintHintGate가 정합 검증. 미당첨(70%)이면 아무 지시도 안 붙는다(진짜 30%).
+        final boolean hintGate = java.util.concurrent.ThreadLocalRandom.current().nextInt(100) < 30;
+        final String hgStruct = !hintGate ? "" :
+              "\n\n## ★힌트관문 설계(이 판 지정) ★필수\n이 시나리오엔 ★힌트관문★을 넣어라 — timeline.main_events 중 ★전반부★에 클리어를 지연·봉쇄하는 ★거대 사건★ 하나를:\n"
+            + "- ★blockable:true★(플레이어가 예방·개입 가능)로 하고, effect·condition에 ★'근원을 직접 해결하는 구체적 방법'★(어떤 행동·조건이면 이 사건의 근원이 해소되는가)을 담아라. ★예방(막기)≠근원해결★ — 막아도 근원은 남는다.\n"
+            + "- 그 사건 객체에 ★\"unlocks_clue\":\"clue_hintgate\"★를 넣어라(이 문자열 그대로 — 다음 단계가 이 단서를 만들어 잠근다).\n"
+            + "- ★단순 습격·각성·최종 실행-기회 사건은 관문으로 쓰지 마라★(근원이 없거나 순환이 된다). '지연·봉쇄' 성격 + 근원을 직접 풀 수 있는 사건이어야 한다.\n";
+        final String hgWorld = !hintGate ? "" :
+              "\n\n## ★힌트관문 단서(이 판 지정) ★필수\n위 timeline에 \"unlocks_clue\":\"clue_hintgate\"인 사건이 있다 — clues에 ★id=\"clue_hintgate\"인 종결 확인 단서★를 하나 만들어라:\n"
+            + "- ★capstone:true★, access:\"hard\", type:\"real\"(mislead 금지). 클리어에 직결된 '진상을 확인하는 마지막 조각'.\n"
+            + "- 그 단서에 ★\"requires_event_resolved\":\"<그 사건의 실제 id>\"★를 넣어라. 이 단서는 ★예방이 아니라 근원 직접해결(EVENT_RESOLVE)★로만 열린다.\n"
+            + "- ★이 단서 봉인은 CLEAR 하드게이트가 아니다★ — 정답을 아는 팀은 이 단서 없이도 올바른 해법 실행으로 클리어할 수 있다(단서는 '떠먹여주는 확인'일 뿐).\n";
+
         // 1a. 구조 청크: entity·world_rules·constraints·timeline (가장 기계적인 뼈대만)
         //    이전엔 코어 한 번에 zones·npcs·clues까지 다 받아 8192토큰에서 잘려 매번 파싱 실패했다 → 둘로 분할.
         String structPrompt = head
@@ -1700,7 +1715,8 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
             + ScenarioArchetypes.worldRulesPick(roomNumber, conceptTypeHint, campaignArchetypes).prompt() // 세계 규칙 후보 + ★캠페인 중복방지 제외★(엔진 샘플링)
             + typeFirstDirective(roomNumber)
             + coexistenceDirective(roomNumber)   // 공존 괴담(1~4 가변): 보조는 같은 출처·결의 함정으로 엮음
-            + "\n\n## ★검증 (출력 전 자기점검)\n최종 JSON을 내기 전 스스로 확인하고, 아니면 고쳐서 출력하라:\n- 고른 행동양식(entity.type)이 world_rules·timeline.main_events에 실제로 반영됐는가?\n- 성향(ai_context.disposition)이 initial_pattern·personality로 구체화됐는가?\n- 스케일이 영향 범위·시간 규모에 반영됐는가?\n- 아키타입의 ★필수산출★ 항목을 다 채웠는가?";
+            + "\n\n## ★검증 (출력 전 자기점검)\n최종 JSON을 내기 전 스스로 확인하고, 아니면 고쳐서 출력하라:\n- 고른 행동양식(entity.type)이 world_rules·timeline.main_events에 실제로 반영됐는가?\n- 성향(ai_context.disposition)이 initial_pattern·personality로 구체화됐는가?\n- 스케일이 영향 범위·시간 규모에 반영됐는가?\n- 아키타입의 ★필수산출★ 항목을 다 채웠는가?"
+            + hgStruct;
 
         return aiManager.callGmAiLarge(GDAM_SYSTEM_PROMPT, structPrompt).thenCompose(structRaw -> {
             JsonObject core = tryParseObject(structRaw);
@@ -1726,7 +1742,8 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
                 + "\n## daily_prologue.opening: 도입 강도를 시나리오 성격에 맞게 정하라 — "
                 + "\"calm\"(대부분: 담담한 일상에서 서서히 침식) · \"tense\"(일상에 미묘한 긴장·불안, 단 초자연은 아님) · "
                 + "\"crisis\"(시작부터 이미 위기·재난·감금·추격이 진행 중인 괴담). ★crisis면 daily_prologue.turns를 0~1로 짧게★ "
-                + "(일상 유예 없이 바로 사건 한복판). 대부분 시나리오는 calm.";
+                + "(일상 유예 없이 바로 사건 한복판). 대부분 시나리오는 calm."
+                + hgWorld;
 
             return aiManager.callGmAiLarge(GDAM_SYSTEM_PROMPT, worldPrompt).thenCompose(worldRaw -> {
                 JsonObject world = tryParseObject(worldRaw);
@@ -2032,6 +2049,8 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
             // 4b) ★A(난이도 바닥) 백스톱★: 쉬운 해결 구조인데 전반부 지연·봉쇄 거대사건이 없으면 경고(비차단) — 초반 운클리어 위험
             if (easyClearLacksEarlyBlocker(g))
                 logger.warning("[gdam lint] 쉬운 해결 구조(종결단서 약함)인데 전반부 지연·봉쇄 거대사건(threat≥15) 없음 — 초반 운클리어 위험(난이도 바닥 A: 초반 봉쇄 거대사건 권장).");
+            // 4c) ★#285 힌트관문 정합 검증(재설계: 생성 청크가 설계, 여기선 배선 검사만)★ — clue.requires_event_resolved ↔ event.id ↔ event.unlocks_clue 짝이 맞나.
+            for (String w : lintHintGate(g)) logger.warning(w);
             // 5) core_gate(고집도) 무결성·커버리지 — 핵심을 쥔 NPC가 처음부터 다 불어 최단거리 클리어되는 붕괴 방지
             if (g.has("npcs") && g.get("npcs").isJsonArray()) {
                 java.util.Set<String> clueIds = new java.util.HashSet<>();
@@ -2608,14 +2627,7 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
         return (o != null && o.has(k) && !o.get(k).isJsonNull()) ? o.get(k).getAsString() : "";
     }
 
-    /** 힌트관문 게이트로 삼을 만한 사건인가 — id 있고, 종료(is_end) 아님, 곁가지(side) 아님(=본줄기 사건). */
-    private static boolean isGateCandidate(JsonObject ev) {
-        if (ev == null || tlStr(ev, "id").isBlank()) return false;
-        if (ev.has("is_end") && ev.get("is_end").isJsonPrimitive() && ev.get("is_end").getAsBoolean()) return false;
-        if (ev.has("side")   && ev.get("side").isJsonPrimitive()   && ev.get("side").getAsBoolean())   return false;
-        return true;
-    }
-    /** 사건 위협도(없으면 0). 힌트관문 '거대함' 척도. */
+    /** 사건 위협도(없으면 0). 힌트관문 '거대함' 척도(easyClear 백스톱에서 사용). */
     private static int evThreat(JsonObject ev) {
         try { if (ev != null && ev.has("threat") && !ev.get("threat").isJsonNull()) return ev.get("threat").getAsInt(); }
         catch (Exception ignore) {}
@@ -2624,7 +2636,7 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
 
     /** ★A(난이도 바닥) 백스톱 판정★ — 구조적으로 '쉬운 해결'인데 초반 지연·봉쇄 거대사건이 없으면 true(초반 운클리어 위험).
      *  쉬움 = 종결단서(capstone)가 선행단서 2+로 게이트되지 않음(없거나 <2 → 답이 금세 완성). 초반 봉쇄 = 비종료 main_events의
-     *  ★전반부(배열 앞 절반)★에 threat≥15 거대 사건 존재. 힌트관문 B(applyHintGateReroll)와 별개 축 — 이건 난이도 감지·경고다.
+     *  ★전반부(배열 앞 절반)★에 threat≥15 거대 사건 존재. 힌트관문(생성 청크 설계)과 별개 축 — 이건 난이도 감지·경고다.
      *  ★생성 실패에 인질 잡히지 않게 안전측(판단 불가 시 false)★. lint 경고용(비차단). */
     private static boolean easyClearLacksEarlyBlocker(JsonObject g) {
         if (g == null) return false;
@@ -2656,69 +2668,50 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
         return true; // 쉬움 + 전반부 봉쇄 없음 → 위험
     }
 
-    /** ★#285 힌트관문 30% (코드 프리롤 — 확률·상태를 엔진이 소유, 프롬프트 %지시 신뢰 안 함)★
-     *  씨드로 결정적 30%를 굴려, 당첨된 시나리오에 한해 ★클리어 직결 종결단서(capstone) 하나★를
-     *  ★초반 거대 사건의 근원 직접해결(EVENT_RESOLVE) 전까지 봉인★한다(예방으론 안 열림).
-     *  거대 사건 선정: 본줄기(비종료·비곁가지) 중 위협도 유의미한 것 우선, 동급이면 ★배열 순서=이른 시각★.
-     *  선정 사건은 반드시 blockable=true로(요구사항: 초반 지연 사건은 예방 가능해야 함 — 단 예방≠해결).
-     *  ★CLEAR 하드게이트가 아니다★: 봉인은 그 단서 조각만 잠근다 — 정답 아는 팀의 실행은 런타임
-     *  자동성공(clearAssertsKnownSolution)으로 여전히 인정된다. 적합 capstone·사건 없으면 조용히 건너뛴다.
-     *  ★생성 프롬프트 문자열은 건드리지 않는다(65535 한계 무관) — 순수 후처리. 씨드 결정적이라 재현 가능.★ */
-    private void applyHintGateReroll(String seed, JsonObject gdam) {
+    /** ★#285 힌트관문 정합 검증(재설계: 생성 청크가 설계 → 여기선 배선 검사만)★ — 청크가 만든
+     *  clue.requires_event_resolved ↔ event.id, event.unlocks_clue ↔ clue.id 짝이 맞는지 확인.
+     *  반쪽 배선(단서만/사건만)·존재하지 않는 사건에 건 단서(소프트락 위험)를 경고 목록으로 반환(비차단). */
+    private static java.util.List<String> lintHintGate(JsonObject g) {
+        java.util.List<String> out = new java.util.ArrayList<>();
         try {
-            if (gdam == null) return;
-            if (Math.floorMod(("hintgate:" + (seed == null ? "" : seed)).hashCode(), 100) >= 30) return; // 70%는 게이트 없음(정상)
-
-            // 종결단서(capstone, 시나리오당 0~1개) — 클리어 직결 '확인 조각'
-            if (!gdam.has("clues") || !gdam.get("clues").isJsonArray()) return;
-            JsonObject capstone = null;
-            for (JsonElement ce : gdam.getAsJsonArray("clues")) {
-                if (!ce.isJsonObject()) continue;
-                JsonObject c = ce.getAsJsonObject();
-                if (c.has("capstone") && c.get("capstone").isJsonPrimitive() && c.get("capstone").getAsBoolean()
-                        && !tlStr(c, "id").isBlank()) {
-                    if (!tlStr(c, "requires_event_resolved").isBlank()) return; // 이미 게이트됨(멱등)
-                    capstone = c; break;
-                }
+            java.util.Map<String,JsonObject> events = new java.util.HashMap<>();
+            if (g.has("timeline") && g.get("timeline").isJsonObject()) {
+                JsonObject tl = g.getAsJsonObject("timeline");
+                if (tl.has("main_events") && tl.get("main_events").isJsonArray())
+                    for (JsonElement ee : tl.getAsJsonArray("main_events"))
+                        if (ee.isJsonObject() && !tlStr(ee.getAsJsonObject(),"id").isBlank())
+                            events.put(tlStr(ee.getAsJsonObject(),"id"), ee.getAsJsonObject());
             }
-            if (capstone == null) { logger.info("[힌트관문] 당첨이나 capstone 단서 없음 — 봉인 건너뜀 (" + seed + ")"); return; }
-
-            if (!gdam.has("timeline") || !gdam.get("timeline").isJsonObject()) return;
-            JsonObject tl = gdam.getAsJsonObject("timeline");
-            if (!tl.has("main_events") || !tl.get("main_events").isJsonArray()) return;
-            JsonArray evs = tl.getAsJsonArray("main_events");
-
-            int maxThreat = 0; // 1패스: 후보 최대 위협도 → 유의미 기준선
-            for (JsonElement ee : evs) if (ee.isJsonObject() && isGateCandidate(ee.getAsJsonObject())) maxThreat = Math.max(maxThreat, evThreat(ee.getAsJsonObject()));
-            int bar = Math.max(10, (int) (maxThreat * 0.6));
-            // 2패스: 배열 순서(=시간 순)로 가장 이른 '유의미' 사건, 없으면 최대 위협도 사건
-            JsonObject bestEv = null, biggest = null; int biggestThreat = -1;
-            for (JsonElement ee : evs) {
-                if (!ee.isJsonObject()) continue;
-                JsonObject ev = ee.getAsJsonObject();
-                if (!isGateCandidate(ev)) continue;
-                int t = evThreat(ev);
-                if (t > biggestThreat) { biggestThreat = t; biggest = ev; }
-                if (bestEv == null && t >= bar) bestEv = ev; // 첫(가장 이른) 유의미 사건
+            java.util.Map<String,JsonObject> clues = new java.util.HashMap<>();
+            if (g.has("clues") && g.get("clues").isJsonArray())
+                for (JsonElement ce : g.getAsJsonArray("clues"))
+                    if (ce.isJsonObject() && !tlStr(ce.getAsJsonObject(),"id").isBlank())
+                        clues.put(tlStr(ce.getAsJsonObject(),"id"), ce.getAsJsonObject());
+            // 단서 → 사건: requires_event_resolved가 실존 사건을 가리키고, 그 사건이 이 단서를 되받나
+            for (JsonObject c : clues.values()) {
+                String eid = tlStr(c, "requires_event_resolved");
+                if (eid.isBlank()) continue;
+                if (!events.containsKey(eid))
+                    out.add("[gdam lint] 힌트관문: 단서 '" + tlStr(c,"id") + "'가 존재하지 않는 사건 '" + eid + "'에 걸림 — 영영 안 열림(소프트락 위험).");
+                else if (!tlStr(c,"id").equals(tlStr(events.get(eid),"unlocks_clue")))
+                    out.add("[gdam lint] 힌트관문: 단서 '" + tlStr(c,"id") + "'는 사건 '" + eid + "'에 걸렸으나 그 사건 unlocks_clue가 이 단서를 안 가리킴(반쪽 배선).");
             }
-            if (bestEv == null) bestEv = biggest;
-            if (bestEv == null) { logger.info("[힌트관문] 당첨이나 적합 사건 없음 — 봉인 건너뜀 (" + seed + ")"); return; }
-
-            // 배선(양방향) + 예방 가능 표시
-            String evId = tlStr(bestEv, "id");
-            capstone.addProperty("requires_event_resolved", evId);
-            bestEv.addProperty("unlocks_clue", tlStr(capstone, "id"));
-            bestEv.addProperty("blockable", true); // ★초반 지연 사건은 반드시 막을 수 있어야 함(예방·학습) — 예방≠해결★
-            logger.info("[힌트관문] 적용 (" + seed + "): 종결단서 '" + tlStr(capstone, "id") + "' → 사건 '" + evId + "' 근원해결 전까지 봉인 (위협도 " + evThreat(bestEv) + ")");
-        } catch (Exception e) {
-            logger.warning("[힌트관문] 적용 중 예외(무시): " + e.getMessage());
-        }
+            // 사건 → 단서: unlocks_clue가 실존 단서를 가리키고, 그 단서가 이 사건에 걸렸나
+            for (JsonObject e : events.values()) {
+                String cid = tlStr(e, "unlocks_clue");
+                if (cid.isBlank()) continue;
+                if (!clues.containsKey(cid))
+                    out.add("[gdam lint] 힌트관문: 사건 '" + tlStr(e,"id") + "'의 unlocks_clue='" + cid + "' 단서가 clues에 없음(반쪽 배선 — 청크가 단서를 안 만듦).");
+                else if (!tlStr(e,"id").equals(tlStr(clues.get(cid),"requires_event_resolved")))
+                    out.add("[gdam lint] 힌트관문: 사건 '" + tlStr(e,"id") + "'가 단서 '" + cid + "'를 연다지만 그 단서 requires_event_resolved가 이 사건을 안 가리킴(반쪽 배선).");
+            }
+        } catch (Exception ignored) {}
+        return out;
     }
 
     public void save(String seed, JsonObject gdam) throws Exception {
         recordCampaignArchetype(gdam); // ★캠페인 중복방지 기록(GPT 디테일2: 성공 저장 시에만)★ — 이 판의 주 world_rules 아키타입을 캠페인 사용 목록에 추가
         repairTimelineConsistency(gdam); // ★생성 후 타임라인 정합 자동 보정★ — 종료 사건 시각·창 밖 사건·시간창 페이스(GPT 지적: 검증이 존재 여부만 봄)
-        applyHintGateReroll(seed, gdam); // ★#285★ 힌트관문 30% 코드 프리롤 — 당첨 시 종결단서를 초반 거대사건 근원해결 전까지 봉인(순수 후처리)
         finalizeNpcSpeech(gdam); // 저장 직전 NPC 말투 후처리 — D1: 개성 어미 최소 1명 보장 · D2: 그 인물 나이 12~35
         File file = new File(gdamDir, seed + ".gdam");
         String encrypted = encrypt(gdam.toString());
