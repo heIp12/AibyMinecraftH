@@ -9829,6 +9829,18 @@ public class TRPGGameManager {
         return "";
     }
 
+    /** 사건 id가 실재하는 main_event인가 — EVENT_RESOLVE 태그 검증용(GM 환각 id 거부, GPT #3). */
+    private boolean eventIdExists(JsonObject gdam, String eid) {
+        try {
+            if (gdam == null || !gdam.has("timeline")) return false;
+            JsonObject tl = gdam.getAsJsonObject("timeline");
+            if (!tl.has("main_events") || !tl.get("main_events").isJsonArray()) return false;
+            for (JsonElement el : tl.getAsJsonArray("main_events"))
+                if (el.isJsonObject() && eid.equals(getStr(el.getAsJsonObject(), "id"))) return true;
+        } catch (Exception ignored) {}
+        return false;
+    }
+
     /** ★#285★ GM {@code <EVENT_RESOLVE id="X"/>} 소비 — 사건의 근원 직접해결을 상태에 표시하고, 그 사건에 게이트된
      *  핵심 단서(requires_event_resolved==X)가 있으면 GM 프롬프트를 즉시 재빌드 + 해제를 일회 주입한다
      *  (capstone 동적 해제와 동형·소프트락 방지). ★단서만 여는 것 — CLEAR/자동성공은 별개 경로다.★ */
@@ -9836,8 +9848,12 @@ public class TRPGGameManager {
         if (eventId == null || eventId.isBlank()) return;
         String eid = eventId.trim();
         if (state.isEventResolved(eid)) return; // 중복 태그 무시(멱등)
-        state.resolveEvent(eid);
         JsonObject gdam = state.getGdamData();
+        if (!eventIdExists(gdam, eid)) { // ★GPT #3 검증★: 실재하지 않는 사건 id는 GM 환각 태그 — 무시(가짜 단서 해제 방지)
+            gameLogger.logEvent("[EVENT_RESOLVE 무시] 타임라인에 없는 사건 태그 — GM 오출력으로 판단, 미반영");
+            return;
+        }
+        state.resolveEvent(eid);
         String label = eventLabelById(gdam, eid);
         gameLogger.logEvent("[사건 근원 해결] " + (label.isBlank() ? "사건의 근원을 직접 해결" : "'" + label + "'의 근원을 직접 해결")
             + " — 예방이 아닌 직접 해결(연결 단서 해제 가능)");
@@ -13895,6 +13911,7 @@ public class TRPGGameManager {
                     if (ev.has("effect")) sb.append(" → ").append(ev.get("effect").getAsString());
                     if (ev.has("blockable") && ev.get("blockable").getAsBoolean()) sb.append(" (막을 수 있음)");
                     if (ev.has("is_end")    && ev.get("is_end").getAsBoolean())    sb.append(" [종료 사건]");
+                    if (ev.has("combat")    && !ev.get("combat").isJsonNull() && ev.get("combat").getAsBoolean()) sb.append(" [전투]"); // ★combat 표시 전달(PromptBuilder 289 계약 — 예전 누락)★
                     // ★사건 설계 의도 필드 전달(GPT: 예전엔 GM에 안 넘겨져 곁가지·마감·힌트관문이 사실상 미작동)★
                     if (ev.has("side") && ev.get("side").isJsonPrimitive() && ev.get("side").getAsBoolean()) {
                         sb.append(" (곁가지");
