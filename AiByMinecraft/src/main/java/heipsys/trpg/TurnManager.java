@@ -30,7 +30,8 @@ public class TurnManager {
     /** ★행동마다 미리 굴려둔 능력치별 판정값 노트★ 제공자(TRPGGameManager 등록) — turnInput 머리에 얹어 GM이 판정 결과를 알고 서술을 이어 쓰게(#254). */
     private java.util.function.Function<Player, String> preRollProvider;
 
-    public record GmResponse(Player player, String rawText) {}
+    /** dailyAtSubmit: 이 요청을 ★제출한 시점★이 일상 파트였는가 — 전환 경계에서 뒤늦게 도착한 stale 일상 서술을 억제(#3). */
+    public record GmResponse(Player player, String rawText, boolean dailyAtSubmit) {}
 
     public TurnManager(GameStateManager state, AiManager ai) {
         this.state = state;
@@ -88,12 +89,13 @@ public class TurnManager {
             if (pr != null && !pr.isEmpty()) turnInput = pr + "\n\n" + turnInput;
         }
 
+        final boolean dailyAtSubmit = state.isDailyPhase(); // ★#3★ 제출 시점 위상 캡처(응답 도착 땐 이미 전환됐을 수 있음)
         CompletableFuture<Void> future = ai.callGmAi(gmSystemPrompt, turnInput)
             .thenAccept(response -> {
                 pd.turnState = TurnState.IDLE;
                 pending.remove(player.getUniqueId());
                 if (responseHandler != null) {
-                    responseHandler.accept(new GmResponse(player, response));
+                    responseHandler.accept(new GmResponse(player, response, dailyAtSubmit));
                 }
             })
             .exceptionally(ex -> {
@@ -145,12 +147,13 @@ public class TurnManager {
             if (pr.length() > 0) turnInput = pr.toString() + turnInput;
         }
 
+        final boolean dailyAtSubmit = state.isDailyPhase(); // ★#3★ 제출 시점 위상 캡처
         CompletableFuture<Void> future = ai.callGmAi(gmSystemPrompt, turnInput)
             .thenAccept(response -> {
                 for (PlayerData p : pds) p.turnState = TurnState.IDLE;
                 pending.remove(rep.getUniqueId());
                 if (responseHandler != null) {
-                    responseHandler.accept(new GmResponse(rep, response));
+                    responseHandler.accept(new GmResponse(rep, response, dailyAtSubmit));
                 }
             })
             .exceptionally(ex -> {

@@ -2994,6 +2994,15 @@ public class TRPGGameManager {
             if (currentPhase == Phase.GAMEOVER || currentPhase == Phase.IDLE
                 || currentPhase == Phase.CLEAR || concludingEnding) return;
 
+            // ★#3★ 전환 경계 stale 일상 서술 억제: 이 응답이 ★일상에서 제출★(dailyAtSubmit)됐는데 이미 공포로 전환됐으면,
+            //   비동기 동시제출 경합으로 뒤늦게 온 '평온한 일상' 서술이 공포 첫 장면을 덮어쓰는 걸 막는다(통째 드롭 — 일상 서술은 잃어도 무해).
+            //   ★전환을 유발한 응답 자신은 아직 isDailyPhase()=true★라 걸리지 않는다(전환은 아래 단계에서 consumeDailyTurn으로 일어난다).
+            if (response.dailyAtSubmit() && !state.isDailyPhase() && currentPhase == Phase.HORROR) {
+                Player sp = response.player();
+                if (sp != null) sp.sendMessage("§8(상황이 급변해 방금 행동은 흐름에 묻혔습니다 — 다시 시도해 주세요.)");
+                return;
+            }
+
             String raw = response.rawText();
             Player player = response.player();
             // ★단체턴(2a)★: 이 응답이 단체 라운드 응답이 아니면(능력·개별 행동 등) 지난 라운드 팬아웃 멤버십을 정리 —
