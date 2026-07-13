@@ -1531,6 +1531,12 @@ public class AiManager {
             Thread.sleep(1500L * (1L << attempt)); // 1.5s→3s→6s (로컬 과부하·모델 로딩 대기)
             return sendLocal(system, messages, maxTokens, attempt + 1);
         }
+        if (stat == 404) { // 대개 '모델 미설치' — 서버는 켜졌으나 그 이름의 모델이 없음. 조치를 안내한다.
+            throw new RuntimeException("로컬 LLM: 모델 '" + localModel + "'을(를) 찾을 수 없습니다(404). "
+                + "서버에 그 모델이 설치돼 있는지 확인하세요 — Ollama면 터미널에서 `ollama list`로 정확한 이름을 보고, "
+                + "없으면 `ollama pull " + localModel + "`로 받으세요. config의 api-key 세 번째 칸(모델명)을 "
+                + "`ollama list`의 NAME과 ★정확히★ 일치시켜야 합니다(예: qwen3:30b-a3b).");
+        }
         if (stat != 200) {
             throw new RuntimeException("로컬 LLM " + stat + ": "
                 + response.body().substring(0, Math.min(300, response.body().length())));
