@@ -1537,6 +1537,15 @@ public class AiManager {
                 + "없으면 `ollama pull " + localModel + "`로 받으세요. config의 api-key 세 번째 칸(모델명)을 "
                 + "`ollama list`의 NAME과 ★정확히★ 일치시켜야 합니다(예: qwen3:30b-a3b).");
         }
+        // 컨텍스트 초과(400) — 로컬 서버의 n_ctx가 게임 프롬프트보다 작음. 창 크기를 올리는 조치를 안내한다.
+        if (stat == 400 && (response.body().contains("context") || response.body().contains("exceed_context")
+                || response.body().contains("n_ctx"))) {
+            throw new RuntimeException("로컬 LLM: 컨텍스트 창이 너무 작습니다 — 이 게임의 프롬프트(특히 시나리오 생성은 약 4만 토큰)가 "
+                + "서버에 설정된 창을 넘었습니다. 모델(qwen3-2507)은 큰 컨텍스트를 지원하니 ★서버 설정만★ 올리면 됩니다. "
+                + "Ollama면 서버를 `OLLAMA_CONTEXT_LENGTH=49152 ollama serve`로 재시작하거나, Modelfile에 "
+                + "`PARAMETER num_ctx 49152`을 넣어 모델을 다시 만드세요(ollama create). 시나리오 생성까지 하려면 49152 이상, "
+                + "메모리가 빠듯하면 32768로 두고 시나리오는 미리 만들어 둔 .gdam으로 플레이만 로컬로 하세요.");
+        }
         if (stat != 200) {
             throw new RuntimeException("로컬 LLM " + stat + ": "
                 + response.body().substring(0, Math.min(300, response.body().length())));
