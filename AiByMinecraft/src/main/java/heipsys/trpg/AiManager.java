@@ -30,6 +30,18 @@ public class AiManager {
     private final Gson gson = new Gson();
     private final HttpClient http = HttpClient.newHttpClient();
 
+    // ── 로컬 LLM(OpenAI 호환 엔드포인트) 연동 ──
+    //   api-key에 'local|<baseUrl>|<model>[|<key>]' 형식을 넣으면 활성화된다(Ollama/llama.cpp/LM Studio/vLLM 등).
+    //   예: local|http://localhost:11434/v1|qwen3:30b-a3b  (Ollama)
+    //       local|http://localhost:1234/v1|qwen3-30b-a3b   (LM Studio)
+    //       local|http://localhost:8080|qwen3-30b-a3b|sk-x (llama.cpp — 키 필요 시)
+    //   활성화되면 apiType(claude/openai/gemini)·모델 라우팅·과금·모델 탐지를 전부 우회하고, 모든 티어를 이 단일
+    //   로컬 모델로 보낸다(GM/NPC 구분은 프롬프트로 유지). Qwen3 계열은 기본으로 /no_think(사고모드 off)로 보낸다.
+    private final boolean localMode;
+    private final String  localBaseUrl;   // 예: http://localhost:11434/v1
+    private final String  localModel;     // 예: qwen3:30b-a3b
+    private final String  localKey;       // 로컬 서버가 요구하는 키(대개 무시됨) — 없으면 더미
+
     // 컨텍스트: GM과 Entity/NPC는 별도 히스토리 유지
     // 멀티플레이에서 여러 플레이어가 동시에 행동하면 callGmAi 등이 동시 실행되므로
     // 각 컨텍스트는 전용 락으로 직렬화하여 동시 변경(자료구조 손상)을 막는다.
@@ -56,8 +68,24 @@ public class AiManager {
     private static final int GDAM_MAX_TOKENS = 32000; // .gdam 청크 JSON 생성용. ★thinking 모델(Sonnet 5·Haiku 4.5 등)은 thinking 토큰이 max_tokens를 함께 소모★ → 12000이면 thinking만으로 소진돼 text 블록이 안 나오고 파싱 실패하던 문제. thinking+JSON이 모두 담기게 상향.
 
     public AiManager(String apiKey, String apiType) {
-        this.apiKey  = apiKey.trim();
-        this.apiType = apiType;
+        String key = apiKey == null ? "" : apiKey.trim();
+        // ★로컬 LLM 감지★: api-key가 'local|...' 이면 로컬 OpenAI 호환 엔드포인트로 전환한다.
+        if (key.regionMatches(true, 0, "local|", 0, 6) || key.regionMatches(true, 0, "local:", 0, 6)) {
+            String[] p = key.substring(6).split("\\|");
+            this.localMode     = true;
+            this.localBaseUrl  = p.length > 0 ? p[0].trim() : "http://localhost:11434/v1";
+            this.localModel    = p.length > 1 && !p[1].isBlank() ? p[1].trim() : "qwen3:30b-a3b";
+            this.localKey      = p.length > 2 && !p[2].isBlank() ? p[2].trim() : "sk-local";
+            this.apiKey        = this.localKey;   // 하위 코드가 참조해도 안전하게 로컬 키를 담아둔다
+            this.apiType       = "openai";        // 로컬은 OpenAI 호환 포맷을 쓴다(내부 표기용)
+        } else {
+            this.localMode     = false;
+            this.localBaseUrl  = null;
+            this.localModel    = null;
+            this.localKey      = null;
+            this.apiKey        = key;
+            this.apiType       = apiType;
+        }
     }
 
     // ======================================================
@@ -148,8 +176,11 @@ public class AiManager {
         return !model.toLowerCase().contains("haiku"); // Haiku 계열만 제외 — Opus/Sonnet/Fable 등은 지원
     }
     public String providerLabel() {
+        if (localMode) return "로컬(" + localModel + ")";
         return switch (apiType) { case "claude" -> "Claude"; case "openai" -> "OpenAI"; default -> "Gemini"; };
     }
+    /** 로컬 LLM 모드 여부(과금 라벨·상태 표시용). */
+    public boolean isLocalMode() { return localMode; }
     /** 역할별 모델 지정(비우면 등급 기본). config 'models' 섹션에서 호출. */
     public void setRoleModels(String gm, String entity, String npc, String assistant, String gdam) {
         this.gmOverride = norm(gm); this.entityOverride = norm(entity); this.npcOverride = norm(npc);
@@ -171,6 +202,7 @@ public class AiManager {
 
     /** autoLatest일 때 provider API에서 고·중품질 최신 모델을 1회 조회. 미지원/실패 시 하드코딩 폴백. */
     private void ensureModelsDiscovered() {
+        if (localMode) { modelsDiscovered = true; return; } // 로컬 모델은 API 목록 조회 없음(단일 모델 고정)
         if (modelsDiscovered || !autoLatest || apiKey.isEmpty()) return;
         synchronized (this) {
             if (modelsDiscovered) return;
@@ -421,6 +453,7 @@ public class AiManager {
 
     /** 품질별 시간당 예상 비용 라벨(★달러 추정 — 요청★, ★인원수 반영★). 선택 화면·시작 로그용. */
     public String hourlyCostLabel(Quality q, int players) {
+        if (localMode) return "무료(로컬 LLM)";
         int p = Math.max(1, players);
         return "약 " + fmtUsd(estimateHourlyUsd(q, p)) + "/시간(" + p + "인 추정)";
     }
@@ -1056,9 +1089,9 @@ public class AiManager {
         return response
             // 사고(THOUGHT/THINKING) 블록 제거 — 여는·닫는 태그가 어긋나거나(<THOUGHT>…</THINKING>)
             // 잘려도(닫는 태그 누락) 본문에 누출되지 않게 한다. (재미나이 등 추론 블록 대응)
-            .replaceAll("(?i)<(thought|thinking)>[\\s\\S]*?</(thought|thinking)>", "")
-            .replaceAll("(?i)<(thought|thinking)>[\\s\\S]*$", "")
-            .replaceAll("(?i)</?(thought|thinking)>", "")
+            .replaceAll("(?i)<(thought|thinking|think)>[\\s\\S]*?</(thought|thinking|think)>", "")
+            .replaceAll("(?i)<(thought|thinking|think)>[\\s\\S]*$", "")
+            .replaceAll("(?i)</?(thought|thinking|think)>", "")
             .replaceAll("<STATE_UPDATE>[\\s\\S]*?</STATE_UPDATE>", "")
             // ★단일/속성형 <STATE_UPDATE {json}> (닫는 태그 없이 여는 태그에 JSON 내장 — 제미나이 등)도 제거.★
             //   parseStateUpdate가 이 형식을 파싱해 상태는 적용하되, 서술·히스토리엔 태그가 남지 않게 여기서 지운다(누출 버그 수정).
@@ -1203,9 +1236,9 @@ public class AiManager {
     /** <THOUGHT>/<THINKING> 사고 블록 제거 (태그 어긋남·잘림 포함) */
     public String stripThought(String response) {
         return response
-            .replaceAll("(?i)<(thought|thinking)>[\\s\\S]*?</(thought|thinking)>", "")
-            .replaceAll("(?i)<(thought|thinking)>[\\s\\S]*$", "")
-            .replaceAll("(?i)</?(thought|thinking)>", "")
+            .replaceAll("(?i)<(thought|thinking|think)>[\\s\\S]*?</(thought|thinking|think)>", "")
+            .replaceAll("(?i)<(thought|thinking|think)>[\\s\\S]*$", "")
+            .replaceAll("(?i)</?(thought|thinking|think)>", "")
             .trim();
     }
 
@@ -1416,8 +1449,122 @@ public class AiManager {
         return send(model, system, messages, maxTokens, 0, cacheHistory, effort);
     }
 
+    /** 로컬 chat/completions URL 정규화 — baseUrl에 /v1 유무·후행 슬래시를 흡수한다. */
+    private String localChatUrl() {
+        String b = localBaseUrl == null ? "" : localBaseUrl.trim();
+        while (b.endsWith("/")) b = b.substring(0, b.length() - 1);
+        if (b.endsWith("/chat/completions")) return b;
+        if (b.endsWith("/v1")) return b + "/chat/completions";
+        return b + "/v1/chat/completions";
+    }
+
+    /** 메시지 content를 평문 문자열로 평탄화(블록 배열이면 text만 이어붙임). */
+    private String flattenContent(JsonElement content) {
+        if (content == null || content.isJsonNull()) return "";
+        if (content.isJsonPrimitive()) return content.getAsString();
+        if (content.isJsonArray()) {
+            StringBuilder sb = new StringBuilder();
+            for (JsonElement e : content.getAsJsonArray()) {
+                if (e.isJsonObject() && e.getAsJsonObject().has("text"))
+                    sb.append(e.getAsJsonObject().get("text").getAsString());
+            }
+            return sb.toString();
+        }
+        return content.toString();
+    }
+
+    /** Qwen3 등 추론모델이 남긴 &lt;think&gt;…&lt;/think&gt; 블록 제거(태그 오염·토큰 낭비 방지). */
+    private static String stripThinkBlocks(String s) {
+        if (s == null) return "";
+        return s.replaceAll("(?is)<think>.*?</think>", "")
+                .replaceAll("(?is)<think>.*$", "")   // 닫힘 누락(잘림) 대비
+                .replaceAll("(?i)</?think>", "")
+                .trim();
+    }
+
+    /**
+     * ★로컬 LLM(OpenAI 호환) 호출★ — Ollama/llama.cpp/LM Studio/vLLM 등.
+     * Anthropic 전용(cache_control·effort·모델 라우팅)을 전부 생략하고 단일 로컬 모델로 보낸다.
+     * max_tokens(로컬 서버 표준 키) 사용, system은 첫 메시지로, 응답 content에서 &lt;think&gt; 제거.
+     */
+    private String sendLocal(String system, List<JsonObject> messages, int maxTokens, int attempt) throws Exception {
+        // 로컬 30B는 CPU 오프로드로 느릴 수 있어 타임아웃을 넉넉히(출력 상한 비례, 최대 40분 — .gdam 대형 생성 대비).
+        long timeoutSec = Math.max(300, Math.min(2400, 60 + (long) maxTokens / 8));
+        JsonObject req = new JsonObject();
+        req.addProperty("model", localModel);
+        req.addProperty("max_tokens", maxTokens); // ★로컬 서버는 max_completion_tokens가 아니라 max_tokens★
+        req.addProperty("stream", false);
+
+        JsonArray arr = new JsonArray();
+        if (system != null && !system.isBlank()) {
+            // Qwen3 사고모드는 태그를 오염시키고 느리다 → 기본 off(/no_think 소프트 스위치). 다른 모델엔 무해한 문자열.
+            String sys = system.replace(SYS_CACHE_SPLIT, "\n") + "\n\n/no_think";
+            arr.add(msg("system", sys));
+        }
+        for (JsonObject m : messages) {
+            String role = m.has("role") ? m.get("role").getAsString() : "user";
+            if ("system".equals(role)) role = "user"; // 안전: 로컬은 system을 위에서 이미 처리
+            arr.add(msg(role, flattenContent(m.get("content"))));
+        }
+        req.add("messages", arr);
+        String body = req.toString();
+
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create(localChatUrl()))
+            .timeout(Duration.ofSeconds(timeoutSec))
+            .header("Content-Type", "application/json")
+            .header("Authorization", "Bearer " + localKey) // 로컬 서버는 대개 무시하지만 헤더 존재를 요구하는 구현 대비
+            .POST(HttpRequest.BodyPublishers.ofString(body))
+            .build();
+
+        HttpResponse<String> response;
+        try {
+            response = http.send(request, HttpResponse.BodyHandlers.ofString());
+        } catch (java.io.IOException ce) { // 연결 거부(ConnectException)·타임아웃 등 포함
+            // 로컬 서버 미기동·일시 불통 → 1회만 짧게 재시도, 그래도 안 되면 원인 메시지로 실패(게임이 죽지 않게 상위에서 처리).
+            if (attempt < 1) { Thread.sleep(1500L); return sendLocal(system, messages, maxTokens, attempt + 1); }
+            throw new RuntimeException("로컬 LLM 연결 실패(" + localChatUrl() + "): 서버가 켜져 있는지 확인하세요 — " + ce.getMessage());
+        }
+
+        int stat = response.statusCode();
+        if ((stat == 503 || stat == 500 || stat == 502 || stat == 504 || stat == 429) && attempt < 3) {
+            Thread.sleep(1500L * (1L << attempt)); // 1.5s→3s→6s (로컬 과부하·모델 로딩 대기)
+            return sendLocal(system, messages, maxTokens, attempt + 1);
+        }
+        if (stat != 200) {
+            throw new RuntimeException("로컬 LLM " + stat + ": "
+                + response.body().substring(0, Math.min(300, response.body().length())));
+        }
+        try {
+            JsonObject json = gson.fromJson(response.body(), JsonObject.class);
+            accumulateUsageLocal(json); // 토큰만 집계(비용 0)
+            String text = json.getAsJsonArray("choices").get(0).getAsJsonObject()
+                              .getAsJsonObject("message").get("content").getAsString();
+            return stripThinkBlocks(text);
+        } catch (Exception e) {
+            if (attempt < 2) { Thread.sleep(2000L * (attempt + 1)); return sendLocal(system, messages, maxTokens, attempt + 1); }
+            throw new RuntimeException("로컬 LLM 응답 파싱 실패: "
+                + response.body().substring(0, Math.min(300, response.body().length())), e);
+        }
+    }
+
+    /** 로컬 모드 토큰 집계(비용 0 — 호출 수·입출력 토큰만 /trpg status에 반영). */
+    private void accumulateUsageLocal(JsonObject json) {
+        accCalls.increment();
+        try {
+            if (json.has("usage") && json.get("usage").isJsonObject()) {
+                JsonObject u = json.getAsJsonObject("usage");
+                accInTok.add(usageLong(u, "prompt_tokens"));
+                accOutTok.add(usageLong(u, "completion_tokens"));
+            }
+        } catch (Exception ignored) {}
+        // 비용(accCostUsd)은 더하지 않는다 — 로컬은 무료.
+    }
+
     private String send(String model, String system, List<JsonObject> messages, int maxTokens, int attempt, boolean cacheHistory, String effort)
             throws Exception {
+        // ★로컬 LLM★: 모델 라우팅·effort·캐시·과금을 우회하고 단일 로컬 모델로 OpenAI 호환 호출.
+        if (localMode) return sendLocal(system, messages, maxTokens, attempt);
 
         String body;
         // 출력이 길수록 더 오래 걸린다 → maxTokens에 비례해 타임아웃을 늘린다(.gdam 단일 생성 12000토큰은 120초로 부족).

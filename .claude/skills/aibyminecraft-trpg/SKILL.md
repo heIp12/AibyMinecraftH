@@ -520,6 +520,11 @@ description: >-
   (kind=thought, actor=NPC — 그 NPC 시점·전체뷰에만, 플레이어엔 비노출) + 게임 내 엿보기 공개는 별개(같은
   구역 엿보기 특성만). logNpcLocationIfChanged(npcLoggedZone 추적, 바뀔 때만 logMove) → 뷰어 zoneAtSeq가
   NPC 위치 인지 = 라이브 패널 '위치' + 근처/방송 가시성. 뷰어 kind=thought 배지 💭·`.k-thought`(흐린 보라·이탤릭).
+- **로컬 LLM 연동(OpenAI 호환)**: api-key에 `local|<baseUrl>|<model>[|<key>]` 넣으면 활성(AiManager 생성자 파싱 →
+  localMode). send() 최상단이 sendLocal로 분기 — 모델 라우팅·effort·cache_control·과금 전부 우회, 단일 localModel로
+  `POST {baseUrl}/chat/completions`(max_tokens 키, system 첫 메시지, Qwen3는 /no_think 자동). 응답 content에서 `<think>`
+  제거(stripThinkBlocks) + stripTags도 think 스크럽. 비용 0(accumulateUsageLocal=토큰만). providerLabel="로컬(모델)",
+  hourlyCostLabel="무료(로컬 LLM)". ensureModelsDiscovered는 localMode 즉시 return. 권장: Qwen3-30B-A3B(MoE, 8GB VRAM+64GB RAM 실용속도).
 - **NPC 자율비트 국지 라운드 게이트**: 턴 카운터는 ★플레이어 행동마다★ 증가(nextTurn) → '매턴' 활성 NPC가 다인
   판에서 라운드당 인원수만큼 중복 대사 내던 버그. fireNpcAiForTurn(cadence, actorKey=uuid, actorZone)이
   npcBeatSeenActors(같은 행위자 재등장=라운드 일주)·npcBeatFiredThisRound·기아밸브(생존자+1 tick)로 자율 발화를
