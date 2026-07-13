@@ -520,6 +520,10 @@ description: >-
   (kind=thought, actor=NPC — 그 NPC 시점·전체뷰에만, 플레이어엔 비노출) + 게임 내 엿보기 공개는 별개(같은
   구역 엿보기 특성만). logNpcLocationIfChanged(npcLoggedZone 추적, 바뀔 때만 logMove) → 뷰어 zoneAtSeq가
   NPC 위치 인지 = 라이브 패널 '위치' + 근처/방송 가시성. 뷰어 kind=thought 배지 💭·`.k-thought`(흐린 보라·이탤릭).
+- **NPC 자율비트 국지 라운드 게이트**: 턴 카운터는 ★플레이어 행동마다★ 증가(nextTurn) → '매턴' 활성 NPC가 다인
+  판에서 라운드당 인원수만큼 중복 대사 내던 버그. fireNpcAiForTurn(cadence, actorKey=uuid, actorZone)이
+  npcBeatSeenActors(같은 행위자 재등장=라운드 일주)·npcBeatFiredThisRound·기아밸브(생존자+1 tick)로 자율 발화를
+  ★라운드당 1회★로 제한. 직접 대화 경로는 불변. 발화 마감은 callNpcAi 직전 npcBeatMarkFired.
 - **성별 앵커/페르소나 분리**: PlayerData.baseGender=고유 앵커(최초 1회 고정, 생성·매칭·clearRoleData 복귀 기준) /
   pd.gender=스테이지 페르소나(배정 시 배역 성별 채택 — 교차 배정돼도 이름·호칭 일관). 배정 3경로(TRPGGameManager
   preAssign 적용부 + RoleManager.adoptPersonaGender×2) 전부 페르소나 채택. "미상" 배역은 미채택.
