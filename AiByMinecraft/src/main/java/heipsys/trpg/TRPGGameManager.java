@@ -292,6 +292,14 @@ public class TRPGGameManager {
     private final Map<String, Integer> npcAutoStateTime = new ConcurrentHashMap<>();
     /** ★#179 능동 비트★ 라운드로빈 커서 — 매 비트마다 다음 critical NPC 1명을 순번대로 고른다(전원 매턴=파산 방지). */
     private int npcBeatCursor = -1;
+    /** ★자율 비트 국지 라운드 게이트(#264 경감)★ npc_id → 마지막 자율 발화 이후 목격한 같은구역 행위자(uuid).
+     *  턴 카운터가 플레이어 행동마다 증가해 '매턴' 활성 NPC가 라운드당 플레이어 수만큼 비슷한 대사를 내던 실측 버그의 축 —
+     *  같은 행위자 재등장 = 그 구역 라운드 일주 → 발화 플래그 리셋. */
+    private final Map<String, java.util.Set<String>> npcBeatSeenActors = new ConcurrentHashMap<>();
+    /** npc_id → 이번 국지 라운드에 자율 발화했는지. */
+    private final Map<String, Boolean> npcBeatFiredThisRound = new ConcurrentHashMap<>();
+    /** npc_id → 마지막 자율 발화 턴(tick) — 기아 방지 밸브(AFK·시스템 틱·빈 구역에서 라운드 일주가 감지 안 될 때 재개방). */
+    private final Map<String, Integer> npcLastAutoFireTurn = new ConcurrentHashMap<>();
     /** NPC id → 뷰어 로그에 마지막으로 남긴 위치(zone). 매 주기 같은 위치를 이동 이벤트로 도배하지 않도록, 바뀔 때만 logMove. 뷰어 NPC 시점 '현재 위치'·근처 가시성용(#188). */
     private final Map<String, String> npcLoggedZone = new ConcurrentHashMap<>();
     /** ★동적 신뢰(#189 Phase2)★ npc_id → (플레이어 uuid문자열 → 신뢰 델타[-5..+5]). 대화 반복=친밀도 코드 소폭↑(상한 +2),
@@ -1035,6 +1043,7 @@ public class TRPGGameManager {
         npcLastDirectTurn.clear();
         npcActiveUntil.clear();
         npcLastAutoOutput.clear(); npcAutoStale.clear();
+        npcBeatSeenActors.clear(); npcBeatFiredThisRound.clear(); npcLastAutoFireTurn.clear(); // 국지 라운드 게이트도 초기화
         npcLoggedZone.clear();
         npcTrust.clear();
         forbiddenWord = "";
@@ -1285,6 +1294,7 @@ public class TRPGGameManager {
         npcLastDirectTurn.clear();
         npcActiveUntil.clear();
         npcLastAutoOutput.clear(); npcAutoStale.clear();
+        npcBeatSeenActors.clear(); npcBeatFiredThisRound.clear(); npcLastAutoFireTurn.clear(); // 국지 라운드 게이트도 초기화
         npcLoggedZone.clear();     // 스테이지 전환 — NPC 위치 로그 추적 초기화(새 스테이지에서 다시 '등장' 기록)
         npcTrust.clear();          // 스테이지 전환 — 신뢰도 초기화(NPC가 스테이지별로 바뀜)
         lastEndingPages = null;
@@ -3527,7 +3537,10 @@ public class TRPGGameManager {
                 boolean watchdog = (curTurn - lastNpcBeatTurn) >= 4;
                 // ★임시★: 해야 할 작업(일정·목표)이 있거나 최근 플레이어와 상호작용한 NPC는 ★매턴★ 자율 구동해
                 //   그 NPC 시점 서술을 계속 남긴다. 주기(3턴)·워치독 턴이면 전원 검토(cadenceTurn=true), 그 외 턴이면 engaged NPC만(내부 게이트).
-                fireNpcAiForTurn(cadence || watchdog);
+                PlayerData beatPd = player != null ? state.getPlayer(player) : null; // 이번 tick의 행위자(국지 라운드 게이트 키)
+                fireNpcAiForTurn(cadence || watchdog,
+                    player != null ? player.getUniqueId().toString() : null,
+                    beatPd != null && beatPd.zone != null ? beatPd.zone : "");
                 // 단일 주체 캐릭터 괴담(절망의 기사류)만 자율 AI로 캐릭터를 살린다 — NPC와 다른 박자(% 3 == 2)로,
                 //   내부 게이트로 대상 시나리오에서만 실제 호출(그 외엔 값싼 no-op).
                 if (curTurn % 3 == 2) fireEntityActorForTurn();
@@ -8936,7 +8949,8 @@ public class TRPGGameManager {
         npcAcquired.clear(); // NPC가 수집한 정보도 새 시나리오에서 초기화
         npcLastDirectTurn.clear(); // 대화 추적도 새 시나리오에서 초기화
         npcActiveUntil.clear();
-        npcLastAutoOutput.clear(); npcAutoStale.clear();    // #179 활성 창도 새 시나리오에서 초기화
+        npcLastAutoOutput.clear(); npcAutoStale.clear();
+        npcBeatSeenActors.clear(); npcBeatFiredThisRound.clear(); npcLastAutoFireTurn.clear(); // 국지 라운드 게이트도 초기화    // #179 활성 창도 새 시나리오에서 초기화
         npcLoggedZone.clear(); // NPC 위치 로그 추적도 새 시나리오에서 초기화(#188)
         npcTrust.clear(); // 동적 신뢰도 새 시나리오에서 초기화(#189)
         if (gdam == null || !gdam.has("npcs")) return;
@@ -9685,12 +9699,37 @@ public class TRPGGameManager {
         return null;
     }
 
+    /** 국지 라운드 게이트: 같은구역 행위자 tick 기록 — 같은 행위자 재등장 = 그 구역 라운드 일주 → 발화 플래그 리셋. */
+    private void npcBeatFeedActor(String npcId, String actorKey) {
+        java.util.Set<String> seen = npcBeatSeenActors.computeIfAbsent(npcId, k -> java.util.concurrent.ConcurrentHashMap.newKeySet());
+        if (!seen.add(actorKey)) {
+            seen.clear(); seen.add(actorKey);
+            npcBeatFiredThisRound.put(npcId, Boolean.FALSE);
+        }
+    }
+    /** 국지 라운드 게이트: 이번 라운드 자율 발화 가능 여부. 밸브(생존자+1 tick 경과)는 라운드 일주가 감지되지 않는
+     *  경우(AFK·시스템 틱·빈 구역·구성 변화)의 기아 방지 — 1인 플레이에선 매 tick이 새 라운드라 기존 '매턴' 그대로. */
+    private boolean npcBeatRoundOpen(String npcId, int nowTurn, int livingPlayers) {
+        if (!npcBeatFiredThisRound.getOrDefault(npcId, Boolean.FALSE)) return true;
+        int last = npcLastAutoFireTurn.getOrDefault(npcId, Integer.MIN_VALUE);
+        return last != Integer.MIN_VALUE && nowTurn - last >= Math.max(2, livingPlayers + 1);
+    }
+    /** 국지 라운드 게이트: 자율 발화 확정 기록(실제 AI 호출 시점 — 비동기 콜백 전에 닫아 이중 발화 방지). */
+    private void npcBeatMarkFired(String npcId, int nowTurn) {
+        npcBeatFiredThisRound.put(npcId, Boolean.TRUE);
+        npcLastAutoFireTurn.put(npcId, nowTurn);
+    }
+
     /**
      * 괴담 파트 critical NPC 독립 AI 호출 — ★#179 3층 능동 비트★.
-     * 턴당 자율 구동 NPC를 ★소수만★ 고른다: (A) 활성 창(지시 이행·<BUSY> 다급) NPC는 매턴 + (B) 라운드로빈 1명.
+     * 턴당 자율 구동 NPC를 ★소수만★ 고른다: (A) 활성 창(지시 이행·<BUSY> 다급) NPC는 ★라운드당 1회★ + (B) 라운드로빈 1명.
      * NPC 행동은 같은 zone 플레이어에게 직접 전달되고, GM 컨텍스트에 주입된다.
+     * ★국지 라운드 게이트(#264 경감 — 실측 버그)★: 턴 카운터는 ★플레이어 행동마다★ 증가하므로(TurnManager.handleAction),
+     * '매턴' 구동이던 활성 NPC가 다인 플레이에선 ★라운드당 플레이어 수만큼★ 비슷한 대사를 쏟아냈다(전원 동일구역 판 실측:
+     * NPC 발화 43회 vs 플레이어 4회, 인접 발화 유사도 0.6~0.75). actorKey(방금 행동한 플레이어)로 NPC별 국지 라운드를
+     * 추적해 — 같은 행위자 재등장=새 라운드 — 자율 발화를 라운드당 1회로 묶는다(1인 플레이는 매 tick이 새 라운드 = 기존 동작).
      */
-    private void fireNpcAiForTurn(boolean cadenceTurn) {
+    private void fireNpcAiForTurn(boolean cadenceTurn, String actorKey, String actorZone) {
         List<JsonObject> criticals = getCriticalNpcs();
         if (criticals.isEmpty()) return;
         int nowTurn = state.getCurrentTurn();
@@ -9703,8 +9742,18 @@ public class TRPGGameManager {
             pool.add(npc0);
         }
         if (pool.isEmpty()) return;
+        // ★국지 라운드 추적★: 이번 tick의 행위자가 NPC와 같은 구역이면 그 NPC의 '이번 라운드 목격 행위자'에 기록.
+        //   같은 행위자가 다시 나타나면 그 구역의 라운드가 한 바퀴 돈 것 → 발화 플래그 리셋(새 라운드).
+        if (actorKey != null && !actorKey.isEmpty() && actorZone != null && !actorZone.isEmpty()) {
+            for (JsonObject npc0 : pool) {
+                String id0 = getStr(npc0, "id");
+                String z0 = npcZones.getOrDefault(id0, getStr(npc0, "zone"));
+                if (actorZone.equals(z0)) npcBeatFeedActor(id0, actorKey);
+            }
+        }
+        int livingN = (int) state.getAllPlayers().stream().filter(pd -> !pd.isDead).count();
         // ★이번 턴 비트 대상 선정★ (전원 매턴=파산 방지, 상한 있음):
-        //   (A) 활성 창 NPC = 플레이어 지시 이행 중이거나 스스로 <BUSY>로 '다급한 일 중' 선언 → 그 창 동안 매턴(대화 쿨다운 지난 뒤).
+        //   (A) 활성 창 NPC = 플레이어 지시 이행 중이거나 스스로 <BUSY>로 '다급한 일 중' 선언 → 그 창 동안 ★라운드당 1회★(대화 쿨다운 지난 뒤).
         //   (B) 라운드로빈 1명 = 나머지 커버리지 + 멀리 있는 NPC의 능동 도달(찾아옴/전화) 유도.
         java.util.LinkedHashSet<JsonObject> toFire = new java.util.LinkedHashSet<>();
         for (JsonObject npc0 : pool) {
@@ -9713,7 +9762,14 @@ public class TRPGGameManager {
             int ld0 = npcLastDirectTurn.getOrDefault(id0, Integer.MIN_VALUE);
             boolean cooldown = ld0 >= 0 && nowTurn - ld0 <= 1;      // 대화 중(직전 1턴) — 자율 중복 구동 안 함
             boolean stale = npcAutoStale.getOrDefault(id0, 0) >= 2; // 무진행 반복 → 활성창이어도 자율 구동 중단(상호작용 시 리셋)
-            if (au >= nowTurn && !cooldown && !stale) { toFire.add(npc0); if (toFire.size() >= 2) break; } // 활성 NPC는 최대 2명까지 매턴
+            if (au < nowTurn || cooldown || stale) continue;
+            // ★게이트 A(구역)★: 남의 구역 플레이어 턴에는 반응하지 않는다 — 그 NPC 구역 행위자의 tick이거나 케이던스 턴에만.
+            String z0 = npcZones.getOrDefault(id0, getStr(npc0, "zone"));
+            boolean sameZoneTick = actorZone != null && !actorZone.isEmpty() && actorZone.equals(z0);
+            if (!sameZoneTick && !cadenceTurn) continue;
+            // ★게이트 B(라운드 1회)★: 이번 국지 라운드에 이미 자율 발화했으면 생략(기아 방지 밸브 포함).
+            if (!npcBeatRoundOpen(id0, nowTurn, livingN)) continue;
+            toFire.add(npc0); if (toFire.size() >= 2) break;        // 활성 NPC는 최대 2명까지
         }
         // 라운드로빈 베이스라인은 ★주기 턴(cadence)에만★ 1명 — 활성 NPC 없는 조용한 턴은 스파스하게(N주기마다 1명). 활성 NPC는 위에서 매턴 이미 잡힘.
         JsonObject rrPick = null;
@@ -9776,6 +9832,7 @@ public class TRPGGameManager {
                 + (!reachable ? "\n[능동 도달] 너는 지금 어떤 플레이어와도 같은 곳에 있지 않다. ★네 목표가 누군가에게 닿는 것이라면★ 그쪽으로 스스로 이동하거나(어디로 향하는지 서술하면 GM이 위치를 옮긴다) 연락 가능한 상대에게 먼저 연락하라. 닿을 이유가 없으면 네 예정대로 조용히 행동하라(억지로 플레이어를 찾지 마라).\n" : "")
                 + (overlapPlayer != null && hasIdentityTwistSignal(npcObj) ? buildIdentityOverlapNote(overlapPlayer) : ""); // 반전 신호 있는 동명만 조건부 안내(우연 동명이인 제외)
 
+            npcBeatMarkFired(npcId, nowTurn); // 국지 라운드 발화 마감 — 콜백 전에 닫아 같은 라운드 재구동 방지
             ai.callNpcAi(npcId, npcPromptFinal, actionLog).thenAccept(npcResp -> {
                 if (npcResp == null || npcResp.startsWith("§c")) return;
 
