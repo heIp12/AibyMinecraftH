@@ -1994,6 +1994,17 @@ public class TRPGGameManager {
             return;
         }
 
+        // ★성별 앵커 재매칭(1스테이지 성별맹 배정 교정)★ — 최초 doPreAssign은 캐릭터 생성 ★전★(pd 없음)에 돌아
+        //   성별을 못 보고 '순서대로' 배정한다. 그 뒤 캐릭터가 생성되며 나이·성별 앵커가 확정됐으므로, 지금
+        //   gender-aware로 ★다시★ 배정해 '여성으로 생성됐는데 남성 배역으로 뒤집히는' 시각적 성별 역전을 없앤다
+        //   (같은 성별 배역이 하나라도 있으면 반드시 그쪽 — doPreAssign의 하드 벌점 10000). 2스테이지 이후엔
+        //   이미 pd가 있어 gender-aware라 결과가 동일해 무해하다. preAssignments가 소비되기 전이고 캐릭터 생성이
+        //   시나리오 독립(배역 미사용)이라 재배정은 안전하다. 정상 흐름(선제 배정 존재)에서만 재매칭한다.
+        if (!preAssignments.isEmpty()) {
+            JsonObject gdamForReassign = state.getGdamData();
+            if (gdamForReassign != null && gdamForReassign.has("roles")) doPreAssign(players, gdamForReassign);
+        }
+
         // 선제 배정 결과 재사용. 없으면 새로 배정 (retrySession 등 경우)
         Map<UUID, RoleManager.RoleAssignment> assignments;
         if (!preAssignments.isEmpty()) {
