@@ -2148,6 +2148,7 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
                     String seed = generateSeed();
                     core.addProperty("seed", seed);
                     core.addProperty("room", roomNumber);
+                    core.addProperty("gen_stage", roomNumber); // ★불변 '설계 스테이지'★ — load/reserve 스테이지 게이트용. room은 재배치로 덮이지만 이 값은 유지된다.
                     core.addProperty("scale", scale);
 
                     if (!validate(core)) {
@@ -2647,6 +2648,7 @@ clues 배열 각 항목 필드: id, type("real" 또는 "mislead"), access("easy"
                     String seed = generateSeed();
                     gdam.addProperty("seed", seed);
                     gdam.addProperty("room", roomNumber);
+                    gdam.addProperty("gen_stage", roomNumber); // ★불변 '설계 스테이지'★ — load/reserve 스테이지 게이트용. room은 재배치로 덮이지만 이 값은 유지된다.
                     gdam.addProperty("scale", scale);
 
                     if (!validate(gdam)) {

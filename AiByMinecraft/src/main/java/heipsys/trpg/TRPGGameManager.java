@@ -1705,10 +1705,19 @@ public class TRPGGameManager {
         plugin.getLogger().info("[gdam] 다음 스테이지 사전 생성 시작 (스테이지 " + target + ")");
     }
 
+    /** 시나리오(.gdam)가 '설계된 스테이지' — 생성 시 심은 불변 gen_stage 우선(없으면 구버전 room, 그것도 없으면 1).
+     *  load/reserve에서 '낮은 스테이지 시나리오를 상위 스테이지에 배치'를 막는 게이트에 쓴다. */
+    private int gdamStage(JsonObject g) {
+        if (g == null) return 1;
+        try { if (g.has("gen_stage")) return Math.max(1, g.get("gen_stage").getAsInt()); } catch (Exception ignore) {}
+        try { if (g.has("room"))      return Math.max(1, g.get("room").getAsInt()); } catch (Exception ignore) {}
+        return 1;
+    }
+
     /**
      * ★#228★ 진행 중 다음 스테이지에 '생성' 대신 불러올 특정 괴담(.gdam 씨드)을 예약한다(1회성).
      * `/trpg reserve <씨드>` (해제: `off`). /trpg next에서 consumePregenOrGenerate가 우선 소비한다.
-     * 스포일러 방지로 괴담 이름은 표시하지 않고 씨드만 확인해준다.
+     * 스포일러 방지로 괴담 이름은 표시하지 않고 씨드만 확인해준다. 낮은 스테이지 시나리오는 상위 스테이지에 예약 불가(게이트).
      */
     public void reserveNextScenario(Player admin, String seed) {
         if (admin == null) return;
@@ -1723,6 +1732,14 @@ public class TRPGGameManager {
         JsonObject g = gdamGen.load(s);
         if (g == null || !g.has("entity")) {
             admin.sendMessage("§c씨드 '" + s + "' 시나리오를 찾을 수 없습니다. §7(/trpg list로 저장된 씨드를 확인하세요)");
+            return;
+        }
+        // ★스테이지 게이트(요청)★ — 낮은 스테이지의 약한 시나리오를 상위 스테이지에 불러오지 못하게.
+        int target = state.getRoomNumber() + 1;   // 예약은 '다음 스테이지'용
+        int gstage = gdamStage(g);
+        if (gstage < target) {
+            admin.sendMessage("§c이 시나리오는 §f" + gstage + "스테이지§c용입니다 — 다음 스테이지(§f" + target + "§c) 이상 시나리오만 예약할 수 있습니다.");
+            admin.sendMessage("§7  · 낮은 스테이지의 약한 시나리오가 상위 스테이지에 오지 않도록 제한합니다.");
             return;
         }
         reservedNextSeed = s;
@@ -1786,13 +1803,13 @@ public class TRPGGameManager {
             reservedNextSeed = "";      // 1회성 — 소비 즉시 예약 해제
             clearPregen();              // 예약이 우선 — 백그라운드 사전생성분은 버린다
             JsonObject loaded = gdamGen.load(seed);
-            if (loaded != null && loaded.has("entity")) {
-                loaded.addProperty("room", nextRoom); // 원래 회차와 무관하게 이번 스테이지 번호로 정합
+            if (loaded != null && loaded.has("entity") && gdamStage(loaded) >= nextRoom) { // ★스테이지 게이트 안전망★ — 예약 설정 후 저장·로드로 스테이지가 어긋나도 낮은 시나리오는 거른다
+                loaded.addProperty("room", nextRoom); // 원래 회차와 무관하게 이번 스테이지 번호로 정합(gen_stage는 유지)
                 stepLoadingBar("예약된 시나리오 불러오기", 0.92f);
                 gameLogger.logEvent("[예약] 다음 스테이지에 예약 시나리오(시드 " + seed + ") 사용");
                 return CompletableFuture.completedFuture(loaded);
             }
-            plugin.getLogger().warning("[gdam] 예약된 시드(" + seed + ") 로드 실패 — 정상 생성으로 폴백");
+            plugin.getLogger().warning("[gdam] 예약 시드(" + seed + ") 사용 불가(로드 실패 또는 설계 스테이지 < " + nextRoom + ") — 정상 생성으로 폴백");
         }
         CompletableFuture<JsonObject> pre = pregenFuture;
         int preRoom = pregenRoom;
@@ -16071,8 +16088,17 @@ public class TRPGGameManager {
             return;
         }
 
+        // ★스테이지 게이트(요청)★ — 진행 중 세션이 있을 때, 설계 스테이지가 현재보다 낮은(약한) 시나리오는 불러오지 못하게 막는다.
+        //   (예: 5스테이지 진행 중 1스테이지용 맵을 불러와 하위 스테이지로 되돌아가는 문제 방지.)
+        int genStage = gdamStage(gdam);
+        if (state.isSessionActive() && genStage < state.getRoomNumber()) {
+            initiator.sendMessage("§c이 시나리오는 §f" + genStage + "스테이지§c용입니다 — 현재 진행 스테이지(§f" + state.getRoomNumber() + "§c) 이상 시나리오만 불러올 수 있습니다.");
+            initiator.sendMessage("§7  · 낮은 스테이지의 약한 시나리오가 상위 진행에 들어오지 않도록 제한합니다.");
+            return;
+        }
+
         int room = gdam.has("room") ? gdam.get("room").getAsInt()
-                 : (state.isSessionActive() ? state.getRoomNumber() + 1 : 1);
+                 : (state.isSessionActive() ? state.getRoomNumber() + 1 : genStage); // 회차 미기록 파일은 설계 스테이지로 배치(예전엔 무조건 1스테이지였음)
         broadcast("§e§l═══ TRPG 세션 로드 (씨드: " + seed + ") ═══");
         broadcast("§7.gdam 파일을 불러왔습니다. 캐릭터를 생성합니다...");
         sendStartNotice(); // ★시작 안내(서버 실행당 1회, 내부 게이트)★(로드)
