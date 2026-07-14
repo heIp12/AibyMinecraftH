@@ -40,7 +40,7 @@ public class AICraft extends JavaPlugin {
 
         getServer().getScheduler().scheduleSyncDelayedTask(instance, () -> {
             Bukkit.broadcastMessage("§f===========================");
-            Bukkit.broadcastMessage("§e[AIByMinecraft] TRPG 준비 완료");
+            Bukkit.broadcastMessage("§6§l 테네브로스 §r§7- TRPG §f준비 완료");
             Bukkit.broadcastMessage("§7/trpg start — 세션 시작 (OP)");
             Bukkit.broadcastMessage("§7/join        — 세션 참여");
             Bukkit.broadcastMessage("§7/r           — 설정 리로드 (OP)");
@@ -76,7 +76,7 @@ public class AICraft extends JavaPlugin {
         String apiType = buildGame(sender);
 
         if (sender != null) {
-            sender.sendMessage("§a[AIByMinecraft] 리로드 완료. (API: " + apiType.toUpperCase() + ")");
+            sender.sendMessage("§a[테네브로스] 리로드 완료. (API: " + apiType.toUpperCase() + ")");
         }
         getLogger().info("설정 리로드 완료. API 타입: " + apiType.toUpperCase());
     }

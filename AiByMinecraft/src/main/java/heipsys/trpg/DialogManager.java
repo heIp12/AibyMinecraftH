@@ -610,7 +610,7 @@ public class DialogManager {
             .append(Component.text("설정은 다음 /trpg start 부터 적용됩니다.", NamedTextColor.GRAY))
             .build();
         Dialog dialog = Dialog.create(b -> b.empty()
-            .base(DialogBase.builder(Component.text("TRPG 시작 설정"))
+            .base(DialogBase.builder(Component.text("테네브로스 시작 설정"))
                 .body(List.of(DialogBody.plainMessage(body)))
                 .build())
             .type(DialogType.multiAction(buttons, close, 1))

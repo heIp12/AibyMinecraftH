@@ -775,7 +775,7 @@ public class TRPGGameManager {
 
     public void startSession(Player initiator) {
         if (currentPhase != Phase.IDLE) {
-            initiator.sendMessage("§c이미 TRPG 세션이 진행 중입니다.");
+            initiator.sendMessage("§c이미 테네브로스 세션이 진행 중입니다.");
             return;
         }
         // 게임 모드 선택 → AI 품질 선택 순서로 진행
@@ -874,7 +874,7 @@ public class TRPGGameManager {
         boolean freshSession = !state.isSessionActive();
         if (freshSession) { retriedThisRun = false; gdamGen.clearCampaignArchetypes(); } // 새 게임 — 무리트라이 추적 + world_rules 캠페인 중복방지 초기화
         int room = state.isSessionActive() ? state.getRoomNumber() + 1 : Math.max(1, Math.min(6, startStage)); // 신규 세션은 설정된 시작 스테이지부터
-        broadcast("§e§l═══ TRPG 세션 시작 (스테이지 " + room + ") ═══");
+        broadcast("§e§l═══ 테네브로스 세션 시작 (스테이지 " + room + ") ═══");
         broadcast("§7.gdam 파일을 생성 중입니다...");
         sendStartNotice(); // ★시작 안내(서버 실행당 1회, 내부 게이트)★(신규 시작)
 
@@ -1116,7 +1116,7 @@ public class TRPGGameManager {
     /** 재도전 실제 진행부 (retrySession에서 평가 출력 완료 후 호출). */
     private void performRetry(Player admin) {
         if (!state.isSessionActive()) return;
-        broadcast("§e[TRPG] 재도전합니다. 오염도 상승!");
+        broadcast("§e[테네브로스] 재도전합니다. 오염도 상승!");
         retriedThisRun = true; // 재도전 발생 — 이번 런은 보너스 6스테이지 자격 상실
         nextStageUnlocked = true; // 재도전은 새 시도 — 진출 잠금 초기화 (재클리어 시 판정에 따라 다시 결정)
         forceRetryAllowed = false; // 동반회귀 1회성 재도전 허용은 재도전이 실제로 일어나면 소멸
@@ -4063,7 +4063,7 @@ public class TRPGGameManager {
 
     public void joinSession(Player player) {
         if (!state.isSessionActive()) {
-            player.sendMessage("§c활성 TRPG 세션이 없습니다.");
+            player.sendMessage("§c활성 테네브로스 세션이 없습니다.");
             return;
         }
         PlayerData pd = state.getPlayer(player);
@@ -15962,7 +15962,7 @@ public class TRPGGameManager {
 
     public void resumeSession(Player initiator) {
         if (currentPhase != Phase.IDLE) {
-            initiator.sendMessage("§c이미 TRPG 세션이 진행 중입니다. /trpg stop 후 시도하세요.");
+            initiator.sendMessage("§c이미 테네브로스 세션이 진행 중입니다. /trpg stop 후 시도하세요.");
             return;
         }
         java.io.File file = autoSaveFile();
@@ -16078,7 +16078,7 @@ public class TRPGGameManager {
 
     public void loadSession(Player initiator, String seed) {
         if (currentPhase != Phase.IDLE) {
-            initiator.sendMessage("§c이미 TRPG 세션이 진행 중입니다. /trpg stop 후 시도하세요.");
+            initiator.sendMessage("§c이미 테네브로스 세션이 진행 중입니다. /trpg stop 후 시도하세요.");
             return;
         }
         JsonObject gdam = gdamGen.load(seed);
@@ -16099,7 +16099,7 @@ public class TRPGGameManager {
 
         int room = gdam.has("room") ? gdam.get("room").getAsInt()
                  : (state.isSessionActive() ? state.getRoomNumber() + 1 : genStage); // 회차 미기록 파일은 설계 스테이지로 배치(예전엔 무조건 1스테이지였음)
-        broadcast("§e§l═══ TRPG 세션 로드 (씨드: " + seed + ") ═══");
+        broadcast("§e§l═══ 테네브로스 세션 로드 (씨드: " + seed + ") ═══");
         broadcast("§7.gdam 파일을 불러왔습니다. 캐릭터를 생성합니다...");
         sendStartNotice(); // ★시작 안내(서버 실행당 1회, 내부 게이트)★(로드)
 
@@ -16153,7 +16153,7 @@ public class TRPGGameManager {
 
     public void replaySession(Player initiator, String fileName) {
         if (currentPhase != Phase.IDLE) {
-            initiator.sendMessage("§c이미 TRPG 세션이 진행 중입니다. /trpg stop 후 시도하세요.");
+            initiator.sendMessage("§c이미 테네브로스 세션이 진행 중입니다. /trpg stop 후 시도하세요.");
             return;
         }
         JsonObject root = replayMan.readReplay(fileName);
@@ -16273,7 +16273,7 @@ public class TRPGGameManager {
         lines.add("§7이번가동  §f" + ai.usageLabel(ai.lifetimeUsage()));
         lines.add("§7전체누적  §f" + ai.usageLabel(ai.allTimeUsage()));
         lines.addAll(ai.usageDiagLines()); // ★#231 진단★ 비용 구성 분해(순수입력/캐시읽기/쓰기/출력·비중·히트율)
-        dialogMan.showStatusDialog(player, "TRPG 상태", lines);
+        dialogMan.showStatusDialog(player, "테네브로스 상태", lines);
     }
 
     /** 플러그인 종료·리로드 직전 — 영구 사용량을 동기 저장한다. */
