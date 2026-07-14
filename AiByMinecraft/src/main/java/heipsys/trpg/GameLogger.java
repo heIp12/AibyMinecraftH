@@ -39,7 +39,7 @@ public class GameLogger {
         this.plugin = plugin;
         this.logDir = new File(plugin.getDataFolder(), "logs");
         ensureDir();
-        exportViewer();                     // logs/viewer.html 을 항상 최신으로 비치
+        exportViewer();                     // viewer.html(플러그인 폴더 최상위)을 항상 최신으로 비치
     }
 
     /** 로그 디렉터리 보장. 실패 시 콘솔에 절대경로와 함께 경고. */
@@ -456,39 +456,46 @@ public class GameLogger {
         }
     }
 
-    /** 번들된 로그 뷰어 HTML을 logs/viewer.html 로 복사(매 시작 시 최신화). 리소스가 없으면 조용히 건너뜀. */
+    /** 번들된 로그 뷰어 HTML을 plugins/AIByMinecraft/viewer.html(폴더 최상위)로 복사(매 시작 시 최신화). 리소스가 없으면 조용히 건너뜀.
+     *  ★뷰어는 logs 안이 아니라 플러그인 폴더 최상위에 둔다★ — 폴더를 열자마자 바로 보이고(발견성), '폴더 열기'로 최상위를
+     *  고르면 logs·gdam·replays가 한 번에 딸려온다. 구버전이 logs/에 남긴 사본(viewer.html·manifest.json)은 정리한다. */
     private void exportViewer() {
-        if (!logDir.exists() && !ensureDir()) return;
+        File dataDir = plugin.getDataFolder();
+        if (!dataDir.exists() && !dataDir.mkdirs()) return;
         try (InputStream in = plugin.getResource("log-viewer.html")) {
             if (in == null) return;
-            Files.copy(in, new File(logDir, "viewer.html").toPath(), StandardCopyOption.REPLACE_EXISTING);
+            Files.copy(in, new File(dataDir, "viewer.html").toPath(), StandardCopyOption.REPLACE_EXISTING);
+            new File(logDir, "viewer.html").delete();    // 구버전 위치의 낡은 사본 제거 — 최신본은 최상위에만 유지
+            new File(logDir, "manifest.json").delete();
         } catch (Exception ignored) { /* 뷰어 비치는 보조 기능 — 실패해도 로그 기록은 계속 */ }
         writeManifest(); // 뷰어 자동 로드용 파일목록도 함께 비치(부팅 시)
     }
 
-    /** ★뷰어 자동 로드용 manifest★ — 뷰어(logs/viewer.html)가 페치해 폴더의 최신 판을 자동으로 열도록,
-     *  logs 목록(최신순) + 형제 폴더 gdam·replays의 상대경로를 logs/manifest.json 으로 쓴다.
+    /** ★뷰어 자동 로드용 manifest★ — 뷰어(plugins/AIByMinecraft/viewer.html)가 페치해 최신 판을 자동으로 열도록,
+     *  logs 목록(최신순) + gdam·replays의 상대경로를 plugins/AIByMinecraft/manifest.json 으로 쓴다.
+     *  경로는 모두 뷰어(최상위) 기준 상대경로(logs/… · gdam/… · replays/…).
      *  (브라우저 file://에선 fetch가 막힐 수 있어 '있으면 자동, 없으면 파일 선택'으로 폴백 — 보조 기능이라 실패해도 조용히 넘어간다.) */
     private void writeManifest() {
         try {
+            File dataDir = plugin.getDataFolder();
             if (!logDir.exists() && !ensureDir()) return;
             JsonObject root = new JsonObject();
             JsonArray logs = new JsonArray();
             File[] lf = logDir.listFiles((d, n) -> n.endsWith(".events.jsonl") || n.endsWith(".txt"));
             if (lf != null) {
                 java.util.Arrays.sort(lf, (a, b) -> Long.compare(b.lastModified(), a.lastModified())); // 최신순(뷰어가 첫 항목을 자동 오픈)
-                for (File f : lf) logs.add(f.getName()); // 뷰어와 같은 폴더 → 파일명만
+                for (File f : lf) logs.add("logs/" + f.getName()); // 뷰어(최상위) 기준 상대경로
             }
             JsonArray gdams = new JsonArray();
-            File[] gf = new File(plugin.getDataFolder(), "gdam").listFiles((d, n) -> n.endsWith(".gdam"));
-            if (gf != null) for (File f : gf) gdams.add("../gdam/" + f.getName());
+            File[] gf = new File(dataDir, "gdam").listFiles((d, n) -> n.endsWith(".gdam"));
+            if (gf != null) for (File f : gf) gdams.add("gdam/" + f.getName());
             JsonArray reps = new JsonArray();
-            File[] rf = new File(plugin.getDataFolder(), "replays").listFiles((d, n) -> n.endsWith(".replay"));
-            if (rf != null) for (File f : rf) reps.add("../replays/" + f.getName());
+            File[] rf = new File(dataDir, "replays").listFiles((d, n) -> n.endsWith(".replay"));
+            if (rf != null) for (File f : rf) reps.add("replays/" + f.getName());
             root.add("logs", logs);
             root.add("gdams", gdams);
             root.add("replays", reps);
-            Files.writeString(new File(logDir, "manifest.json").toPath(), root.toString());
+            Files.writeString(new File(dataDir, "manifest.json").toPath(), root.toString());
         } catch (Exception ignored) { /* 보조 기능 — 실패해도 로그 기록엔 지장 없음 */ }
     }
 
