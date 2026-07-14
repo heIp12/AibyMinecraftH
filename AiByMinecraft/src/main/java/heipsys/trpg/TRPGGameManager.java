@@ -131,6 +131,9 @@ public class TRPGGameManager {
 
     /** 재현(replay) 파일로 시작한 세션 — 해당 스테이지만 진행, 다음 스테이지 진행 차단 */
     private boolean replayLock = false;
+    /** ★시작 안내(제작·면책)를 서버 부팅 후 '첫 게임' 1회에만 노출★ — 이 매니저는 서버 시작 시 새로 생성되므로
+     *  false로 출발해, 최초 sendStartNotice에서 표시 후 true가 된다(같은 서버 실행 동안 재노출 안 함). */
+    private boolean startNoticeShown = false;
     /** 친숙한 친구들 모드 — 유명 괴담/SCP/크리피파스타를 스테이지에 맞춰 사용 */
     private boolean familiarMode = false;
     /** 친숙 모드 괴담 범위 필터: common/heard/minor/urban/scp/korean/rule/random */
@@ -837,16 +840,17 @@ public class TRPGGameManager {
         };
     }
 
-    /** ★게임 시작 안내 + 제작자 표시 + 면책(요청)★ — 세션이 시작될 때(신규·로드·재현) 전원에게 1회 표시한다.
-     *  제작(helpgames)을 밝히고, 이 게임이 허구(실제 인물·지명·단체·사건과 무관)임을 알리며, 기본 조작을 짧게 안내한다.
-     *  (각 시작 경로에서 세션 개시 배너 직후 1회 호출 — 세션당 1회, 스테이지 진행 중엔 반복하지 않음.) */
+    /** ★게임 시작 안내 + 제작자 표시 + 면책(요청)★ — ★서버 부팅 후 '첫 게임' 1회에만★ 전원에게 표시한다.
+     *  제작(helpgames)을 밝히고, 이 게임이 허구(실제 인물·지명·단체·사건과 무관)임을 알린다.
+     *  (신규·로드·재현 어느 경로로 시작하든 서버 실행당 최초 1회만 — startNoticeShown 게이트. 이후 게임엔 반복 안 함.) */
     private void sendStartNotice() {
+        if (startNoticeShown) return;   // ★서버 실행당 1회(부팅 후 첫 게임)만★ — 이후 게임엔 재노출하지 않음
+        startNoticeShown = true;
         broadcast("§8§l━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
         broadcast("§6§l 괴담 TRPG   §r§7제작 §f§lhelpgames");
         broadcast("§7 · 채팅에 하고 싶은 §f행동·말§7을 적으면 §fGM(AI)§7이 이야기를 이어갑니다.");
-        broadcast("§7 · §f/trpg me§7 내 정보 · §f/trpg map§7 약도 · §f/trpg 이동§7 이동 · §f/trpg log§7 기록 · §f/trpg 추천§7 도움");
-        broadcast("§c§l ⚠ 면책 §r§f이 게임의 이야기·인물·지명·단체·사건은 모두 §c§l허구§r§f이며, §c실제와 아무 관련이 없습니다.");
-        broadcast("§7    공포·괴담 소재를 포함하며, 내용은 AI가 실시간으로 생성합니다.");
+        broadcast("§7 · 이 게임의 이야기·인물·지명·단체·사건은 모두 §f허구§7이며, 실제와 아무 관련이 없습니다.");
+        broadcast("§7 · 공포·괴담 소재를 포함하며, 내용은 AI가 실시간으로 생성합니다.");
         broadcast("§8§l━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     }
 
@@ -872,7 +876,7 @@ public class TRPGGameManager {
         int room = state.isSessionActive() ? state.getRoomNumber() + 1 : Math.max(1, Math.min(6, startStage)); // 신규 세션은 설정된 시작 스테이지부터
         broadcast("§e§l═══ TRPG 세션 시작 (스테이지 " + room + ") ═══");
         broadcast("§7.gdam 파일을 생성 중입니다...");
-        sendStartNotice(); // ★시작 안내+면책 1회★(신규 시작)
+        sendStartNotice(); // ★시작 안내(서버 실행당 1회, 내부 게이트)★(신규 시작)
 
         currentPhase = Phase.CHAR_CREATION;
         startLoadingBar(".gdam 생성 중...");
@@ -16071,7 +16075,7 @@ public class TRPGGameManager {
                  : (state.isSessionActive() ? state.getRoomNumber() + 1 : 1);
         broadcast("§e§l═══ TRPG 세션 로드 (씨드: " + seed + ") ═══");
         broadcast("§7.gdam 파일을 불러왔습니다. 캐릭터를 생성합니다...");
-        sendStartNotice(); // ★시작 안내+면책 1회★(로드)
+        sendStartNotice(); // ★시작 안내(서버 실행당 1회, 내부 게이트)★(로드)
 
         replayLock = false; // 일반 로드 — 재현 잠금 해제
         currentPhase = Phase.CHAR_CREATION;
@@ -16154,7 +16158,7 @@ public class TRPGGameManager {
 
         broadcast("§e§l═══ 재현 세션 시작 (스테이지 " + stage + ", 씨드 " + seed + ") ═══");
         broadcast("§7기록된 캐릭터로 시작합니다. 이 스테이지만 진행되며 이어서 진행할 수 없습니다.");
-        sendStartNotice(); // ★시작 안내+면책 1회★(재현)
+        sendStartNotice(); // ★시작 안내(서버 실행당 1회, 내부 게이트)★(재현)
 
         replayLock = true;
         currentPhase = Phase.DAILY;
