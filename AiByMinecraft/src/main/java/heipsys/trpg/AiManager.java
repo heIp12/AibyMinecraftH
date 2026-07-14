@@ -38,6 +38,8 @@ public class AiManager {
     //   활성화되면 apiType(claude/openai/gemini)·모델 라우팅·과금·모델 탐지를 전부 우회하고, 모든 티어를 이 단일
     //   로컬 모델로 보낸다(GM/NPC 구분은 프롬프트로 유지). Qwen3 계열은 기본으로 /no_think(사고모드 off)로 보낸다.
     private final boolean localMode;
+    /** 로컬 출력 토큰 상한 — /no_think 로컬 모델은 thinking 여유가 불필요해 gdam 32000을 이 값으로 줄인다(폭주 생성 방지·시간 절약). */
+    private static final int LOCAL_MAX_OUT = 16000;
     private final String  localBaseUrl;   // 예: http://localhost:11434/v1
     private final String  localModel;     // 예: qwen3:30b-a3b
     private final String  localKey;       // 로컬 서버가 요구하는 키(대개 무시됨) — 없으면 더미
@@ -1488,6 +1490,10 @@ public class AiManager {
      * max_tokens(로컬 서버 표준 키) 사용, system은 첫 메시지로, 응답 content에서 &lt;think&gt; 제거.
      */
     private String sendLocal(String system, List<JsonObject> messages, int maxTokens, int attempt) throws Exception {
+        // ★로컬 출력 상한 축소★: GDAM_MAX_TOKENS(32000)는 Claude thinking 토큰 여유용이라 /no_think 로컬엔 과대하다 —
+        //   .gdam 청크 JSON은 실제로 이보다 훨씬 짧고(청크당 수천 토큰), 상한이 크면 폭주 생성 시 수십 분을 낭비한다.
+        //   16000이면 어떤 청크든 안전히 담기면서 최악의 생성 시간을 절반으로 줄인다(GM 6000·NPC 4000엔 무영향).
+        if (maxTokens > LOCAL_MAX_OUT) maxTokens = LOCAL_MAX_OUT;
         // 로컬 30B는 CPU 오프로드로 느릴 수 있어 타임아웃을 넉넉히(출력 상한 비례, 최대 40분 — .gdam 대형 생성 대비).
         long timeoutSec = Math.max(300, Math.min(2400, 60 + (long) maxTokens / 8));
         JsonObject req = new JsonObject();
