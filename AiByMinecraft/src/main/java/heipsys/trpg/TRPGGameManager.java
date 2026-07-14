@@ -847,7 +847,7 @@ public class TRPGGameManager {
         if (startNoticeShown) return;   // ★서버 실행당 1회(부팅 후 첫 게임)만★ — 이후 게임엔 재노출하지 않음
         startNoticeShown = true;
         broadcast("§8§l━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        broadcast("§6§l 괴담 TRPG   §r§7제작 §f§lhelpgames");
+        broadcast("§6§l 테네브로스 §r§7- TRPG   §r§7제작 §f§lhelpgames");
         broadcast("§7 · 채팅에 하고 싶은 §f행동·말§7을 적으면 §fGM(AI)§7이 이야기를 이어갑니다.");
         broadcast("§7 · 이 게임의 이야기·인물·지명·단체·사건은 모두 §f허구§7이며, 실제와 아무 관련이 없습니다.");
         broadcast("§7 · 공포·괴담 소재를 포함하며, 내용은 AI가 실시간으로 생성합니다.");
