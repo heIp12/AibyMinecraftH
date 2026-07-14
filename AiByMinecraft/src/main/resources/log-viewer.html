@@ -1776,7 +1776,22 @@ const drop=document.getElementById("drop");
 ["dragenter","dragover"].forEach(ev=>document.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("drag");}));
 ["dragleave","drop"].forEach(ev=>document.addEventListener(ev,e=>{e.preventDefault();if(ev==="dragleave"&&e.relatedTarget)return;drop.classList.remove("drag");}));
 document.addEventListener("drop",e=>{const fs=e.dataTransfer?.files;if(fs&&fs.length)ingestAll(fs);});
-tryRestoreLastDir(); // 지난번 폴더를 기본 경로처럼 자동 복원(권한 남아있으면 즉시, 아니면 버튼 클릭 1회)
+// ★뷰어 폴더 자동 로드(요청)★: 뷰어가 들어있는 폴더(logs/)의 manifest.json을 페치해 ★최신 판을 자동으로★ 연다.
+//  플러그인이 서버 시작·세션마다 manifest.json을 갱신한다(logs 목록 + ../gdam·../replays 상대경로).
+//  로컬 서버·파이어폭스 file://에선 즉시 동작. 크롬 더블클릭 file://은 보안상 fetch가 막혀 실패 →
+//  아래 tryRestoreLastDir(최근 폴더 복원) → 파일/폴더 선택 버튼으로 자연스럽게 폴백한다.
+async function tryManifestAutoLoad(){
+  let m; try{ const r=await fetch('manifest.json',{cache:'no-store'}); if(!r.ok) return false; m=await r.json(); }catch(_){ return false; }
+  const rel=[...(m&&m.logs||[]),...(m&&m.gdams||[]),...(m&&m.replays||[])];
+  if(!rel.length) return false;
+  const files=[]; let idx=0;
+  for(const p of rel){ try{ const r=await fetch(p,{cache:'no-store'}); if(r.ok){ const b=await r.blob(); files.push(new File([b],(p.split('/').pop()||p),{lastModified:Date.now()-(idx++)})); } }catch(_){} }
+  if(!files.length) return false;
+  if(!FILES||!FILES.logs)FILES={logs:[],replays:[],scenarios:[],gdams:[]};
+  ingestFolder(files); // 기존 폴더 결합 흐름 재사용(씨드로 로그+gdam+replay 자동 매칭, 최신 로그 자동 오픈)
+  return true;
+}
+tryManifestAutoLoad().then(ok=>{ if(!ok) tryRestoreLastDir(); }); // 자동 로드 실패 시 최근폴더 복원/파일 선택으로 폴백
 </script>
 </body>
 </html>

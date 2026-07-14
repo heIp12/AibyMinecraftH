@@ -94,6 +94,7 @@ public class GameLogger {
             else
                 plugin.getLogger().warning("[gamelog] 로그 파일을 생성하지 못했습니다 → "
                     + currentFile.getAbsolutePath());
+            writeManifest(); // 새 세션 로그가 목록 맨 위에 오도록 갱신(뷰어 자동 로드가 최신 판을 연다)
         }
     }
 
@@ -462,6 +463,33 @@ public class GameLogger {
             if (in == null) return;
             Files.copy(in, new File(logDir, "viewer.html").toPath(), StandardCopyOption.REPLACE_EXISTING);
         } catch (Exception ignored) { /* 뷰어 비치는 보조 기능 — 실패해도 로그 기록은 계속 */ }
+        writeManifest(); // 뷰어 자동 로드용 파일목록도 함께 비치(부팅 시)
+    }
+
+    /** ★뷰어 자동 로드용 manifest★ — 뷰어(logs/viewer.html)가 페치해 폴더의 최신 판을 자동으로 열도록,
+     *  logs 목록(최신순) + 형제 폴더 gdam·replays의 상대경로를 logs/manifest.json 으로 쓴다.
+     *  (브라우저 file://에선 fetch가 막힐 수 있어 '있으면 자동, 없으면 파일 선택'으로 폴백 — 보조 기능이라 실패해도 조용히 넘어간다.) */
+    private void writeManifest() {
+        try {
+            if (!logDir.exists() && !ensureDir()) return;
+            JsonObject root = new JsonObject();
+            JsonArray logs = new JsonArray();
+            File[] lf = logDir.listFiles((d, n) -> n.endsWith(".events.jsonl") || n.endsWith(".txt"));
+            if (lf != null) {
+                java.util.Arrays.sort(lf, (a, b) -> Long.compare(b.lastModified(), a.lastModified())); // 최신순(뷰어가 첫 항목을 자동 오픈)
+                for (File f : lf) logs.add(f.getName()); // 뷰어와 같은 폴더 → 파일명만
+            }
+            JsonArray gdams = new JsonArray();
+            File[] gf = new File(plugin.getDataFolder(), "gdam").listFiles((d, n) -> n.endsWith(".gdam"));
+            if (gf != null) for (File f : gf) gdams.add("../gdam/" + f.getName());
+            JsonArray reps = new JsonArray();
+            File[] rf = new File(plugin.getDataFolder(), "replays").listFiles((d, n) -> n.endsWith(".replay"));
+            if (rf != null) for (File f : rf) reps.add("../replays/" + f.getName());
+            root.add("logs", logs);
+            root.add("gdams", gdams);
+            root.add("replays", reps);
+            Files.writeString(new File(logDir, "manifest.json").toPath(), root.toString());
+        } catch (Exception ignored) { /* 보조 기능 — 실패해도 로그 기록엔 지장 없음 */ }
     }
 
     // ──────────────────────────────────────────────────────────────
