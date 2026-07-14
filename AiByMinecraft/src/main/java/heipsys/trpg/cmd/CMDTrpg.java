@@ -212,6 +212,5 @@ public class CMDTrpg implements CommandExecutor, TabCompleter {
         player.sendMessage("§f/trpg trait §7— 특성 선택창이 닫힌 경우 다시 열기 (클리어 보상 선택 중에만 유효)");
         player.sendMessage("§f/trpg ending §7— 엔딩 해설 다이얼로그 다시 열기");
         player.sendMessage("§f/trpg givetrait <플레이어> <ID> §7— 시스템 특성 부여 (OP)");
-        player.sendMessage("§f/join §7— 진행 중인 세션 참여");
     }
 }

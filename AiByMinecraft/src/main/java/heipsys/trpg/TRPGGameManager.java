@@ -4061,6 +4061,9 @@ public class TRPGGameManager {
         }
     }
 
+    /** ★구 /join(재접속 복원) — 인게임 명령은 제거됨★. 참가자 relog 시 스코어보드·시트·소품 복원 로직은
+     *  재사용(예: PlayerJoinEvent 자동 복원)을 위해 보존만 한다. 현재는 호출처 없음. */
+    @SuppressWarnings("unused")
     public void joinSession(Player player) {
         if (!state.isSessionActive()) {
             player.sendMessage("§c활성 괴담크래프트 세션이 없습니다.");

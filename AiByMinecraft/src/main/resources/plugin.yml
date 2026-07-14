@@ -10,9 +10,6 @@ commands:
     # ★기본 권한 제한 없음(전체 사용 가능)★ — 유저용 서브커맨드(me·map·이동·log·info·trait·ending·추천·status·list 등)는
     #   OP 없이 써야 하므로 커맨드 자체엔 permission을 두지 않는다. 관리·진행 계열(start·setting·stop·retry·next·resume·
     #   load·reserve·replay·givetrait·jobrefresh)은 CMDTrpg가 서브커맨드별 isOp() 검사로 개별 보호한다.
-  join:
-    description: "진행 중인 TRPG 세션 참여"
-    usage: "/join"
   r:
     description: "설정(config.yml) 리로드"
     usage: "/r"

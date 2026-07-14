@@ -3,7 +3,6 @@ package heipsys;
 import heipsys.trpg.AiManager;
 import heipsys.trpg.TRPGGameManager;
 import heipsys.trpg.cmd.CMDGdam;
-import heipsys.trpg.cmd.CMDJoin;
 import heipsys.trpg.cmd.CMDReload;
 import heipsys.trpg.cmd.CMDTrpg;
 import org.bukkit.Bukkit;
@@ -42,7 +41,6 @@ public class AICraft extends JavaPlugin {
             Bukkit.broadcastMessage("§f===========================");
             Bukkit.broadcastMessage("§6§l 괴담크래프트 §f준비 완료");
             Bukkit.broadcastMessage("§7/trpg start — 세션 시작 (OP)");
-            Bukkit.broadcastMessage("§7/join        — 세션 참여");
             Bukkit.broadcastMessage("§7/r           — 설정 리로드 (OP)");
             Bukkit.broadcastMessage("§f===========================");
         });
@@ -165,7 +163,6 @@ public class AICraft extends JavaPlugin {
             getCommand("trpg").setExecutor(cmdTrpg);
             getCommand("trpg").setTabCompleter(cmdTrpg);
         }
-        if (getCommand("join") != null) getCommand("join").setExecutor(new CMDJoin(trpgManager));
 
         return apiType;
     }
