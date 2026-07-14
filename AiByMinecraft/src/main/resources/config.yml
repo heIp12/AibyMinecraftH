@@ -18,6 +18,15 @@ api-key:
 # 비워두면 자동(auto). claude는 API 키만 넣으면 ★각 등급(opus/sonnet/haiku)의 최신 모델을 자동 탐지★해 사용합니다.
 # (자동 탐지는 api-type=claude일 때만. openai/gemini는 아래 등급 기본값/오버라이드를 사용.)
 # 게임 시작 시 저품질/중품질/고품질을 고르면 각각 haiku/sonnet/opus 등급이 적용됩니다.
+#
+# ★Gemini 무료 티어 주의★ — 무료 티어는 Pro(고품질)가 아예 없고, 일반 Flash 계열도 하루 한도(RPD)가
+#   매우 작습니다(계정에 따라 20/일 수준). 반면 ★Flash-Lite는 하루 한도가 큽니다(예: gemini-3.1-flash-lite = 500/일)★.
+#   게임 기본 라우팅은 GM(중품질)·NPC·시나리오생성을 'flash'로 보내서, 무료 티어에선 그 작은 한도에 금방 걸립니다.
+#   → 무료 티어로 돌리려면 아래를 ★flash-lite로 강제★하고 저품질/중품질로 플레이하세요(전부 큰 한도 버킷 공유):
+#     medium: "gemini-3.1-flash-lite"   (GM중품질·시나리오생성)
+#     npc:    "gemini-3.1-flash-lite"   (NPC 대화·자율)
+#     (고품질까지 쓰려면 high도 같은 값으로. 모델 ID는 AI Studio에 표시된 이름과 정확히 일치시킬 것.)
+#   유료로 전환하면 Flash·Pro 한도가 크게 오르니 이 오버라이드가 불필요합니다.
 models:
   # API에서 최신 모델 자동 탐지 (claude 전용). false면 아래 값/하드코딩 기본만 사용.
   auto-latest: true
