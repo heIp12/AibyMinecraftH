@@ -2648,13 +2648,16 @@ public class TRPGGameManager {
             if (thAfter != thBefore) gameLogger.logEvent("위협도 +" + (thAfter - thBefore) + " → " + thAfter + "/100 (정확한 금지어 발설 — 세력 급상승)");
             if (forbiddenDoomTurns <= 0) { // 첫 발설 — 파국 개시(즉종료 대신 유예)
                 forbiddenDoomTurns = 2;
-                broadcast("§4갑자기, 주위가 심상치 않게 뒤틀리기 시작한다...");
+                // ★즉발 하드코딩 방송 금지(스포일러 — 사용자 제보)★: 예전엔 여기서 "§4갑자기 주위가 뒤틀린다"를 즉시 방송했으나,
+                //   그 붉은 문구가 '금지어를 말한 바로 그 입력'과 1:1로 붙어 "방금 그 말이 트리거였다"를 대놓고 알려줬다.
+                //   → 즉발 방송을 없애고, 파국의 조짐은 아래 주입을 받은 GM 서술이 (인과를 숨긴 채) 자연스럽게 그려낸다.
                 ai.injectGmSystem("[금지어 발설 — 파국 개시] " + pd.gmDisplayName() + "이(가) 절대 입에 올려선 안 될 단어를 말했다. "
-                    + "★플레이어에겐 이 인과를 절대 알리지 마라 — '말을 잘못해서'·'그 단어 때문에' 같은 설명·암시 금지(채팅·발화가 원인이라고 드러내지 마라, 메타 노출 금지). 그저 ★상황이 갑자기·격렬하게 변하는 것★으로만 그려라.★ "
+                    + "★플레이어에겐 이 인과를 절대 알리지 마라 — '말을 잘못해서'·'그 단어 때문에'·'그 말을 입에 올린 순간' 같은 설명·암시 금지(채팅·발화·특정 단어가 원인이라고 드러내지 마라, 메타 노출 금지). 그저 ★상황이 갑자기·격렬하게 변하는 것★으로만 그려라.★ "
+                    + "★이번 응답에서 반드시★ 주위가 심상치 않게 뒤틀리기 시작하는 이변을 강렬히 서술해 파국의 조짐을 열어라(즉발 시스템 안내는 없다 — 이 서술이 그 역할을 대신한다). "
                     + "이제부터 괴담이 급격히 정체를 드러내며 파국이 닥쳐온다 — ★아직 완전히 끝난 건 아니다★. "
-                    + "이 턴엔 세계가 급변하는 이변을 강렬히 서술하되, 플레이어가 ★마지막 발버둥(도주·능력 사용·최후의 단서 확보)★을 시도할 여지를 남겨라. 정체·해결법 누설 금지.");
+                    + "플레이어가 ★마지막 발버둥(도주·능력 사용·최후의 단서 확보)★을 시도할 여지를 남겨라. 정체·해결법 누설 금지.");
             } else { // 파국 진행 중 재발설 — 가속
-                ai.injectGmSystem("[금지어 재발설 — 파국 가속] 금지된 단어가 또 입에 올랐다(★인과 노출 금지 — 발화·채팅이 원인이라고 알리지 마라★). 조여오던 파국이 한층 급박해진다 — 이변을 더 강하고 빠르게 서술하라.");
+                ai.injectGmSystem("[금지어 재발설 — 파국 가속] 금지된 단어가 또 입에 올랐다(★인과 노출 금지 — 발화·채팅·특정 단어가 원인이라고 알리지 마라★). 조여오던 파국이 한층 급박해진다 — 이변을 더 강하고 빠르게 서술하라.");
             }
             // ★return 하지 않는다★ — 이번 입력도 정상 행동으로 처리해, 플레이어가 파국 속에서도 행동하게 둔다.
         } else if (fwSim >= 0.6) {
@@ -3080,12 +3083,19 @@ public class TRPGGameManager {
             String raw = response.rawText();
             Player player = response.player();
             // ★확정 성공 '미적용' 환불★: GM이 <GUARANTEE_UNUSED/>를 냈으면(행동이 특성 취지와 불일치 → 미적용) 그 특성 사용을 되돌린다.
+            // ★확정 성공 '적용' 표식(guaranteeApplied)★: 무장돼 있었고 미적용 신호가 없으면 = 적용된 것 → 아래 '4. 서술 배달'에서
+            //   이 행동의 (비결정타) 주사위를 억제한다(사용자 제보: 확정 성공 능력을 써도 여전히 주사위를 굴림 — 약한 모델이 지시를 놓치고 <DICE>를 냄).
+            boolean guaranteeApplied = false;
             if (player != null) {
                 String awaitBt = boostTraitAwaitingResult.remove(player.getUniqueId());
-                if (awaitBt != null && raw != null && raw.toUpperCase().contains("GUARANTEE_UNUSED")) {
-                    PlayerData bpd = state.getPlayer(player);
-                    if (bpd != null) { refundTraitUse(bpd, awaitBt);
-                        player.sendMessage("§7[확정 성공 미적용] 행동이 특성 취지와 맞지 않아 §f사용 횟수가 보존§7됩니다."); }
+                if (awaitBt != null) {
+                    if (raw != null && raw.toUpperCase().contains("GUARANTEE_UNUSED")) {
+                        PlayerData bpd = state.getPlayer(player);
+                        if (bpd != null) { refundTraitUse(bpd, awaitBt);
+                            player.sendMessage("§7[확정 성공 미적용] 행동이 특성 취지와 맞지 않아 §f사용 횟수가 보존§7됩니다."); }
+                    } else {
+                        guaranteeApplied = true; // 확정 성공이 실제로 적용됨 → 이 행동엔 판정(주사위)을 굴리지 않는다(아래에서 억제)
+                    }
                 }
             }
             // ★단체턴(2a)★: 이 응답이 단체 라운드 응답이 아니면(능력·개별 행동 등) 지난 라운드 팬아웃 멤버십을 정리 —
@@ -3253,6 +3263,14 @@ public class TRPGGameManager {
 
             // 4. 서술 배달 — <DICE>가 있으면 그 위치에서 쪼개 [앞 서술]→[주사위 인라인]→[뒤 결과 서술](#254). 없으면 통짜 배달.
             JsonObject inlineDice = (player != null && player.isOnline()) ? ai.parseDiceTag(raw) : null;
+            // ★확정 성공 적용 시 (비결정타) 주사위 억제★(사용자 제보): 확정 성공이 적용된 일반 행동에 GM이 습관적으로 <DICE>를
+            //   함께 냈어도 굴리지 않는다 — 확정 성공은 판정을 건너뛰는 능력이다(엔진이 강제 → 약한 모델이 '주사위 금지' 지시를 놓쳐도 안전).
+            //   inlineDice를 비우면 아래 통짜 배달(deliverNarrative)이 stripTags로 <DICE> 태그까지 지워 표기도 남지 않는다.
+            //   단 시나리오를 끝내는 결정타는 확정 성공 범위 밖(activateGuaranteed 6349: 괴담 본체 즉시 해결 금지)이라 정상 판정하게 둔다.
+            if (guaranteeApplied && inlineDice != null && !isDecisiveDice(player, inlineDice)) {
+                gameLogger.logEvent("[확정 성공] 판정 생략 — 확정 성공 능력이 적용되어 이 행동은 주사위를 굴리지 않음");
+                inlineDice = null;
+            }
             // ★결정타 등록(감사 B)★: 이 굴림이 결정타(명시 decisive / CLEAR 동봉 stash / 고DC / 고위협)면 해소될 때까지
             //   전역 게이트에 올린다 — 이 동안 도착하는 어떤 CLEAR도 판정 확정 전엔 처리되지 않는다.
             if (inlineDice != null && isDecisiveDice(player, inlineDice)) unresolvedDecisiveDice.add(player.getUniqueId());
@@ -3275,7 +3293,8 @@ public class TRPGGameManager {
             }
 
             // 4a. <DICE> 태그가 있으면 위 인라인 배달(deliverNarrativeWithInlineDice)에서 이미 처리됐다. 태그 없이 판정 키워드만 있으면 기존 폴백 연출.
-            if (player != null && player.isOnline() && inlineDice == null && needsDiceAnimation(raw)) {
+            //   ★확정 성공 적용 행동은 폴백 연출도 막는다★(사용자 제보) — '주사위를 굴린다'류 서술 잔재로 needsDiceAnimation이 오탐해도 판정 연출이 뜨지 않게.
+            if (player != null && player.isOnline() && inlineDice == null && !guaranteeApplied && needsDiceAnimation(raw)) {
                 present(() -> { if (player.isOnline()) playDiceAnimation(player); });
             }
             // 4c. ★행운 마커(엔진 소유)★: 이번 턴 무판정 우연(serendipity)이 실제로 굴려졌을 때만 [행운!]을 시스템이 표기한다
@@ -3506,7 +3525,7 @@ public class TRPGGameManager {
             //   (그동안 플레이어는 계속 행동해 왔다 → 즉사 몰입 파괴 없이 '왜 졌는지 납득되는' 파국.)
             if (forbiddenDoomTurns > 0 && (currentPhase == Phase.HORROR || currentPhase == Phase.DAILY)) {
                 if (--forbiddenDoomTurns <= 0) {
-                    onBadEnding("금지어 발설");
+                    onBadEnding("금지어 발설", true); // ★인과 은닉★ — 엔딩이 '금지어 때문'이라 짚지 않게(스포일러 방지)
                     return; // 종료 처리됨 — 이후 쿨다운·NPC 자율 AI 불필요
                 }
             }
@@ -3890,7 +3909,13 @@ public class TRPGGameManager {
      * (재도전 시 전말을 알면 재미가 없으므로 — 해설은 클리어 또는 포기 시에만 공개)
      * @param reasonLabel 패인 요약 (예: "타임라인 붕괴", "전원 사망")
      */
-    private void onBadEnding(String reasonLabel) {
+    private void onBadEnding(String reasonLabel) { onBadEnding(reasonLabel, false); }
+    /**
+     * @param hiddenCause 파국의 '계기'를 플레이어에게 숨겨야 하는 엔딩인가(예: 금지어 발설).
+     *   true면 배드 엔딩 서술이 원인·계기를 짚지 않고 '피할 수 없는 재앙이 닥친' 결말로만 그린다
+     *   (메커니즘 스포일러 방지 — 사용자 제보: 엔딩이 '금지어 때문'이라 알려주는 느낌). false면 인과를 분명히 밝힌다.
+     */
+    private void onBadEnding(String reasonLabel, boolean hiddenCause) {
         if (currentPhase == Phase.GAMEOVER) return;
         currentPhase = Phase.GAMEOVER;
         pendingTraitActivation.clear();
@@ -3903,11 +3928,21 @@ public class TRPGGameManager {
         // 재도전 가능 여부 판정 (3번째 방부터는 생존 성공자가 있어야 재도전 가능)
         boolean retryAllowed = isRetryAllowed();
 
-        ai.callGmAi(gmSystemPrompt,
-            "게임이 실패로 끝났다(" + reasonLabel + "). 배드 엔딩 장면을 서술해줘. "
-            + "★플레이어가 '왜 이렇게 끝났는지' 납득하게★ — 무엇이 모든 길을 닫아 이 결말에 이르렀는지 그 인과를 장면 안에서 분명히 드러내라. "
-            + "지금까지 쌓여 온 전개의 당연한 귀결로 느껴지게(갑작스럽거나 억울한 즉사·운빨 종료가 아니라, 이미 벌어진 일들의 결과로). "
-            + "단, 괴담의 정체·규칙·해결법을 직접 설명하거나 누설하지 마라(재도전 여지를 남긴다).")
+        // ★인과 은닉 엔딩(hiddenCause)★: 계기(금지어 발설 등)를 절대 드러내지 않는다 — 그 계기를 짚는 순간
+        //   '무엇이 파국을 불렀는지'가 곧 게임의 비밀(금지어 메커니즘)을 알려주는 스포일러가 되기 때문.
+        //   그래서 reasonLabel조차 프롬프트에 넣지 않고, '조여오던 힘이 마침내 터진' 불가피한 재앙으로만 그린다.
+        String endPrompt = hiddenCause
+            ? ("게임이 파국으로 끝났다. 마지막 배드 엔딩 장면을 서술해줘. "
+               + "지금까지 조여오던 괴담의 힘이 마침내 걷잡을 수 없이 터져 나와 인물들을 집어삼키는 결말이다. "
+               + "★무엇이 이 파국을 불렀는지 그 원인·계기를 절대 설명하거나 암시하지 마라 — 특정 행동·말·선택 때문이라고 짚지 마라(인물들조차 영문을 모른 채 압도된다). "
+               + "그저 피할 수 없는 재앙이 닥쳐와 모든 것이 무너지는 광경으로만 그려라.★ "
+               + "갑작스럽되 억울하지 않게 — 처음부터 이 존재 앞에 인간은 무력했다는 체념이 배게. "
+               + "괴담의 정체·규칙·약점을 직접 설명하거나 누설하지 마라(재도전 여지를 남긴다).")
+            : ("게임이 실패로 끝났다(" + reasonLabel + "). 배드 엔딩 장면을 서술해줘. "
+               + "★플레이어가 '왜 이렇게 끝났는지' 납득하게★ — 무엇이 모든 길을 닫아 이 결말에 이르렀는지 그 인과를 장면 안에서 분명히 드러내라. "
+               + "지금까지 쌓여 온 전개의 당연한 귀결로 느껴지게(갑작스럽거나 억울한 즉사·운빨 종료가 아니라, 이미 벌어진 일들의 결과로). "
+               + "단, 괴담의 정체·규칙·해결법을 직접 설명하거나 누설하지 마라(재도전 여지를 남긴다).");
+        ai.callGmAi(gmSystemPrompt, endPrompt)
           .thenAccept(r -> plugin.getServer().getScheduler().runTask(plugin, () -> {
               String narrative = ai.stripTags(r);
               // 미스폰 플레이어 포함 전원에게 배드엔딩 서술 전달
@@ -6343,8 +6378,9 @@ public class TRPGGameManager {
         //  특정 조건 특성인데도 아무 행동이나(설득·이동 등) 전부 확정 성공되던 버그. GM이 취지 부합 여부로 게이트하게 한다.
         pendingActionBoost.put(player.getUniqueId(),
             "[확정 성공(" + td.name + ") — 이 특성의 취지: '" + detail + "'. "
-            + "플레이어가 방금 입력한 행동이 ★이 취지에 부합하는 종류★이면 " + scopeStr + "을(를) 주사위·실패를 무시하고 §반드시 성공§한 것으로 서술하라(결과 확정). "
-            + "★취지와 무관한 다른 종류의 행동에는 적용하지 말고 평소대로 판정하라 — 아무 행동이나 무조건 성공시키지 마라.★ "
+            + "플레이어가 방금 입력한 행동이 ★이 취지에 부합하는 종류★이면 " + scopeStr + "을(를) §반드시 성공§한 것으로 서술하라(결과 확정). "
+            + "★★적용할 때는 <DICE>를 절대 내지 마라 — 확정 성공은 판정(주사위)을 굴리지 않는다. '주사위를 굴린다·판정한다·d20' 같은 말도 쓰지 말고, 곧바로 성공한 것으로 이어 서술하라.★★ "
+            + "★취지와 무관한 다른 종류의 행동에는 적용하지 말고 평소대로 판정하라(그런 행동은 <DICE>로 굴려도 된다) — 아무 행동이나 무조건 성공시키지 마라.★ "
             + "★적용하지 않았다면(취지 불일치) 응답 어딘가에 <GUARANTEE_UNUSED/> 를 포함하라 — 이 능력 사용이 소모되지 않고 보존된다(플레이어 서술엔 안 보임).★ "
             + "단 괴담 본체를 즉사·즉시 해결시키는 과잉 처리는 금지하고 '그 행동의 의도'가 이뤄진 것으로만 묘사.]");
         pendingBoostTrait.put(player.getUniqueId(), td.id); // 취소 시 환원용
