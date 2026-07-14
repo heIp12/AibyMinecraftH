@@ -2646,18 +2646,24 @@ public class TRPGGameManager {
             int need = 90 - thBefore;
             int thAfter = need > 0 ? state.adjustThreat(need) : thBefore;
             if (thAfter != thBefore) gameLogger.logEvent("위협도 +" + (thAfter - thBefore) + " → " + thAfter + "/100 (정확한 금지어 발설 — 세력 급상승)");
-            if (forbiddenDoomTurns <= 0) { // 첫 발설 — 파국 개시(즉종료 대신 유예)
-                forbiddenDoomTurns = 2;
+            if (forbiddenDoomTurns <= 0) { // 첫 발설 — 파국 개시(즉종료 대신 짧은 도주 창)
+                // ★짧은 도주 가능 시간★(사용자 요청: '즉시 종료가 아닌 짧은 도주가능시간이 존재해야함'): 즉사가 아니라, 파국이
+                //   조여오는 동안 인원이 각자 두어 번 움직여 도망칠 수 있는 짧은 창을 연다. ★인원수와 무관하게 1인당 창이 일정★하도록
+                //   생존자 수에 비례시킨다(솔로 3 · 2인 5 · 3인+ 7, 상한 7). 예전 고정 2는 멀티에서 카운터가 매 GM 응답마다 줄어
+                //   1~2행동 만에 소진돼 '즉시 종료'처럼 느껴졌다(제보). 이 창 안에 안전히 도주하면(GM <CLEAR> 생존/탈출) 파국을
+                //   면하고, 못 벗어나면 창이 닫히는 턴에 배드엔딩(caught).
+                forbiddenDoomTurns = Math.min(7, 2 * Math.max(1, state.getAliveCount()) + 1);
                 // ★즉발 하드코딩 방송 금지(스포일러 — 사용자 제보)★: 예전엔 여기서 "§4갑자기 주위가 뒤틀린다"를 즉시 방송했으나,
                 //   그 붉은 문구가 '금지어를 말한 바로 그 입력'과 1:1로 붙어 "방금 그 말이 트리거였다"를 대놓고 알려줬다.
-                //   → 즉발 방송을 없애고, 파국의 조짐은 아래 주입을 받은 GM 서술이 (인과를 숨긴 채) 자연스럽게 그려낸다.
+                //   → 즉발 방송을 없애고, 파국의 조짐·도주 다급함은 아래 주입을 받은 GM 서술이 (인과를 숨긴 채) 그려낸다.
                 ai.injectGmSystem("[금지어 발설 — 파국 개시] " + pd.gmDisplayName() + "이(가) 절대 입에 올려선 안 될 단어를 말했다. "
                     + "★플레이어에겐 이 인과를 절대 알리지 마라 — '말을 잘못해서'·'그 단어 때문에'·'그 말을 입에 올린 순간' 같은 설명·암시 금지(채팅·발화·특정 단어가 원인이라고 드러내지 마라, 메타 노출 금지). 그저 ★상황이 갑자기·격렬하게 변하는 것★으로만 그려라.★ "
                     + "★이번 응답에서 반드시★ 주위가 심상치 않게 뒤틀리기 시작하는 이변을 강렬히 서술해 파국의 조짐을 열어라(즉발 시스템 안내는 없다 — 이 서술이 그 역할을 대신한다). "
-                    + "이제부터 괴담이 급격히 정체를 드러내며 파국이 닥쳐온다 — ★아직 완전히 끝난 건 아니다★. "
-                    + "플레이어가 ★마지막 발버둥(도주·능력 사용·최후의 단서 확보)★을 시도할 여지를 남겨라. 정체·해결법 누설 금지.");
+                    + "이제부터 괴담이 급격히 정체를 드러내며 파국이 닥쳐온다 — ★아직 끝난 게 아니다: 지금 도망치면 살 수 있는 짧은 순간이 있다★. "
+                    + "★지금 당장 벗어나야 한다는 다급함을 서술로 강하게 전하고★, 플레이어가 ★짧은 시간 안에 도주·탈출·최후의 대처★를 시도할 여지를 남겨라. "
+                    + "★이 짧은 창 안에 그들이 위험을 벗어나 안전한 곳으로 도망치는 데 성공하면(도주 장면이 성립하면) <CLEAR>{\"grade\":\"D\",\"resolved\":\"false\",\"reason\":\"가까스로 도주·생존\"}로 매듭지어 파국을 면하게 하라.★ 정체·해결법 누설 금지.");
             } else { // 파국 진행 중 재발설 — 가속
-                ai.injectGmSystem("[금지어 재발설 — 파국 가속] 금지된 단어가 또 입에 올랐다(★인과 노출 금지 — 발화·채팅·특정 단어가 원인이라고 알리지 마라★). 조여오던 파국이 한층 급박해진다 — 이변을 더 강하고 빠르게 서술하라.");
+                ai.injectGmSystem("[금지어 재발설 — 파국 가속] 금지된 단어가 또 입에 올랐다(★인과 노출 금지 — 발화·채팅·특정 단어가 원인이라고 알리지 마라★). 조여오던 파국이 한층 급박해진다 — 이변을 더 강하고 빠르게 서술하라(도주가 늦으면 곧 끝이다).");
             }
             // ★return 하지 않는다★ — 이번 입력도 정상 행동으로 처리해, 플레이어가 파국 속에서도 행동하게 둔다.
         } else if (fwSim >= 0.6) {
@@ -3134,6 +3140,7 @@ public class TRPGGameManager {
                 boolean gmAssertsKnown = clearTag != null && clearAssertsKnownSolution(clearTag);
                 final UUID ndk = (player != null) ? player.getUniqueId() : NODICE_NIL; // ★#4★ CLEAR 주체별 스코핑 키
                 if (clearTag != null && !solutionKnown && !gmAssertsKnown && ai.parseDiceTag(raw) == null
+                        && forbiddenDoomTurns <= 0 // ★금지어 도주 창 중엔 무판정 종결 게이트 면제★ — 위협도 90이어도 '가까스로 도주' CLEAR(생존)를 즉시 허용해 도주가 실제로 성립하게(사용자 요청)
                         && state.getThreat() >= 40 && state.getCurrentTurn() - lastDiceSuccessTurnBy.getOrDefault(ndk, -999) > 3) {
                     // ★A: 무판정 CLEAR를 무한히 막지 않는다(로그 CRGY-YQ2H: 정당한 자동성공 5회 연속 차단)★.
                     //   첫 무판정 CLEAR는 보류하되 ★버리지 않고 이월(stash)★한다. 다음 행동 때 GM이 다시 CLEAR하면(재확정) 그때 종결.
@@ -3520,9 +3527,9 @@ public class TRPGGameManager {
                 }
             }
 
-            // ★금지어 파국 카운트다운(문제1)★: 발설로 시작된 파국을 즉종료가 아니라 1~2턴 조짐 뒤 매듭짓는다.
-            //   이 턴 서술(조짐·이변)은 이미 위에서 전달됐고, 매 플레이어 턴 1씩 줄어 0이 되는 턴에 배드엔딩으로 자연스럽게 종결.
-            //   (그동안 플레이어는 계속 행동해 왔다 → 즉사 몰입 파괴 없이 '왜 졌는지 납득되는' 파국.)
+            // ★금지어 도주 창 카운트다운★: 발설로 시작된 파국을 즉종료가 아니라 짧은 도주 창(생존자 수 비례) 동안 미룬다.
+            //   매 플레이어 턴 1씩 줄고, 그 사이 안전히 도주하면 GM이 <CLEAR>(생존)로 매듭지어 창이 취소된다(onClearEnding에서 0으로).
+            //   끝내 못 벗어나 창이 0이 되는 턴에 배드엔딩(caught) — 즉사 몰입 파괴 없이 '도망칠 틈은 있었다'가 성립.
             if (forbiddenDoomTurns > 0 && (currentPhase == Phase.HORROR || currentPhase == Phase.DAILY)) {
                 if (--forbiddenDoomTurns <= 0) {
                     onBadEnding("금지어 발설", true); // ★인과 은닉★ — 엔딩이 '금지어 때문'이라 짚지 않게(스포일러 방지)
@@ -7220,6 +7227,7 @@ public class TRPGGameManager {
         unresolvedDecisiveDice.clear();
         heldCrossClear = null; heldCrossClearBy = null;
         pendingDecisiveClear.clear();
+        forbiddenDoomTurns = 0; // ★금지어 도주 창 종료★ — 도주(또는 다른 방식) 성공으로 클리어되면 파국 카운트다운을 꺼 뒤늦은 배드엔딩을 막는다
         int room = state.getRoomNumber();
         // 스테이지 3+는 괴담 완전 해결(해결판정)만 다음 스테이지 진출 허용. 단순 생존은 재도전만 가능.
         nextStageUnlocked = (room < 3) || resolved;
