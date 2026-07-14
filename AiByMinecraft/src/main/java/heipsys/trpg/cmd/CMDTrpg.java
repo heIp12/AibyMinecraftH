@@ -80,11 +80,13 @@ public class CMDTrpg implements CommandExecutor, TabCompleter {
                 if (args.length < 2) { player.sendMessage("§c사용법: /trpg reserve <씨드>  §7(해제: off)"); return true; }
                 trpg.reserveNextScenario(player, args[1]);
             }
-            case "read"   -> {
-                if (!player.isOp()) { player.sendMessage("§c권한이 없습니다."); return true; }
-                if (args.length < 2) { player.sendMessage("§c사용법: /trpg read <씨드>"); return true; }
-                readGdam(player, args[1]);
-            }
+            // ★/trpg read 비활성(요청)★ — 인게임 명령어에서만 내려 노출·실행되지 않게 한다. 기능(readGdam·exportGdamJson)은 그대로 보존.
+            //   ★재연결: 아래 case 주석을 해제하면 즉시 복구된다(탭완성 subs·seed 완성·도움말 3곳도 함께 주석 해제).★
+            // case "read"   -> {
+            //     if (!player.isOp()) { player.sendMessage("§c권한이 없습니다."); return true; }
+            //     if (args.length < 2) { player.sendMessage("§c사용법: /trpg read <씨드>"); return true; }
+            //     readGdam(player, args[1]);
+            // }
             case "replay" -> {
                 if (!player.isOp()) { player.sendMessage("§c권한이 없습니다."); return true; }
                 if (args.length < 2) { player.sendMessage("§c사용법: /trpg replay <재현코드>"); return true; }
@@ -131,7 +133,7 @@ public class CMDTrpg implements CommandExecutor, TabCompleter {
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (args.length == 1) {
-            List<String> subs = List.of("start", "setting", "stop", "retry", "next", "resume", "load", "read", "replay", "replaylist", "list", "status", "me", "log", "info", "추천", "map", "이동", "trait", "ending", "givetrait", "jobrefresh", "help");
+            List<String> subs = List.of("start", "setting", "stop", "retry", "next", "resume", "load", "replay", "replaylist", "list", "status", "me", "log", "info", "추천", "map", "이동", "trait", "ending", "givetrait", "jobrefresh", "help"); // read 비활성(기능 보존): 재연결 시 "read" 추가
             String partial = args[0].toLowerCase();
             return subs.stream()
                 .filter(s -> s.startsWith(partial))
@@ -146,7 +148,7 @@ public class CMDTrpg implements CommandExecutor, TabCompleter {
             if (sub.equals("start") || sub.equals("s")) {
                 return Stream.of("setting").filter(s -> s.startsWith(partial2)).collect(Collectors.toList());
             }
-            if (sub.equals("load") || sub.equals("read")) {
+            if (sub.equals("load")) { // read 비활성(기능 보존): 재연결 시 " || sub.equals(\"read\")" 복원
                 String partial = args[1].toLowerCase();
                 return trpg.listSavedSeeds().stream()
                     .filter(s -> s.toLowerCase().startsWith(partial))
@@ -162,6 +164,9 @@ public class CMDTrpg implements CommandExecutor, TabCompleter {
         return Collections.emptyList();
     }
 
+    /** ★보존됨(명령 비활성)★ — /trpg read 명령은 내렸지만 이 기능은 남겨 둔다. 위 switch의 case "read" 주석만 해제하면 재연결된다.
+     *  .gdam을 복호화해 평문 .json으로 내보낸다(내용 검수·편집용). */
+    @SuppressWarnings("unused")
     private void readGdam(Player player, String seed) {
         String path = trpg.exportGdamJson(seed);
         if (path == null) {
@@ -188,7 +193,7 @@ public class CMDTrpg implements CommandExecutor, TabCompleter {
         player.sendMessage("§f/trpg start §7— 새 세션 시작 (OP)");
         player.sendMessage("§f/trpg setting §7— 시작 옵션(자동 사전생성·시작 스테이지) 설정 (OP)");
         player.sendMessage("§f/trpg load <씨드> §7— 저장된 세션 불러오기 (OP)");
-        player.sendMessage("§f/trpg read <씨드> §7— .gdam 복호화 후 .json으로 내보내기 (OP)");
+        // player.sendMessage("§f/trpg read <씨드> §7— .gdam 복호화 후 .json으로 내보내기 (OP)"); // read 비활성(기능 보존): 재연결 시 주석 해제
         player.sendMessage("§f/trpg replay <코드> §7— 기록된 시작(직업·특성·능력치)으로 그 스테이지만 재현 (OP)");
         player.sendMessage("§f/trpg replaylist §7— 재현 기록 목록");
         player.sendMessage("§f/trpg list §7— 저장된 세션 목록");
