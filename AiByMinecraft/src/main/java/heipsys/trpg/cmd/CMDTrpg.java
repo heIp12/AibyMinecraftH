@@ -58,10 +58,14 @@ public class CMDTrpg implements CommandExecutor, TabCompleter {
                 if (!player.isOp()) { player.sendMessage("§c권한이 없습니다."); return true; }
                 trpg.stopSession(player);
             }
-            // ★유저 진행 명령(요청)★ — 엔딩·클리어에서 전원에게 안내되는 '진행' 커맨드라 OP 불필요.
-            //   (retrySession/nextSession 내부에 상태 가드가 있어 부적절한 시점 호출은 자체적으로 무시된다.)
-            case "retry"  -> trpg.retrySession(player);  // 재도전(실패 후 이어가기)
-            case "next"   -> trpg.nextSession(player);   // 다음 스테이지 진행(클리어 후)
+            case "retry"  -> {
+                if (!player.isOp()) { player.sendMessage("§c권한이 없습니다."); return true; }
+                trpg.retrySession(player);
+            }
+            case "next"   -> {
+                if (!player.isOp()) { player.sendMessage("§c권한이 없습니다."); return true; }
+                trpg.nextSession(player);
+            }
             case "resume" -> {
                 if (!player.isOp()) { player.sendMessage("§c권한이 없습니다."); return true; }
                 trpg.resumeSession(player);
@@ -194,8 +198,8 @@ public class CMDTrpg implements CommandExecutor, TabCompleter {
         player.sendMessage("§f/trpg replaylist §7— 재현 기록 목록");
         player.sendMessage("§f/trpg list §7— 저장된 세션 목록");
         player.sendMessage("§f/trpg stop  §7— 세션 종료 (OP)");
-        player.sendMessage("§f/trpg retry §7— 재도전 (누구나)");
-        player.sendMessage("§f/trpg next  §7— 다음 스테이지로 이동 (누구나) — 클리어 후 새 시나리오 시작");
+        player.sendMessage("§f/trpg retry §7— 재도전 (OP)");
+        player.sendMessage("§f/trpg next  §7— 다음 스테이지로 이동 (OP) — 클리어 후 새 시나리오 시작");
         player.sendMessage("§f/trpg reserve <씨드> §7— 다음 스테이지에 특정 괴담 예약(1회성 · 해제 off) (OP)");
         player.sendMessage("§f/trpg resume §7— 예기치 못하게 끊긴 게임을 자동 저장에서 이어하기 (OP)");
         player.sendMessage("§f/trpg jobrefresh §7— 직업 풀을 AI로 강제 재생성(캐시·재시작 불필요) (OP)");
