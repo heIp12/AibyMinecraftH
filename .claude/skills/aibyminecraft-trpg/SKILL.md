@@ -520,6 +520,10 @@ description: >-
   (kind=thought, actor=NPC — 그 NPC 시점·전체뷰에만, 플레이어엔 비노출) + 게임 내 엿보기 공개는 별개(같은
   구역 엿보기 특성만). logNpcLocationIfChanged(npcLoggedZone 추적, 바뀔 때만 logMove) → 뷰어 zoneAtSeq가
   NPC 위치 인지 = 라이브 패널 '위치' + 근처/방송 가시성. 뷰어 kind=thought 배지 💭·`.k-thought`(흐린 보라·이탤릭).
+- **런타임 AI 재설정 + 키 풀 순환**: api-key volatile + keyPool(';' 분리)/keyIdx. applyConfig(생성자·reconfigure 공용)이
+  local|·키풀 파싱 + modelsDiscovered/auto* 리셋. send() 429 재시도 소진 시 advanceKey()로 다음 키 순환(한 호출 키개수만큼
+  bound). AICraft.hotReloadAiConfig(세션 유지 — reloadPlugin과 달리 stopSession 안 함) + applyAiSettings(모델 배선 공용) +
+  public trpgAi 필드. 커맨드 `/gdam reload|key|status`(CMDGdam, plugin.yml 등록). 여러 명 무료 키 합산 플레이용.
 - **로컬 LLM 연동(OpenAI 호환)**: api-key에 `local|<baseUrl>|<model>[|<key>]` 넣으면 활성(AiManager 생성자 파싱 →
   localMode). send() 최상단이 sendLocal로 분기 — 모델 라우팅·effort·cache_control·과금 전부 우회, 단일 localModel로
   `POST {baseUrl}/chat/completions`(max_tokens 키, system 첫 메시지, Qwen3는 /no_think 자동). 응답 content에서 `<think>`

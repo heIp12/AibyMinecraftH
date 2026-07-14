@@ -15,3 +15,7 @@ commands:
     description: "설정(config.yml) 리로드"
     usage: "/r"
     permission: op
+  gdam:
+    description: "AI 설정 실시간 리로드/키 순환 (세션 유지)"
+    usage: "/gdam <reload|key|status>"
+    permission: op

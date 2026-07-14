@@ -2,6 +2,11 @@
 # 발급받은 API 키를 아래에 입력해 주세요.
 # openai(짧고 빠름) / gemini(상상력이 풍부하지만 느림) / claude(비싸지만 똑똑함)
 #
+# ★여러 키 번갈아 쓰기(하루 한도 합산)★ — api-key에 ';'로 여러 키를 넣으면 키 풀이 됩니다.
+#   예)  api-key: "AIza...KEY1;AIza...KEY2;AIza...KEY3"
+#   한 키가 한도 소진(429)되면 자동으로 다음 키로 순환합니다. 여러 명이 각자 무료 키를 대면 그만큼 오래 플레이 가능.
+#   (게임 중 커맨드: /gdam reload = config 다시 읽기(세션 유지) · /gdam key = 수동 다음 키 · /gdam status = 현재 상태)
+#
 # ★로컬 LLM(무료·오프라인)★ — api-key에 아래 형식을 넣으면 로컬 서버로 연결됩니다(api-type은 무시).
 #   형식:  local|<주소>|<모델>[|<키>]
 #   예)  Ollama       :  local|http://localhost:11434/v1|qwen3:30b-a3b

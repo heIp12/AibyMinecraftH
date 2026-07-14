@@ -25,8 +25,13 @@ public class AiManager {
 
     public enum AiType { GM_AI, ENTITY_AI, NPC_AI, ASSISTANT }
 
-    private final String apiKey;
-    private final String apiType;  // claude / openai / gemini
+    // ★런타임 재설정 가능(/gdam reload)★ — final이 아니라 volatile. reconfigure()가 세션을 안 끊고 이 값들을 바꾼다.
+    private volatile String apiKey;   // ★현재 활성 키★(키 풀에서 순환). 아래 keyPool의 keyIdx가 가리키는 값.
+    private volatile String apiType;  // claude / openai / gemini
+    // ★키 풀(여러 명이 키를 번갈아)★: api-key에 ';'로 여러 키를 넣으면 풀이 되고, 한 키가 한도 소진(429 재시도 실패)되면
+    //   다음 키로 자동 순환한다(하루 한도 합산 효과). 로컬 모드면 단일(localKey)만.
+    private final java.util.List<String> keyPool = new java.util.concurrent.CopyOnWriteArrayList<>();
+    private volatile int keyIdx = 0;
     private final Gson gson = new Gson();
     private final HttpClient http = HttpClient.newHttpClient();
 
@@ -37,12 +42,12 @@ public class AiManager {
     //       local|http://localhost:8080|qwen3-30b-a3b|sk-x (llama.cpp — 키 필요 시)
     //   활성화되면 apiType(claude/openai/gemini)·모델 라우팅·과금·모델 탐지를 전부 우회하고, 모든 티어를 이 단일
     //   로컬 모델로 보낸다(GM/NPC 구분은 프롬프트로 유지). Qwen3 계열은 기본으로 /no_think(사고모드 off)로 보낸다.
-    private final boolean localMode;
+    private volatile boolean localMode;
     /** 로컬 출력 토큰 상한 — /no_think 로컬 모델은 thinking 여유가 불필요해 gdam 32000을 이 값으로 줄인다(폭주 생성 방지·시간 절약). */
     private static final int LOCAL_MAX_OUT = 16000;
-    private final String  localBaseUrl;   // 예: http://localhost:11434/v1
-    private final String  localModel;     // 예: qwen3:30b-a3b
-    private final String  localKey;       // 로컬 서버가 요구하는 키(대개 무시됨) — 없으면 더미
+    private volatile String  localBaseUrl;   // 예: http://localhost:11434/v1
+    private volatile String  localModel;     // 예: qwen3:30b-a3b
+    private volatile String  localKey;       // 로컬 서버가 요구하는 키(대개 무시됨) — 없으면 더미
 
     // 컨텍스트: GM과 Entity/NPC는 별도 히스토리 유지
     // 멀티플레이에서 여러 플레이어가 동시에 행동하면 callGmAi 등이 동시 실행되므로
@@ -70,14 +75,22 @@ public class AiManager {
     private static final int GDAM_MAX_TOKENS = 32000; // .gdam 청크 JSON 생성용. ★thinking 모델(Sonnet 5·Haiku 4.5 등)은 thinking 토큰이 max_tokens를 함께 소모★ → 12000이면 thinking만으로 소진돼 text 블록이 안 나오고 파싱 실패하던 문제. thinking+JSON이 모두 담기게 상향.
 
     public AiManager(String apiKey, String apiType) {
-        String key = apiKey == null ? "" : apiKey.trim();
-        // ★로컬 LLM 감지★: api-key가 'local|...' 이면 로컬 OpenAI 호환 엔드포인트로 전환한다.
+        applyConfig(apiKey, apiType);
+    }
+
+    /** api-key/api-type를 파싱해 필드에 반영한다(생성자·reconfigure 공용). 로컬 모드·키 풀(';' 분리)을 여기서 결정. */
+    private synchronized void applyConfig(String rawKey, String type) {
+        String key = rawKey == null ? "" : rawKey.trim();
+        keyPool.clear();
+        keyIdx = 0;
+        // ★로컬 LLM 감지★: api-key가 'local|...' 이면 로컬 OpenAI 호환 엔드포인트로 전환한다(키 풀 미적용, 단일).
         if (key.regionMatches(true, 0, "local|", 0, 6) || key.regionMatches(true, 0, "local:", 0, 6)) {
             String[] p = key.substring(6).split("\\|");
             this.localMode     = true;
             this.localBaseUrl  = p.length > 0 ? p[0].trim() : "http://localhost:11434/v1";
             this.localModel    = p.length > 1 && !p[1].isBlank() ? p[1].trim() : "qwen3:30b-a3b";
             this.localKey      = p.length > 2 && !p[2].isBlank() ? p[2].trim() : "sk-local";
+            keyPool.add(this.localKey);
             this.apiKey        = this.localKey;   // 하위 코드가 참조해도 안전하게 로컬 키를 담아둔다
             this.apiType       = "openai";        // 로컬은 OpenAI 호환 포맷을 쓴다(내부 표기용)
         } else {
@@ -85,10 +98,35 @@ public class AiManager {
             this.localBaseUrl  = null;
             this.localModel    = null;
             this.localKey      = null;
-            this.apiKey        = key;
-            this.apiType       = apiType;
+            // ★여러 키 지원★: ';' 또는 줄바꿈으로 나눠 키 풀을 만든다(여러 명이 키를 번갈아 → 하루 한도 합산).
+            for (String k : key.split("[;\\n]")) { String t = k.trim(); if (!t.isEmpty()) keyPool.add(t); }
+            this.apiKey        = keyPool.isEmpty() ? "" : keyPool.get(0);
+            this.apiType       = type;
         }
+        // 새 키/타입 → 모델 자동탐지를 다시 시키기 위해 리셋(다음 호출 때 재탐지).
+        modelsDiscovered = false;
+        autoHigh = autoMedium = autoLow = autoMini = null;
     }
+
+    /** ★런타임 재설정(/gdam reload)★ — 세션·컨텍스트·누적을 유지한 채 api-key/타입만 갈아끼운다. 모델 오버라이드는 호출자가 재적용. */
+    public synchronized void reconfigure(String rawKey, String type) {
+        applyConfig(rawKey, type);
+    }
+
+    /** 키 풀에서 다음 키로 순환(한도 소진 회피). 키가 1개 이하면 false. */
+    public synchronized boolean advanceKey() {
+        if (keyPool.size() <= 1) return false;
+        keyIdx = (keyIdx + 1) % keyPool.size();
+        this.apiKey = keyPool.get(keyIdx);
+        modelsDiscovered = false; // 키가 바뀌면 가용 모델이 다를 수 있어 재탐지(대개 동일 provider라 즉시 완료)
+        autoHigh = autoMedium = autoLow = autoMini = null;
+        return true;
+    }
+
+    /** 등록된 키 개수(로컬은 1). */
+    public int keyCount()      { return keyPool.size(); }
+    /** 현재 활성 키의 인덱스(0부터). */
+    public int activeKeyIndex(){ return keyIdx; }
 
     // ======================================================
     //  모델 선택
@@ -1714,9 +1752,16 @@ public class AiManager {
         HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
 
         if (response.statusCode() == 429) {
-            if (attempt >= 3) throw new RuntimeException("API 429: 재시도 횟수 초과 (3회)");
-            Thread.sleep(7000L * (attempt + 1));
-            return send(model, system, messages, maxTokens, attempt + 1, cacheHistory, effort);
+            if (attempt < 3) {
+                Thread.sleep(7000L * (attempt + 1));
+                return send(model, system, messages, maxTokens, attempt + 1, cacheHistory, effort);
+            }
+            // ★키 순환★: 재시도 소진 → 다른 키가 있으면 그 키로 갈아타 즉시 재시도(한도 소진 키 회피). 무한루프 방지로
+            //   한 호출에서 키 개수만큼만 순환(attempt<3+keyCount). 여러 명이 키를 대면 하루 한도가 합산되는 효과.
+            if (keyCount() > 1 && attempt < 3 + keyCount() && advanceKey()) {
+                return send(model, system, messages, maxTokens, attempt + 1, cacheHistory, effort);
+            }
+            throw new RuntimeException("API 429: 재시도·키 순환 모두 소진 (모든 키의 한도 초과일 수 있음)");
         }
         // 모델 ID가 이 키에서 안 먹히면(404 not_found) 탐지된 '가용' 모델로 1회 폴백 — 잘못된 모델로 게임이 죽지 않게.
         if (response.statusCode() == 404 && attempt < 2 && response.body().toLowerCase().contains("not_found")) {
