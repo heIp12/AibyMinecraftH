@@ -189,7 +189,7 @@ public class CMDTrpg implements CommandExecutor, TabCompleter {
     }
 
     private void sendHelp(Player player) {
-        player.sendMessage("§e[테네브로스 커맨드]");
+        player.sendMessage("§e[괴담크래프트 커맨드]");
         player.sendMessage("§f/trpg start §7— 새 세션 시작 (OP)");
         player.sendMessage("§f/trpg setting §7— 시작 옵션(자동 사전생성·시작 스테이지) 설정 (OP)");
         player.sendMessage("§f/trpg load <씨드> §7— 저장된 세션 불러오기 (OP)");

@@ -46,7 +46,7 @@ public class ScoreboardManager {
             return;
         }
 
-        Objective obj = sb.registerNewObjective("trpg", Criteria.DUMMY, "§e§l[ 테네브로스 ]");
+        Objective obj = sb.registerNewObjective("trpg", Criteria.DUMMY, "§e§l[ 괴담크래프트 ]");
         obj.setDisplaySlot(DisplaySlot.SIDEBAR);
 
         // 사이드바는 핵심 정보만 간략하게. 상세 정보(스탯·특성)는 '캐릭터 정보'(네더의 별) GUI에서.

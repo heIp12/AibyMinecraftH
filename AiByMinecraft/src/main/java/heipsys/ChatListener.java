@@ -196,7 +196,7 @@ public class ChatListener implements Listener {
         if (!trpgManager.hasAutoSave()) return;
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
             if (!player.isOnline()) return;
-            player.sendMessage("§e[테네브로스] 중단된 게임의 자동 저장 기록이 있습니다. §f/trpg resume §e으로 이어서 진행할 수 있습니다.");
+            player.sendMessage("§e[괴담크래프트] 중단된 게임의 자동 저장 기록이 있습니다. §f/trpg resume §e으로 이어서 진행할 수 있습니다.");
         }, 40L);
     }
 

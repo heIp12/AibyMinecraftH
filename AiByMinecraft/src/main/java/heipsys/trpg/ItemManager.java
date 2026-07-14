@@ -222,7 +222,7 @@ public class ItemManager {
         if (meta == null) return item;
         meta.displayName(Component.text("§e" + title));
         List<Component> lore = new ArrayList<>();
-        lore.add(Component.text("§7[테네브로스 아이템]"));
+        lore.add(Component.text("§7[괴담크래프트 아이템]"));
         if (def.has("description")) {
             appendWrapped(lore, def.get("description").getAsString(), "§f");
         }
